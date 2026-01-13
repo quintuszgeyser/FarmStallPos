@@ -1,14 +1,15 @@
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship
+from sqlalchemy import text
 from datetime import datetime
-import os
+import io, csv, json, os
 
 # --- Configuration ---
-CURRENCY = os.getenv("CURRENCY", "R")                 # UI currency
-DATABASE_URL = os.getenv("DATABASE_URL")             # Set this in Render → Service → Environment
-# Example: postgresql://user:pass@host:5432/farmstall_pos
+CURRENCY = os.getenv("CURRENCY", "R")            # UI currency
+DATABASE_URL = os.getenv("DATABASE_URL")         # Set this in Render → Service → Environment
+ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")           # Optional: protects /admin/export/*
 
 app = Flask(__name__)
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = True
@@ -45,12 +46,12 @@ class TransactionLine(db.Model):
 with app.app_context():
     db.create_all()
 
-# --- Routes ---
+# --- Routes (UI) ---
 @app.get("/")
 def index():
     return render_template("index.html", currency=CURRENCY)
 
-# Products
+# --- Products API ---
 @app.get("/api/products")
 def api_get_products():
     rows = Product.query.order_by(Product.id).all()
@@ -93,10 +94,13 @@ def api_delete_product(name):
     db.session.commit()
     return jsonify({"ok": True})
 
-# Transactions
+# --- Transactions API ---
 @app.get("/api/transactions")
 def api_get_transactions():
-    # Return per-line rows, grouped by tran_id on the frontend (same as before)
+    """
+    Returns per-line rows; your frontend groups by tran_id.
+    Keeps the "product_id" field compatible with the UI (product name).
+    """
     q = db.session.query(
         Transaction.id.label("tran_id"),
         Transaction.date_time,
@@ -112,7 +116,7 @@ def api_get_transactions():
         payload.append({
             "tran_id":     row.tran_id,
             "date_time":   row.date_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "product_id":  row.product_name,            # keep compatible with your UI
+            "product_id":  row.product_name,  # keep compatible with your UI
             "no_of_items": int(row.qty),
             "amount":      float(row.amount)
         })
@@ -167,6 +171,82 @@ def api_add_transaction():
 
     return jsonify({"ok": True, "tran_id": tran.id, "lines": lines})
 
+# --- Admin: DB health & CSV exports ---
+def require_admin():
+    """Simple header-based guard. Set ADMIN_TOKEN env var to enable."""
+    if not ADMIN_TOKEN:
+        return None  # protection disabled
+    if request.headers.get("X-Admin-Token") != ADMIN_TOKEN:
+        return Response("Unauthorized", status=401)
+    return None
+
+def csv_response(filename: str, header: list[str], rows_iter):
+    """Stream a CSV download with a header row and the given iterator of rows."""
+    def generate():
+        yield ",".join(header) + "\n"
+        for row in rows_iter:
+            s = io.StringIO()
+            w = csv.writer(s)
+            w.writerow(row)
+            yield s.getvalue()
+    return Response(
+        generate(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+@app.get("/api/db-health")
+def db_health():
+    """
+    Confirms the app can reach the DB (internal on Render).
+    Returns {"ok": true} on success.
+    """
+    try:
+        db.session.execute(text("SELECT 1"))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.get("/admin/export/products")
+def export_products():
+    guard = require_admin()
+    if guard: return guard
+
+    q = db.session.query(Product).order_by(Product.id)
+    header = ["id", "name", "price"]
+    def rows():
+        for p in q.all():
+            yield [p.id, p.name, float(p.price)]
+    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return csv_response(f"products_{stamp}.csv", header, rows())
+
+@app.get("/admin/export/transactions")
+def export_transactions():
+    guard = require_admin()
+    if guard: return guard
+
+    q = db.session.query(Transaction).order_by(Transaction.id)
+    header = ["id", "date_time"]
+    def rows():
+        for t in q.all():
+            yield [t.id, t.date_time.isoformat()]
+    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return csv_response(f"transactions_{stamp}.csv", header, rows())
+
+@app.get("/admin/export/transaction_lines")
+def export_transaction_lines():
+    guard = require_admin()
+    if guard: return guard
+
+    q = db.session.query(TransactionLine).order_by(TransactionLine.id)
+    header = ["id", "transaction_id", "product_id", "qty", "unit_price"]
+    def rows():
+        for l in q.all():
+            yield [l.id, l.transaction_id, l.product_id, l.qty, float(l.unit_price)]
+    stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    return csv_response(f"transaction_lines_{stamp}.csv", header, rows())
+
+# --- Local dev entrypoint ---
 if __name__ == "__main__":
     # Local dev only; on Render you run with: gunicorn app:app  (Start Command)
     app.run(host="0.0.0.0", port=5000, debug=True)
