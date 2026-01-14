@@ -1,0 +1,36 @@
+Open PowerShell
+Open a PowerShell window and navigate to your project:
+PowerShellcd "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web"Show more lines
+
+✅ 2. Enable script execution for this session
+(You only need to do this when a new PowerShell session is opened.)
+PowerShellSet-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSignedShow more lines
+Press A for "Yes to all".
+✔ This is safe — only affects the current window.
+
+✅ 3. Activate your virtual environment
+PowerShell.\.venv\Scripts\Activate.ps1Show more lines
+Prompt should now look like:
+(.venv) PS C:\Users\...>
+
+
+✅ 4. Set your environment variables
+These must be set every time you open a fresh PowerShell window:
+PowerShell$env:SECRET_KEY = "change-me"$env:DATABASE_URL = "sqlite:///pos.db"$env:LOCAL_TZ = "Africa/Johannesburg"Show more lines
+(If you want exports protected:)
+PowerShell# optional$env:ADMIN_TOKEN = "my-secret-token"Show more lines
+
+✅ 5. Run the app
+PowerShellpython app.pyShow more lines
+You should see output like:
+* Running on http://127.0.0.1:5000
+* Running on http://192.168.1.6:5000
+
+This means the app is now LIVE.
+
+🎯 6. Access the app
+✔ On your computer:
+Open:
+👉 http://127.0.0.1:5000
+or
+👉 http://localhost:5000

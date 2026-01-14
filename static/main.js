@@ -1,342 +1,215 @@
-/* ======================= Auth & Role UI ======================= */
-const loginArea  = document.getElementById('loginArea');
-const loginUser  = document.getElementById('loginUser');
-const loginPass  = document.getElementById('loginPass');
-const loginBtn   = document.getElementById('loginBtn');
-const loginError = document.getElementById('loginError');
-const userChip   = document.getElementById('userChip');
-const logoutBtn  = document.getElementById('logoutBtn');
-const appContainer = document.getElementById('appContainer');
+async function api(path, opts={}) {
+  const res = await fetch(path, Object.assign({ headers: { 'Content-Type': 'application/json' } }, opts));
+  if (!res.ok) { let t=''; try{t=await res.text();}catch{}; throw new Error(`HTTP ${res.status}: ${t}`); }
+  const ct = res.headers.get('Content-Type')||''; return ct.includes('application/json')? res.json(): res.text();
+}
 
-// tabs
-const tellerTabBtn       = document.getElementById('teller-tab');
-const transactionsTabBtn = document.getElementById('transactions-tab');
-const manageTabBtn       = document.getElementById('manage-tab');
+let currentUser = null;
+let cart = [];
+let codeReader = null;
+let lastScanAt = 0;
+const SCAN_COOLDOWN_MS = 700;
+let mediaStream = null;
 
-// users admin area
-const usersAdminArea   = document.getElementById('usersAdminArea');
-const usersList        = document.getElementById('usersList');
-const userUsername     = document.getElementById('userUsername');
-const userPassword     = document.getElementById('userPassword');
-const userRole         = document.getElementById('userRole');
-const userActive       = document.getElementById('userActive');
-const createUserBtn    = document.getElementById('createUserBtn');
-const updateUserBtn    = document.getElementById('updateUserBtn');
-const deleteUserBtn    = document.getElementById('deleteUserBtn');
+function setLoggedInUI(isLoggedIn, role) {
+  const loginArea = document.getElementById('loginArea');
+  const appContainer = document.getElementById('appContainer');
+  const navTabs = document.getElementById('navTabs');
+  const tabManage = document.getElementById('tabManageLink');
+  const tabUsers = document.getElementById('tabUsersLink');
+  const btnLogout = document.getElementById('btnLogout');
 
-async function refreshAuthUI() {
-  const res = await fetch('/api/me');
-  const me  = await res.json();
-
-  if (!me.logged_in) {
+  if (isLoggedIn) {
+    loginArea.style.display = 'none';
+    appContainer.style.display = '';
+    navTabs.style.display = '';
+    btnLogout.classList.remove('hidden');
+    if (role === 'admin') { tabManage.parentElement.style.display = ''; tabUsers.parentElement.style.display = ''; }
+    else { tabManage.parentElement.style.display = 'none'; tabUsers.parentElement.style.display = 'none'; }
+  } else {
     loginArea.style.display = '';
     appContainer.style.display = 'none';
-    userChip.style.display  = 'none';
-    logoutBtn.style.display = 'none';
-    return;
-  }
-
-  // logged in
-  loginArea.style.display = 'none';
-  appContainer.style.display = '';
-  userChip.textContent = `${me.user.username} (${me.user.role})`;
-  userChip.style.display = '';
-  logoutBtn.style.display = '';
-
-  if (me.user.role === 'teller') {
-    // show only Transactions
-    tellerTabBtn.parentElement.style.display       = '';
-    manageTabBtn.parentElement.style.display       = 'none';
-    transactionsTabBtn.parentElement.style.display = '';
-
-    // activate Transactions tab
-    new bootstrap.Tab(transactionsTabBtn).show();
-    usersAdminArea.style.display = 'none';
-    await loadTransactions();
-  } else {
-    // admin: all tabs visible
-    tellerTabBtn.parentElement.style.display       = '';
-    transactionsTabBtn.parentElement.style.display = '';
-    manageTabBtn.parentElement.style.display       = '';
-    usersAdminArea.style.display = '';
-    await Promise.allSettled([ loadProducts(), loadTransactions(), loadUsers() ]);
+    navTabs.style.display = 'none';
+    btnLogout.classList.add('hidden');
   }
 }
 
-loginBtn?.addEventListener('click', async () => {
-  loginError.style.display = 'none';
-  const payload = { username: loginUser.value.trim(), password: loginPass.value };
-  const res = await fetch('/api/login', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (!res.ok) { loginError.textContent = data.error || 'Login failed'; loginError.style.display = ''; return; }
-  await refreshAuthUI();
-});
-
-logoutBtn?.addEventListener('click', async () => {
-  await fetch('/api/logout', { method: 'POST' });
-  CART = []; renderCart();
-  await refreshAuthUI();
-});
-
-/* ======================= Users Admin ======================= */
-async function loadUsers() {
+async function refreshProductsList() {
+  const listDiv = document.getElementById('productsList');
   try {
-    const res = await fetch('/api/users');
-    if (!res.ok) return; // teller will get 403
-    const rows = await res.json();
-    usersList.innerHTML = '';
-    rows.forEach(u => {
-      const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-center';
-      li.textContent = `${u.username} — ${u.role} — ${u.active ? 'active' : 'inactive'}`;
-      li.onclick = () => {
-        userUsername.value = u.username;
-        userRole.value     = u.role;
-        userActive.checked = !!u.active;
-        userPassword.value = '';
-      };
-      usersList.appendChild(li);
+    const data = await api('/api/products');
+    const entries = Object.entries(data).sort((a,b)=>a[0].localeCompare(b[0]));
+    let html = '<table class="table table-sm"><thead><tr><th>Name</th><th>Price</th><th>Barcode</th></tr></thead><tbody>';
+    for (const [name, obj] of entries) { html += `<tr><td>${name}</td><td>${(+obj.price).toFixed(2)}</td><td>${obj.barcode||''}</td></tr>`; }
+    html += '</tbody></table>';
+    listDiv.innerHTML = html;
+  } catch (e) { listDiv.innerHTML = `<div class="text-danger">Failed to load products: ${e.message}</div>`; }
+}
+
+async function refreshUsersList() {
+  const list = document.getElementById('usersList');
+  try {
+    const users = await api('/api/users');
+    list.innerHTML='';
+    users.forEach(u=>{
+      const li=document.createElement('li'); li.className='list-group-item d-flex justify-content-between align-items-center';
+      li.innerHTML = `<div><strong>${u.username}</strong> <span class=\"badge bg-secondary ms-2\">${u.role}</span> ${u.active? '' : '<span class=\"badge bg-warning text-dark ms-1\">inactive</span>'}</div>`+
+                     `<div><button class=\"btn btn-sm btn-outline-primary me-2\" data-act=\"toggle\" data-u=\"${u.username}\" data-active=\"${u.active}\">${u.active? 'Deactivate':'Activate'}</button>`+
+                     `<button class=\"btn btn-sm btn-outline-danger\" data-act=\"delete\" data-u=\"${u.username}\">Delete</button></div>`;
+      list.appendChild(li);
     });
-  } catch (e) {}
+  } catch(e) { list.innerHTML = `<li class="list-group-item text-danger">Failed to load users: ${e.message}</li>`; }
 }
 
-createUserBtn?.addEventListener('click', async () => {
-  const payload = {
-    username: userUsername.value.trim(),
-    password: userPassword.value,
-    role:     userRole.value,
-    active:   userActive.checked
-  };
-  const res = await fetch('/api/users', {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (!res.ok) return alert(JSON.stringify(data));
-  userPassword.value = '';
-  await loadUsers();
-  alert('User created');
-});
-
-updateUserBtn?.addEventListener('click', async () => {
-  const payload = {
-    username: userUsername.value.trim(),
-    role:     userRole.value,
-    active:   userActive.checked,
-    password: userPassword.value || undefined
-  };
-  const res = await fetch('/api/users/update', {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
-  });
-  const data = await res.json();
-  if (!res.ok) return alert(JSON.stringify(data));
-  userPassword.value = '';
-  await loadUsers();
-  alert('User updated');
-});
-
-deleteUserBtn?.addEventListener('click', async () => {
-  const username = userUsername.value.trim();
-  if (!username) return alert('Select a user first');
-  if (!confirm(`Delete ${username}?`)) return;
-  const res = await fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE' });
-  const data = await res.json();
-  if (!res.ok) return alert(JSON.stringify(data));
-  userUsername.value = ''; userPassword.value = ''; userActive.checked = true; userRole.value = 'teller';
-  await loadUsers();
-  alert('User deleted');
-});
-
-/* ======================= POS Logic ======================= */
-let PRODUCTS = {}; // name -> {id, price, barcode}
-let CART = [];     // [{name, qty, price}]
-
-const productSelect   = document.getElementById('productSelect');
-const qtyInput        = document.getElementById('qtyInput');
-const addBtn          = document.getElementById('addBtn');
-const cartList        = document.getElementById('cartList');
-const cartTotalEl     = document.getElementById('cartTotal');
-const cancelBtn       = document.getElementById('cancelBtn');
-const checkoutBtn     = document.getElementById('checkoutBtn');
-
-const productsList    = document.getElementById('productsList');
-const prodName        = document.getElementById('prodName');
-const prodPrice       = document.getElementById('prodPrice');
-
-const refreshTxBtn    = document.getElementById('refreshTxBtn');
-const transactionsBody= document.getElementById('transactionsBody');
-
-const barcodeInput    = document.getElementById('barcodeInput');
-const scanStartBtn    = document.getElementById('scanStartBtn');
-const scanStopBtn     = document.getElementById('scanStopBtn');
-const cameraArea      = document.getElementById('cameraArea');
-const previewVideo    = document.getElementById('preview');
-let codeReader;
-
-/* --- Scan feedback: beep + cooldown --- */
-let audioCtx;
-let scanningCooldownUntil = 0;
-const SCAN_COOLDOWN_MS = 700;
-function playBeep(duration = 120, freq = 1100, volume = 0.25) {
+async function refreshTransactions() {
+  const container = document.getElementById('txList'); container.innerHTML = '<div class="text-muted">Loading…</div>';
   try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine'; osc.frequency.value = freq; gain.gain.value = volume;
-    osc.connect(gain); gain.connect(audioCtx.destination);
-    osc.start(); setTimeout(() => { osc.stop(); osc.disconnect(); gain.disconnect(); }, duration);
-  } catch (e) {}
-}
-function acceptScanNow() {
-  const now = Date.now();
-  if (now < scanningCooldownUntil) return false;
-  scanningCooldownUntil = now + SCAN_COOLDOWN_MS;
-  return true;
-}
-
-/* --- Products & Transactions --- */
-async function loadProducts() {
-  try {
-    const res = await fetch('/api/products');
-    if (!res.ok) { productsList.innerHTML=''; productSelect.innerHTML=''; return; }
-    PRODUCTS = await res.json();
-  } catch { PRODUCTS = {}; }
-
-  productSelect.innerHTML = '';
-  const optPlaceholder = document.createElement('option');
-  optPlaceholder.textContent = 'Select Product'; optPlaceholder.value = '';
-  productSelect.appendChild(optPlaceholder);
-
-  Object.entries(PRODUCTS).forEach(([name, info]) => {
-    const opt = document.createElement('option');
-    opt.value = name;
-    const priceText = (info.price?.toFixed ? info.price.toFixed(2) : info.price);
-    opt.textContent = `${name} — ${info.id} — ${priceText}${info.barcode ? ' — ' + info.barcode : ''}`;
-    productSelect.appendChild(opt);
-  });
-
-  renderProductsList();
-}
-
-function renderProductsList() {
-  productsList.innerHTML = '';
-  Object.entries(PRODUCTS).forEach(([name, info]) => {
-    const li = document.createElement('li');
-    li.className = 'list-group-item d-flex justify-content-between align-items-center';
-    li.textContent = `${name} — ${info.id} — ${info.price} — ${info.barcode || ''}`;
-    li.onclick = () => { prodName.value = name; prodPrice.value = info.price; };
-    productsList.appendChild(li);
-  });
-}
-
-function addToCart(inputValue, qty = 1) {
-  let productName = inputValue;
-  if (!productName) return;
-  qty = parseInt(qty || '1', 10);
-
-  let info = PRODUCTS[productName]; // by name
-  if (!info) { // by id
-    const asId = parseInt(productName, 10);
-    if (!Number.isNaN(asId)) for (const [n, v] of Object.entries(PRODUCTS)) { if (v.id === asId) { info = v; productName = n; break; } }
-  }
-  if (!info) { // by barcode
-    for (const [n, v] of Object.entries(PRODUCTS)) { if (v.barcode && v.barcode === inputValue) { info = v; productName = n; break; } }
-  }
-  if (!info) { alert('Product not found: ' + inputValue); return; }
-
-  const existing = CART.find(x => x.name === productName);
-  if (existing) existing.qty += qty; else CART.push({ name: productName, qty, price: info.price });
-  renderCart();
-}
-
-function renderCart() {
-  cartList.innerHTML = ''; let total = 0;
-  CART.forEach((item, idx) => {
-    const amount = item.price * item.qty; total += amount;
-    const li = document.createElement('div');
-    li.className = 'list-group-item d-flex justify-content-between align-items-center';
-    li.innerHTML = `<div><strong>${item.name}</strong> — ${item.qty} items</div><div>${amount.toFixed(2)}</div>`;
-    const btn = document.createElement('button'); btn.className='btn btn-sm btn-outline-danger'; btn.textContent='✖';
-    btn.onclick = () => { if (item.qty > 1) item.qty -= 1; else CART.splice(idx, 1); renderCart(); };
-    li.appendChild(btn); cartList.appendChild(li);
-  });
-  cartTotalEl.textContent = total.toFixed(2);
-}
-
-cancelBtn.onclick = () => { CART = []; renderCart(); };
-addBtn.onclick    = () => { addToCart(productSelect.value, qtyInput.value); };
-barcodeInput.onchange = () => { addToCart(barcodeInput.value, 1); barcodeInput.value = ''; };
-
-checkoutBtn.onclick = async () => {
-  if (CART.length === 0) return alert('Cart is empty');
-  const payload = { items: CART.map(x => ({ product_name: x.name, qty: x.qty })) };
-  const res = await fetch('/api/transactions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
-  const data = await res.json();
-  if (!res.ok) { alert(JSON.stringify(data)); return; }
-  CART = []; renderCart(); await loadTransactions(); alert('Sale completed. Transaction #' + data.tran_id);
-};
-
-refreshTxBtn.onclick = () => loadTransactions();
-
-async function loadTransactions() {
-  const res = await fetch('/api/transactions'); const tx = await res.json();
-  const byTran = new Map(); tx.forEach(line => { const key = line.tran_id; if (!byTran.has(key)) byTran.set(key, []); byTran.get(key).push(line); });
-  transactionsBody.innerHTML = '';
-  [...byTran.entries()].sort((a,b)=>a[0]-b[0]).forEach(([id, lines]) => {
-    const total = lines.reduce((sum, l) => sum + l.amount, 0);
-    const card = document.createElement('div'); card.className='card mb-2';
-    const body = document.createElement('div'); body.className='card-body';
-    const title = document.createElement('h6'); title.textContent = `#${id} — ${lines[0].date_time} — Total: ${total.toFixed(2)}`;
-    body.appendChild(title);
-    const list = document.createElement('ul'); list.className='list-group list-group-flush';
-    lines.forEach(l => { const li=document.createElement('li'); li.className='list-group-item d-flex justify-content-between'; li.innerHTML = `<span>${l.product_id} — ${l.no_of_items} items</span><span>${l.amount.toFixed(2)}</span>`; list.appendChild(li); });
-    body.appendChild(list); card.appendChild(body); transactionsBody.appendChild(card);
-  });
-}
-
-/* ======================= Camera Scanning ======================= */
-scanStartBtn.onclick = async () => {
-  try {
-    cameraArea.style.display = '';
-    previewVideo.setAttribute('playsinline', 'true'); previewVideo.muted = true; previewVideo.autoplay = true;
-    const ReaderCtor = ZXing?.BrowserMultiFormatReader;
-    if (!ReaderCtor) throw new Error('ZXing not available');
-    codeReader = new ReaderCtor();
-    try {
-      await codeReader.decodeFromConstraints(
-        { video: { facingMode: { exact: 'environment' } } },
-        'preview',
-        (result, err) => {
-          if (result) {
-            if (!acceptScanNow()) return;
-            addToCart(result.getText(), 1);
-            previewVideo.style.outline = '3px solid #28a745'; setTimeout(()=>previewVideo.style.outline='',300);
-            playBeep(120, 1100, 0.25);
-          }
-        }
-      );
-    } catch {
-      await codeReader.decodeFromConstraints(
-        { video: { facingMode: 'environment' } },
-        'preview',
-        (result, err) => {
-          if (result) {
-            if (!acceptScanNow()) return;
-            addToCart(result.getText(), 1);
-            previewVideo.style.outline = '3px solid #28a745'; setTimeout(()=>previewVideo.style.outline='',300);
-            playBeep(120, 1100, 0.25);
-          }
-        }
-      );
+    const txs = await api('/api/transactions');
+    if (!Array.isArray(txs) || txs.length===0) { container.innerHTML = '<div class="text-muted">No transactions today.</div>'; return; }
+    let html='';
+    for (const t of txs) {
+      html += `<div class=\"card mb-2\"><div class=\"card-body\">
+        <div class=\"d-flex justify-content-between\"><div><strong>#${t.id}</strong> <span class=\"text-muted\">${t.date_time}</span></div><div><strong>Total: ${(+t.total).toFixed(2)}</strong></div></div>
+        <table class=\"table table-sm mt-2\"><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Line</th></tr></thead><tbody>`;
+      for (const ln of t.lines) { html += `<tr><td>${ln.product_name}</td><td>${ln.qty}</td><td>${(+ln.unit_price).toFixed(2)}</td><td>${(+ln.line_total).toFixed(2)}</td></tr>`; }
+      html += '</tbody></table></div></div>';
     }
-  } catch (e2) {
-    cameraArea.style.display = 'none';
-    const httpsHint = location.protocol !== 'https:' ? 'This feature requires HTTPS.\n' : '';
-    alert(httpsHint + 'Camera error: ' + e2);
-  }
-};
-scanStopBtn.onclick = () => { try { codeReader?.reset(); } catch {} cameraArea.style.display = 'none'; };
+    container.innerHTML = html;
+  } catch(e) { container.innerHTML = `<div class="text-danger">Failed to load transactions: ${e.message}</div>`; }
+}
 
-/* ======================= Boot ======================= */
-refreshAuthUI();
+function redrawCart() {
+  const tbody = document.querySelector('#cartTable tbody'); tbody.innerHTML='';
+  let total=0; cart.forEach(it=>{ const tr=document.createElement('tr'); const line=it.qty*it.price; total+=line; tr.innerHTML=`<td>${it.name}</td><td>${it.qty}</td><td>${it.price.toFixed(2)}</td><td>${line.toFixed(2)}</td>`; tbody.appendChild(tr); });
+  document.getElementById('cartTotal').textContent = `Total: ${total.toFixed(2)}`;
+}
+
+async function ensureLoggedIn() {
+  try { const me = await api('/api/me'); if (me.logged_in){ currentUser=me.user; setLoggedInUI(true, me.user.role); await refreshProductsList(); await refreshTransactions(); } else setLoggedInUI(false); }
+  catch { setLoggedInUI(false); }
+}
+
+// --- Scanner logic ---
+function beep() {
+  try {
+    const ctx = new (window.AudioContext||window.webkitAudioContext)();
+    const o = ctx.createOscillator(); const g = ctx.createGain();
+    o.connect(g); g.connect(ctx.destination); o.frequency.value=880; g.gain.value=0.05; o.start();
+    setTimeout(()=>{o.stop(); ctx.close();}, 140);
+  } catch {}
+}
+
+async function onScan(text) {
+  const now = Date.now(); if (now - lastScanAt < SCAN_COOLDOWN_MS) return; lastScanAt = now;
+  const video = document.getElementById('scanVideo'); video.classList.add('scan-ok'); setTimeout(()=>video.classList.remove('scan-ok'), 450);
+  beep();
+  // Lookup product by barcode or ID or name
+  try {
+    const data = await api('/api/products');
+    let found = null; const num = parseInt(text,10);
+    for (const [n, o] of Object.entries(data)) {
+      if (o.barcode && o.barcode===text) { found = { name:n, id:o.id, price:+o.price }; break; }
+      if (!isNaN(num) && o.id===num) { found = { name:n, id:o.id, price:+o.price }; break; }
+      if (n.toLowerCase()===text.toLowerCase()) { found = { name:n, id:o.id, price:+o.price }; break; }
+    }
+    if (!found) { document.getElementById('scanMsg').textContent = 'Code scanned but no matching product.'; return; }
+    const existing = cart.find(it=>it.id===found.id); if (existing) existing.qty += 1; else cart.push({ name: found.name, price: found.price, qty:1, id: found.id });
+    redrawCart();
+    document.getElementById('scanMsg').textContent = `Added: ${found.name}`;
+  } catch(e) {
+    document.getElementById('scanMsg').textContent = 'Scan lookup failed: '+e.message;
+  }
+}
+
+async function startScanner() {
+  const video = document.getElementById('scanVideo'); const msg = document.getElementById('scanMsg');
+  msg.textContent = 'Starting scanner…';
+  try {
+    // Prefer environment (rear) camera
+    mediaStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+    video.srcObject = mediaStream; await video.play();
+    if (!window.ZXing || !ZXing.BrowserMultiFormatReader) { msg.textContent = 'ZXing library not loaded'; return; }
+    codeReader = new ZXing.BrowserMultiFormatReader();
+    const devices = await codeReader.listVideoInputDevices();
+    let deviceId = undefined;
+    const back = devices.find(d=>d.label && d.label.toLowerCase().includes('back'));
+    if (back) deviceId = back.deviceId; else if (devices[0]) deviceId = devices[0].deviceId;
+    codeReader.decodeContinuouslyFromVideoDevice(deviceId, video, (result, err) => {
+      if (result && result.text) onScan(result.text);
+    });
+    msg.textContent = 'Scanner running (cooldown '+SCAN_COOLDOWN_MS+'ms).';
+  } catch(e) { msg.textContent = 'Camera error: '+e.message; }
+}
+
+function stopScanner() {
+  const msg = document.getElementById('scanMsg');
+  try { if (codeReader) { codeReader.reset(); codeReader = null; } } catch {}
+  if (mediaStream) { mediaStream.getTracks().forEach(t=>t.stop()); mediaStream=null; }
+  msg.textContent = 'Scanner stopped.';
+}
+
+// --- DOM events ---
+document.addEventListener('DOMContentLoaded', () => {
+  ensureLoggedIn();
+
+  document.getElementById('btnLogin').addEventListener('click', async () => {
+    const u = document.getElementById('loginUsername').value.trim();
+    const p = document.getElementById('loginPassword').value; const msg = document.getElementById('loginMsg'); msg.textContent='';
+    try { const res = await api('/api/login', { method:'POST', body: JSON.stringify({ username:u, password:p }) }); currentUser=res.user; setLoggedInUI(true,res.user.role); await refreshProductsList(); await refreshTransactions(); }
+    catch(e){ msg.textContent='Login failed: '+e.message; }
+  });
+
+  document.getElementById('btnLogout').addEventListener('click', async () => { try{ await api('/api/logout',{method:'POST'});}catch{} location.reload(); });
+
+  document.getElementById('btnReloadProducts').addEventListener('click', refreshProductsList);
+
+  document.getElementById('btnAddProduct').addEventListener('click', async () => {
+    const name = document.getElementById('pName').value.trim(); const price = parseFloat(document.getElementById('pPrice').value); const barcode = document.getElementById('pBarcode').value.trim(); const msg = document.getElementById('addPMsg'); msg.textContent='';
+    try { await api('/api/products',{method:'POST',body:JSON.stringify({name,price,barcode:barcode||null})}); msg.className='small text-success'; msg.textContent='Product added.'; await refreshProductsList(); }
+    catch(e){ msg.className='small text-danger'; msg.textContent='Add failed: '+e.message; }
+  });
+
+  document.getElementById('btnUpdateProduct').addEventListener('click', async () => {
+    const old_name=document.getElementById('pOldName').value.trim(); const new_name=document.getElementById('pNewName').value.trim(); const priceVal=document.getElementById('pNewPrice').value; const barcode=document.getElementById('pNewBarcode').value.trim(); const msg=document.getElementById('updPMsg'); msg.textContent='';
+    const payload={old_name}; if(new_name) payload.new_name=new_name; if(priceVal!=='') payload.price=parseFloat(priceVal); if(barcode!=='') payload.barcode=barcode;
+    try { await api('/api/products/update',{method:'POST',body:JSON.stringify(payload)}); msg.className='small text-success'; msg.textContent='Product updated.'; await refreshProductsList(); }
+    catch(e){ msg.className='small text-danger'; msg.textContent='Update failed: '+e.message; }
+  });
+
+  document.getElementById('btnDeleteProduct').addEventListener('click', async () => {
+    const name=document.getElementById('pDelName').value.trim(); const msg=document.getElementById('delPMsg'); msg.textContent='';
+    try { const res = await fetch('/api/products/'+encodeURIComponent(name), { method:'DELETE' }); if(!res.ok) throw new Error('HTTP '+res.status); msg.className='small text-success'; msg.textContent='Product deleted.'; await refreshProductsList(); }
+    catch(e){ msg.className='small text-danger'; msg.textContent='Delete failed: '+e.message; }
+  });
+
+  document.getElementById('btnAddToCart').addEventListener('click', () => {
+    const name=document.getElementById('tellerProduct').value.trim(); const qty=Math.max(1,parseInt(document.getElementById('tellerQty').value||'1',10)); if(!name) return;
+    fetch('/api/products').then(r=>r.json()).then(data=>{ let found=null; for(const [n,o] of Object.entries(data)){ if(n.toLowerCase()===name.toLowerCase() || (o.barcode && o.barcode===name)) { found={name:n,price:+o.price,id:o.id}; break; } }
+      if(!found){ alert('Product not found'); return; } const existing=cart.find(it=>it.name===found.name); if(existing) existing.qty+=qty; else cart.push({name:found.name, price:found.price, qty, id:found.id}); redrawCart(); });
+  });
+
+  document.getElementById('btnCheckout').addEventListener('click', async () => {
+    if(cart.length===0) return; const items=cart.map(it=>({product_name:it.name,product_id:it.id,qty:it.qty}));
+    try { await api('/api/transactions',{method:'POST',body:JSON.stringify({items})}); cart=[]; redrawCart(); await refreshTransactions(); alert('Sale completed.'); }
+    catch(e){ alert('Checkout failed: '+e.message); }
+  });
+
+  document.getElementById('btnRefreshTx').addEventListener('click', refreshTransactions);
+
+  // Users
+  document.getElementById('btnReloadUsers').addEventListener('click', refreshUsersList);
+  document.getElementById('btnCreateUser').addEventListener('click', async () => {
+    const username=document.getElementById('uName').value.trim(); const password=document.getElementById('uPass').value; const role=document.getElementById('uRole').value;
+    try { await api('/api/users',{method:'POST',body:JSON.stringify({username,password,role,active:true})}); await refreshUsersList(); alert('User created'); }
+    catch(e){ alert('Create failed: '+e.message); }
+  });
+  document.getElementById('usersList').addEventListener('click', async (ev) => {
+    const btn=ev.target.closest('button'); if(!btn) return; const act=btn.getAttribute('data-act'); const uname=btn.getAttribute('data-u');
+    if(act==='delete'){ if(!confirm('Delete user '+uname+'?')) return; const res=await fetch('/api/users/'+encodeURIComponent(uname),{method:'DELETE'}); if(!res.ok){ alert('Delete failed'); return; } await refreshUsersList(); }
+    else if(act==='toggle'){ const active=btn.getAttribute('data-active')==='true'; await api('/api/users/update',{method:'POST',body:JSON.stringify({username:uname,active:!active})}); await refreshUsersList(); }
+  });
+
+  // Scanner buttons
+  document.getElementById('btnStartScan').addEventListener('click', startScanner);
+  document.getElementById('btnStopScan').addEventListener('click', stopScanner);
+});
