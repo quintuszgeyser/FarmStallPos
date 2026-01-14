@@ -45,7 +45,7 @@ async function refreshAuthUI() {
 
   if (me.user.role === 'teller') {
     // show only Transactions
-    tellerTabBtn.parentElement.style.display       = 'none';
+    tellerTabBtn.parentElement.style.display       = '';
     manageTabBtn.parentElement.style.display       = 'none';
     transactionsTabBtn.parentElement.style.display = '';
 
