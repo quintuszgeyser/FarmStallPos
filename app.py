@@ -96,8 +96,7 @@ def ensure_barcode_column_and_backfill():
         db.session.commit()
 
 def seed_default_admin():
-    """Create a first admin if users table is empty.
-       Uses env ADMIN_USER/ADMIN_PASS if present; otherwise admin/admin (prompt to change!)."""
+    """Create a first admin if users table is empty."""
     admin_user = os.getenv("ADMIN_USER", "admin")
     admin_pass = os.getenv("ADMIN_PASS", "admin")
     if User.query.count() == 0:
@@ -128,7 +127,7 @@ def require_login():
     return None
 
 def require_role(*roles):
-    """Return a Flask Response if denied; otherwise None."""
+    """Return a Response if denied; else None."""
     guard = require_login()
     if guard: return guard
     user = current_user()
@@ -139,7 +138,7 @@ def require_role(*roles):
 # --- Routes (UI) ---
 @app.get("/")
 def index():
-    """Serve the main UI and force no-cache so stale HTML is not reused while iterating."""
+    """Serve the main UI; no-cache to avoid stale HTML while iterating."""
     html = render_template("index.html", currency=CURRENCY)
     resp = make_response(html)
     resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
@@ -147,7 +146,7 @@ def index():
     resp.headers["Expires"]       = "0"
     return resp
 
-# Serve PWA files from root paths to avoid scope/safari quirks
+# Serve PWA files from root paths
 @app.get("/sw.js")
 def service_worker():
     return send_from_directory("static", "sw.js")
@@ -157,9 +156,15 @@ def manifest():
     return send_from_directory("static", "manifest.json")
 
 # Optional: diagnostic
-@app.get("/__version")
-def version():
-    return jsonify({"ok": True, "time": datetime.utcnow().isoformat() + "Z", "currency": CURRENCY})
+@app.get("/api/me")
+def api_me():
+    user = current_user()
+    if not user:
+        return jsonify({"logged_in": False})
+    return jsonify({
+        "logged_in": True,
+        "user": {"username": user.username, "role": user.role, "active": user.active}
+    })
 
 # --- Auth API ---
 @app.post("/api/login")
@@ -179,15 +184,71 @@ def api_logout():
     session.clear()
     return jsonify({"ok": True})
 
-@app.get("/api/me")
-def api_me():
-    user = current_user()
+# --- Users management (ADMIN ONLY) ---
+@app.get("/api/users")
+def list_users():
+    guard = require_role("admin")
+    if guard: return guard
+    users = User.query.order_by(User.id).all()
+    return jsonify([{
+        "id": u.id, "username": u.username, "role": u.role, "active": u.active
+    } for u in users])
+
+@app.post("/api/users")
+def create_user():
+    guard = require_role("admin")
+    if guard: return guard
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    role     = (data.get("role") or "teller").strip()
+    active   = bool(data.get("active", True))
+    if not username or not password or role not in ("admin", "teller"):
+        return jsonify({"error": "username, password, role(admin|teller) required"}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({"error": "User exists"}), 409
+    db.session.add(User(
+        username=username,
+        password_hash=generate_password_hash(password),
+        role=role,
+        active=active
+    ))
+    db.session.commit()
+    return jsonify({"ok": True})
+
+@app.post("/api/users/update")
+def update_user():
+    guard = require_role("admin")
+    if guard: return guard
+    data = request.get_json(force=True)
+    username = (data.get("username") or "").strip()
+    role     = (data.get("role") or "").strip()
+    active   = data.get("active")
+    password = data.get("password")  # optional
+    user = User.query.filter_by(username=username).first()
     if not user:
-        return jsonify({"logged_in": False})
-    return jsonify({
-        "logged_in": True,
-        "user": {"username": user.username, "role": user.role}
-    })
+        return jsonify({"error": "User not found"}), 404
+    if role:
+        if role not in ("admin", "teller"):
+            return jsonify({"error": "Invalid role"}), 400
+        user.role = role
+    if active is not None:
+        user.active = bool(active)
+    if password:
+        user.password_hash = generate_password_hash(password)
+    db.session.commit()
+    return jsonify({"ok": True})
+
+@app.delete("/api/users/<username>")
+def delete_user(username):
+    guard = require_role("admin")
+    if guard: return guard
+    user = User.query.filter_by(username=username).first()
+    if not user:
+        return jsonify({"error": "User not found"}), 404
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({"ok": True})
 
 # --- Products API (ADMIN ONLY) ---
 @app.get("/api/products")
@@ -278,7 +339,6 @@ def api_get_transactions():
 
 @app.post("/api/transactions")
 def api_add_transaction():
-    # If you want tellers to record sales, include 'teller' here.
     guard = require_role("admin", "teller")
     if guard: return guard
     data  = request.get_json(force=True)
@@ -343,7 +403,6 @@ def db_health():
 
 @app.get("/admin/export/products")
 def export_products():
-    # Both role guard and optional token guard
     guard = require_role("admin")
     if guard: return guard
     tok = require_admin_token()
@@ -379,3 +438,4 @@ def export_transaction_lines():
 # --- Local dev entrypoint ---
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+

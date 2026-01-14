@@ -7,28 +7,21 @@
   <title>Farm Stall POS</title>
 
   <!-- PWA -->
-  <link rel="manifest" href="/static/manifest.json">
-  <link rel="icon" href="/static/icon.png">
-  <!-- iOS PWA hints for fullscreen when added to Home Screen -->
+  /static/manifest.json
+  /static/icon.png
+  <!-- iOS fullscreen when added to Home Screen -->
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="/static/icon-192.png">
 
   <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css
 
-  <!-- ZXing UMD build (exposes global `ZXing` for Safari/Chrome) -->
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
+  <!-- ZXing UMD (global ZXing) -->
+  https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js</script>
 
   <style>
     body { padding-bottom: 3rem; }
-    .sticky-total {
-      position: sticky;
-      bottom: 0;
-      background: #fff;
-      padding: .75rem;
-      box-shadow: 0 -2px 6px rgba(0,0,0,.08);
-    }
+    .sticky-total { position: sticky; bottom: 0; background: #fff; padding: .75rem; box-shadow: 0 -2px 6px rgba(0,0,0,.08); }
     video { width: 100%; max-height: 240px; background: #000; }
   </style>
 </head>
@@ -36,36 +29,20 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-success">
   <div class="container-fluid">
-    <a class="navbar-brand" href="#">Farm Stall POS</a>
-
+    #Farm Stall POS</a>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
             aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
 
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0" role="tablist">
         <li class="nav-item" role="presentation">
-          <a class="nav-link active"
-             id="teller-tab"
-             data-bs-toggle="tab"
-             data-bs-target="#teller"
-             type="button" role="tab"
-             aria-controls="teller" aria-selected="true">Teller</a>
+          <a class="nav-link active" id="teller-tab" data-bs-toggle="tab" data-bs-target="#teller" type="button" role="tab" aria-controls="teller" aria-selected="true">Teller</a>
         </li>
         <li class="nav-item" role="presentation">
-          <a class="nav-link"
-             id="transactions-tab"
-             data-bs-toggle="tab"
-             data-bs-target="#transactions"
-             type="button" role="tab"
-             aria-controls="transactions" aria-selected="false">Transactions</a>
+          <a class="nav-link" id="transactions-tab" data-bs-toggle="tab" data-bs-target="#transactions" type="button" role="tab" aria-controls="transactions" aria-selected="false">Transactions</a>
         </li>
         <li class="nav-item" role="presentation">
-          <a class="nav-link"
-             id="manage-tab"
-             data-bs-toggle="tab"
-             data-bs-target="#manage"
-             type="button" role="tab"
-             aria-controls="manage" aria-selected="false">Manage Products</a>
+          <a class="nav-link" id="manage-tab" data-bs-toggle="tab" data-bs-target="#manage" type="button" role="tab" aria-controls="manage" aria-selected="false">Manage Products</a>
         </li>
       </ul>
 
@@ -76,36 +53,30 @@
   </div>
 </nav>
 
-<!-- Simple sign-in card (shown when not logged in) -->
+<!-- Sign-in (shown when not logged in) -->
 <div id="loginArea" class="container mt-4" style="display:none;">
   <div class="card shadow-sm">
     <div class="card-body">
       <h5 class="card-title mb-3">Sign in</h5>
       <div class="row g-2">
-        <div class="col-12 col-md-4">
-          <input id="loginUser" class="form-control" placeholder="Username">
-        </div>
-        <div class="col-12 col-md-4">
-          <input id="loginPass" type="password" class="form-control" placeholder="Password">
-        </div>
-        <div class="col-12 col-md-4 d-grid">
-          <button id="loginBtn" class="btn btn-success">Login</button>
-        </div>
+        <div class="col-12 col-md-4"><input id="loginUser" class="form-control" placeholder="Username"></div>
+        <div class="col-12 col-md-4"><input id="loginPass" type="password" class="form-control" placeholder="Password"></div>
+        <div class="col-12 col-md-4 d-grid"><button id="loginBtn" class="btn btn-light text-success border">Login</button></div>
       </div>
       <div id="loginError" class="text-danger mt-2" style="display:none;"></div>
-      <div class="form-text mt-2">
-        Tip: first admin is seeded from env <code>ADMIN_USER</code>/<code>ADMIN_PASS</code> (defaults to <code>admin/admin</code> — change in Render!).
-      </div>
+      <div class="form-text mt-2">First admin is seeded from env <code>ADMIN_USER</code>/<code>ADMIN_PASS</code> (defaults to <code>admin/admin</code> — change in Render).</div>
     </div>
   </div>
 </div>
 
-<!-- Main app content -->
+<!-- App content -->
 <div class="container mt-3" id="appContainer" style="display:none;">
   <div class="tab-content" id="posTabContent">
 
     <!-- Teller -->
     <div class="tab-pane fade show active" id="teller" role="tabpanel" aria-labelledby="teller-tab">
+      <!-- ... your existing teller UI exactly as before ... -->
+      <!-- (unchanged content omitted for brevity) -->
       <div class="row g-3">
         <div class="col-12 col-md-6">
           <label class="form-label">Scan barcode or select product</label>
@@ -153,20 +124,14 @@
     <!-- Manage -->
     <div class="tab-pane fade" id="manage" role="tabpanel" aria-labelledby="manage-tab">
       <div class="row g-3">
+        <!-- Products -->
         <div class="col-12 col-lg-6">
           <h6>Products</h6>
           <ul id="productsList" class="list-group"></ul>
-        </div>
-        <div class="col-12 col-lg-6">
+          <hr>
           <h6>Add / Modify Product</h6>
-          <div class="mb-2">
-            <label class="form-label">Name</label>
-            <input id="prodName" class="form-control">
-          </div>
-          <div class="mb-2">
-            <label class="form-label">Price</label>
-            <input id="prodPrice" type="number" step="0.01" class="form-control">
-          </div>
+          <div class="mb-2"><label class="form-label">Name</label><input id="prodName" class="form-control"></div>
+          <div class="mb-2"><label class="form-label">Price</label><input id="prodPrice" type="number" step="0.01" class="form-control"></div>
           <div class="d-flex gap-2 mb-3">
             <button class="btn btn-primary" id="addProductBtn">Add Product</button>
             <button class="btn btn-warning" id="updateProductBtn">Update Product</button>
@@ -174,24 +139,51 @@
           </div>
           <div class="alert alert-info">Tip: click a product from the list to populate the fields.</div>
         </div>
+
+        <!-- Users (admin only; JS will hide for tellers) -->
+        <div class="col-12 col-lg-6" id="usersAdminArea">
+          <h6>Users</h6>
+          <ul id="usersList" class="list-group mb-3"></ul>
+
+          <div class="mb-2"><label class="form-label">Username</label><input id="userUsername" class="form-control"></div>
+          <div class="mb-2"><label class="form-label">Password</label><input id="userPassword" type="password" class="form-control"></div>
+          <div class="mb-2">
+            <label class="form-label">Role</label>
+            <select id="userRole" class="form-select">
+              <option value="teller">teller</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="userActive" checked>
+            <label class="form-check-label" for="userActive">Active</label>
+          </div>
+
+          <div class="d-flex gap-2">
+            <button class="btn btn-success" id="createUserBtn">Create User</button>
+            <button class="btn btn-warning" id="updateUserBtn">Update User</button>
+            <button class="btn btn-danger"  id="deleteUserBtn">Delete User</button>
+          </div>
+          <div class="form-text mt-2">Click a user from the list to populate fields.</div>
+        </div>
       </div>
     </div>
 
   </div>
 </div>
 
-<!-- Bootstrap bundle (includes Popper) -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- Bootstrap bundle -->
+https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js</script>
 
 <!-- App logic -->
-<script src="/static/main.js"></script>
+/static/main.js</script>
 
-<!-- PWA service worker at root scope -->
+<!-- Service worker -->
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js');
   }
 </script>
-
 </body>
 </html>
+

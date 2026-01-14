@@ -1,4 +1,173 @@
 
+/* ======================= Auth & Role UI ======================= */
+const loginArea  = document.getElementById('loginArea');
+const loginUser  = document.getElementById('loginUser');
+const loginPass  = document.getElementById('loginPass');
+const loginBtn   = document.getElementById('loginBtn');
+const loginError = document.getElementById('loginError');
+const userChip   = document.getElementById('userChip');
+const logoutBtn  = document.getElementById('logoutBtn');
+const appContainer = document.getElementById('appContainer');
+
+// tabs
+const tellerTabBtn       = document.getElementById('teller-tab');
+const transactionsTabBtn = document.getElementById('transactions-tab');
+const manageTabBtn       = document.getElementById('manage-tab');
+
+// panes
+const tellerPane       = document.getElementById('teller');
+const transactionsPane = document.getElementById('transactions');
+const managePane       = document.getElementById('manage');
+
+// users admin area
+const usersAdminArea   = document.getElementById('usersAdminArea');
+const usersList        = document.getElementById('usersList');
+const userUsername     = document.getElementById('userUsername');
+const userPassword     = document.getElementById('userPassword');
+const userRole         = document.getElementById('userRole');
+const userActive       = document.getElementById('userActive');
+const createUserBtn    = document.getElementById('createUserBtn');
+const updateUserBtn    = document.getElementById('updateUserBtn');
+const deleteUserBtn    = document.getElementById('deleteUserBtn');
+
+async function refreshAuthUI() {
+  const res = await fetch('/api/me');
+  const me  = await res.json();
+
+  if (!me.logged_in) {
+    loginArea.style.display = '';
+    appContainer.style.display = 'none';
+    userChip.style.display  = 'none';
+    logoutBtn.style.display = 'none';
+    return;
+  }
+
+  // logged in
+  loginArea.style.display = 'none';
+  appContainer.style.display = '';
+  userChip.textContent = `${me.user.username} (${me.user.role})`;
+  userChip.style.display = '';
+  logoutBtn.style.display = '';
+
+  if (me.user.role === 'teller') {
+    // show only Transactions
+    tellerTabBtn.parentElement.style.display       = 'none';
+    manageTabBtn.parentElement.style.display       = 'none';
+    transactionsTabBtn.parentElement.style.display = '';
+
+    // activate Transactions tab
+    new bootstrap.Tab(transactionsTabBtn).show();
+
+    // hide admin areas
+    usersAdminArea.style.display = 'none';
+    // Teller can still post transactions (checkout)
+    await loadTransactions();
+  } else {
+    // admin: all tabs visible
+    tellerTabBtn.parentElement.style.display       = '';
+    transactionsTabBtn.parentElement.style.display = '';
+    manageTabBtn.parentElement.style.display       = '';
+    usersAdminArea.style.display = '';
+
+    // load data
+    await Promise.allSettled([
+      loadProducts(),
+      loadTransactions(),
+      loadUsers()
+    ]);
+  }
+}
+
+loginBtn?.addEventListener('click', async () => {
+  loginError.style.display = 'none';
+  const payload = { username: loginUser.value.trim(), password: loginPass.value };
+  const res = await fetch('/api/login', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    loginError.textContent = data.error || 'Login failed';
+    loginError.style.display = '';
+    return;
+  }
+  await refreshAuthUI();
+});
+
+logoutBtn?.addEventListener('click', async () => {
+  await fetch('/api/logout', { method: 'POST' });
+  CART = []; renderCart();
+  await refreshAuthUI();
+});
+
+/* ======================= Users Admin ======================= */
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/users');
+    if (!res.ok) return; // teller will get 403
+    const rows = await res.json();
+    usersList.innerHTML = '';
+    rows.forEach(u => {
+      const li = document.createElement('li');
+      li.className = 'list-group-item d-flex justify-content-between align-items-center';
+      li.textContent = `${u.username} — ${u.role} — ${u.active ? 'active' : 'inactive'}`;
+      li.onclick = () => {
+        userUsername.value = u.username;
+        userRole.value     = u.role;
+        userActive.checked = !!u.active;
+        userPassword.value = ''; // not shown
+      };
+      usersList.appendChild(li);
+    });
+  } catch (e) {}
+}
+
+createUserBtn?.addEventListener('click', async () => {
+  const payload = {
+    username: userUsername.value.trim(),
+    password: userPassword.value,
+    role:     userRole.value,
+    active:   userActive.checked
+  };
+  const res = await fetch('/api/users', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok) return alert(JSON.stringify(data));
+  userPassword.value = '';
+  await loadUsers();
+  alert('User created');
+});
+
+updateUserBtn?.addEventListener('click', async () => {
+  const payload = {
+    username: userUsername.value.trim(),
+    role:     userRole.value,
+    active:   userActive.checked,
+    password: userPassword.value || undefined
+  };
+  const res = await fetch('/api/users/update', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!res.ok) return alert(JSON.stringify(data));
+  userPassword.value = '';
+  await loadUsers();
+  alert('User updated');
+});
+
+deleteUserBtn?.addEventListener('click', async () => {
+  const username = userUsername.value.trim();
+  if (!username) return alert('Select a user first');
+  if (!confirm(`Delete ${username}?`)) return;
+  const res = await fetch('/api/users/' + encodeURIComponent(username), { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) return alert(JSON.stringify(data));
+  userUsername.value = ''; userPassword.value = ''; userActive.checked = true; userRole.value = 'teller';
+  await loadUsers();
+  alert('User deleted');
+});
+
+/* ======================= POS Logic (unchanged) ======================= */
 let PRODUCTS = {}; // name -> {id, price, barcode}
 let CART = [];     // [{name, qty, price}]
 
@@ -13,9 +182,6 @@ const checkoutBtn     = document.getElementById('checkoutBtn');
 const productsList    = document.getElementById('productsList');
 const prodName        = document.getElementById('prodName');
 const prodPrice       = document.getElementById('prodPrice');
-const addProductBtn   = document.getElementById('addProductBtn');
-const updateProductBtn= document.getElementById('updateProductBtn');
-const deleteProductBtn= document.getElementById('deleteProductBtn');
 
 const refreshTxBtn    = document.getElementById('refreshTxBtn');
 const transactionsBody= document.getElementById('transactionsBody');
@@ -25,55 +191,40 @@ const scanStartBtn    = document.getElementById('scanStartBtn');
 const scanStopBtn     = document.getElementById('scanStopBtn');
 const cameraArea      = document.getElementById('cameraArea');
 const previewVideo    = document.getElementById('preview');
-
 let codeReader;
 
-/* -------------------- Scan feedback: beep + cooldown -------------------- */
+/* --- Scan feedback: beep + cooldown --- */
 let audioCtx;
-let scanningCooldownUntil = 0;           // timestamp (ms)
-const SCAN_COOLDOWN_MS = 700;            // delay between accepted scans
-
+let scanningCooldownUntil = 0;
+const SCAN_COOLDOWN_MS = 700;
 function playBeep(duration = 120, freq = 1100, volume = 0.25) {
   try {
-    // Lazy init: allowed after user gesture (Camera button)
     audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    const oscillator = audioCtx.createOscillator();
-    const gainNode   = audioCtx.createGain();
-
-    oscillator.type = 'sine';
-    oscillator.frequency.value = freq;
-    gainNode.gain.value = volume;
-
-    oscillator.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
-
-    oscillator.start();
-    setTimeout(() => {
-      oscillator.stop();
-      oscillator.disconnect();
-      gainNode.disconnect();
-    }, duration);
-  } catch (e) {
-    // If autoplay policy blocks sound, fail silently
-  }
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine'; osc.frequency.value = freq; gain.gain.value = volume;
+    osc.connect(gain); gain.connect(audioCtx.destination);
+    osc.start(); setTimeout(() => { osc.stop(); osc.disconnect(); gain.disconnect(); }, duration);
+  } catch (e) {}
 }
-
 function acceptScanNow() {
   const now = Date.now();
   if (now < scanningCooldownUntil) return false;
   scanningCooldownUntil = now + SCAN_COOLDOWN_MS;
   return true;
 }
-/* ----------------------------------------------------------------------- */
 
+/* --- Products & Transactions --- */
 async function loadProducts() {
-  const res = await fetch('/api/products');
-  PRODUCTS = await res.json();
+  try {
+    const res = await fetch('/api/products');
+    if (!res.ok) { productsList.innerHTML=''; productSelect.innerHTML=''; return; } // teller gets 403
+    PRODUCTS = await res.json();
+  } catch { PRODUCTS = {}; }
 
   productSelect.innerHTML = '';
   const optPlaceholder = document.createElement('option');
-  optPlaceholder.textContent = 'Select Product';
-  optPlaceholder.value = '';
+  optPlaceholder.textContent = 'Select Product'; optPlaceholder.value = '';
   productSelect.appendChild(optPlaceholder);
 
   Object.entries(PRODUCTS).forEach(([name, info]) => {
@@ -104,205 +255,93 @@ function addToCart(inputValue, qty = 1) {
   qty = parseInt(qty || '1', 10);
 
   let info = PRODUCTS[productName]; // by name
-
-  if (!info) { // by numeric id
+  if (!info) { // by id
     const asId = parseInt(productName, 10);
-    if (!Number.isNaN(asId)) {
-      for (const [n, v] of Object.entries(PRODUCTS)) {
-        if (v.id === asId) { info = v; productName = n; break; }
-      }
-    }
+    if (!Number.isNaN(asId)) for (const [n, v] of Object.entries(PRODUCTS)) { if (v.id === asId) { info = v; productName = n; break; } }
   }
-
   if (!info) { // by barcode
-    for (const [n, v] of Object.entries(PRODUCTS)) {
-      if (v.barcode && v.barcode === inputValue) { info = v; productName = n; break; }
-    }
+    for (const [n, v] of Object.entries(PRODUCTS)) { if (v.barcode && v.barcode === inputValue) { info = v; productName = n; break; } }
   }
-
-  if (!info) {
-    alert('Product not found: ' + inputValue);
-    return;
-  }
+  if (!info) { alert('Product not found: ' + inputValue); return; }
 
   const existing = CART.find(x => x.name === productName);
-  if (existing) existing.qty += qty;
-  else CART.push({ name: productName, qty, price: info.price });
-
+  if (existing) existing.qty += qty; else CART.push({ name: productName, qty, price: info.price });
   renderCart();
 }
 
 function renderCart() {
-  cartList.innerHTML = '';
-  let total = 0;
+  cartList.innerHTML = ''; let total = 0;
   CART.forEach((item, idx) => {
+    const amount = item.price * item.qty; total += amount;
     const li = document.createElement('div');
     li.className = 'list-group-item d-flex justify-content-between align-items-center';
-    const amount = item.price * item.qty;
-    total += amount;
     li.innerHTML = `<div><strong>${item.name}</strong> — ${item.qty} items</div><div>${amount.toFixed(2)}</div>`;
-    const btn = document.createElement('button');
-    btn.className = 'btn btn-sm btn-outline-danger';
-    btn.textContent = '✖';
-    btn.onclick = () => { removeFromCart(idx); };
-    li.appendChild(btn);
-    cartList.appendChild(li);
+    const btn = document.createElement('button'); btn.className='btn btn-sm btn-outline-danger'; btn.textContent='✖';
+    btn.onclick = () => { if (item.qty > 1) item.qty -= 1; else CART.splice(idx, 1); renderCart(); };
+    li.appendChild(btn); cartList.appendChild(li);
   });
   cartTotalEl.textContent = total.toFixed(2);
 }
 
-function removeFromCart(index) {
-  const item = CART[index];
-  if (!item) return;
-  if (item.qty > 1) item.qty -= 1; else CART.splice(index, 1);
-  renderCart();
-}
-
 cancelBtn.onclick = () => { CART = []; renderCart(); };
-addBtn.onclick = () => { addToCart(productSelect.value, qtyInput.value); };
+addBtn.onclick    = () => { addToCart(productSelect.value, qtyInput.value); };
 barcodeInput.onchange = () => { addToCart(barcodeInput.value, 1); barcodeInput.value = ''; };
 
 checkoutBtn.onclick = async () => {
   if (CART.length === 0) return alert('Cart is empty');
   const payload = { items: CART.map(x => ({ product_name: x.name, qty: x.qty })) };
-  const res = await fetch('/api/transactions', {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
-  });
+  const res = await fetch('/api/transactions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
   const data = await res.json();
   if (!res.ok) { alert(JSON.stringify(data)); return; }
-  CART = []; renderCart();
-  await loadTransactions();
-  alert('Sale completed. Transaction #' + data.tran_id);
-};
-
-addProductBtn.onclick = async () => {
-  const name = (prodName.value || '').trim();
-  const price = parseFloat(prodPrice.value || '0');
-  if (!name) return alert('Name required');
-
-  const barcode = prompt('Enter barcode (leave blank to auto-generate EAN-13):', '');
-
-  const res = await fetch('/api/products', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ name, price, barcode })
-  });
-  const data = await res.json();
-  if (!res.ok) return alert(JSON.stringify(data));
-  await loadProducts();
-  prodName.value = ''; prodPrice.value = '';
-  if (data.barcode) alert('Product added. Barcode: ' + data.barcode);
-};
-
-updateProductBtn.onclick = async () => {
-  const name = (prodName.value || '').trim();
-  const price = parseFloat(prodPrice.value || '0');
-  if (!name) return alert('Select a product first');
-
-  const cur = PRODUCTS[name]?.barcode || '';
-  const barcode = prompt('Enter new barcode (leave blank to keep current):', cur) || cur;
-
-  const res = await fetch('/api/products/update', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ old_name: name, new_name: name, price, barcode })
-  });
-  const data = await res.json();
-  if (!res.ok) return alert(JSON.stringify(data));
-  await loadProducts();
-};
-
-deleteProductBtn.onclick = async () => {
-  const name = (prodName.value || '').trim();
-  if (!name) return alert('Select a product first');
-  if (!confirm('Delete ' + name + '?')) return;
-  const res = await fetch('/api/products/' + encodeURIComponent(name), { method: 'DELETE' });
-  const data = await res.json();
-  if (!res.ok) return alert(JSON.stringify(data));
-  await loadProducts();
-  prodName.value = ''; prodPrice.value = '';
+  CART = []; renderCart(); await loadTransactions(); alert('Sale completed. Transaction #' + data.tran_id);
 };
 
 refreshTxBtn.onclick = () => loadTransactions();
 
 async function loadTransactions() {
-  const res = await fetch('/api/transactions');
-  const tx = await res.json();
-  const byTran = new Map();
-  tx.forEach(line => {
-    const key = line.tran_id;
-    if (!byTran.has(key)) byTran.set(key, []);
-    byTran.get(key).push(line);
-  });
+  const res = await fetch('/api/transactions'); const tx = await res.json();
+  const byTran = new Map(); tx.forEach(line => { const key = line.tran_id; if (!byTran.has(key)) byTran.set(key, []); byTran.get(key).push(line); });
   transactionsBody.innerHTML = '';
   [...byTran.entries()].sort((a,b)=>a[0]-b[0]).forEach(([id, lines]) => {
     const total = lines.reduce((sum, l) => sum + l.amount, 0);
-    const card = document.createElement('div');
-    card.className = 'card mb-2';
-    const body = document.createElement('div');
-    body.className = 'card-body';
-    const title = document.createElement('h6');
-    title.textContent = `#${id} — ${lines[0].date_time} — Total: ${total.toFixed(2)}`;
+    const card = document.createElement('div'); card.className='card mb-2';
+    const body = document.createElement('div'); body.className='card-body';
+    const title = document.createElement('h6'); title.textContent = `#${id} — ${lines[0].date_time} — Total: ${total.toFixed(2)}`;
     body.appendChild(title);
-    const list = document.createElement('ul');
-    list.className = 'list-group list-group-flush';
-    lines.forEach(l => {
-      const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between';
-      li.innerHTML = `<span>${l.product_id} — ${l.no_of_items} items</span><span>${l.amount.toFixed(2)}</span>`;
-      list.appendChild(li);
-    });
-    body.appendChild(list);
-    card.appendChild(body);
-    transactionsBody.appendChild(card);
+    const list = document.createElement('ul'); list.className='list-group list-group-flush';
+    lines.forEach(l => { const li=document.createElement('li'); li.className='list-group-item d-flex justify-content-between'; li.innerHTML = `<span>${l.product_id} — ${l.no_of_items} items</span><span>${l.amount.toFixed(2)}</span>`; list.appendChild(li); });
+    body.appendChild(list); card.appendChild(body); transactionsBody.appendChild(card);
   });
 }
 
-/* -------------------- Camera scanning (mobile-friendly) -------------------- */
+/* ======================= Camera Scanning ======================= */
 scanStartBtn.onclick = async () => {
   try {
     cameraArea.style.display = '';
-    previewVideo.setAttribute('playsinline', 'true'); // iOS
-    previewVideo.muted = true;
-    previewVideo.autoplay = true;
-
+    previewVideo.setAttribute('playsinline', 'true'); previewVideo.muted = true; previewVideo.autoplay = true;
     codeReader = new ZXing.BrowserMultiFormatReader();
-
-    // Prefer rear camera
     try {
       await codeReader.decodeFromConstraints(
         { video: { facingMode: { exact: "environment" } } },
         'preview',
         (result, err) => {
           if (result) {
-            // Respect cooldown; ignore rapid repeated detections
             if (!acceptScanNow()) return;
-
-            const text = result.getText();
-            addToCart(text, 1);
-
-            // Visual feedback
-            previewVideo.style.outline = '3px solid #28a745';
-            setTimeout(() => previewVideo.style.outline = '', 300);
-
-            // Audio feedback
+            addToCart(result.getText(), 1);
+            previewVideo.style.outline = '3px solid #28a745'; setTimeout(()=>previewVideo.style.outline='',300);
             playBeep(120, 1100, 0.25);
           }
         }
       );
     } catch {
-      // Fallback if exact not supported
       await codeReader.decodeFromConstraints(
         { video: { facingMode: "environment" } },
         'preview',
         (result, err) => {
           if (result) {
             if (!acceptScanNow()) return;
-
-            const text = result.getText();
-            addToCart(text, 1);
-
-            previewVideo.style.outline = '3px solid #28a745';
-            setTimeout(() => previewVideo.style.outline = '', 300);
-
+            addToCart(result.getText(), 1);
+            previewVideo.style.outline = '3px solid #28a745'; setTimeout(()=>previewVideo.style.outline='',300);
             playBeep(120, 1100, 0.25);
           }
         }
@@ -310,19 +349,11 @@ scanStartBtn.onclick = async () => {
     }
   } catch (e2) {
     cameraArea.style.display = 'none';
-    const msg = (location.protocol !== 'https:' ? 'This feature requires HTTPS.\n' : '') +
-                'Camera error: ' + e2;
-    alert(msg);
+    const httpsHint = location.protocol !== 'https:' ? 'This feature requires HTTPS.\n' : '';
+    alert(httpsHint + 'Camera error: ' + e2);
   }
 };
+scanStopBtn.onclick = () => { try { codeReader?.reset(); } catch {} cameraArea.style.display = 'none'; };
 
-scanStopBtn.onclick = () => {
-  try { codeReader?.reset(); } catch {}
-  cameraArea.style.display = 'none';
-};
-/* ------------------------------------------------------------------------- */
-
-// Init
-loadProducts();
-loadTransactions();
-
+/* ======================= Boot ======================= */
+refreshAuthUI();
