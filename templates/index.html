@@ -3,42 +3,55 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Farm Stall POS</title>
+ /dist/css/bootstrap.min.css" 
+        rel="stylesheet">
 
-  <!-- PWA -->
-  <link rel="manifest" href="/manifest.json">
-  <link rel="icon" href="/static/icon-192.png">
-
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- ZXing Barcode/QR library -->
-  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0"></script>
+  <!-- ZXing Barcode/QR library (correct UMD build, exposes global ZXing) -->
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
 
   <style>
     body { padding-bottom: 3rem; }
-    .sticky-total { position: sticky; bottom: 0; background: #fff; padding: .75rem; box-shadow: 0 -2px 6px rgba(0,0,0,.08); }
-    video { width: 100%; max-height: 240px; background: #000; }
+    .sticky-total { 
+      position: sticky; 
+      bottom: 0; 
+      background: #fff; 
+      padding: .75rem; 
+      box-shadow: 0 -2px 6px rgba(0,0,0,.08); 
+  
+    }
   </style>
 </head>
+
 <body class="bg-light">
 <nav class="navbar navbar-expand-lg navbar-dark bg-success">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="#">Farm Stall POS</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
-            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
-    <div class="collapse navbar-collapse" id="navbarNav">
+ collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0" role="tablist">
+
         <li class="nav-item" role="presentation">
-          <a class="nav-link active" id="teller-tab" data-bs-toggle="tab" data-bs-target="#teller" type="button" role="tab" aria-controls="teller" aria-selected="true">Teller</a>
+          <a class="nav-link active" id="teller-tab" 
+             data-bs-toggle="tab" data-bs-target="#teller"
+             type="button" role="tab"
+             aria-controls="teller" aria-selected="true">
+             Teller
+          </a>
         </li>
+
         <li class="nav-item" role="presentation">
-          <a class="nav-link" id="transactions-tab" data-bs-toggle="tab" data-bs-target="#transactions" type="button" role="tab" aria-controls="transactions" aria-selected="false">Transactions</a>
+          <a class="nav-link" id="transactions-tab"
+            -selected="false">
+             Transactions
+          </a>
         </li>
+
         <li class="nav-item" role="presentation">
-          <a class="nav-link" id="manage-tab" data-bs-toggle="tab" data-bs-target="#manage" type="button" role="tab" aria-controls="manage" aria-selected="false">Manage Products</a>
+          <a class="nav-link" id="manage-tab"
+             data-bs-toggle="tab" data-bs-target="#manage"
+             type="button" role="tab"
+             aria-controls="manage" aria-selected="false">
+             Manage Products
+          </a>
         </li>
+
       </ul>
     </div>
   </div>
@@ -48,14 +61,20 @@
   <div class="tab-content" id="posTabContent">
 
     <!-- Teller -->
-    <div class="tab-pane fade show active" id="teller" role="tabpanel" aria-labelledby="teller-tab">
+    <div class="tab-pane fade show active" id="teller" role="tabpanel">
+
       <div class="row g-3">
+
         <div class="col-12 col-md-6">
           <label class="form-label">Scan barcode or select product</label>
+
           <div class="input-group">
-            <input id="barcodeInput" class="form-control" placeholder="Type/scan product name, ID or barcode">
+            <input id="barcodeInput" 
+                   class="form-control" 
+                   placeholder="Type/scan product name, ID or barcode">
             <button class="btn btn-outline-secondary" id="scanStartBtn">Camera</button>
           </div>
+
           <div class="mt-2" id="cameraArea" style="display:none;">
             <video id="preview" playsinline autoplay muted></video>
             <div class="d-flex gap-2 mt-2">
@@ -71,13 +90,20 @@
             <button class="btn btn-primary" id="addBtn">Add</button>
           </div>
         </div>
+
       </div>
 
       <hr>
+
       <h5>Current cart</h5>
       <div id="cartList" class="list-group"></div>
+
       <div class="sticky-total d-flex justify-content-between align-items-center">
-        <strong>Total: <span id="cartTotal">0</span> <span id="currency">{{ currency }}</span></strong>
+        <strong>
+          Total: <span id="cartTotal">0</span>
+          <span id="currency">{{ currency }}</span>
+        </strong>
+
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary" id="cancelBtn">Cancel Session</button>
           <button class="btn btn-success" id="checkoutBtn">Takeout Items</button>
@@ -86,7 +112,7 @@
     </div>
 
     <!-- Transactions -->
-    <div class="tab-pane fade" id="transactions" role="tabpanel" aria-labelledby="transactions-tab">
+    <div class="tab-pane fade" id="transactions" role="tabpanel">
       <div class="d-flex justify-content-end mb-2">
         <button class="btn btn-outline-primary" id="refreshTxBtn">Refresh</button>
       </div>
@@ -94,30 +120,41 @@
     </div>
 
     <!-- Manage -->
-    <div class="tab-pane fade" id="manage" role="tabpanel" aria-labelledby="manage-tab">
+    <div class="tab-pane fade" id="manage" role="tabpanel">
+
       <div class="row g-3">
+
         <div class="col-12 col-lg-6">
           <h6>Products</h6>
           <ul id="productsList" class="list-group"></ul>
         </div>
+
         <div class="col-12 col-lg-6">
           <h6>Add / Modify Product</h6>
+
           <div class="mb-2">
             <label class="form-label">Name</label>
             <input id="prodName" class="form-control">
           </div>
+
           <div class="mb-2">
             <label class="form-label">Price</label>
             <input id="prodPrice" type="number" step="0.01" class="form-control">
           </div>
+
           <div class="d-flex gap-2 mb-3">
             <button class="btn btn-primary" id="addProductBtn">Add Product</button>
             <button class="btn btn-warning" id="updateProductBtn">Update Product</button>
             <button class="btn btn-danger" id="deleteProductBtn">Delete Product</button>
           </div>
-          <div class="alert alert-info">Tip: click a product from the list to populate the fields.</div>
+
+          <div class="alert alert-info">
+            Tip: click a product from the list to populate the fields.
+          </div>
         </div>
+
       </div>
+
     </div>
 
   </div>
@@ -125,13 +162,16 @@
 
 <!-- Bootstrap bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<!-- App logic -->
+
+<!-- App logic (must load AFTER ZXing) -->
 <script src="/static/main.js"></script>
-<!-- PWA service worker -->
+
+<!-- Service worker -->
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js');
   }
 </script>
+
 </body>
 </html>
