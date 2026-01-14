@@ -1,174 +1,195 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Farm Stall POS</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#0d6efd" />
-  <title>Farm Stall POS</title>
+  <meta name="theme-color" content="#2a6f3e">
   <style>
-    #appContainer { display: none; }
-    #navTabs { display: none; }
+    body { padding-top: 1rem; }
     .hidden { display: none !important; }
-    #scanVideo { width: 100%; max-height: 320px; border: 3px solid #ccc; border-radius: 4px; }
-    #scanVideo.scan-ok { border-color: #28a745; box-shadow: 0 0 0.5rem rgba(40,167,69,0.5); }
+    #scanner-flash { position: absolute; top:0; left:0; right:0; bottom:0; border: 3px solid transparent; border-radius: 6px; }
+    #scanner-flash.ok { border-color: #4caf50; }
+    canvas { max-width: 100%; }
   </style>
 </head>
-<body class="bg-light">
-<div class="container py-4">
-  <div id="loginArea" class="row justify-content-center">
-    <div class="col-md-4">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h5 class="card-title mb-3">Sign in</h5>
-          <div class="mb-3">
-            <label class="form-label">Username</label>
-            <input type="text" id="loginUsername" class="form-control" />
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Password</label>
-            <input type="password" id="loginPassword" class="form-control" />
-          </div>
-          <button id="btnLogin" class="btn btn-primary w-100">Sign in</button>
-          <div id="loginMsg" class="text-danger small mt-2"></div>
-        </div>
+<body>
+<div class="container">
+  <!-- Login Card -->
+  <div id="login-card" class="card mb-3">
+    <div class="card-body">
+      <h5 class="card-title">Login</h5>
+      <div class="row g-2">
+        <div class="col-md-3"><input id="login-username" class="form-control" placeholder="Username"></div>
+        <div class="col-md-3"><input id="login-password" type="password" class="form-control" placeholder="Password"></div>
+        <div class="col-md-3"><button id="btn-login" class="btn btn-success">Login</button>
+          <button id="btn-logout" class="btn btn-outline-secondary ms-2 hidden">Logout</button></div>
+        <div class="col-md-3"><span id="login-status" class="text-danger"></span></div>
       </div>
     </div>
   </div>
 
-  <ul id="navTabs" class="nav nav-tabs mt-3">
-    <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tabTeller">Teller</a></li>
-    <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tabTransactions">Transactions</a></li>
-    <li class="nav-item"><a id="tabManageLink" class="nav-link" data-bs-toggle="tab" href="#tabManage">Manage Products</a></li>
-    <li class="nav-item"><a id="tabUsersLink" class="nav-link" data-bs-toggle="tab" href="#tabUsers">Users</a></li>
+  <!-- Tabs: Hidden before login -->
+  <ul id="main-tabs" class="nav nav-tabs hidden">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#teller">Teller</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
+    <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
+    <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
+    <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
+    <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
   </ul>
 
-  <div id="appContainer" class="tab-content bg-white p-3 border border-top-0 rounded-bottom shadow-sm">
-    <div id="tabTeller" class="tab-pane fade show active">
-      <h5>Teller</h5>
+  <div id="tab-contents" class="tab-content hidden mt-3">
+    <!-- Teller Tab -->
+    <div class="tab-pane fade show active" id="teller">
       <div class="row g-3">
         <div class="col-md-6">
-          <label class="form-label">Product</label>
-          <input id="tellerProduct" class="form-control" placeholder="Type name or barcode" />
+          <h5>Scan/Find Product</h5>
+          <div class="position-relative">
+            <video id="video" width="100%" class="border rounded"></video>
+            <div id="scanner-flash"></div>
+          </div>
+          <div class="input-group mt-2">
+            <span class="input-group-text">Search</span>
+            <input id="search" class="form-control" placeholder="Type name, ID, or barcode">
+          </div>
+          <div id="product-search-results" class="list-group mt-2"></div>
         </div>
-        <div class="col-md-2">
-          <label class="form-label">Qty</label>
-          <input id="tellerQty" type="number" class="form-control" value="1" min="1" />
-        </div>
-        <div class="col-md-4 d-flex align-items-end">
-          <button id="btnAddToCart" class="btn btn-success w-100">Add to cart</button>
-        </div>
-      </div>
-
-      <div class="mt-4">
-        <div class="d-flex justify-content-between align-items-center">
-          <h6>Barcode Scanner</h6>
-          <div>
-            <button id="btnStartScan" class="btn btn-outline-primary btn-sm">Start Scanner</button>
-            <button id="btnStopScan" class="btn btn-outline-secondary btn-sm">Stop</button>
+        <div class="col-md-6">
+          <h5>Cart</h5>
+          <div id="cart" class="list-group"></div>
+          <div class="mt-2 d-flex justify-content-between">
+            <strong>Total: <span id="cart-total">0.00</span></strong>
+            <button id="btn-checkout" class="btn btn-primary">Checkout</button>
           </div>
         </div>
-        <video id="scanVideo" playsinline muted></video>
-        <div id="scanMsg" class="small text-muted mt-2">Rear camera preferred. Allow camera permission when prompted.</div>
-      </div>
-
-      <hr/>
-      <div>
-        <table class="table table-sm" id="cartTable">
-          <thead>
-            <tr><th>Item</th><th>Qty</th><th>Unit</th><th>Total</th></tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-        <div class="d-flex justify-content-between">
-          <strong id="cartTotal">Total: 0.00</strong>
-          <button id="btnCheckout" class="btn btn-primary">Checkout</button>
-        </div>
       </div>
     </div>
 
-    <div id="tabTransactions" class="tab-pane fade">
+    <!-- Transactions Tab -->
+    <div class="tab-pane fade" id="transactions">
       <div class="d-flex justify-content-between align-items-center">
-        <h5>Today's Transactions</h5>
-        <button id="btnRefreshTx" class="btn btn-outline-secondary btn-sm">Refresh</button>
+        <h5>Transactions (Newest first)</h5>
+        <button class="btn btn-outline-secondary" id="btn-refresh-trans">Refresh</button>
       </div>
-      <div id="txList" class="mt-3"></div>
+      <div id="transactions-list" class="mt-3"></div>
     </div>
 
-    <div id="tabManage" class="tab-pane fade">
-      <div class="d-flex justify-content-between align-items-center">
-        <h5>Manage Products</h5>
-        <button id="btnReloadProducts" class="btn btn-outline-secondary btn-sm">Reload</button>
+    <!-- Products Tab (admin) -->
+    <div class="tab-pane fade" id="products">
+      <div class="row">
+        <div class="col-md-6">
+          <h5>Products</h5>
+          <div id="products-list" class="list-group"></div>
+        </div>
+        <div class="col-md-6">
+          <h5>Add / Update Product</h5>
+          <div class="mb-2"><input id="p-id" class="form-control" placeholder="(ID for update)"/></div>
+          <div class="mb-2"><input id="p-name" class="form-control" placeholder="Name"/></div>
+          <div class="mb-2"><input id="p-price" type="number" step="0.01" class="form-control" placeholder="Price"/></div>
+          <div class="mb-2"><input id="p-barcode" class="form-control" placeholder="Barcode"/></div>
+          <div class="mb-2"><input id="p-stock" type="number" class="form-control" placeholder="Stock Qty"/></div>
+          <div class="mb-2 d-flex gap-2">
+            <button id="btn-add-product" class="btn btn-success">Add Product</button>
+            <button id="btn-update-product" class="btn btn-primary">Update Product</button>
+            <button id="btn-delete-product" class="btn btn-danger">Delete by Name</button>
+          </div>
+
+          <hr>
+          <h6>Add Stock (Purchase)</h6>
+          <div class="mb-2"><input id="pur-product-id" class="form-control" placeholder="Product ID"/></div>
+          <div class="mb-2"><input id="pur-qty" type="number" class="form-control" placeholder="Qty Added"/></div>
+          <div class="mb-2"><input id="pur-price" type="number" step="0.01" class="form-control" placeholder="Purchase Price per Unit"/></div>
+          <div class="mb-2 d-flex gap-2">
+            <button id="btn-add-purchase" class="btn btn-outline-success">Record Purchase</button>
+            <button id="btn-suggest-price" class="btn btn-outline-primary">Suggest Sale Price</button>
+          </div>
+          <div id="suggest-output" class="text-muted small"></div>
+
+          <hr>
+          <h6>Settings</h6>
+          <div class="mb-2"><input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Markup % (default)"/></div>
+          <button id="btn-save-settings" class="btn btn-outline-secondary">Save Settings</button>
+        </div>
       </div>
-
-      <div class="row g-3 mt-2">
-        <div class="col-md-4">
-          <h6>Add Product</h6>
-          <div class="mb-2"><input id="pName" class="form-control" placeholder="Name" /></div>
-          <div class="mb-2"><input id="pPrice" type="number" step="0.01" class="form-control" placeholder="Price" /></div>
-          <div class="mb-2"><input id="pBarcode" class="form-control" placeholder="Barcode (optional)" /></div>
-          <button id="btnAddProduct" class="btn btn-success w-100">Add</button>
-          <div id="addPMsg" class="small mt-2"></div>
-        </div>
-
-        <div class="col-md-4">
-          <h6>Update Product</h6>
-          <div class="mb-2"><input id="pOldName" class="form-control" placeholder="Current Name" /></div>
-          <div class="mb-2"><input id="pNewName" class="form-control" placeholder="New Name (optional)" /></div>
-          <div class="mb-2"><input id="pNewPrice" type="number" step="0.01" class="form-control" placeholder="New Price (optional)" /></div>
-          <div class="mb-2"><input id="pNewBarcode" class="form-control" placeholder="New Barcode (optional)" /></div>
-          <button id="btnUpdateProduct" class="btn btn-warning w-100">Update</button>
-          <div id="updPMsg" class="small mt-2"></div>
-        </div>
-
-        <div class="col-md-4">
-          <h6>Delete Product</h6>
-          <div class="mb-2"><input id="pDelName" class="form-control" placeholder="Name to delete" /></div>
-          <button id="btnDeleteProduct" class="btn btn-danger w-100">Delete</button>
-          <div id="delPMsg" class="small mt-2"></div>
-        </div>
-      </div>
-
-      <hr/>
-      <h6>Products</h6>
-      <div id="productsList" class="small"></div>
     </div>
 
-    <div id="tabUsers" class="tab-pane fade">
-      <h5>Users (Admin)</h5>
-      <div class="row g-3">
-        <div class="col-md-4">
-          <h6>Create User</h6>
-          <div class="mb-2"><input id="uName" class="form-control" placeholder="Username" /></div>
-          <div class="mb-2"><input id="uPass" type="password" class="form-control" placeholder="Password" /></div>
+    <!-- Users Tab (admin) -->
+    <div class="tab-pane fade" id="users">
+      <h5>Users</h5>
+      <div class="row">
+        <div class="col-md-6">
+          <div id="users-list" class="list-group"></div>
+        </div>
+        <div class="col-md-6">
+          <div class="mb-2"><input id="u-username" class="form-control" placeholder="Username"></div>
+          <div class="mb-2"><input id="u-password" class="form-control" placeholder="Password"></div>
           <div class="mb-2">
-            <select id="uRole" class="form-select">
+            <select id="u-role" class="form-select">
               <option value="teller">teller</option>
               <option value="admin">admin</option>
             </select>
           </div>
-          <button id="btnCreateUser" class="btn btn-success w-100">Create</button>
+          <button id="btn-add-user" class="btn btn-success">Add User</button>
         </div>
-        <div class="col-md-8">
-          <div class="d-flex justify-content-between align-items-center">
-            <h6>Existing Users</h6>
-            <button id="btnReloadUsers" class="btn btn-outline-secondary btn-sm">Reload</button>
-          </div>
-          <ul id="usersList" class="list-group mt-2"></ul>
+      </div>
+    </div>
+
+    <!-- Exports Tab (admin) -->
+    <div class="tab-pane fade" id="exports">
+      <h5>CSV Exports</h5>
+      <ul>
+        <li><a href="/admin/export/products" target="_blank">Products CSV</a></li>
+        <li><a href="/admin/export/transactions" target="_blank">Transactions CSV</a></li>
+        <li><a href="/admin/export/transaction_lines" target="_blank">Transaction Lines CSV</a></li>
+      </ul>
+    </div>
+
+    <!-- Stats Tab (admin only) -->
+    <div class="tab-pane fade" id="stats">
+      <div class="d-flex justify-content-between align-items-center">
+        <h5>Today's Stats</h5>
+        <button id="btn-refresh-stats" class="btn btn-outline-secondary">Refresh</button>
+      </div>
+      <div class="row mt-3">
+        <div class="col-md-3">
+          <div class="card"><div class="card-body">
+            <div>Total Sales</div><h5 id="stat-total">0.00</h5>
+          </div></div>
+        </div>
+        <div class="col-md-3">
+          <div class="card"><div class="card-body">
+            <div>Items Sold</div><h5 id="stat-items">0</h5>
+          </div></div>
+        </div>
+        <div class="col-md-3">
+          <div class="card"><div class="card-body">
+            <div>Transactions</div><h5 id="stat-tx">0</h5>
+          </div></div>
+        </div>
+        <div class="col-md-3">
+          <div class="card"><div class="card-body">
+            <div>Avg Basket Size</div><h5 id="stat-avg">0</h5>
+          </div></div>
+        </div>
+      </div>
+      <div class="row mt-3">
+        <div class="col-md-6">
+          <h6>Top Products (Qty)</h6>
+          <canvas id="chart-top" width="600" height="300"></canvas>
+        </div>
+        <div class="col-md-6">
+          <h6>Revenue per Hour</h6>
+          <canvas id="chart-hourly" width="600" height="300"></canvas>
         </div>
       </div>
     </div>
   </div>
-
-  <div class="mt-3 d-flex justify-content-end">
-    <button id="btnLogout" class="btn btn-outline-danger hidden">Logout</button>
-  </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<!-- ZXing UMD (CDN) -->
-<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/main.js"></script>
 </body>
 </html>

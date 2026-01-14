@@ -1,18 +1,17 @@
-javascript
-const CACHE = 'pos-cache-v8';
+// Simple service worker with versioned cache
+const CACHE_NAME = 'pos-cache-v2';
 const ASSETS = [
   '/',
+  '/templates/index.html',
   '/static/main.js',
-  '/static/manifest.json',
-  '/static/icons/icon-192.png',
-  '/static/icons/icon-512.png'
+  '/static/manifest.json'
 ];
-self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then(c=>c.addAll(ASSETS))); });
-self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))))); });
-self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-  if (e.request.method !== 'GET') return;
-  if (url.origin === location.origin) {
-    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
-  }
+self.addEventListener('install', (evt) => {
+  evt.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS)));
+});
+self.addEventListener('activate', (evt) => {
+  evt.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))));
+});
+self.addEventListener('fetch', (evt) => {
+  evt.respondWith(caches.match(evt.request).then(resp => resp || fetch(evt.request)));
 });
