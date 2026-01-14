@@ -125,57 +125,63 @@ def seed_first_admin():
                 pass
 
 # Stronger startup migration
+
 def strong_migrate():
-    engine_name = db.session.bind.dialect.name
-    # Create base tables (if fresh DB)
+    # Use the Flask‑SQLAlchemy Engine, not db.session.bind
+    engine = db.engine
+    # Determine backend from engine.dialect
+    engine_name = engine.dialect.name
+
+    # Ensure ORM metadata tables (fresh DBs) exist
     db.create_all()
-    if engine_name == 'sqlite':
-        # SQLite: add column if missing using simple ALTER (fails if exists; we ignore)
-        try:
-            db.session.execute(text("ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 0"))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-        # Purchases & settings tables
-        try:
-            db.session.execute(text(
+
+    # Run idempotent DDL in a transaction that auto‑commits
+    with engine.begin() as conn:
+        if engine_name == 'sqlite':
+            # SQLite: CREATE TABLE IF NOT EXISTS is fine; ALTER ADD COLUMN errors if exists → ignore
+            conn.exec_driver_sql(
                 "CREATE TABLE IF NOT EXISTS purchases ("
                 " id INTEGER PRIMARY KEY AUTOINCREMENT,"
                 " product_id INTEGER NOT NULL,"
                 " qty_added INTEGER NOT NULL,"
                 " purchase_price REAL NOT NULL,"
                 " date_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
-            ))
-            db.session.execute(text(
+            )
+            conn.exec_driver_sql(
                 "CREATE TABLE IF NOT EXISTS settings ("
                 " id INTEGER PRIMARY KEY AUTOINCREMENT,"
                 " key TEXT UNIQUE NOT NULL,"
                 " value TEXT NOT NULL)"
-            ))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
-    else:
-        # PostgreSQL: idempotent migration using IF NOT EXISTS
-        try:
-            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_qty INTEGER NOT NULL DEFAULT 0"))
-            db.session.execute(text(
+            )
+            try:
+                conn.exec_driver_sql(
+                    "ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 0"
+                )
+            except Exception:
+                # Column already exists → ignore
+                pass
+
+        else:
+            # PostgreSQL: fully idempotent with IF NOT EXISTS
+            conn.exec_driver_sql(
+                "ALTER TABLE products "
+                "ADD COLUMN IF NOT EXISTS stock_qty INTEGER NOT NULL DEFAULT 0"
+            )
+            conn.exec_driver_sql(
                 "CREATE TABLE IF NOT EXISTS purchases ("
                 " id SERIAL PRIMARY KEY,"
                 " product_id INTEGER NOT NULL REFERENCES products(id),"
                 " qty_added INTEGER NOT NULL,"
                 " purchase_price DOUBLE PRECISION NOT NULL,"
                 " date_time TIMESTAMP NOT NULL DEFAULT NOW())"
-            ))
-            db.session.execute(text(
+            )
+            conn.exec_driver_sql(
                 "CREATE TABLE IF NOT EXISTS settings ("
                 " id SERIAL PRIMARY KEY,"
                 " key TEXT UNIQUE NOT NULL,"
                 " value TEXT NOT NULL)"
-            ))
-            db.session.commit()
-        except Exception:
-            db.session.rollback()
+            )
+
 
 with app.app_context():
     strong_migrate()
