@@ -28,6 +28,44 @@ const previewVideo    = document.getElementById('preview');
 
 let codeReader;
 
+/* -------------------- Scan feedback: beep + cooldown -------------------- */
+let audioCtx;
+let scanningCooldownUntil = 0;           // timestamp (ms)
+const SCAN_COOLDOWN_MS = 700;            // delay between accepted scans
+
+function playBeep(duration = 120, freq = 1100, volume = 0.25) {
+  try {
+    // Lazy init: allowed after user gesture (Camera button)
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioCtx.createOscillator();
+    const gainNode   = audioCtx.createGain();
+
+    oscillator.type = 'sine';
+    oscillator.frequency.value = freq;
+    gainNode.gain.value = volume;
+
+    oscillator.connect(gainNode);
+    gainNode.connect(audioCtx.destination);
+
+    oscillator.start();
+    setTimeout(() => {
+      oscillator.stop();
+      oscillator.disconnect();
+      gainNode.disconnect();
+    }, duration);
+  } catch (e) {
+    // If autoplay policy blocks sound, fail silently
+  }
+}
+
+function acceptScanNow() {
+  const now = Date.now();
+  if (now < scanningCooldownUntil) return false;
+  scanningCooldownUntil = now + SCAN_COOLDOWN_MS;
+  return true;
+}
+/* ----------------------------------------------------------------------- */
+
 async function loadProducts() {
   const res = await fetch('/api/products');
   PRODUCTS = await res.json();
@@ -218,7 +256,7 @@ async function loadTransactions() {
   });
 }
 
-// --- Camera scanning (mobile-friendly) ---
+/* -------------------- Camera scanning (mobile-friendly) -------------------- */
 scanStartBtn.onclick = async () => {
   try {
     cameraArea.style.display = '';
@@ -235,10 +273,18 @@ scanStartBtn.onclick = async () => {
         'preview',
         (result, err) => {
           if (result) {
+            // Respect cooldown; ignore rapid repeated detections
+            if (!acceptScanNow()) return;
+
             const text = result.getText();
             addToCart(text, 1);
+
+            // Visual feedback
             previewVideo.style.outline = '3px solid #28a745';
             setTimeout(() => previewVideo.style.outline = '', 300);
+
+            // Audio feedback
+            playBeep(120, 1100, 0.25);
           }
         }
       );
@@ -249,10 +295,15 @@ scanStartBtn.onclick = async () => {
         'preview',
         (result, err) => {
           if (result) {
+            if (!acceptScanNow()) return;
+
             const text = result.getText();
             addToCart(text, 1);
+
             previewVideo.style.outline = '3px solid #28a745';
             setTimeout(() => previewVideo.style.outline = '', 300);
+
+            playBeep(120, 1100, 0.25);
           }
         }
       );
@@ -269,7 +320,9 @@ scanStopBtn.onclick = () => {
   try { codeReader?.reset(); } catch {}
   cameraArea.style.display = 'none';
 };
+/* ------------------------------------------------------------------------- */
 
 // Init
 loadProducts();
 loadTransactions();
+
