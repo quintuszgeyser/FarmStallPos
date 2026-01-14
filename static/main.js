@@ -1,4 +1,3 @@
-
 /* ======================= Auth & Role UI ======================= */
 const loginArea  = document.getElementById('loginArea');
 const loginUser  = document.getElementById('loginUser');
@@ -13,11 +12,6 @@ const appContainer = document.getElementById('appContainer');
 const tellerTabBtn       = document.getElementById('teller-tab');
 const transactionsTabBtn = document.getElementById('transactions-tab');
 const manageTabBtn       = document.getElementById('manage-tab');
-
-// panes
-const tellerPane       = document.getElementById('teller');
-const transactionsPane = document.getElementById('transactions');
-const managePane       = document.getElementById('manage');
 
 // users admin area
 const usersAdminArea   = document.getElementById('usersAdminArea');
@@ -57,10 +51,7 @@ async function refreshAuthUI() {
 
     // activate Transactions tab
     new bootstrap.Tab(transactionsTabBtn).show();
-
-    // hide admin areas
     usersAdminArea.style.display = 'none';
-    // Teller can still post transactions (checkout)
     await loadTransactions();
   } else {
     // admin: all tabs visible
@@ -68,13 +59,7 @@ async function refreshAuthUI() {
     transactionsTabBtn.parentElement.style.display = '';
     manageTabBtn.parentElement.style.display       = '';
     usersAdminArea.style.display = '';
-
-    // load data
-    await Promise.allSettled([
-      loadProducts(),
-      loadTransactions(),
-      loadUsers()
-    ]);
+    await Promise.allSettled([ loadProducts(), loadTransactions(), loadUsers() ]);
   }
 }
 
@@ -85,11 +70,7 @@ loginBtn?.addEventListener('click', async () => {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
   });
   const data = await res.json();
-  if (!res.ok) {
-    loginError.textContent = data.error || 'Login failed';
-    loginError.style.display = '';
-    return;
-  }
+  if (!res.ok) { loginError.textContent = data.error || 'Login failed'; loginError.style.display = ''; return; }
   await refreshAuthUI();
 });
 
@@ -114,7 +95,7 @@ async function loadUsers() {
         userUsername.value = u.username;
         userRole.value     = u.role;
         userActive.checked = !!u.active;
-        userPassword.value = ''; // not shown
+        userPassword.value = '';
       };
       usersList.appendChild(li);
     });
@@ -167,7 +148,7 @@ deleteUserBtn?.addEventListener('click', async () => {
   alert('User deleted');
 });
 
-/* ======================= POS Logic (unchanged) ======================= */
+/* ======================= POS Logic ======================= */
 let PRODUCTS = {}; // name -> {id, price, barcode}
 let CART = [];     // [{name, qty, price}]
 
@@ -218,7 +199,7 @@ function acceptScanNow() {
 async function loadProducts() {
   try {
     const res = await fetch('/api/products');
-    if (!res.ok) { productsList.innerHTML=''; productSelect.innerHTML=''; return; } // teller gets 403
+    if (!res.ok) { productsList.innerHTML=''; productSelect.innerHTML=''; return; }
     PRODUCTS = await res.json();
   } catch { PRODUCTS = {}; }
 
@@ -319,10 +300,12 @@ scanStartBtn.onclick = async () => {
   try {
     cameraArea.style.display = '';
     previewVideo.setAttribute('playsinline', 'true'); previewVideo.muted = true; previewVideo.autoplay = true;
-    codeReader = new ZXing.BrowserMultiFormatReader();
+    const ReaderCtor = ZXing?.BrowserMultiFormatReader;
+    if (!ReaderCtor) throw new Error('ZXing not available');
+    codeReader = new ReaderCtor();
     try {
       await codeReader.decodeFromConstraints(
-        { video: { facingMode: { exact: "environment" } } },
+        { video: { facingMode: { exact: 'environment' } } },
         'preview',
         (result, err) => {
           if (result) {
@@ -335,7 +318,7 @@ scanStartBtn.onclick = async () => {
       );
     } catch {
       await codeReader.decodeFromConstraints(
-        { video: { facingMode: "environment" } },
+        { video: { facingMode: 'environment' } },
         'preview',
         (result, err) => {
           if (result) {
