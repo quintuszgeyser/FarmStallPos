@@ -5,12 +5,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Farm Stall POS</title>
-  <link rel="manifest" href="/static/manifest.json">
-  <link rel="icon" href="/static/icon.png">
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/static/icon-192.png">
+
   <!-- Bootstrap CSS -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
   <!-- ZXing Barcode/QR library -->
   <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0"></script>
+
   <style>
     body { padding-bottom: 3rem; }
     .sticky-total { position: sticky; bottom: 0; background: #fff; padding: .75rem; box-shadow: 0 -2px 6px rgba(0,0,0,.08); }
@@ -21,42 +26,18 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-success">
   <div class="container-fluid">
     <a class="navbar-brand" href="#">Farm Stall POS</a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav"
+            aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
     <div class="collapse navbar-collapse" id="navbarNav">
-      <!-- UPDATED: robust Bootstrap 5 tab controls -->
       <ul class="navbar-nav me-auto mb-2 mb-lg-0" role="tablist">
         <li class="nav-item" role="presentation">
-          <a class="nav-link active"
-             id="teller-tab"
-             data-bs-toggle="tab"
-             data-bs-target="#teller"
-             type="button"
-             role="tab"
-             aria-controls="teller"
-             aria-selected="true">Teller</a>
+          <a class="nav-link active" id="teller-tab" data-bs-toggle="tab" data-bs-target="#teller" type="button" role="tab" aria-controls="teller" aria-selected="true">Teller</a>
         </li>
         <li class="nav-item" role="presentation">
-          <a class="nav-link"
-             id="transactions-tab"
-             data-bs-toggle="tab"
-             data-bs-target="#transactions"
-             type="button"
-             role="tab"
-             aria-controls="transactions"
-             aria-selected="false">Transactions</a>
+          <a class="nav-link" id="transactions-tab" data-bs-toggle="tab" data-bs-target="#transactions" type="button" role="tab" aria-controls="transactions" aria-selected="false">Transactions</a>
         </li>
         <li class="nav-item" role="presentation">
-          <a class="nav-link"
-             id="manage-tab"
-             data-bs-toggle="tab"
-             data-bs-target="#manage"
-             type="button"
-             role="tab"
-             aria-controls="manage"
-             aria-selected="false">Manage Products</a>
+          <a class="nav-link" id="manage-tab" data-bs-toggle="tab" data-bs-target="#manage" type="button" role="tab" aria-controls="manage" aria-selected="false">Manage Products</a>
         </li>
       </ul>
     </div>
@@ -65,22 +46,24 @@
 
 <div class="container mt-3">
   <div class="tab-content" id="posTabContent">
+
     <!-- Teller -->
     <div class="tab-pane fade show active" id="teller" role="tabpanel" aria-labelledby="teller-tab">
       <div class="row g-3">
         <div class="col-12 col-md-6">
           <label class="form-label">Scan barcode or select product</label>
           <div class="input-group">
-            <input id="barcodeInput" class="form-control" placeholder="Type/scan product name or ID">
+            <input id="barcodeInput" class="form-control" placeholder="Type/scan product name, ID or barcode">
             <button class="btn btn-outline-secondary" id="scanStartBtn">Camera</button>
           </div>
           <div class="mt-2" id="cameraArea" style="display:none;">
-            <video id="preview"></video>
+            <video id="preview" playsinline autoplay muted></video>
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-sm btn-outline-danger" id="scanStopBtn">Stop</button>
             </div>
           </div>
         </div>
+
         <div class="col-12 col-md-6">
           <div class="input-group">
             <select id="productSelect" class="form-select"></select>
@@ -136,19 +119,18 @@
         </div>
       </div>
     </div>
+
   </div>
 </div>
 
-<!-- Bootstrap bundle (includes Popper) -->
+<!-- Bootstrap bundle -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- Your app logic -->
+<!-- App logic -->
 <script src="/static/main.js"></script>
-
 <!-- PWA service worker -->
 <script>
   if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/static/sw.js');
+    navigator.serviceWorker.register('/sw.js');
   }
 </script>
 </body>

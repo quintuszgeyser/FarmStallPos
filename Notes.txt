@@ -27,3 +27,15 @@ curl -X POST "https://farmstallpos.onrender.com/api/transactions" ^
 
 curl "https://farmstallpos.onrender.com/api/products"
 curl "https://farmstallpos.onrender.com/api/transactions"
+
+
+your-repo/
+├─ app.py
+├─ templates/
+│  └─ index.html
+└─ static/
+   ├─ main.js
+   ├─ sw.js
+   ├─ manifest.json
+   ├─ icon-192.png      (add a small placeholder PNG here)
+   └─ icon-512.png      (add a small placeholder PNG here)

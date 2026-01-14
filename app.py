@@ -1,5 +1,5 @@
 
-from flask import Flask, render_template, jsonify, request, Response
+from flask import Flask, render_template, jsonify, request, Response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship
 from sqlalchemy import text
@@ -45,18 +45,12 @@ class TransactionLine(db.Model):
 
 # --- Helpers: barcode generation & migration ---
 def _ean13_checksum(digits12: str) -> int:
-    """Compute EAN-13 checksum for first 12 digits (string of digits)."""
-    # positions: d1..d12 (1-indexed). Sum odd + 3*sum even
     odd_sum  = sum(int(d) for i, d in enumerate(digits12, start=1) if i % 2 == 1)
     even_sum = sum(int(d) for i, d in enumerate(digits12, start=1) if i % 2 == 0)
     s = odd_sum + 3 * even_sum
     return (10 - (s % 10)) % 10
 
 def generate_ean13(prefix: str = "200") -> str:
-    """
-    Generate a private EAN-13 (prefix 200..299 are commonly used for internal barcodes).
-    Produces 12-digit payload + checksum.
-    """
     payload_len = 12 - len(prefix)
     mid = "".join(str(random.randint(0, 9)) for _ in range(payload_len))
     base = prefix + mid
@@ -64,32 +58,25 @@ def generate_ean13(prefix: str = "200") -> str:
     return base + str(c)
 
 def generate_unique_barcode() -> str:
-    """Loop until a unique barcode is found."""
     while True:
         code = generate_ean13("200")
         if not Product.query.filter_by(barcode=code).first():
             return code
 
 def ensure_barcode_column_and_backfill():
-    """
-    Adds 'barcode' column if missing and backfills null/empty barcodes with unique EAN-13.
-    Safe to run repeatedly.
-    """
     try:
-        db.session.execute(
-            text("ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode VARCHAR(64) UNIQUE")
-        )
+        db.session.execute(text(
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode VARCHAR(64) UNIQUE"
+        ))
         db.session.commit()
     except Exception:
         db.session.rollback()
 
-    # Backfill rows missing barcode
     rows = db.session.execute(
         text("SELECT id FROM products WHERE barcode IS NULL OR barcode = ''")
     ).fetchall()
     if rows:
         for (pid,) in rows:
-            # ensure uniqueness by checking DB each time
             code = generate_unique_barcode()
             db.session.execute(
                 text("UPDATE products SET barcode = :code WHERE id = :pid"),
@@ -107,11 +94,19 @@ with app.app_context():
 def index():
     return render_template("index.html", currency=CURRENCY)
 
+# Serve PWA files from root paths to avoid scope/safari quirks
+@app.get("/sw.js")
+def service_worker():
+    return send_from_directory("static", "sw.js")
+
+@app.get("/manifest.json")
+def manifest():
+    return send_from_directory("static", "manifest.json")
+
 # --- Products API ---
 @app.get("/api/products")
 def api_get_products():
     rows = Product.query.order_by(Product.id).all()
-    # Now includes barcode
     return jsonify({p.name: {"id": p.id, "price": float(p.price), "barcode": p.barcode} for p in rows})
 
 @app.post("/api/products")
@@ -119,8 +114,6 @@ def api_add_product():
     data  = request.get_json(force=True)
     name  = (data.get("name") or "").strip()
     price = float(data.get("price") or 0)
-
-    # Allow optional client-provided barcode, else generate one
     barcode = (data.get("barcode") or "").strip()
 
     if not name:
@@ -143,13 +136,12 @@ def api_update_product():
     old_name  = (data.get("old_name") or "").strip()
     new_name  = (data.get("new_name") or "").strip() or old_name
     price     = float(data.get("price") or 0)
-    barcode   = (data.get("barcode") or "").strip()  # optional
+    barcode   = (data.get("barcode") or "").strip()
 
     prod = Product.query.filter_by(name=old_name).first()
     if not prod:
         return jsonify({"error": "Original product not found"}), 404
 
-    # If barcode provided and different, validate uniqueness
     if barcode and barcode != (prod.barcode or ""):
         if Product.query.filter_by(barcode=barcode).first():
             return jsonify({"error": "Barcode already exists"}), 409
@@ -172,10 +164,6 @@ def api_delete_product(name):
 # --- Transactions API ---
 @app.get("/api/transactions")
 def api_get_transactions():
-    """
-    Returns per-line rows; your frontend groups by tran_id.
-    Keeps the "product_id" field compatible with the UI (product name).
-    """
     q = db.session.query(
         Transaction.id.label("tran_id"),
         Transaction.date_time,
@@ -191,7 +179,7 @@ def api_get_transactions():
         payload.append({
             "tran_id":     row.tran_id,
             "date_time":   row.date_time.strftime("%Y-%m-%d %H:%M:%S"),
-            "product_id":  row.product_name,  # keep compatible with your UI
+            "product_id":  row.product_name,
             "no_of_items": int(row.qty),
             "amount":      float(row.amount)
         })
@@ -199,10 +187,6 @@ def api_get_transactions():
 
 @app.post("/api/transactions")
 def api_add_transaction():
-    """
-    Payload: { "items": [ {"product_name":"Apple","qty":2}, ... ] }
-    Creates 1 Transaction + N lines; responds with {ok, tran_id, lines:[...]}.
-    """
     data  = request.get_json(force=True)
     items = data.get("items") or []
     if not items:
@@ -210,13 +194,12 @@ def api_add_transaction():
 
     tran = Transaction(date_time=datetime.utcnow())
     db.session.add(tran)
-    db.session.flush()  # get tran.id before committing
+    db.session.flush()
 
     for it in items:
         name = (it.get("product_name") or "").strip()
         qty  = int(it.get("qty") or 1)
 
-        # Lookup by name, or fallback to numeric ID string
         prod = Product.query.filter_by(name=name).first()
         if not prod:
             try:
@@ -248,15 +231,13 @@ def api_add_transaction():
 
 # --- Admin: DB health & CSV exports ---
 def require_admin():
-    """Simple header-based guard. Set ADMIN_TOKEN env var to enable."""
     if not ADMIN_TOKEN:
-        return None  # protection disabled
+        return None
     if request.headers.get("X-Admin-Token") != ADMIN_TOKEN:
         return Response("Unauthorized", status=401)
     return None
 
 def csv_response_eager(filename: str, header: list[str], rows: list[list]):
-    """Build the entire CSV eagerly (no streaming) and return it."""
     s = io.StringIO()
     w = csv.writer(s)
     w.writerow(header)
@@ -270,10 +251,6 @@ def csv_response_eager(filename: str, header: list[str], rows: list[list]):
 
 @app.get("/api/db-health")
 def db_health():
-    """
-    Confirms the app can reach the DB (internal on Render).
-    Returns {"ok": true} on success.
-    """
     try:
         db.session.execute(text("SELECT 1"))
         return jsonify({"ok": True})
@@ -328,5 +305,4 @@ def export_transaction_lines():
 
 # --- Local dev entrypoint ---
 if __name__ == "__main__":
-    # Local dev only; on Render you run with: gunicorn app:app  (Start Command)
     app.run(host="0.0.0.0", port=5000, debug=True)

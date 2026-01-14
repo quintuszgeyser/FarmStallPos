@@ -32,7 +32,6 @@ async function loadProducts() {
   const res = await fetch('/api/products');
   PRODUCTS = await res.json();
 
-  // fill select
   productSelect.innerHTML = '';
   const optPlaceholder = document.createElement('option');
   optPlaceholder.textContent = 'Select Product';
@@ -66,11 +65,9 @@ function addToCart(inputValue, qty = 1) {
   if (!productName) return;
   qty = parseInt(qty || '1', 10);
 
-  // 1) Try by direct name
-  let info = PRODUCTS[productName];
+  let info = PRODUCTS[productName]; // by name
 
-  // 2) Try by numeric id
-  if (!info) {
+  if (!info) { // by numeric id
     const asId = parseInt(productName, 10);
     if (!Number.isNaN(asId)) {
       for (const [n, v] of Object.entries(PRODUCTS)) {
@@ -79,8 +76,7 @@ function addToCart(inputValue, qty = 1) {
     }
   }
 
-  // 3) Try by barcode (string match)
-  if (!info) {
+  if (!info) { // by barcode
     for (const [n, v] of Object.entries(PRODUCTS)) {
       if (v.barcode && v.barcode === inputValue) { info = v; productName = n; break; }
     }
@@ -131,7 +127,9 @@ barcodeInput.onchange = () => { addToCart(barcodeInput.value, 1); barcodeInput.v
 checkoutBtn.onclick = async () => {
   if (CART.length === 0) return alert('Cart is empty');
   const payload = { items: CART.map(x => ({ product_name: x.name, qty: x.qty })) };
-  const res = await fetch('/api/transactions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
+  const res = await fetch('/api/transactions', {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+  });
   const data = await res.json();
   if (!res.ok) { alert(JSON.stringify(data)); return; }
   CART = []; renderCart();
@@ -144,12 +142,10 @@ addProductBtn.onclick = async () => {
   const price = parseFloat(prodPrice.value || '0');
   if (!name) return alert('Name required');
 
-  // Optional: prompt for custom barcode (leave empty to auto-generate)
   const barcode = prompt('Enter barcode (leave blank to auto-generate EAN-13):', '');
 
   const res = await fetch('/api/products', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ name, price, barcode })
   });
   const data = await res.json();
@@ -164,13 +160,11 @@ updateProductBtn.onclick = async () => {
   const price = parseFloat(prodPrice.value || '0');
   if (!name) return alert('Select a product first');
 
-  // Optional: allow updating barcode
   const cur = PRODUCTS[name]?.barcode || '';
   const barcode = prompt('Enter new barcode (leave blank to keep current):', cur) || cur;
 
   const res = await fetch('/api/products/update', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    method: 'POST', headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ old_name: name, new_name: name, price, barcode })
   });
   const data = await res.json();
@@ -194,7 +188,6 @@ refreshTxBtn.onclick = () => loadTransactions();
 async function loadTransactions() {
   const res = await fetch('/api/transactions');
   const tx = await res.json();
-  // Group by tran_id
   const byTran = new Map();
   tx.forEach(line => {
     const key = line.tran_id;
@@ -229,44 +222,28 @@ async function loadTransactions() {
 scanStartBtn.onclick = async () => {
   try {
     cameraArea.style.display = '';
-    // iOS-friendly video settings
-    previewVideo.setAttribute('playsinline', 'true');
+    previewVideo.setAttribute('playsinline', 'true'); // iOS
     previewVideo.muted = true;
     previewVideo.autoplay = true;
 
     codeReader = new ZXing.BrowserMultiFormatReader();
 
-    // Hint common formats (EAN-13 for printed retail codes, plus Code128/EAN-8/QR)
-    const hints = new Map();
+    // Prefer rear camera
     try {
-      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
-        ZXing.BarcodeFormat.EAN_13,
-        ZXing.BarcodeFormat.CODE_128,
-        ZXing.BarcodeFormat.EAN_8,
-        ZXing.BarcodeFormat.QR_CODE
-      ]);
-    } catch (_) {
-      // library may not expose hints in some builds—safe to ignore
-    }
-
-    // Use constraints so mobile picks the rear camera
-    await codeReader.decodeFromConstraints(
-      { video: { facingMode: { exact: "environment" } } },
-      'preview',
-      (result, err) => {
-        if (result) {
-          const text = result.getText();
-          addToCart(text, 1);
-          // brief flash
-          previewVideo.style.outline = '3px solid #28a745';
-          setTimeout(() => previewVideo.style.outline = '', 300);
+      await codeReader.decodeFromConstraints(
+        { video: { facingMode: { exact: "environment" } } },
+        'preview',
+        (result, err) => {
+          if (result) {
+            const text = result.getText();
+            addToCart(text, 1);
+            previewVideo.style.outline = '3px solid #28a745';
+            setTimeout(() => previewVideo.style.outline = '', 300);
+          }
         }
-        // err is frequent while scanning; ignore unless needed
-      }
-    );
-  } catch (e) {
-    // Fallback: some browsers don’t support exact facingMode—try without exact, then surface error
-    try {
+      );
+    } catch {
+      // Fallback if exact not supported
       await codeReader.decodeFromConstraints(
         { video: { facingMode: "environment" } },
         'preview',
@@ -279,18 +256,17 @@ scanStartBtn.onclick = async () => {
           }
         }
       );
-    } catch (e2) {
-      cameraArea.style.display = 'none';
-      const msg =
-        (location.protocol !== 'https:' ? 'This feature requires HTTPS.\n' : '') +
-        'Camera error: ' + e2;
-      alert(msg);
     }
+  } catch (e2) {
+    cameraArea.style.display = 'none';
+    const msg = (location.protocol !== 'https:' ? 'This feature requires HTTPS.\n' : '') +
+                'Camera error: ' + e2;
+    alert(msg);
   }
 };
 
 scanStopBtn.onclick = () => {
-  try { codeReader?.reset(); } catch (e) {}
+  try { codeReader?.reset(); } catch {}
   cameraArea.style.display = 'none';
 };
 
