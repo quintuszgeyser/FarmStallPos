@@ -1,9 +1,10 @@
+
 // Farm Stall POS main.js — Updated
 // - Robust Product CRUD
 // - Transactions view ordered by id desc
 // - Hide tabs before login; role-based visibility
 // - Stock system and purchase recording
-// - Suggested price helper
+// - Suggested price helper (WAC + markup)
 // - Admin-only stats with simple canvas charts
 
 let STATE = {
@@ -18,7 +19,7 @@ function show(el) { el.classList.remove('hidden'); }
 function hide(el) { el.classList.add('hidden'); }
 function fmt(n) { return (Math.round(n * 100) / 100).toFixed(2); }
 
-async function api(path, opts={}) {
+async function api(path, opts = {}) {
   const res = await fetch(path, Object.assign({
     headers: { 'Content-Type': 'application/json' },
     credentials: 'same-origin'
@@ -67,7 +68,10 @@ document.getElementById('btn-login').addEventListener('click', async () => {
     await refreshMe();
     await loadProducts();
     await loadTransactions();
-    if (STATE.user && STATE.user.role === 'admin') await loadSettings();
+    if (STATE.user && STATE.user.role === 'admin') {
+      await loadSettings();
+      await loadStats();
+    }
     initScanner();
   } catch (e) {
     document.getElementById('login-status').textContent = e.message;
@@ -255,21 +259,16 @@ searchInput.addEventListener('input', () => {
   });
 });
 
-// ---------- Scanner (ZXing) ----------
+// ---------- Scanner (ZXing placeholder) ----------
 async function initScanner() {
   const video = document.getElementById('video');
   if (!video) return;
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
     video.srcObject = stream; await video.play();
-    // Minimal barcode scan using built-in ImageCapture? For simplicity, we'll do manual polling and match by barcode string.
-    // If ZXing UMD is already part of your project, you can integrate it here. We keep the UX cues (flash + beep).
-    const flash = document.getElementById('scanner-flash');
-    const beep = new Audio('data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQAAAAA=');
+    // Hook in ZXing UMD here if you want real decoding.
     const scanLoop = async () => {
       if (!STATE.user) return; // stop when logged out
-      // We skip actual decoding for brevity; in your original build, hook ZXing here.
-      // This preserves current functionality placeholder without breaking.
       setTimeout(scanLoop, 1000);
     };
     scanLoop();
@@ -284,7 +283,7 @@ function drawBarChart(canvas, labels, values) {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   const W = canvas.width, H = canvas.height;
   const max = Math.max(...values, 1);
-  const pad = 40; const bw = (W - pad*2) / values.length * 0.8;
+  const pad = 40; const bw = (W - pad*2) / (values.length || 1) * 0.8;
   ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H-pad); ctx.lineTo(W-pad, H-pad); ctx.stroke();
   values.forEach((v,i) => {
     const x = pad + (i+0.1) * (W - pad*2) / values.length;
@@ -292,7 +291,7 @@ function drawBarChart(canvas, labels, values) {
     const y = H - pad - h;
     ctx.fillStyle = '#2a6f3e'; ctx.fillRect(x, y, bw, h);
     ctx.fillStyle = '#000'; ctx.font = '12px sans-serif';
-    ctx.fillText(labels[i].slice(0,10), x, H - pad + 14);
+    ctx.fillText((labels[i] || '').slice(0,10), x, H - pad + 14);
     ctx.fillText(fmt(v), x, y - 4);
   });
 }
@@ -315,8 +314,7 @@ document.getElementById('btn-refresh-stats').addEventListener('click', loadStats
 
 // ---------- Bootstrap ----------
 (async function init(){
-  // Hide tabs before login by default
-  updateVisibility();
+  updateVisibility();   // hide tabs before login
   await refreshMe();
   if (STATE.user) {
     await loadProducts();

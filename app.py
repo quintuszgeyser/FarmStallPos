@@ -1,12 +1,14 @@
+
 # -*- coding: utf-8 -*-
 """
-Farm Stall POS — Updated (v1.2.1)
-- Switch to psycopg (v3) to support Python 3.13+ on Render
-- Rewrite DATABASE_URL to use postgresql+psycopg
-- Fix index route to render_template (previous path bug)
-- Includes requirements.txt and Procfile
-- Everything else from v1.2.0 remains (stock, purchases, stats, etc.)
+Farm Stall POS — Updated (v1.2.2)
+- Stronger startup migration for existing DBs (PostgreSQL & SQLite):
+  * ALTER TABLE ... ADD COLUMN IF NOT EXISTS stock_qty
+  * CREATE TABLE IF NOT EXISTS purchases, settings
+- Adds /api/db-migrate (admin) to run migration on demand
+- Keeps psycopg (v3) driver mapping for Python 3.13 compatibility
 """
+
 import os
 from datetime import datetime, date
 from collections import defaultdict
@@ -15,7 +17,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import text
 from werkzeug.security import generate_password_hash, check_password_hash
 
-APP_VERSION = '1.2.1'
+APP_VERSION = '1.2.2'
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key')
@@ -80,7 +82,6 @@ class Setting(db.Model):
 # -----------------------------
 # Utilities & Bootstrap
 # -----------------------------
-
 def get_setting(key, default=None):
     s = Setting.query.filter_by(key=key).first()
     return s.value if s else default
@@ -94,24 +95,20 @@ def set_setting(key, value):
         db.session.add(s)
     db.session.commit()
 
-
 def require_login():
     if 'user_id' not in session:
         return False
     user = User.query.get(session['user_id'])
     return bool(user and user.active)
 
-
 def current_user():
     if 'user_id' not in session:
         return None
     return User.query.get(session.get('user_id'))
 
-
 def require_role(role):
     u = current_user()
     return bool(u and u.role == role)
-
 
 def seed_first_admin():
     if User.query.count() == 0:
@@ -127,21 +124,61 @@ def seed_first_admin():
             except Exception:
                 pass
 
-def safe_migrate():
+# Stronger startup migration
+def strong_migrate():
+    engine_name = db.session.bind.dialect.name
+    # Create base tables (if fresh DB)
     db.create_all()
-    try:
-        engine_name = db.session.bind.dialect.name
-        if engine_name != 'sqlite':
-            res = db.session.execute(text("SELECT column_name FROM information_schema.columns WHERE table_name='products'"))
-            cols = [r[0] for r in res]
-            if 'stock_qty' not in cols:
-                db.session.execute(text("ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 0"))
-                db.session.commit()
-    except Exception:
-        db.session.rollback()
+    if engine_name == 'sqlite':
+        # SQLite: add column if missing using simple ALTER (fails if exists; we ignore)
+        try:
+            db.session.execute(text("ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 0"))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        # Purchases & settings tables
+        try:
+            db.session.execute(text(
+                "CREATE TABLE IF NOT EXISTS purchases ("
+                " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                " product_id INTEGER NOT NULL,"
+                " qty_added INTEGER NOT NULL,"
+                " purchase_price REAL NOT NULL,"
+                " date_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            ))
+            db.session.execute(text(
+                "CREATE TABLE IF NOT EXISTS settings ("
+                " id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                " key TEXT UNIQUE NOT NULL,"
+                " value TEXT NOT NULL)"
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+    else:
+        # PostgreSQL: idempotent migration using IF NOT EXISTS
+        try:
+            db.session.execute(text("ALTER TABLE products ADD COLUMN IF NOT EXISTS stock_qty INTEGER NOT NULL DEFAULT 0"))
+            db.session.execute(text(
+                "CREATE TABLE IF NOT EXISTS purchases ("
+                " id SERIAL PRIMARY KEY,"
+                " product_id INTEGER NOT NULL REFERENCES products(id),"
+                " qty_added INTEGER NOT NULL,"
+                " purchase_price DOUBLE PRECISION NOT NULL,"
+                " date_time TIMESTAMP NOT NULL DEFAULT NOW())"
+            ))
+            db.session.execute(text(
+                "CREATE TABLE IF NOT EXISTS settings ("
+                " id SERIAL PRIMARY KEY,"
+                " key TEXT UNIQUE NOT NULL,"
+                " value TEXT NOT NULL)"
+            ))
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 with app.app_context():
-    safe_migrate()
+    strong_migrate()
     seed_first_admin()
 
 # -----------------------------
@@ -171,7 +208,17 @@ def api_me():
     return jsonify({'logged_in': True, 'username': u.username, 'role': u.role})
 
 # -----------------------------
-# Routes: Users (admin only)
+# Admin: manual migrate endpoint
+# -----------------------------
+@app.route('/api/db-migrate', methods=['POST'])
+def api_db_migrate():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    strong_migrate()
+    return jsonify({'ok': True})
+
+# -----------------------------
+# Users
 # -----------------------------
 @app.route('/api/users', methods=['GET'])
 def api_users_get():
@@ -232,7 +279,7 @@ def api_users_delete(username):
     return jsonify({'ok': True})
 
 # -----------------------------
-# Routes: Products
+# Products
 # -----------------------------
 @app.route('/api/products', methods=['GET'])
 def api_products_get():
@@ -347,10 +394,9 @@ def api_suggested_price(pid):
     return jsonify({'product_id': pid, 'wac': round(wac, 4), 'markup_percent': markup, 'suggested_price': suggested})
 
 # -----------------------------
-# Routes: Purchases (admin only)
+# Purchases
 # -----------------------------
 @app.route('/api/purchases', methods=['GET'])
-
 def api_purchases_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -369,7 +415,6 @@ def api_purchases_get():
     return jsonify(result)
 
 @app.route('/api/purchases', methods=['POST'])
-
 def api_purchases_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -395,10 +440,9 @@ def api_purchases_post():
     return jsonify({'ok': True})
 
 # -----------------------------
-# Routes: Transactions
+# Transactions
 # -----------------------------
 @app.route('/api/transactions', methods=['GET'])
-
 def api_transactions_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -413,12 +457,13 @@ def api_transactions_get():
             name = p.name if p else f"Product {ln.product_id}"
             subtotal = ln.qty * ln.unit_price
             total += subtotal
-            line_items.append({'product_id': ln.product_id, 'name': name, 'qty': ln.qty, 'unit_price': ln.unit_price, 'subtotal': subtotal})
-        result.append({'id': t.id, 'date_time': t.date_time.isoformat(), 'total': round(total, 2), 'lines': line_items})
+            line_items.append({'product_id': ln.product_id, 'name': name, 'qty': ln.qty,
+                               'unit_price': ln.unit_price, 'subtotal': subtotal})
+        result.append({'id': t.id, 'date_time': t.date_time.isoformat(),
+                       'total': round(total, 2), 'lines': line_items})
     return jsonify(result)
 
 @app.route('/api/transactions', methods=['POST'])
-
 def api_transactions_post():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -444,7 +489,6 @@ def api_transactions_post():
 # CSV Exports (admin)
 # -----------------------------
 @app.route('/admin/export/products')
-
 def export_products_csv():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -460,7 +504,6 @@ def export_products_csv():
     return send_file(sio, mimetype='text/csv', as_attachment=True, download_name='products.csv')
 
 @app.route('/admin/export/transactions')
-
 def export_transactions_csv():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -478,7 +521,6 @@ def export_transactions_csv():
     return send_file(sio, mimetype='text/csv', as_attachment=True, download_name='transactions.csv')
 
 @app.route('/admin/export/transaction_lines')
-
 def export_transaction_lines_csv():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -494,17 +536,35 @@ def export_transaction_lines_csv():
     return send_file(sio, mimetype='text/csv', as_attachment=True, download_name='transaction_lines.csv')
 
 # -----------------------------
-# Stats (admin)
+# Settings (admin)
+# -----------------------------
+@app.route('/api/settings', methods=['GET', 'POST'])
+def api_settings():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if request.method == 'GET':
+        return jsonify({'markup_percent': float(get_setting('markup_percent', 20) or 20)})
+    data = request.json or {}
+    mp = data.get('markup_percent')
+    try:
+        mp = float(mp)
+    except Exception:
+        return jsonify({'error': 'Invalid markup_percent'}), 400
+    set_setting('markup_percent', mp)
+    return jsonify({'ok': True})
+
+# -----------------------------
+# Stats (admin-only)
 # -----------------------------
 @app.route('/api/stats/today')
-
 def api_stats_today():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     today = date.today()
     start_dt = datetime(today.year, today.month, today.day)
     end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
-    trs = Transaction.query.filter(Transaction.date_time >= start_dt, Transaction.date_time <= end_dt).all()
+    trs = Transaction.query.filter(Transaction.date_time >= start_dt,
+                                   Transaction.date_time <= end_dt).all()
     transactions_count = len(trs)
     total_sales_value = 0.0
     total_items_sold = 0
@@ -544,9 +604,21 @@ def api_stats_today():
 # UI
 # -----------------------------
 @app.route('/')
-
 def index():
     return render_template('index.html')
+
+# Diagnostics
+@app.route('/api/db-health')
+def api_db_health():
+    try:
+        db.session.execute(text('SELECT 1'))
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+@app.route('/__version')
+def version():
+    return jsonify({'version': APP_VERSION})
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5000')))
