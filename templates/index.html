@@ -7,62 +7,59 @@
   <title>Farm Stall POS</title>
 
   <!-- PWA -->
- .css" 
-        rel="stylesheet" 
-        integrity="sha384-rbsA2VBKQJH0zY+1j0sP4OG8pb6jH1t7EVZ9iGqGQHQzFjZx4E6C0Bp1pJgqS0bQ" 
-       ,0,.08);
+  <!-- If you kept manifest under /static, leave as-is. If you moved to /manifest.json, change href accordingly. -->
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="icon" href="/static/icon.png">
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+  <!-- ZXing UMD build (exposes global `ZXing` for browsers, works on Safari/Chrome) -->
+  <script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.20.0/umd/index.min.js"></script>
+
+  <style>
+    body { padding-bottom: 3rem; }
+    .sticky-total {
+      position: sticky;
+      bottom: 0;
+      background: #fff;
+      padding: .75rem;
+      box-shadow: 0 -2px 6px rgba(0,0,0,.08);
     }
-    video {
-      width: 100%;
-      max-height: 240px;
-      background: #000;
-    }
+    video { width: 100%; max-height: 240px; background: #000; }
   </style>
 </head>
-
 <body class="bg-light">
 <nav class="navbar navbar-expand-lg navbar-dark bg-success">
   <div class="container-fluid">
     <a class="navbar-brand" href="#">Farm Stall POS</a>
-
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
-            data-bs-target="#navbarNav" aria-controls="navbarNav"
-            aria-expanded="false" aria-label="Toggle navigation">
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
       <span class="navbar-toggler-icon"></span>
     </button>
-
-    role="tab"
-             aria-controls="manage"
-             aria-selected="false">
-            Manage Products
-          </a>
-        </li>
-
+    <div class="collapse navbar-collapse" id="navbarNav">
+      <!-- Keep the original tab styling/structure -->
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#teller">Teller</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#transactions">Transactions</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#manage">Manage Products</a></li>
       </ul>
     </div>
   </div>
 </nav>
 
 <div class="container mt-3">
-
-  <div class="tab-content" id="posTabContent">
-
+  <div class="tab-content">
     <!-- Teller -->
-    <div class="tab-pane fade show active" id="teller" role="tabpanel">
+    <div class="tab-pane fade show active" id="teller">
       <div class="row g-3">
-
         <div class="col-12 col-md-6">
           <label class="form-label">Scan barcode or select product</label>
-
           <div class="input-group">
-            <input id="barcodeInput"
-                   class="form-control"
-                   placeholder="Type/scan product name, ID or barcode">
+            <input id="barcodeInput" class="form-control" placeholder="Type/scan product name or ID">
             <button class="btn btn-outline-secondary" id="scanStartBtn">Camera</button>
           </div>
-
           <div class="mt-2" id="cameraArea" style="display:none;">
-            <video id="preview" playsinline autoplay muted></video>
+            <video id="preview"></video>
             <div class="d-flex gap-2 mt-2">
               <button class="btn btn-sm btn-outline-danger" id="scanStopBtn">Stop</button>
             </div>
@@ -76,20 +73,13 @@
             <button class="btn btn-primary" id="addBtn">Add</button>
           </div>
         </div>
-
       </div>
 
       <hr>
-
       <h5>Current cart</h5>
       <div id="cartList" class="list-group"></div>
-
       <div class="sticky-total d-flex justify-content-between align-items-center">
-        <strong>
-          Total: <span id="cartTotal">0</span>
-          <span id="currency">{{ currency }}</span>
-        </strong>
-
+        <strong>Total: <span id="cartTotal">0</span> <span id="currency">{{ currency }}</span></strong>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary" id="cancelBtn">Cancel Session</button>
           <button class="btn btn-success" id="checkoutBtn">Takeout Items</button>
@@ -98,7 +88,7 @@
     </div>
 
     <!-- Transactions -->
-    <div class="tab-pane fade" id="transactions" role="tabpanel">
+    <div class="tab-pane fade" id="transactions">
       <div class="d-flex justify-content-end mb-2">
         <button class="btn btn-outline-primary" id="refreshTxBtn">Refresh</button>
       </div>
@@ -106,62 +96,46 @@
     </div>
 
     <!-- Manage -->
-    <div class="tab-pane fade" id="manage" role="tabpanel">
-
+    <div class="tab-pane fade" id="manage">
       <div class="row g-3">
-
         <div class="col-12 col-lg-6">
           <h6>Products</h6>
           <ul id="productsList" class="list-group"></ul>
         </div>
-
         <div class="col-12 col-lg-6">
           <h6>Add / Modify Product</h6>
-
           <div class="mb-2">
             <label class="form-label">Name</label>
             <input id="prodName" class="form-control">
           </div>
-
           <div class="mb-2">
             <label class="form-label">Price</label>
             <input id="prodPrice" type="number" step="0.01" class="form-control">
           </div>
-
           <div class="d-flex gap-2 mb-3">
             <button class="btn btn-primary" id="addProductBtn">Add Product</button>
             <button class="btn btn-warning" id="updateProductBtn">Update Product</button>
             <button class="btn btn-danger" id="deleteProductBtn">Delete Product</button>
           </div>
-
-          <div class="alert alert-info">
-            Tip: click a product from the list to populate the fields.
-          </div>
-
+          <div class="alert alert-info">Tip: click a product from the list to populate the fields.</div>
         </div>
-
       </div>
-
     </div>
 
   </div>
-
 </div>
 
-<!-- Bootstrap Bundle -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-pprn3073KE6tl6C5QnbD+yE4YQ49jM0lHGyHCm9D8Y5bYl9Dd5V2pYCTnFZy3QJf"
-        crossorigin="anonymous"></script>
+<!-- Bootstrap bundle (includes Popper) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-<!-- App logic -->
+<!-- Your app logic (kept as-is) -->
 <script src="/static/main.js"></script>
 
-<!-- PWA service worker -->
+<!-- PWA service worker at root scope (better reliability than /static/sw.js) -->
 <script>
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/sw.js');
   }
 </script>
-
 </body>
 </html>
