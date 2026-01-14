@@ -4,7 +4,7 @@ from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm import relationship
 from sqlalchemy import text
 from datetime import datetime
-import io, csv, json, os
+import io, csv, json, os, random
 
 # --- Configuration ---
 CURRENCY     = os.getenv("CURRENCY", "R")   # UI currency symbol
@@ -21,9 +21,10 @@ db = SQLAlchemy(app)
 # --- Models ---
 class Product(db.Model):
     __tablename__ = "products"
-    id    = db.Column(db.Integer, primary_key=True)
-    name  = db.Column(db.String(120), unique=True, nullable=False)
-    price = db.Column(db.Numeric(10, 2), nullable=False)
+    id       = db.Column(db.Integer, primary_key=True)
+    name     = db.Column(db.String(120), unique=True, nullable=False)
+    price    = db.Column(db.Numeric(10, 2), nullable=False)
+    barcode  = db.Column(db.String(64), unique=True)  # NEW
 
 class Transaction(db.Model):
     __tablename__ = "transactions"
@@ -42,9 +43,64 @@ class TransactionLine(db.Model):
     transaction = relationship("Transaction", back_populates="lines")
     product     = relationship("Product")
 
-# Create tables if they don't exist (for production, consider Alembic/Flask-Migrate)
+# --- Helpers: barcode generation & migration ---
+def _ean13_checksum(digits12: str) -> int:
+    """Compute EAN-13 checksum for first 12 digits (string of digits)."""
+    # positions: d1..d12 (1-indexed). Sum odd + 3*sum even
+    odd_sum  = sum(int(d) for i, d in enumerate(digits12, start=1) if i % 2 == 1)
+    even_sum = sum(int(d) for i, d in enumerate(digits12, start=1) if i % 2 == 0)
+    s = odd_sum + 3 * even_sum
+    return (10 - (s % 10)) % 10
+
+def generate_ean13(prefix: str = "200") -> str:
+    """
+    Generate a private EAN-13 (prefix 200..299 are commonly used for internal barcodes).
+    Produces 12-digit payload + checksum.
+    """
+    payload_len = 12 - len(prefix)
+    mid = "".join(str(random.randint(0, 9)) for _ in range(payload_len))
+    base = prefix + mid
+    c = _ean13_checksum(base)
+    return base + str(c)
+
+def generate_unique_barcode() -> str:
+    """Loop until a unique barcode is found."""
+    while True:
+        code = generate_ean13("200")
+        if not Product.query.filter_by(barcode=code).first():
+            return code
+
+def ensure_barcode_column_and_backfill():
+    """
+    Adds 'barcode' column if missing and backfills null/empty barcodes with unique EAN-13.
+    Safe to run repeatedly.
+    """
+    try:
+        db.session.execute(
+            text("ALTER TABLE products ADD COLUMN IF NOT EXISTS barcode VARCHAR(64) UNIQUE")
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    # Backfill rows missing barcode
+    rows = db.session.execute(
+        text("SELECT id FROM products WHERE barcode IS NULL OR barcode = ''")
+    ).fetchall()
+    if rows:
+        for (pid,) in rows:
+            # ensure uniqueness by checking DB each time
+            code = generate_unique_barcode()
+            db.session.execute(
+                text("UPDATE products SET barcode = :code WHERE id = :pid"),
+                {"code": code, "pid": pid},
+            )
+        db.session.commit()
+
+# Create tables & run tiny migration
 with app.app_context():
     db.create_all()
+    ensure_barcode_column_and_backfill()
 
 # --- Routes (UI) ---
 @app.get("/")
@@ -55,21 +111,31 @@ def index():
 @app.get("/api/products")
 def api_get_products():
     rows = Product.query.order_by(Product.id).all()
-    # Return in the same shape your frontend expects: {name: {id, price}}
-    return jsonify({p.name: {"id": p.id, "price": float(p.price)} for p in rows})
+    # Now includes barcode
+    return jsonify({p.name: {"id": p.id, "price": float(p.price), "barcode": p.barcode} for p in rows})
 
 @app.post("/api/products")
 def api_add_product():
     data  = request.get_json(force=True)
     name  = (data.get("name") or "").strip()
     price = float(data.get("price") or 0)
+
+    # Allow optional client-provided barcode, else generate one
+    barcode = (data.get("barcode") or "").strip()
+
     if not name:
         return jsonify({"error": "Product name required"}), 400
     if Product.query.filter_by(name=name).first():
         return jsonify({"error": "Product already exists"}), 409
-    db.session.add(Product(name=name, price=price))
+    if barcode:
+        if Product.query.filter_by(barcode=barcode).first():
+            return jsonify({"error": "Barcode already exists"}), 409
+    else:
+        barcode = generate_unique_barcode()
+
+    db.session.add(Product(name=name, price=price, barcode=barcode))
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "barcode": barcode})
 
 @app.post("/api/products/update")
 def api_update_product():
@@ -77,13 +143,22 @@ def api_update_product():
     old_name  = (data.get("old_name") or "").strip()
     new_name  = (data.get("new_name") or "").strip() or old_name
     price     = float(data.get("price") or 0)
-    prod      = Product.query.filter_by(name=old_name).first()
+    barcode   = (data.get("barcode") or "").strip()  # optional
+
+    prod = Product.query.filter_by(name=old_name).first()
     if not prod:
         return jsonify({"error": "Original product not found"}), 404
+
+    # If barcode provided and different, validate uniqueness
+    if barcode and barcode != (prod.barcode or ""):
+        if Product.query.filter_by(barcode=barcode).first():
+            return jsonify({"error": "Barcode already exists"}), 409
+        prod.barcode = barcode
+
     prod.name  = new_name
     prod.price = price
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "barcode": prod.barcode})
 
 @app.delete("/api/products/<name>")
 def api_delete_product(name):
@@ -211,12 +286,12 @@ def export_products():
     if guard: return guard
 
     products = db.session.query(Product).order_by(Product.id).all()
-    rows = [[p.id, p.name, float(p.price)] for p in products]
+    rows = [[p.id, p.name, float(p.price), p.barcode or ""] for p in products]
 
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     return csv_response_eager(
         f"products_{stamp}.csv",
-        ["id", "name", "price"],
+        ["id", "name", "price", "barcode"],
         rows
     )
 

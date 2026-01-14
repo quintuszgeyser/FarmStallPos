@@ -1,44 +1,52 @@
 
-let PRODUCTS = {}; // name -> {id, price}
+let PRODUCTS = {}; // name -> {id, price, barcode}
 let CART = [];     // [{name, qty, price}]
 
-const productSelect = document.getElementById('productSelect');
-const qtyInput = document.getElementById('qtyInput');
-const addBtn = document.getElementById('addBtn');
-const cartList = document.getElementById('cartList');
-const cartTotalEl = document.getElementById('cartTotal');
-const cancelBtn = document.getElementById('cancelBtn');
-const checkoutBtn = document.getElementById('checkoutBtn');
-const productsList = document.getElementById('productsList');
-const prodName = document.getElementById('prodName');
-const prodPrice = document.getElementById('prodPrice');
-const addProductBtn = document.getElementById('addProductBtn');
-const updateProductBtn = document.getElementById('updateProductBtn');
-const deleteProductBtn = document.getElementById('deleteProductBtn');
-const refreshTxBtn = document.getElementById('refreshTxBtn');
-const transactionsBody = document.getElementById('transactionsBody');
-const barcodeInput = document.getElementById('barcodeInput');
-const scanStartBtn = document.getElementById('scanStartBtn');
-const scanStopBtn = document.getElementById('scanStopBtn');
-const cameraArea = document.getElementById('cameraArea');
-const previewVideo = document.getElementById('preview');
+const productSelect   = document.getElementById('productSelect');
+const qtyInput        = document.getElementById('qtyInput');
+const addBtn          = document.getElementById('addBtn');
+const cartList        = document.getElementById('cartList');
+const cartTotalEl     = document.getElementById('cartTotal');
+const cancelBtn       = document.getElementById('cancelBtn');
+const checkoutBtn     = document.getElementById('checkoutBtn');
+
+const productsList    = document.getElementById('productsList');
+const prodName        = document.getElementById('prodName');
+const prodPrice       = document.getElementById('prodPrice');
+const addProductBtn   = document.getElementById('addProductBtn');
+const updateProductBtn= document.getElementById('updateProductBtn');
+const deleteProductBtn= document.getElementById('deleteProductBtn');
+
+const refreshTxBtn    = document.getElementById('refreshTxBtn');
+const transactionsBody= document.getElementById('transactionsBody');
+
+const barcodeInput    = document.getElementById('barcodeInput');
+const scanStartBtn    = document.getElementById('scanStartBtn');
+const scanStopBtn     = document.getElementById('scanStopBtn');
+const cameraArea      = document.getElementById('cameraArea');
+const previewVideo    = document.getElementById('preview');
+
 let codeReader;
 
 async function loadProducts() {
   const res = await fetch('/api/products');
   PRODUCTS = await res.json();
+
   // fill select
   productSelect.innerHTML = '';
   const optPlaceholder = document.createElement('option');
   optPlaceholder.textContent = 'Select Product';
   optPlaceholder.value = '';
   productSelect.appendChild(optPlaceholder);
+
   Object.entries(PRODUCTS).forEach(([name, info]) => {
     const opt = document.createElement('option');
     opt.value = name;
-    opt.textContent = `${name} — ${info.id} — ${info.price.toFixed ? info.price.toFixed(2) : info.price}`;
+    const priceText = (info.price?.toFixed ? info.price.toFixed(2) : info.price);
+    opt.textContent = `${name} — ${info.id} — ${priceText}${info.barcode ? ' — ' + info.barcode : ''}`;
     productSelect.appendChild(opt);
   });
+
   renderProductsList();
 }
 
@@ -47,30 +55,46 @@ function renderProductsList() {
   Object.entries(PRODUCTS).forEach(([name, info]) => {
     const li = document.createElement('li');
     li.className = 'list-group-item d-flex justify-content-between align-items-center';
-    li.textContent = `${name} — ${info.id} — ${info.price}`;
+    li.textContent = `${name} — ${info.id} — ${info.price} — ${info.barcode || ''}`;
     li.onclick = () => { prodName.value = name; prodPrice.value = info.price; };
     productsList.appendChild(li);
   });
 }
 
-function addToCart(productName, qty=1) {
+function addToCart(inputValue, qty = 1) {
+  let productName = inputValue;
   if (!productName) return;
   qty = parseInt(qty || '1', 10);
-  // allow using ID number as barcode: find by id
+
+  // 1) Try by direct name
   let info = PRODUCTS[productName];
+
+  // 2) Try by numeric id
   if (!info) {
-    // try by id
     const asId = parseInt(productName, 10);
-    for (const [n, v] of Object.entries(PRODUCTS)) {
-      if (v.id === asId) { info = v; productName = n; break; }
+    if (!Number.isNaN(asId)) {
+      for (const [n, v] of Object.entries(PRODUCTS)) {
+        if (v.id === asId) { info = v; productName = n; break; }
+      }
     }
   }
+
+  // 3) Try by barcode (string match)
   if (!info) {
-    alert('Product not found: ' + productName);
+    for (const [n, v] of Object.entries(PRODUCTS)) {
+      if (v.barcode && v.barcode === inputValue) { info = v; productName = n; break; }
+    }
+  }
+
+  if (!info) {
+    alert('Product not found: ' + inputValue);
     return;
   }
+
   const existing = CART.find(x => x.name === productName);
-  if (existing) existing.qty += qty; else CART.push({name: productName, qty, price: info.price});
+  if (existing) existing.qty += qty;
+  else CART.push({ name: productName, qty, price: info.price });
+
   renderCart();
 }
 
@@ -100,41 +124,59 @@ function removeFromCart(index) {
   renderCart();
 }
 
-cancelBtn.onclick = () => { CART = []; renderCart(); }
-addBtn.onclick = () => { addToCart(productSelect.value, qtyInput.value); }
-barcodeInput.onchange = () => { addToCart(barcodeInput.value, 1); barcodeInput.value = ''; }
+cancelBtn.onclick = () => { CART = []; renderCart(); };
+addBtn.onclick = () => { addToCart(productSelect.value, qtyInput.value); };
+barcodeInput.onchange = () => { addToCart(barcodeInput.value, 1); barcodeInput.value = ''; };
 
 checkoutBtn.onclick = async () => {
   if (CART.length === 0) return alert('Cart is empty');
-  const payload = { items: CART.map(x => ({product_name: x.name, qty: x.qty})) };
+  const payload = { items: CART.map(x => ({ product_name: x.name, qty: x.qty })) };
   const res = await fetch('/api/transactions', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) });
   const data = await res.json();
   if (!res.ok) { alert(JSON.stringify(data)); return; }
   CART = []; renderCart();
   await loadTransactions();
   alert('Sale completed. Transaction #' + data.tran_id);
-}
+};
 
 addProductBtn.onclick = async () => {
   const name = (prodName.value || '').trim();
   const price = parseFloat(prodPrice.value || '0');
   if (!name) return alert('Name required');
-  const res = await fetch('/api/products', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name, price}) });
+
+  // Optional: prompt for custom barcode (leave empty to auto-generate)
+  const barcode = prompt('Enter barcode (leave blank to auto-generate EAN-13):', '');
+
+  const res = await fetch('/api/products', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ name, price, barcode })
+  });
   const data = await res.json();
   if (!res.ok) return alert(JSON.stringify(data));
   await loadProducts();
   prodName.value = ''; prodPrice.value = '';
-}
+  if (data.barcode) alert('Product added. Barcode: ' + data.barcode);
+};
 
 updateProductBtn.onclick = async () => {
   const name = (prodName.value || '').trim();
   const price = parseFloat(prodPrice.value || '0');
   if (!name) return alert('Select a product first');
-  const res = await fetch('/api/products/update', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({old_name: name, new_name: name, price}) });
+
+  // Optional: allow updating barcode
+  const cur = PRODUCTS[name]?.barcode || '';
+  const barcode = prompt('Enter new barcode (leave blank to keep current):', cur) || cur;
+
+  const res = await fetch('/api/products/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ old_name: name, new_name: name, price, barcode })
+  });
   const data = await res.json();
   if (!res.ok) return alert(JSON.stringify(data));
   await loadProducts();
-}
+};
 
 deleteProductBtn.onclick = async () => {
   const name = (prodName.value || '').trim();
@@ -145,7 +187,7 @@ deleteProductBtn.onclick = async () => {
   if (!res.ok) return alert(JSON.stringify(data));
   await loadProducts();
   prodName.value = ''; prodPrice.value = '';
-}
+};
 
 refreshTxBtn.onclick = () => loadTransactions();
 
@@ -183,24 +225,67 @@ async function loadTransactions() {
   });
 }
 
-// --- Camera scanning ---
+// --- Camera scanning (mobile-friendly) ---
 scanStartBtn.onclick = async () => {
   try {
     cameraArea.style.display = '';
+    // iOS-friendly video settings
+    previewVideo.setAttribute('playsinline', 'true');
+    previewVideo.muted = true;
+    previewVideo.autoplay = true;
+
     codeReader = new ZXing.BrowserMultiFormatReader();
-    const devices = await ZXing.BrowserMultiFormatReader.listVideoInputDevices();
-    const deviceId = devices?.[0]?.deviceId;
-    await codeReader.decodeFromVideoDevice(deviceId, 'preview', (result, err) => {
-      if (result) {
-        addToCart(result.getText(), 1);
-        // brief flash
-        previewVideo.style.outline = '3px solid #28a745';
-        setTimeout(() => previewVideo.style.outline = '', 300);
+
+    // Hint common formats (EAN-13 for printed retail codes, plus Code128/EAN-8/QR)
+    const hints = new Map();
+    try {
+      hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+        ZXing.BarcodeFormat.EAN_13,
+        ZXing.BarcodeFormat.CODE_128,
+        ZXing.BarcodeFormat.EAN_8,
+        ZXing.BarcodeFormat.QR_CODE
+      ]);
+    } catch (_) {
+      // library may not expose hints in some builds—safe to ignore
+    }
+
+    // Use constraints so mobile picks the rear camera
+    await codeReader.decodeFromConstraints(
+      { video: { facingMode: { exact: "environment" } } },
+      'preview',
+      (result, err) => {
+        if (result) {
+          const text = result.getText();
+          addToCart(text, 1);
+          // brief flash
+          previewVideo.style.outline = '3px solid #28a745';
+          setTimeout(() => previewVideo.style.outline = '', 300);
+        }
+        // err is frequent while scanning; ignore unless needed
       }
-    });
+    );
   } catch (e) {
-    alert('Camera error: ' + e);
-    cameraArea.style.display = 'none';
+    // Fallback: some browsers don’t support exact facingMode—try without exact, then surface error
+    try {
+      await codeReader.decodeFromConstraints(
+        { video: { facingMode: "environment" } },
+        'preview',
+        (result, err) => {
+          if (result) {
+            const text = result.getText();
+            addToCart(text, 1);
+            previewVideo.style.outline = '3px solid #28a745';
+            setTimeout(() => previewVideo.style.outline = '', 300);
+          }
+        }
+      );
+    } catch (e2) {
+      cameraArea.style.display = 'none';
+      const msg =
+        (location.protocol !== 'https:' ? 'This feature requires HTTPS.\n' : '') +
+        'Camera error: ' + e2;
+      alert(msg);
+    }
   }
 };
 
