@@ -1,23 +1,25 @@
 
 # -*- coding: utf-8 -*-
 """
-Farm Stall POS — Updated (v1.2.2)
-- Stronger startup migration for existing DBs (PostgreSQL & SQLite):
-  * ALTER TABLE ... ADD COLUMN IF NOT EXISTS stock_qty
-  * CREATE TABLE IF NOT EXISTS purchases, settings
-- Adds /api/db-migrate (admin) to run migration on demand
-- Keeps psycopg (v3) driver mapping for Python 3.13 compatibility
+Farm Stall POS — v1.3.0
+- Single-table design for sales (replaces transactions + transaction_lines)
+- Grouping via sale_id (UUID string) to keep multi-line "transactions"
+- Startup migration: create 'sales', backfill from legacy tables if present
+- Stats & exports rewritten to use 'sales'
+- psycopg v3 driver mapping retained for Python 3.13 compatibility
 """
 
-import os
+import os, uuid
 from datetime import datetime, date
 from collections import defaultdict
+from io import StringIO, BytesIO
+
 from flask import Flask, jsonify, request, session, send_file, render_template
 from flask_sqlalchemy import SQLAlchemy
-from sqlalchemy import text
+from sqlalchemy import text, func
 from werkzeug.security import generate_password_hash, check_password_hash
 
-APP_VERSION = '1.2.2'
+APP_VERSION = '1.3.0'
 
 app = Flask(__name__)
 app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key')
@@ -28,9 +30,9 @@ if db_url.startswith('postgres://'):
     db_url = db_url.replace('postgres://', 'postgresql+psycopg://', 1)
 elif db_url.startswith('postgresql://') and '+psycopg://' not in db_url:
     db_url = 'postgresql+psycopg://' + db_url.split('://', 1)[1]
+
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
 db = SQLAlchemy(app)
 
 # -----------------------------
@@ -51,19 +53,8 @@ class Product(db.Model):
     price = db.Column(db.Float, nullable=False)
     barcode = db.Column(db.String(32), unique=True, nullable=False)
     stock_qty = db.Column(db.Integer, nullable=False, default=0)
-
-class Transaction(db.Model):
-    __tablename__ = 'transactions'
-    id = db.Column(db.Integer, primary_key=True)
-    date_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-class TransactionLine(db.Model):
-    __tablename__ = 'transaction_lines'
-    id = db.Column(db.Integer, primary_key=True)
-    transaction_id = db.Column(db.Integer, db.ForeignKey('transactions.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    qty = db.Column(db.Integer, nullable=False)
-    unit_price = db.Column(db.Float, nullable=False)
+    # Optional soft-delete if you plan to disable instead of hard delete:
+    # active = db.Column(db.Boolean, nullable=False, default=True)
 
 class Purchase(db.Model):
     __tablename__ = 'purchases'
@@ -79,8 +70,18 @@ class Setting(db.Model):
     key = db.Column(db.String(50), unique=True, nullable=False)
     value = db.Column(db.String(200), nullable=False)
 
+# NEW: single-table "sales" (replaces transactions + transaction_lines)
+class Sale(db.Model):
+    __tablename__ = 'sales'
+    id = db.Column(db.Integer, primary_key=True)
+    sale_id = db.Column(db.String(50), index=True, nullable=False)  # one receipt across multiple rows
+    date_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    qty = db.Column(db.Integer, nullable=False)
+    unit_price = db.Column(db.Float, nullable=False)
+
 # -----------------------------
-# Utilities & Bootstrap
+# Utilities
 # -----------------------------
 def get_setting(key, default=None):
     s = Setting.query.filter_by(key=key).first()
@@ -124,71 +125,81 @@ def seed_first_admin():
             except Exception:
                 pass
 
-# Stronger startup migration
-
+# -----------------------------
+# Strong startup migration
+# -----------------------------
 def strong_migrate():
-    # Use the Flask‑SQLAlchemy Engine, not db.session.bind
-    engine = db.engine
-    # Determine backend from engine.dialect
-    engine_name = engine.dialect.name
-
-    # Ensure ORM metadata tables (fresh DBs) exist
+    # Ensure base tables exist
     db.create_all()
 
-    # Run idempotent DDL in a transaction that auto‑commits
+    engine = db.engine
+    engine_name = engine.dialect.name
+
     with engine.begin() as conn:
+        # 1) Create 'sales' table if not exists
         if engine_name == 'sqlite':
-            # SQLite: CREATE TABLE IF NOT EXISTS is fine; ALTER ADD COLUMN errors if exists → ignore
-            conn.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS purchases ("
-                " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                " product_id INTEGER NOT NULL,"
-                " qty_added INTEGER NOT NULL,"
-                " purchase_price REAL NOT NULL,"
-                " date_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP)"
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS sales (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              sale_id TEXT NOT NULL,
+              date_time TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              product_id INTEGER NOT NULL,
+              qty INTEGER NOT NULL,
+              unit_price REAL NOT NULL
             )
-            conn.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS settings ("
-                " id INTEGER PRIMARY KEY AUTOINCREMENT,"
-                " key TEXT UNIQUE NOT NULL,"
-                " value TEXT NOT NULL)"
-            )
-            try:
-                conn.exec_driver_sql(
-                    "ALTER TABLE products ADD COLUMN stock_qty INTEGER NOT NULL DEFAULT 0"
-                )
-            except Exception:
-                # Column already exists → ignore
-                pass
-
+            """)
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sales_sale_id ON sales (sale_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sales_date_time ON sales (date_time)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sales_product_dt ON sales (product_id, date_time)")
         else:
-            # PostgreSQL: fully idempotent with IF NOT EXISTS
-            conn.exec_driver_sql(
-                "ALTER TABLE products "
-                "ADD COLUMN IF NOT EXISTS stock_qty INTEGER NOT NULL DEFAULT 0"
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS sales (
+              id SERIAL PRIMARY KEY,
+              sale_id TEXT NOT NULL,
+              date_time TIMESTAMP NOT NULL DEFAULT NOW(),
+              product_id INTEGER NOT NULL REFERENCES products(id),
+              qty INTEGER NOT NULL,
+              unit_price DOUBLE PRECISION NOT NULL
             )
-            conn.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS purchases ("
-                " id SERIAL PRIMARY KEY,"
-                " product_id INTEGER NOT NULL REFERENCES products(id),"
-                " qty_added INTEGER NOT NULL,"
-                " purchase_price DOUBLE PRECISION NOT NULL,"
-                " date_time TIMESTAMP NOT NULL DEFAULT NOW())"
-            )
-            conn.exec_driver_sql(
-                "CREATE TABLE IF NOT EXISTS settings ("
-                " id SERIAL PRIMARY KEY,"
-                " key TEXT UNIQUE NOT NULL,"
-                " value TEXT NOT NULL)"
-            )
+            """)
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sales_sale_id ON sales (sale_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sales_date_time ON sales (date_time)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sales_product_dt ON sales (product_id, date_time)")
 
+        # 2) Backfill from legacy tables if they exist and 'sales' is empty
+        sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
+        if sales_count == 0:
+            # detect legacy tables
+            legacy_ok = False
+            try:
+                conn.execute(text("SELECT 1 FROM transactions LIMIT 1"))
+                conn.execute(text("SELECT 1 FROM transaction_lines LIMIT 1"))
+                legacy_ok = True
+            except Exception:
+                legacy_ok = False
+
+            if legacy_ok:
+                if engine_name == 'sqlite':
+                    conn.exec_driver_sql("""
+                    INSERT INTO sales (sale_id, date_time, product_id, qty, unit_price)
+                    SELECT CAST(t.id AS TEXT), t.date_time, tl.product_id, tl.qty, tl.unit_price
+                    FROM transaction_lines tl
+                    JOIN transactions t ON tl.transaction_id = t.id
+                    """)
+                else:
+                    conn.exec_driver_sql("""
+                    INSERT INTO sales (sale_id, date_time, product_id, qty, unit_price)
+                    SELECT CAST(t.id AS TEXT), t.date_time, tl.product_id, tl.qty, tl.unit_price
+                    FROM transaction_lines tl
+                    JOIN transactions t ON tl.transaction_id = t.id
+                    """)
 
 with app.app_context():
     strong_migrate()
     seed_first_admin()
 
 # -----------------------------
-# Routes: Auth
+# Auth
 # -----------------------------
 @app.route('/api/login', methods=['POST'])
 def api_login():
@@ -224,7 +235,7 @@ def api_db_migrate():
     return jsonify({'ok': True})
 
 # -----------------------------
-# Users
+# Users (admin) — unchanged
 # -----------------------------
 @app.route('/api/users', methods=['GET'])
 def api_users_get():
@@ -285,7 +296,7 @@ def api_users_delete(username):
     return jsonify({'ok': True})
 
 # -----------------------------
-# Products
+# Products — unchanged behaviour
 # -----------------------------
 @app.route('/api/products', methods=['GET'])
 def api_products_get():
@@ -306,7 +317,6 @@ def api_products_post():
     price = data.get('price')
     barcode = data.get('barcode', '').strip()
     stock_qty = int(data.get('stock_qty', 0) or 0)
-
     if not name or price is None or not barcode:
         return jsonify({'error': 'name, price, barcode required'}), 400
     try:
@@ -317,7 +327,6 @@ def api_products_post():
         return jsonify({'error': 'Product name exists'}), 409
     if Product.query.filter_by(barcode=barcode).first():
         return jsonify({'error': 'Barcode exists'}), 409
-
     p = Product(name=name, price=price, barcode=barcode, stock_qty=stock_qty)
     db.session.add(p)
     db.session.commit()
@@ -371,6 +380,18 @@ def api_products_delete(name):
     p = Product.query.filter_by(name=name).first()
     if not p:
         return jsonify({'error': 'Product not found'}), 404
+
+    # Protect history (recommended): block delete if referenced
+    ref_sales = Sale.query.filter_by(product_id=p.id).count()
+    ref_pur = Purchase.query.filter_by(product_id=p.id).count()
+    if ref_sales or ref_pur:
+        return jsonify({
+            'error': 'Product has historical references',
+            'sales_rows': ref_sales,
+            'purchases': ref_pur,
+            'hint': 'Consider disabling product instead of deleting.'
+        }), 409
+
     db.session.delete(p)
     db.session.commit()
     return jsonify({'ok': True})
@@ -400,7 +421,7 @@ def api_suggested_price(pid):
     return jsonify({'product_id': pid, 'wac': round(wac, 4), 'markup_percent': markup, 'suggested_price': suggested})
 
 # -----------------------------
-# Purchases
+# Purchases (admin)
 # -----------------------------
 @app.route('/api/purchases', methods=['GET'])
 def api_purchases_get():
@@ -446,27 +467,56 @@ def api_purchases_post():
     return jsonify({'ok': True})
 
 # -----------------------------
-# Transactions
+# Sales (replaces Transactions)
 # -----------------------------
 @app.route('/api/transactions', methods=['GET'])
 def api_transactions_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
-    trs = Transaction.query.order_by(Transaction.id.desc()).all()
+
+    # Load all recent sales rows and group by sale_id in Python (keeps response shape identical)
+    rows = (db.session.query(Sale)
+            .order_by(Sale.id.desc())
+            .limit(2000)  # safety cap; tweak as needed
+            .all())
+
+    # Preload product names
+    product_names = {}
+    if rows:
+        pids = {r.product_id for r in rows}
+        for p in Product.query.filter(Product.id.in_(pids)).all():
+            product_names[p.id] = p.name
+
+    grouped = defaultdict(list)
+    dates = {}
+    for r in rows:
+        grouped[r.sale_id].append(r)
+        dates.setdefault(r.sale_id, r.date_time)
+
     result = []
-    for t in trs:
-        lines = TransactionLine.query.filter_by(transaction_id=t.id).all()
-        line_items = []
+    # newest "transactions" first by inferred sale block latest id
+    for sid in sorted(grouped.keys(),
+                      key=lambda k: max(x.id for x in grouped[k]),
+                      reverse=True):
+        items = []
         total = 0.0
-        for ln in lines:
-            p = Product.query.get(ln.product_id)
-            name = p.name if p else f"Product {ln.product_id}"
+        for ln in grouped[sid]:
+            name = product_names.get(ln.product_id, f"Product {ln.product_id}")
             subtotal = ln.qty * ln.unit_price
             total += subtotal
-            line_items.append({'product_id': ln.product_id, 'name': name, 'qty': ln.qty,
-                               'unit_price': ln.unit_price, 'subtotal': subtotal})
-        result.append({'id': t.id, 'date_time': t.date_time.isoformat(),
-                       'total': round(total, 2), 'lines': line_items})
+            items.append({
+                'product_id': ln.product_id,
+                'name': name,
+                'qty': ln.qty,
+                'unit_price': ln.unit_price,
+                'subtotal': subtotal
+            })
+        result.append({
+            'id': sid,  # logical transaction id is sale_id
+            'date_time': dates[sid].isoformat(),
+            'total': round(total, 2),
+            'lines': items
+        })
     return jsonify(result)
 
 @app.route('/api/transactions', methods=['POST'])
@@ -477,22 +527,32 @@ def api_transactions_post():
     cart = data.get('cart', [])
     if not cart:
         return jsonify({'error': 'Empty cart'}), 400
-    t = Transaction(date_time=datetime.utcnow())
-    db.session.add(t)
-    db.session.flush()
+
+    sale_uuid = str(uuid.uuid4())
+    now = datetime.utcnow()
+
+    # Insert one Sale row per line item; adjust stock
     for item in cart:
         pid = int(item['product_id'])
         qty = int(item.get('qty', 1))
         unit_price = float(item.get('unit_price'))
-        db.session.add(TransactionLine(transaction_id=t.id, product_id=pid, qty=qty, unit_price=unit_price))
+
+        db.session.add(Sale(
+            sale_id=sale_uuid,
+            date_time=now,
+            product_id=pid,
+            qty=qty,
+            unit_price=unit_price
+        ))
         p = Product.query.get(pid)
         if p:
             p.stock_qty = max(0, (p.stock_qty or 0) - qty)
+
     db.session.commit()
-    return jsonify({'ok': True, 'transaction_id': t.id})
+    return jsonify({'ok': True, 'transaction_id': sale_uuid})
 
 # -----------------------------
-# CSV Exports (admin)
+# CSV Exports (admin) — BytesIO fix retained
 # -----------------------------
 @app.route('/admin/export/products')
 def export_products_csv():
@@ -501,13 +561,13 @@ def export_products_csv():
     admin_token = os.getenv('ADMIN_TOKEN')
     if admin_token and request.args.get('token') != admin_token:
         return jsonify({'error': 'Invalid token'}), 403
-    from io import StringIO
+
     sio = StringIO()
     sio.write('id,name,price,barcode,stock_qty\n')
     for p in Product.query.order_by(Product.id.asc()).all():
         sio.write(f"{p.id},{p.name},{p.price},{p.barcode},{p.stock_qty}\n")
-    sio.seek(0)
-    return send_file(sio, mimetype='text/csv', as_attachment=True, download_name='products.csv')
+    buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name='products.csv')
 
 @app.route('/admin/export/transactions')
 def export_transactions_csv():
@@ -516,15 +576,20 @@ def export_transactions_csv():
     admin_token = os.getenv('ADMIN_TOKEN')
     if admin_token and request.args.get('token') != admin_token:
         return jsonify({'error': 'Invalid token'}), 403
-    from io import StringIO
+
+    # group totals per sale_id
+    q = (db.session.query(
+            Sale.sale_id,
+            func.min(Sale.date_time).label('dt'),
+            func.sum(Sale.qty * Sale.unit_price).label('total'))
+         .group_by(Sale.sale_id)
+         .order_by(func.max(Sale.id).desc()))
     sio = StringIO()
     sio.write('id,date_time,total\n')
-    for t in Transaction.query.order_by(Transaction.id.asc()).all():
-        lines = TransactionLine.query.filter_by(transaction_id=t.id).all()
-        total = sum(ln.qty * ln.unit_price for ln in lines)
-        sio.write(f"{t.id},{t.date_time.isoformat()},{round(total,2)}\n")
-    sio.seek(0)
-    return send_file(sio, mimetype='text/csv', as_attachment=True, download_name='transactions.csv')
+    for row in q.all():
+        sio.write(f"{row.sale_id},{row.dt.isoformat()},{round(row.total or 0, 2)}\n")
+    buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name='transactions.csv')
 
 @app.route('/admin/export/transaction_lines')
 def export_transaction_lines_csv():
@@ -533,13 +598,13 @@ def export_transaction_lines_csv():
     admin_token = os.getenv('ADMIN_TOKEN')
     if admin_token and request.args.get('token') != admin_token:
         return jsonify({'error': 'Invalid token'}), 403
-    from io import StringIO
+
     sio = StringIO()
-    sio.write('id,transaction_id,product_id,qty,unit_price\n')
-    for ln in TransactionLine.query.order_by(TransactionLine.id.asc()).all():
-        sio.write(f"{ln.id},{ln.transaction_id},{ln.product_id},{ln.qty},{ln.unit_price}\n")
-    sio.seek(0)
-    return send_file(sio, mimetype='text/csv', as_attachment=True, download_name='transaction_lines.csv')
+    sio.write('id,sale_id,date_time,product_id,qty,unit_price\n')
+    for ln in db.session.query(Sale).order_by(Sale.id.asc()).all():
+        sio.write(f"{ln.id},{ln.sale_id},{ln.date_time.isoformat()},{ln.product_id},{ln.qty},{ln.unit_price}\n")
+    buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name='transaction_lines.csv')
 
 # -----------------------------
 # Settings (admin)
@@ -560,7 +625,7 @@ def api_settings():
     return jsonify({'ok': True})
 
 # -----------------------------
-# Stats (admin-only)
+# Stats (admin; now from sales)
 # -----------------------------
 @app.route('/api/stats/today')
 def api_stats_today():
@@ -569,34 +634,40 @@ def api_stats_today():
     today = date.today()
     start_dt = datetime(today.year, today.month, today.day)
     end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
-    trs = Transaction.query.filter(Transaction.date_time >= start_dt,
-                                   Transaction.date_time <= end_dt).all()
-    transactions_count = len(trs)
-    total_sales_value = 0.0
-    total_items_sold = 0
-    basket_sizes = []
-    top_counts = defaultdict(int)
-    revenue_per_hour = defaultdict(float)
-    for t in trs:
-        lines = TransactionLine.query.filter_by(transaction_id=t.id).all()
-        basket_qty = 0
-        tx_total = 0.0
-        for ln in lines:
-            basket_qty += ln.qty
-            tx_total += ln.qty * ln.unit_price
-            top_counts[ln.product_id] += ln.qty
-        total_items_sold += basket_qty
-        total_sales_value += tx_total
-        hour = t.date_time.hour
-        revenue_per_hour[hour] += tx_total
-        basket_sizes.append(basket_qty)
+
+    rows = (db.session.query(Sale)
+            .filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt)
+            .all())
+
+    transactions_count = len({r.sale_id for r in rows})
+    total_sales_value = sum(r.qty * r.unit_price for r in rows)
+    total_items_sold = sum(r.qty for r in rows)
+
+    # Avg basket size = items per sale_id
+    basket_map = defaultdict(int)
+    for r in rows:
+        basket_map[r.sale_id] += r.qty
+    basket_sizes = list(basket_map.values())
     avg_basket_size = (sum(basket_sizes)/len(basket_sizes)) if basket_sizes else 0.0
+
+    # Top products
+    top_counts = defaultdict(int)
+    for r in rows:
+        top_counts[r.product_id] += r.qty
     top_sorted = sorted(top_counts.items(), key=lambda x: x[1], reverse=True)[:10]
     top_products = []
-    for pid, qty in top_sorted:
-        p = Product.query.get(pid)
-        top_products.append({'product_id': pid, 'name': p.name if p else str(pid), 'qty_sold': qty})
-    hourly = [{'hour': h, 'revenue': round(rev,2)} for h, rev in sorted(revenue_per_hour.items())]
+    if top_sorted:
+        pids = [pid for pid, _ in top_sorted]
+        name_map = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()}
+        for pid, qty in top_sorted:
+            top_products.append({'product_id': pid, 'name': name_map.get(pid, str(pid)), 'qty_sold': qty})
+
+    # Revenue per hour
+    revenue_per_hour = defaultdict(float)
+    for r in rows:
+        revenue_per_hour[r.date_time.hour] += r.qty * r.unit_price
+    hourly = [{'hour': h, 'revenue': round(v, 2)} for h, v in sorted(revenue_per_hour.items())]
+
     return jsonify({
         'transactions_count': transactions_count,
         'total_sales_value': round(total_sales_value, 2),
@@ -607,13 +678,12 @@ def api_stats_today():
     })
 
 # -----------------------------
-# UI
+# UI / Diagnostics
 # -----------------------------
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# Diagnostics
 @app.route('/api/db-health')
 def api_db_health():
     try:
