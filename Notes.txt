@@ -1,0 +1,29 @@
+----Save files
+https://farmstallpos.onrender.com/api/db-health
+🔗 Products CSV
+https://farmstallpos.onrender.com/admin/export/products
+🔗 Transactions CSV
+https://farmstallpos.onrender.com/admin/export/transactions
+🔗 Transaction Lines CSV
+https://farmstallpos.onrender.com/admin/export/transaction_lines
+
+
+
+
+ --Add a product
+ 
+curl -X POST "https://farmstallpos.onrender.com/api/products" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"name\":\"Apples\",\"price\":12.50}"
+
+
+--Create a test transaction
+
+curl -X POST "https://farmstallpos.onrender.com/api/transactions" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"items\":[{\"product_name\":\"Apples\",\"qty\":2}]}"
+
+-- Verify data is saved
+
+curl "https://farmstallpos.onrender.com/api/products"
+curl "https://farmstallpos.onrender.com/api/transactions"

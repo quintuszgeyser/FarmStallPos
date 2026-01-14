@@ -7,9 +7,9 @@ from datetime import datetime
 import io, csv, json, os
 
 # --- Configuration ---
-CURRENCY = os.getenv("CURRENCY", "R")            # UI currency
-DATABASE_URL = os.getenv("DATABASE_URL")         # Set this in Render → Service → Environment
-ADMIN_TOKEN = os.getenv("ADMIN_TOKEN")           # Optional: protects /admin/export/*
+CURRENCY     = os.getenv("CURRENCY", "R")   # UI currency symbol
+DATABASE_URL = os.getenv("DATABASE_URL")    # Set this in Render → Service → Environment
+ADMIN_TOKEN  = os.getenv("ADMIN_TOKEN")     # Optional: protects /admin/export/*
 
 app = Flask(__name__)
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = True
@@ -180,17 +180,15 @@ def require_admin():
         return Response("Unauthorized", status=401)
     return None
 
-def csv_response(filename: str, header: list[str], rows_iter):
-    """Stream a CSV download with a header row and the given iterator of rows."""
-    def generate():
-        yield ",".join(header) + "\n"
-        for row in rows_iter:
-            s = io.StringIO()
-            w = csv.writer(s)
-            w.writerow(row)
-            yield s.getvalue()
+def csv_response_eager(filename: str, header: list[str], rows: list[list]):
+    """Build the entire CSV eagerly (no streaming) and return it."""
+    s = io.StringIO()
+    w = csv.writer(s)
+    w.writerow(header)
+    w.writerows(rows)
+    out = s.getvalue()
     return Response(
-        generate(),
+        out,
         mimetype="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
@@ -212,39 +210,46 @@ def export_products():
     guard = require_admin()
     if guard: return guard
 
-    q = db.session.query(Product).order_by(Product.id)
-    header = ["id", "name", "price"]
-    def rows():
-        for p in q.all():
-            yield [p.id, p.name, float(p.price)]
+    products = db.session.query(Product).order_by(Product.id).all()
+    rows = [[p.id, p.name, float(p.price)] for p in products]
+
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return csv_response(f"products_{stamp}.csv", header, rows())
+    return csv_response_eager(
+        f"products_{stamp}.csv",
+        ["id", "name", "price"],
+        rows
+    )
 
 @app.get("/admin/export/transactions")
 def export_transactions():
     guard = require_admin()
     if guard: return guard
 
-    q = db.session.query(Transaction).order_by(Transaction.id)
-    header = ["id", "date_time"]
-    def rows():
-        for t in q.all():
-            yield [t.id, t.date_time.isoformat()]
+    txs = db.session.query(Transaction).order_by(Transaction.id).all()
+    rows = [[t.id, t.date_time.isoformat()] for t in txs]
+
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return csv_response(f"transactions_{stamp}.csv", header, rows())
+    return csv_response_eager(
+        f"transactions_{stamp}.csv",
+        ["id", "date_time"],
+        rows
+    )
 
 @app.get("/admin/export/transaction_lines")
 def export_transaction_lines():
     guard = require_admin()
     if guard: return guard
 
-    q = db.session.query(TransactionLine).order_by(TransactionLine.id)
-    header = ["id", "transaction_id", "product_id", "qty", "unit_price"]
-    def rows():
-        for l in q.all():
-            yield [l.id, l.transaction_id, l.product_id, l.qty, float(l.unit_price)]
+    lines = db.session.query(TransactionLine).order_by(TransactionLine.id).all()
+    rows = [[l.id, l.transaction_id, l.product_id, l.qty, float(l.unit_price)]
+            for l in lines]
+
     stamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-    return csv_response(f"transaction_lines_{stamp}.csv", header, rows())
+    return csv_response_eager(
+        f"transaction_lines_{stamp}.csv",
+        ["id", "transaction_id", "product_id", "qty", "unit_price"],
+        rows
+    )
 
 # --- Local dev entrypoint ---
 if __name__ == "__main__":
