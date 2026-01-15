@@ -1,24 +1,23 @@
 
-// Farm Stall POS main.js — Updated
-// - Robust Product CRUD
-// - Transactions view ordered by id desc
-// - Hide tabs before login; role-based visibility
-// - Stock system and purchase recording
-// - Suggested price helper (WAC + markup)
-// - Admin-only stats with simple canvas charts
+// Farm Stall POS main.js — Teller-first UX & on-demand scanning
+// - Preserves all existing endpoints & flows
+// - Hides login card after login; shows compact Auth Bar
+// - Forces clean start (no auto-login) on fresh page load
+// - Product dropdown + search
+// - Start/Stop camera on demand with ZXing; beep, cooldown & flash
+// - Admin stats unchanged
 
 let STATE = {
   user: null,
   products: [],
   cart: {}, // product_id -> {product_id, name, unit_price, qty}
-  scanCooldown: false,
+  scanCooldown: false, // retained for compatibility (unused by new scanner)
 };
 
-// ---------- Helpers ----------
-function show(el) { el.classList.remove('hidden'); }
-function hide(el) { el.classList.add('hidden'); }
-function fmt(n) { return (Math.round(n * 100) / 100).toFixed(2); }
-
+// --- Helpers ---
+function show(el) { el && el.classList.remove('hidden'); }
+function hide(el) { el && el.classList.add('hidden'); }
+function fmt(n)   { return (Math.round(n * 100) / 100).toFixed(2); }
 async function api(path, opts = {}) {
   const res = await fetch(path, Object.assign({
     headers: { 'Content-Type': 'application/json' },
@@ -32,11 +31,46 @@ async function api(path, opts = {}) {
   try { return await res.json(); } catch { return {}; }
 }
 
+// Simple beep using Web Audio (tiny and instant)
+function beep(durationMs = 120, frequency = 880) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = frequency;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    gain.gain.setValueAtTime(0.1, ctx.currentTime);
+    osc.start();
+    setTimeout(() => { osc.stop(); ctx.close(); }, durationMs);
+  } catch {}
+}
+
+// --- Visibility & Auth UI ---
 function updateVisibility() {
   const tabs = document.getElementById('main-tabs');
   const contents = document.getElementById('tab-contents');
-  if (!STATE.user) { hide(tabs); hide(contents); return; }
-  show(tabs); show(contents);
+  const loginCard = document.getElementById('login-card');
+  const authBar = document.getElementById('auth-bar');
+
+  if (!STATE.user) {
+    // Logged out
+    show(loginCard);
+    hide(authBar);
+    hide(tabs);
+    hide(contents);
+    return;
+  }
+
+  // Logged in
+  hide(loginCard);
+  show(authBar);
+  const au = document.getElementById('auth-user');
+  if (au) au.textContent = `Logged in as ${STATE.user.username} (${STATE.user.role})`;
+  show(tabs);
+  show(contents);
+
   // Admin-only tabs
   document.querySelectorAll('.admin-only').forEach(el => {
     if (STATE.user.role === 'admin') show(el); else hide(el);
@@ -47,20 +81,22 @@ async function refreshMe() {
   const me = await api('/api/me');
   if (me.logged_in) {
     STATE.user = { username: me.username, role: me.role };
-    document.getElementById('login-status').textContent = `Logged in as ${me.username} (${me.role})`;
+    const s = document.getElementById('login-status');
+    if (s) s.textContent = '';
     hide(document.getElementById('btn-login'));
     show(document.getElementById('btn-logout'));
   } else {
     STATE.user = null;
-    document.getElementById('login-status').textContent = '';
+    const s = document.getElementById('login-status');
+    if (s) s.textContent = '';
     show(document.getElementById('btn-login'));
     hide(document.getElementById('btn-logout'));
   }
   updateVisibility();
 }
 
-// ---------- Login/Logout ----------
-document.getElementById('btn-login').addEventListener('click', async () => {
+// --- Login / Logout ---
+document.getElementById('btn-login')?.addEventListener('click', async () => {
   const username = document.getElementById('login-username').value.trim();
   const password = document.getElementById('login-password').value;
   try {
@@ -72,56 +108,94 @@ document.getElementById('btn-login').addEventListener('click', async () => {
       await loadSettings();
       await loadStats();
     }
-    initScanner();
+    // Do not auto-start the scanner
   } catch (e) {
-    document.getElementById('login-status').textContent = e.message;
+    const s = document.getElementById('login-status');
+    if (s) s.textContent = e.message;
   }
 });
 
-document.getElementById('btn-logout').addEventListener('click', async () => {
+async function doLogout() {
   try { await api('/api/logout', { method: 'POST' }); } catch {}
   STATE.user = null; STATE.products = []; STATE.cart = {};
+  stopScanner(); // ensure camera is off
   updateVisibility();
-});
+}
 
-// ---------- Products ----------
+document.getElementById('btn-logout')?.addEventListener('click', doLogout);
+document.getElementById('btn-logout-top')?.addEventListener('click', doLogout);
+
+// --- Products ---
 async function loadProducts() {
   if (!STATE.user) return;
   try {
     const products = await api('/api/products');
     STATE.products = products;
+
+    // List (admin panel)
     const list = document.getElementById('products-list');
-    list.innerHTML = '';
-    products.forEach(p => {
-      const item = document.createElement('a');
-      item.className = 'list-group-item list-group-item-action';
-      item.textContent = `#${p.id} ${p.name} — ${fmt(p.price)} — BAR:${p.barcode} — Stock:${p.stock_qty}`;
-      item.addEventListener('click', () => {
-        document.getElementById('p-id').value = p.id;
-        document.getElementById('p-name').value = p.name;
-        document.getElementById('p-price').value = p.price;
-        document.getElementById('p-barcode').value = p.barcode;
-        document.getElementById('p-stock').value = p.stock_qty;
-        document.getElementById('pur-product-id').value = p.id;
+    if (list) {
+      list.innerHTML = '';
+      products.forEach(p => {
+        const item = document.createElement('a');
+        item.className = 'list-group-item list-group-item-action';
+        item.textContent = `#${p.id} ${p.name} — ${fmt(p.price)} — BAR:${p.barcode} — Stock:${p.stock_qty}`;
+        item.addEventListener('click', () => {
+          document.getElementById('p-id').value = p.id;
+          document.getElementById('p-name').value = p.name;
+          document.getElementById('p-price').value = p.price;
+          document.getElementById('p-barcode').value = p.barcode;
+          document.getElementById('p-stock').value = p.stock_qty;
+          const pid = document.getElementById('pur-product-id');
+          if (pid) pid.value = p.id;
+        });
+        list.appendChild(item);
       });
-      list.appendChild(item);
-    });
-  } catch (e) { console.error('loadProducts', e); }
+    }
+
+    // NEW: populate product dropdown on Teller toolbar
+    const sel = document.getElementById('product-select');
+    if (sel) {
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Select product…</option>';
+      products.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = String(p.id);
+        opt.textContent = `${p.name} — ${fmt(p.price)}`;
+        sel.appendChild(opt);
+      });
+      if (prev) sel.value = prev;
+
+      // One-time change handler (guard with a flag)
+      if (!sel._boundChange) {
+        sel.addEventListener('change', () => {
+          const pid = parseInt(sel.value || '0', 10);
+          const prod = STATE.products.find(x => x.id === pid);
+          if (prod) addToCart(prod);
+          sel.value = '';
+        });
+        sel._boundChange = true;
+      }
+    }
+
+  } catch (e) {
+    console.error('loadProducts', e);
+  }
 }
 
-document.getElementById('btn-add-product').addEventListener('click', async () => {
+document.getElementById('btn-add-product')?.addEventListener('click', async () => {
   const name = document.getElementById('p-name').value.trim();
   const price = parseFloat(document.getElementById('p-price').value);
   const barcode = document.getElementById('p-barcode').value.trim();
-  const stock_qty = parseInt(document.getElementById('p-stock').value || '0');
+  const stock_qty = parseInt(document.getElementById('p-stock').value || '0', 10);
   try {
     await api('/api/products', { method: 'POST', body: JSON.stringify({ name, price, barcode, stock_qty }) });
     await loadProducts();
   } catch (e) { alert(e.message); }
 });
 
-document.getElementById('btn-update-product').addEventListener('click', async () => {
-  const id = parseInt(document.getElementById('p-id').value || '0');
+document.getElementById('btn-update-product')?.addEventListener('click', async () => {
+  const id = parseInt(document.getElementById('p-id').value || '0', 10);
   const name = document.getElementById('p-name').value.trim();
   const price = document.getElementById('p-price').value;
   const barcode = document.getElementById('p-barcode').value.trim();
@@ -132,7 +206,7 @@ document.getElementById('btn-update-product').addEventListener('click', async ()
   } catch (e) { alert(e.message); }
 });
 
-document.getElementById('btn-delete-product').addEventListener('click', async () => {
+document.getElementById('btn-delete-product')?.addEventListener('click', async () => {
   const name = document.getElementById('p-name').value.trim();
   if (!name) return alert('Specify name to delete');
   try {
@@ -141,10 +215,10 @@ document.getElementById('btn-delete-product').addEventListener('click', async ()
   } catch (e) { alert(e.message); }
 });
 
-// ---------- Purchases & Suggested Price ----------
-document.getElementById('btn-add-purchase').addEventListener('click', async () => {
-  const pid = parseInt(document.getElementById('pur-product-id').value || '0');
-  const qty = parseInt(document.getElementById('pur-qty').value || '0');
+// --- Purchases & Suggested price (admin) ---
+document.getElementById('btn-add-purchase')?.addEventListener('click', async () => {
+  const pid = parseInt(document.getElementById('pur-product-id').value || '0', 10);
+  const qty = parseInt(document.getElementById('pur-qty').value || '0', 10);
   const price = parseFloat(document.getElementById('pur-price').value || '0');
   try {
     await api('/api/purchases', { method: 'POST', body: JSON.stringify({ product_id: pid, qty_added: qty, purchase_price: price }) });
@@ -152,40 +226,43 @@ document.getElementById('btn-add-purchase').addEventListener('click', async () =
   } catch (e) { alert(e.message); }
 });
 
-document.getElementById('btn-suggest-price').addEventListener('click', async () => {
-  const pid = parseInt(document.getElementById('pur-product-id').value || '0');
+document.getElementById('btn-suggest-price')?.addEventListener('click', async () => {
+  const pid = parseInt(document.getElementById('pur-product-id').value || '0', 10);
   const markup = document.getElementById('markup-percent').value;
   try {
     const j = await api(`/api/products/${pid}/suggested_price${markup?`?markup=${markup}`:''}`);
     const out = document.getElementById('suggest-output');
-    out.textContent = `WAC ${fmt(j.wac)} + ${j.markup_percent}% => Suggested ${fmt(j.suggested_price)}`;
+    if (out) out.textContent = `WAC ${fmt(j.wac)} + ${j.markup_percent}% => Suggested ${fmt(j.suggested_price)}`;
   } catch (e) { alert(e.message); }
 });
 
 async function loadSettings() {
   try {
     const j = await api('/api/settings');
-    document.getElementById('markup-percent').value = j.markup_percent;
+    const el = document.getElementById('markup-percent');
+    if (el) el.value = j.markup_percent;
   } catch (e) {}
 }
 
-document.getElementById('btn-save-settings').addEventListener('click', async () => {
+document.getElementById('btn-save-settings')?.addEventListener('click', async () => {
   const mp = parseFloat(document.getElementById('markup-percent').value || '0');
-  try { await api('/api/settings', { method: 'POST', body: JSON.stringify({ markup_percent: mp }) }); } catch (e) { alert(e.message); }
+  try { await api('/api/settings', { method: 'POST', body: JSON.stringify({ markup_percent: mp }) }); }
+  catch (e) { alert(e.message); }
 });
 
-// ---------- Transactions ----------
+// --- Transactions ---
 async function loadTransactions() {
   if (!STATE.user) return;
   try {
     const trs = await api('/api/transactions');
     const host = document.getElementById('transactions-list');
+    if (!host) return;
     host.innerHTML = '';
     trs.forEach(t => {
       const card = document.createElement('div'); card.className = 'card mb-2';
       const body = document.createElement('div'); body.className = 'card-body';
       const h = document.createElement('div'); h.className = 'd-flex justify-content-between';
-      h.innerHTML = `<strong>#${t.id}</strong><span>${new Date(t.date_time).toLocaleString()} — Total: ${fmt(t.total)}`;
+      h.innerHTML = `<strong>#${String(t.id).slice(0,8)}</strong><span>${new Date(t.date_time).toLocaleString()} — Total: ${fmt(t.total)}`;
       body.appendChild(h);
       const ul = document.createElement('ul'); ul.className = 'mt-2';
       t.lines.forEach(ln => {
@@ -198,12 +275,12 @@ async function loadTransactions() {
     });
   } catch (e) { console.error('loadTransactions', e); }
 }
+document.getElementById('btn-refresh-trans')?.addEventListener('click', loadTransactions);
 
-document.getElementById('btn-refresh-trans').addEventListener('click', loadTransactions);
-
-// ---------- Teller & Cart ----------
+// --- Cart ---
 function renderCart() {
-  const host = document.getElementById('cart'); host.innerHTML = '';
+  const host = document.getElementById('cart'); if (!host) return;
+  host.innerHTML = '';
   let total = 0;
   Object.values(STATE.cart).forEach(item => {
     const row = document.createElement('div'); row.className = 'list-group-item d-flex justify-content-between align-items-center';
@@ -220,17 +297,19 @@ function renderCart() {
     host.appendChild(row);
     total += item.qty * item.unit_price;
   });
-  document.getElementById('cart-total').textContent = fmt(total);
+  const t = document.getElementById('cart-total');
+  if (t) t.textContent = fmt(total);
 }
 
 function addToCart(p) {
   const id = p.id;
   const existing = STATE.cart[id];
-  if (existing) existing.qty += 1; else STATE.cart[id] = { product_id: id, name: p.name, unit_price: p.price, qty: 1 };
+  if (existing) existing.qty += 1;
+  else STATE.cart[id] = { product_id: id, name: p.name, unit_price: p.price, qty: 1 };
   renderCart();
 }
 
-document.getElementById('btn-checkout').addEventListener('click', async () => {
+document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   const cart = Object.values(STATE.cart);
   if (cart.length === 0) return alert('Cart is empty');
   try {
@@ -242,14 +321,17 @@ document.getElementById('btn-checkout').addEventListener('click', async () => {
   } catch (e) { alert(e.message); }
 });
 
-// ---------- Search ----------
+// --- Search (unchanged behavior; IDs preserved) ---
 const searchInput = document.getElementById('search');
-searchInput.addEventListener('input', () => {
+searchInput?.addEventListener('input', () => {
   const q = searchInput.value.trim().toLowerCase();
-  const host = document.getElementById('product-search-results'); host.innerHTML = '';
+  const host = document.getElementById('product-search-results'); if (!host) return;
+  host.innerHTML = '';
   if (!q) return;
   const matches = STATE.products.filter(p => (
-    p.name.toLowerCase().includes(q) || String(p.id) === q || p.barcode === q
+    p.name.toLowerCase().includes(q) ||
+    String(p.id) === q ||
+    p.barcode === q
   ));
   matches.forEach(p => {
     const a = document.createElement('a'); a.className = 'list-group-item list-group-item-action';
@@ -259,25 +341,76 @@ searchInput.addEventListener('input', () => {
   });
 });
 
-// ---------- Scanner (ZXing placeholder) ----------
-async function initScanner() {
-  const video = document.getElementById('video');
-  if (!video) return;
+// --- On-demand Scanner (ZXing) ---
+let SCAN = { running: false, reader: null, controls: null, cooldown: false };
+
+function flashOK() {
+  const flash = document.getElementById('scanner-flash');
+  if (!flash) return;
+  flash.classList.add('ok');
+  setTimeout(() => flash.classList.remove('ok'), 150);
+}
+
+async function startScanner() {
+  if (SCAN.running) return;
+  const panel = document.getElementById('scan-panel');
+  const btnStart = document.getElementById('btn-start-scan');
+  const btnStop  = document.getElementById('btn-stop-scan');
+  const video    = document.getElementById('video');
+
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-    video.srcObject = stream; await video.play();
-    // Hook in ZXing UMD here if you want real decoding.
-    const scanLoop = async () => {
-      if (!STATE.user) return; // stop when logged out
-      setTimeout(scanLoop, 1000);
-    };
-    scanLoop();
+    if (!window.ZXing || !ZXing.BrowserMultiFormatReader) throw new Error('Scanner library missing');
+    panel.style.display = 'block';
+    btnStart && btnStart.classList.add('hidden');
+    btnStop  && btnStop.classList.remove('hidden');
+
+    const codeReader = new ZXing.BrowserMultiFormatReader();
+    SCAN.reader = codeReader;
+
+    SCAN.controls = await codeReader.decodeFromVideoDevice(null, video, (result, err, ctrl) => {
+      if (!result || SCAN.cooldown) return;
+
+      const code = result.getText();
+      flashOK(); beep(120, 880);
+
+      SCAN.cooldown = true;
+      setTimeout(() => SCAN.cooldown = false, 700);
+
+      // Match exact barcode first; then fallback
+      const p = STATE.products.find(x => x.barcode === code)
+             || STATE.products.find(x => String(x.id) === code)
+             || STATE.products.find(x => x.name.toLowerCase() === code.toLowerCase());
+      if (p) addToCart(p);
+    });
+
+    SCAN.running = true;
   } catch (e) {
-    console.warn('Scanner init failed', e);
+    console.warn('Scanner start failed', e);
+    stopScanner();
   }
 }
 
-// ---------- Stats (simple canvas charts) ----------
+function stopScanner() {
+  const panel = document.getElementById('scan-panel');
+  const btnStart = document.getElementById('btn-start-scan');
+  const btnStop  = document.getElementById('btn-stop-scan');
+  try { SCAN.controls?.stop(); } catch {}
+  try {
+    const video = document.getElementById('video');
+    const stream = video?.srcObject;
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    if (video) video.srcObject = null;
+  } catch {}
+  SCAN = { running: false, reader: null, controls: null, cooldown: false };
+  if (panel) panel.style.display = 'none';
+  btnStop && btnStop.classList.add('hidden');
+  btnStart && btnStart.classList.remove('hidden');
+}
+
+document.getElementById('btn-start-scan')?.addEventListener('click', startScanner);
+document.getElementById('btn-stop-scan')?.addEventListener('click',  stopScanner);
+
+// --- Stats (admin; unchanged) ---
 function drawBarChart(canvas, labels, values) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -286,7 +419,7 @@ function drawBarChart(canvas, labels, values) {
   const pad = 40; const bw = (W - pad*2) / (values.length || 1) * 0.8;
   ctx.strokeStyle = '#333'; ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H-pad); ctx.lineTo(W-pad, H-pad); ctx.stroke();
   values.forEach((v,i) => {
-    const x = pad + (i+0.1) * (W - pad*2) / values.length;
+    const x = pad + (i+0.1) * (W - pad*2) / (values.length || 1);
     const h = (H - pad*2) * (v / max);
     const y = H - pad - h;
     ctx.fillStyle = '#2a6f3e'; ctx.fillRect(x, y, bw, h);
@@ -299,27 +432,41 @@ function drawBarChart(canvas, labels, values) {
 async function loadStats() {
   try {
     const j = await api('/api/stats/today');
-    document.getElementById('stat-total').textContent = fmt(j.total_sales_value);
-    document.getElementById('stat-items').textContent = j.total_items_sold;
-    document.getElementById('stat-tx').textContent = j.transactions_count;
-    document.getElementById('stat-avg').textContent = j.avg_basket_size;
-    const top = j.top_products || []; const labels = top.map(x => x.name); const values = top.map(x => x.qty_sold);
-    drawBarChart(document.getElementById('chart-top'), labels, values);
-    const hours = j.revenue_per_hour || []; const hlabels = hours.map(x => String(x.hour)); const hvals = hours.map(x => x.revenue);
-    drawBarChart(document.getElementById('chart-hourly'), hlabels, hvals);
+    const total = document.getElementById('stat-total');
+    const items = document.getElementById('stat-items');
+    const tx    = document.getElementById('stat-tx');
+    const avg   = document.getElementById('stat-avg');
+    if (total) total.textContent = fmt(j.total_sales_value);
+    if (items) items.textContent = j.total_items_sold;
+    if (tx) tx.textContent = j.transactions_count;
+    if (avg) avg.textContent = j.avg_basket_size;
+
+    const top = j.top_products || [];
+    drawBarChart(document.getElementById('chart-top'), top.map(x=>x.name), top.map(x=>x.qty_sold));
+
+    const hours = j.revenue_per_hour || [];
+    drawBarChart(document.getElementById('chart-hourly'), hours.map(x=>String(x.hour)), hours.map(x=>x.revenue));
   } catch (e) { console.error('loadStats', e); }
 }
+document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
 
-document.getElementById('btn-refresh-stats').addEventListener('click', loadStats);
-
-// ---------- Bootstrap ----------
+// --- Bootstrap (app init) ---
+let _didAutoLogout = false;
 (async function init(){
-  updateVisibility();   // hide tabs before login
+  // Kiosk requirement: never “auto-login” on page open.
+  // Force a clean session once per page load.
+  if (!_didAutoLogout) {
+    try { await api('/api/logout', { method: 'POST' }); } catch {}
+    _didAutoLogout = true;
+  }
+
+  updateVisibility();
   await refreshMe();
+
   if (STATE.user) {
     await loadProducts();
     await loadTransactions();
     if (STATE.user.role === 'admin') { await loadSettings(); await loadStats(); }
-    initScanner();
+    // Do NOT auto-start the scanner
   }
 })();
