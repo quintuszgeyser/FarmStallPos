@@ -72,9 +72,11 @@ function updateVisibility() {
   show(contents);
 
   // Admin-only tabs
-  document.querySelectorAll('.admin-only').forEach(el => {
-    if (STATE.user.role === 'admin') show(el); else hide(el);
-  });
+
+document.querySelectorAll('.admin-only').forEach(el => {
+  if (STATE.user.role === 'admin') show(el); else hide(el);
+});
+
 }
 
 async function refreshMe() {
@@ -115,12 +117,15 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
   }
 });
 
+
 async function doLogout() {
   try { await api('/api/logout', { method: 'POST' }); } catch {}
   STATE.user = null; STATE.products = []; STATE.cart = {};
   stopScanner(); // ensure camera is off
-  updateVisibility();
+  // Refresh session/UI state so Login button shows and tabs hide
+  await refreshMe();
 }
+
 
 document.getElementById('btn-logout')?.addEventListener('click', doLogout);
 document.getElementById('btn-logout-top')?.addEventListener('click', doLogout);

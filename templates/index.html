@@ -56,8 +56,9 @@
     /* Large touch buttons */
     .btn-lg-touch { padding: .55rem .9rem; font-size: 16px; }
 
-    /* Avoid flicker for admin-only tabs (JS still controls visibility) */
-    .admin-only { display: none; }
+
+
+
   </style>
 </head>
 <body>
@@ -91,10 +92,15 @@
     <ul id="main-tabs" class="nav nav-tabs hidden">
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#teller">Teller</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
-      <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
-      <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
-      <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
-      <li class="nav-item admin-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
+      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
+	  <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
+	  <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
+	  <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
+	  
+	  
+
+
+	  
     </ul>
 
     <div id="tab-contents" class="tab-content hidden mt-3">
