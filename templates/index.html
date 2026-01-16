@@ -25,8 +25,14 @@
   <!-- Kiosk / mobile-first additions -->
   <style>
     /* Kiosk-friendly: keep whole app on one screen; page itself does not scroll */
+
     html, body { height: 100%; }
-    body { margin: 0; overflow: hidden; }
+    body {
+      margin: 0;
+      overflow-y: auto;   /* enable vertical scroll */
+      overflow-x: hidden; /* prevent sideways scroll */
+    }
+
 
     /* Auth bar appears after login and replaces the login card */
     #auth-bar { display: none; }
@@ -80,8 +86,8 @@
    }
    .product-card {
      border: 1px solid #dee2e6;
-     border-radius: .5rem;
-     padding: .5rem;
+     border-radius: .3rem;
+     padding: .3rem;
      display: flex;
      flex-direction: column;
      justify-content: space-between;
