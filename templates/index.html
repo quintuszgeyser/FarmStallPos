@@ -29,6 +29,28 @@
       gap: .5rem;
       overflow: hidden; /* keep Teller contained */
     }
+    
+    /* Teller: tighten vertical spacing so the footer sits closer */
+    #teller-screen {
+      gap: .25rem; /* was .5rem */
+    }
+
+    /* Reduce Bootstrap gutters inside the toolbar row */
+    .teller-toolbar .row.g-2 {
+      --bs-gutter-y: .25rem;  /* was .5rem equivalent for g-2 */
+      --bs-gutter-x: .25rem;
+    }
+
+    /* Remove extra top margin from the search results list */
+    #product-search-results {
+      margin-top: .25rem !important; /* was .5rem via .mt-2 */
+    }
+
+    /* Make sure the cart block doesn't add extra bottom space */
+    #cart {
+      margin-bottom: .25rem;
+    }
+
 
     /* Teller inputs/buttons sized for touch */
     .teller-toolbar .form-select,
