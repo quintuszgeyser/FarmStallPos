@@ -56,8 +56,44 @@
     /* Large touch buttons */
     .btn-lg-touch { padding: .55rem .9rem; font-size: 16px; }
 
-
-
+    /* ---------------- Products mobile layout ---------------- */
+    #products-screen {
+      height: calc(100vh - 120px);
+      display: grid;
+      grid-template-rows: auto 1fr;     /* toolbar, content */
+      gap: .5rem;
+    }
+    .products-toolbar .form-control,
+    .products-toolbar .btn {
+      height: 44px;
+      font-size: 16px;
+    }
+    /* Two stacked panels that each scroll internally */
+    #products-panels {
+      display: grid;
+      grid-template-rows: 1fr 1fr;      /* inventory list, editor */
+      gap: .5rem;
+      height: 100%;
+    }
+    /* On larger screens, place side-by-side */
+    @media (min-width: 992px) {
+      #products-panels {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: none;
+      }
+    }
+    #products-list-wrap, #product-editor-wrap {
+      overflow: auto;    /* internal scroll; page stays fixed */
+      border: 1px solid #dee2e6;
+      border-radius: .5rem;
+      padding: .5rem;
+      background: #fff;
+    }
+    #products-list .list-group-item {
+      padding: .5rem .6rem;
+      font-size: 15px;
+    }
+    /* -------------------------------------------------------- */
 
   </style>
 </head>
@@ -92,23 +128,19 @@
     <ul id="main-tabs" class="nav nav-tabs hidden">
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#teller">Teller</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
+
+      <!-- Admin-only tabs start hidden; JS will show them for admins -->
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
-	  <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
-	  <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
-	  <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
-	  
-	  
-
-
-	  
+      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
+      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
+      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     </ul>
 
     <div id="tab-contents" class="tab-content hidden mt-3">
 
-      <!-- Teller: redesigned for one-screen mobile use; IDs preserved -->
+      <!-- Teller -->
       <div class="tab-pane fade show active" id="teller">
         <div id="teller-screen" class="container-fluid p-0">
-
           <!-- Toolbar: dropdown + search + scan controls -->
           <div class="teller-toolbar">
             <div class="row g-2">
@@ -149,7 +181,7 @@
         </div>
       </div>
 
-      <!-- Transactions Tab (unchanged) -->
+      <!-- Transactions (unchanged) -->
       <div class="tab-pane fade" id="transactions">
         <div class="d-flex justify-content-between align-items-center">
           <h5>Transactions (Newest first)</h5>
@@ -158,44 +190,62 @@
         <div id="transactions-list" class="mt-3"></div>
       </div>
 
-      <!-- Products Tab (admin) (unchanged) -->
+      <!-- Products (admin) — mobile-first single-screen -->
       <div class="tab-pane fade" id="products">
-        <div class="row">
-          <div class="col-md-6">
-            <h5>Products</h5>
-            <div id="products-list" class="list-group"></div>
+        <div id="products-screen" class="container-fluid p-0">
+          <!-- Toolbar -->
+          <div class="products-toolbar">
+            <div class="row g-2 align-items-center">
+              <div class="col-8">
+                <input id="products-filter" class="form-control" placeholder="Filter products…">
+              </div>
+              <div class="col-4 d-flex justify-content-end">
+                <button id="btn-new-product" class="btn btn-outline-primary w-100">New Product</button>
+              </div>
+            </div>
           </div>
-          <div class="col-md-6">
-            <h5>Add / Update Product</h5>
-            <div class="mb-2"><input id="p-id" class="form-control" placeholder="(ID for update)"/></div>
-            <div class="mb-2"><input id="p-name" class="form-control" placeholder="Name"/></div>
-            <div class="mb-2"><input id="p-price" type="number" step="0.01" class="form-control" placeholder="Price"/></div>
-            <div class="mb-2"><input id="p-barcode" class="form-control" placeholder="Barcode"/></div>
-            <div class="mb-2"><input id="p-stock" type="number" class="form-control" placeholder="Stock Qty"/></div>
-            <div class="mb-2 d-flex gap-2">
-              <button id="btn-add-product" class="btn btn-success">Add Product</button>
-              <button id="btn-update-product" class="btn btn-primary">Update Product</button>
-              <button id="btn-delete-product" class="btn btn-danger">Delete by Name</button>
+
+          <!-- Two panels: inventory list + editor (both scroll internally) -->
+          <div id="products-panels">
+            <!-- Inventory list -->
+            <div id="products-list-wrap">
+              <h6 class="mb-2">Products</h6>
+              <div id="products-list" class="list-group"></div>
             </div>
-            <hr>
-            <h6>Add Stock (Purchase)</h6>
-            <div class="mb-2"><input id="pur-product-id" class="form-control" placeholder="Product ID"/></div>
-            <div class="mb-2"><input id="pur-qty" type="number" class="form-control" placeholder="Qty Added"/></div>
-            <div class="mb-2"><input id="pur-price" type="number" step="0.01" class="form-control" placeholder="Purchase Price per Unit"/></div>
-            <div class="mb-2 d-flex gap-2">
-              <button id="btn-add-purchase" class="btn btn-outline-success">Record Purchase</button>
-              <button id="btn-suggest-price" class="btn btn-outline-primary">Suggest Sale Price</button>
+
+            <!-- Editor -->
+            <div id="product-editor-wrap">
+              <h6 class="mb-2">Add / Update Product</h6>
+              <div class="mb-2"><input id="p-id" class="form-control" placeholder="(ID for update)"/></div>
+              <div class="mb-2"><input id="p-name" class="form-control" placeholder="Name"/></div>
+              <div class="mb-2"><input id="p-price" type="number" step="0.01" class="form-control" placeholder="Price"/></div>
+              <div class="mb-2"><input id="p-barcode" class="form-control" placeholder="Barcode"/></div>
+              <div class="mb-2"><input id="p-stock" type="number" class="form-control" placeholder="Stock Qty"/></div>
+              <div class="mb-2 d-flex gap-2">
+                <button id="btn-add-product" class="btn btn-success w-100">Add</button>
+                <button id="btn-update-product" class="btn btn-primary w-100">Update</button>
+                <button id="btn-delete-product" class="btn btn-danger w-100">Delete by Name</button>
+              </div>
+              <hr>
+              <h6>Add Stock (Purchase)</h6>
+              <div class="mb-2"><input id="pur-product-id" class="form-control" placeholder="Product ID"/></div>
+              <div class="mb-2"><input id="pur-qty" type="number" class="form-control" placeholder="Qty Added"/></div>
+              <div class="mb-2"><input id="pur-price" type="number" step="0.01" class="form-control" placeholder="Purchase Price per Unit"/></div>
+              <div class="mb-2 d-flex gap-2">
+                <button id="btn-add-purchase" class="btn btn-outline-success w-100">Record Purchase</button>
+                <button id="btn-suggest-price" class="btn btn-outline-primary w-100">Suggest Price</button>
+              </div>
+              <div id="suggest-output" class="text-muted small"></div>
+              <hr>
+              <h6>Settings</h6>
+              <div class="mb-2"><input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Markup % (default)"/></div>
+              <button id="btn-save-settings" class="btn btn-outline-secondary w-100">Save Settings</button>
             </div>
-            <div id="suggest-output" class="text-muted small"></div>
-            <hr>
-            <h6>Settings</h6>
-            <div class="mb-2"><input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Markup % (default)"/></div>
-            <button id="btn-save-settings" class="btn btn-outline-secondary">Save Settings</button>
           </div>
         </div>
       </div>
 
-      <!-- Users Tab (admin) (unchanged) -->
+      <!-- Users (admin) -->
       <div class="tab-pane fade" id="users">
         <h5>Users</h5>
         <div class="row">
@@ -216,7 +266,7 @@
         </div>
       </div>
 
-      <!-- Exports Tab (admin) (unchanged) -->
+      <!-- Exports (admin) -->
       <div class="tab-pane fade" id="exports">
         <h5>CSV Exports</h5>
         <ul>
@@ -226,7 +276,7 @@
         </ul>
       </div>
 
-      <!-- Stats Tab (admin) (unchanged) -->
+      <!-- Stats (admin) -->
       <div class="tab-pane fade" id="stats">
         <div class="d-flex justify-content-between align-items-center">
           <h5>Today's Stats</h5>
@@ -272,14 +322,14 @@
   <!-- Bootstrap bundle -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
-  <!-- Service worker registration (kept) -->
+  <!-- Service worker registration -->
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/static/sw.js').catch(console.warn);
     }
   </script>
 
-  <!-- ZXing UMD for barcode scanning (new; main.js will use it) -->
+  <!-- ZXing UMD for barcode scanning -->
   <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 
   <!-- App logic -->

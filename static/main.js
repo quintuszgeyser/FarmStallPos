@@ -157,6 +157,54 @@ async function loadProducts() {
         list.appendChild(item);
       });
     }
+    
+// --- Products filter (client-side match by name, id, barcode) ---
+const productsFilter = document.getElementById('products-filter');
+productsFilter?.addEventListener('input', () => {
+  const q = productsFilter.value.trim().toLowerCase();
+  const list = document.getElementById('products-list');
+  if (!list) return;
+
+  // Build a filtered array from STATE.products
+  const filtered = (STATE.products || []).filter(p =>
+    !q ||
+    p.name.toLowerCase().includes(q) ||
+    String(p.id) === q ||
+    (p.barcode && p.barcode.toLowerCase().includes(q))
+  );
+
+  // Re-render list
+  list.innerHTML = '';
+  filtered.forEach(p => {
+    const item = document.createElement('a');
+    item.className = 'list-group-item list-group-item-action';
+    item.textContent = `#${p.id} ${p.name} — ${fmt(p.price)} — BAR:${p.barcode} — Stock:${p.stock_qty}`;
+    item.addEventListener('click', () => {
+      document.getElementById('p-id').value = p.id;
+      document.getElementById('p-name').value = p.name;
+      document.getElementById('p-price').value = p.price;
+      document.getElementById('p-barcode').value = p.barcode;
+      document.getElementById('p-stock').value = p.stock_qty;
+      const pid = document.getElementById('pur-product-id');
+      if (pid) pid.value = p.id;
+    });
+    list.appendChild(item);
+  });
+});
+
+
+  document.getElementById('btn-new-product')?.addEventListener('click', () => {
+    const clearIds = [
+      'p-id','p-name','p-price','p-barcode','p-stock',
+      'pur-product-id','pur-qty','pur-price'
+    ];
+    clearIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = '';
+    });
+    // Keep focus on name for quick add
+    document.getElementById('p-name')?.focus();
+  });
 
     // NEW: populate product dropdown on Teller toolbar
     const sel = document.getElementById('product-select');
