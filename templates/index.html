@@ -15,100 +15,80 @@
 
   <!-- Base styles (kept) -->
   <style>
-    body { padding-top: 1rem; }
-    .hidden { display: none !important; }
-    #scanner-flash { position: absolute; top:0; left:0; right:0; bottom:0; border: 3px solid transparent; border-radius: 6px; }
-    #scanner-flash.ok { border-color: #4caf50; }
-    canvas { max-width: 100%; }
-  </style>
-
-  <!-- Kiosk / mobile-first additions -->
-  <style>
-    /* Kiosk-friendly: keep whole app on one screen; page itself does not scroll */
-
+    /* Allow page scrolling globally */
     html, body { height: 100%; }
-    body {
-      margin: 0;
-      overflow-y: auto;   /* enable vertical scroll */
-      overflow-x: hidden; /* prevent sideways scroll */
-    }
+    body { margin: 0; overflow-y: auto; overflow-x: hidden; }
 
+    .hidden { display: none !important; }
 
-    /* Auth bar appears after login and replaces the login card */
-    #auth-bar { display: none; }
-
-    /* Teller single-screen layout */
+    /* Teller stays one-screen, no page scroll from Teller */
     #teller-screen {
-      height: calc(100vh - 120px); /* leave room for tabs + margins */
+      height: calc(100vh - 120px); /* tabs + margins */
       display: grid;
       grid-template-rows: auto auto 1fr auto; /* toolbar, scan panel, cart, checkout row */
       gap: .5rem;
+      overflow: hidden; /* keep Teller contained */
     }
 
+    /* Teller inputs/buttons sized for touch */
     .teller-toolbar .form-select,
     .teller-toolbar .form-control {
-      height: 44px;               /* larger touch target */
-      font-size: 16px;            /* avoids iOS zoom on focus */
+      height: 44px; font-size: 16px;
     }
-
-    /* Scan panel is hidden until user presses "Scan" */
     #scan-panel { display: none; }
     #video { width: 100%; height: 160px; object-fit: cover; border: 2px solid #ced4da; border-radius: 6px; }
+    #scanner-flash { position: absolute; inset: 0; border: 3px solid transparent; border-radius: 6px; pointer-events: none; }
+    #scanner-flash.ok { border-color: #4caf50; }
 
-    /* Cart area gets its own small scroll so page stays fixed */
+    /* Cart may scroll within Teller (page itself does not) */
     #cart { overflow: auto; }
     #cart .list-group-item { padding: .4rem .5rem; font-size: 15px; }
-
-    /* Large touch buttons */
     .btn-lg-touch { padding: .55rem .9rem; font-size: 16px; }
 
-    /* ---------------- Products mobile layout ---------------- */
-    
-  /* Products: one-screen, no page scroll */
-   #products-screen {
-     height: calc(100vh - 120px);
-     display: grid;
-     grid-template-rows: auto 1fr; /* toolbar, grid */
-     gap: .5rem;
-     overflow: hidden; /* ensure page never scrolls */
-   }
-   .products-toolbar .form-control,
-   .products-toolbar .btn {
-     height: 44px; font-size: 16px;
-   }
-   /* Fixed grid for up to 6 items: 2 cols × 3 rows */
-   #products-grid {
-     display: grid;
-     grid-template-columns: 1fr 1fr;
-     grid-template-rows: repeat(3, 1fr);
-     gap: .5rem;
-     height: 100%;
-   }
-   .product-card {
-     border: 1px solid #dee2e6;
-     border-radius: .3rem;
-     padding: .3rem;
-     display: flex;
-     flex-direction: column;
-     justify-content: space-between;
-     background: #fff;
-   }
-   .product-title { font-size: 15px; font-weight: 600; line-height: 1.1; }
-   .product-sub { font-size: 13px; color: #6c757d; line-height: 1.1; }
-   .product-actions .btn { height: 36px; font-size: 14px; }
-   @media (min-width: 576px) {
-     .product-title { font-size: 16px; }
-     .product-sub { font-size: 14px; }
-   }
+    /* -------- Products: thin card list (details-pane style) -------- */
+    #products-screen { /* now scrolls with page by default */ }
+    .products-toolbar .form-control,
+    .products-toolbar .btn {
+      height: 44px; font-size: 16px;
+    }
+    /* Thin, full-width cards */
+    #products-card-list { display: flex; flex-direction: column; gap: .5rem; }
+    .product-thin-card {
+      border: 1px solid #dee2e6;
+      border-radius: .5rem;
+      padding: .5rem .75rem;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: .75rem;
+    }
+    .product-thin-main {
+      display: flex; flex-direction: column; min-width: 0; /* allow truncation */
+    }
+    .product-title {
+      font-size: 15px; font-weight: 600; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .product-sub {
+      font-size: 13px; color: #6c757d; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .product-actions .btn { height: 36px; font-size: 14px; }
 
-    /* -------------------------------------------------------- */
+    /* Keep hidden legacy list to preserve existing JS until we update main.js */
+    #products-list { display: none; }
 
+    /* -------- Users list styling -------- */
+    .user-list-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: .5rem .75rem;
+    }
+    .user-meta { font-size: 13px; color: #6c757d; }
   </style>
 </head>
 <body>
   <div class="container">
 
-    <!-- Login Card (kept for compatibility; will be hidden after login) -->
+    <!-- Login Card (kept for compatibility; hidden after login) -->
     <div id="login-card" class="card mb-3">
       <div class="card-body">
         <h5 class="card-title">Login</h5>
@@ -124,20 +104,20 @@
       </div>
     </div>
 
-    <!-- Compact Auth Bar (shown after login; replaces login card) -->
-    <div id="auth-bar" class="d-flex justify-content-between align-items-center mb-2">
+    <!-- Compact Auth Bar -->
+    <div id="auth-bar" class="d-flex justify-content-between align-items-center mb-2 hidden">
       <div id="auth-user" class="text-muted small"></div>
       <div>
         <button id="btn-logout-top" class="btn btn-sm btn-outline-secondary">Logout</button>
       </div>
     </div>
 
-    <!-- Tabs (hidden before login) -->
+    <!-- Tabs -->
     <ul id="main-tabs" class="nav nav-tabs hidden">
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#teller">Teller</button></li>
       <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
 
-      <!-- Admin-only tabs start hidden; JS will show them for admins -->
+      <!-- Admin-only tabs start hidden; JS will show for admins -->
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
@@ -146,7 +126,7 @@
 
     <div id="tab-contents" class="tab-content hidden mt-3">
 
-      <!-- Teller -->
+      <!-- Teller (no page scroll) -->
       <div class="tab-pane fade show active" id="teller">
         <div id="teller-screen" class="container-fluid p-0">
           <!-- Toolbar: dropdown + search + scan controls -->
@@ -168,7 +148,7 @@
             <div id="product-search-results" class="list-group mt-2"></div>
           </div>
 
-          <!-- Scan panel (turns on/off with buttons) -->
+          <!-- Scan panel -->
           <div id="scan-panel">
             <div class="position-relative">
               <video id="video" playsinline muted></video>
@@ -177,9 +157,7 @@
           </div>
 
           <!-- Cart -->
-          <div>
-            <div id="cart" class="list-group"></div>
-          </div>
+          <div><div id="cart" class="list-group"></div></div>
 
           <!-- Checkout row -->
           <div class="d-flex justify-content-between align-items-center">
@@ -189,7 +167,7 @@
         </div>
       </div>
 
-      <!-- Transactions (unchanged) -->
+      <!-- Transactions (scrolls with page) -->
       <div class="tab-pane fade" id="transactions">
         <div class="d-flex justify-content-between align-items-center">
           <h5>Transactions (Newest first)</h5>
@@ -198,101 +176,116 @@
         <div id="transactions-list" class="mt-3"></div>
       </div>
 
-      <!-- Products (admin) — mobile-first single-screen -->
-      
-      <!-- Products (admin) — one-screen, no-scroll, paginated grid + modal editor -->
+      <!-- Products (admin) — thin card list + modal editor -->
       <div class="tab-pane fade" id="products">
         <div id="products-screen" class="container-fluid p-0">
-        
-          <!-- Toolbar: filter + new + pager (one line on mobile) -->
+
+          <!-- Toolbar -->
           <div class="products-toolbar">
             <div class="row g-2 align-items-center">
-              <div class="col-5">
-                <input id="products-filter" class="form-control" placeholder="Filter…">
+              <div class="col-8">
+                <input id="products-filter" class="form-control" placeholder="Filter products…">
               </div>
-              <div class="col-3 d-grid">
-                <button id="btn-new-product" class="btn btn-outline-primary">New</button>
-              </div>
-              <div class="col-4 d-flex align-items-center justify-content-end gap-2">
-                <button id="btn-page-prev" class="btn btn-outline-secondary">‹</button>
-                <div id="products-page-indicator" class="small text-muted">1 / 1</div>
-                <button id="btn-page-next" class="btn btn-outline-secondary">›</button>
+              <div class="col-4 d-grid">
+                <button id="btn-new-product" class="btn btn-outline-primary">New Product</button>
               </div>
             </div>
           </div>
-        
-          <!-- Fixed-size grid: 2 cols x 3 rows = 6 items (fits on phones) -->
-          <div id="products-grid" class="mt-2"></div>
+
+          <!-- Thin card list (new) -->
+          <div id="products-card-list" class="mt-2"></div>
+
+          <!-- Legacy list kept (hidden) so existing JS remains compatible while we update main.js -->
+          <div id="products-list" class="list-group"></div>
         </div>
-      
-        <!-- Product Editor Modal (keeps main Products view uncluttered) -->
+
+        <!-- Product Editor Modal -->
         <div class="modal fade" id="productEditorModal" tabindex="-1" aria-hidden="true">
           <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-            
+
               <div class="modal-header">
                 <h5 class="modal-title" id="productEditorTitle">Product</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
-            
+
               <div class="modal-body">
-                <!-- Existing IDs preserved so your JS continues to work -->
+                <!-- Existing IDs preserved -->
                 <div class="mb-2"><input id="p-id" class="form-control" placeholder="(ID for update)"/></div>
                 <div class="mb-2"><input id="p-name" class="form-control" placeholder="Name"/></div>
                 <div class="mb-2"><input id="p-price" type="number" step="0.01" class="form-control" placeholder="Price"/></div>
                 <div class="mb-2"><input id="p-barcode" class="form-control" placeholder="Barcode"/></div>
                 <div class="mb-2"><input id="p-stock" type="number" class="form-control" placeholder="Stock Qty"/></div>
-              
+
                 <div class="mb-2 d-flex gap-2">
                   <button id="btn-add-product" class="btn btn-success w-100">Add</button>
                   <button id="btn-update-product" class="btn btn-primary w-100">Update</button>
                   <button id="btn-delete-product" class="btn btn-danger w-100">Delete by Name</button>
                 </div>
-              
+
                 <hr class="my-2">
-              
+
                 <h6 class="mb-2">Add Stock (Purchase)</h6>
                 <div class="mb-2"><input id="pur-product-id" class="form-control" placeholder="Product ID"/></div>
                 <div class="mb-2"><input id="pur-qty" type="number" class="form-control" placeholder="Qty Added"/></div>
                 <div class="mb-2"><input id="pur-price" type="number" step="0.01" class="form-control" placeholder="Purchase Price per Unit"/></div>
-              
+
                 <div class="mb-2 d-flex gap-2">
                   <button id="btn-add-purchase" class="btn btn-outline-success w-100">Record Purchase</button>
                   <button id="btn-suggest-price" class="btn btn-outline-primary w-100">Suggest Price</button>
                 </div>
-              
+
                 <div id="suggest-output" class="text-muted small"></div>
-              
+
                 <hr class="my-2">
-              
+
                 <h6>Settings</h6>
                 <div class="mb-2"><input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Markup % (default)"/></div>
                 <button id="btn-save-settings" class="btn btn-outline-secondary w-100">Save Settings</button>
               </div>
-            
+
             </div>
           </div>
         </div>
       </div>
 
-
-      <!-- Users (admin) -->
+      <!-- Users (admin) — filter + list + edit controls -->
       <div class="tab-pane fade" id="users">
-        <h5>Users</h5>
-        <div class="row">
-          <div class="col-md-6">
-            <div id="users-list" class="list-group"></div>
-          </div>
-          <div class="col-md-6">
-            <div class="mb-2"><input id="u-username" class="form-control" placeholder="Username"></div>
-            <div class="mb-2"><input id="u-password" class="form-control" placeholder="Password"></div>
-            <div class="mb-2">
-              <select id="u-role" class="form-select">
-                <option value="teller">teller</option>
-                <option value="admin">admin</option>
-              </select>
+        <div class="row g-3">
+          <div class="col-12 col-lg-6">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <input id="users-filter" class="form-control" placeholder="Filter users…">
+              <button id="btn-refresh-users" class="btn btn-outline-secondary">Refresh</button>
             </div>
-            <button id="btn-add-user" class="btn btn-success">Add User</button>
+            <div id="users-list" class="list-group">
+              <!-- will be populated by main.js -->
+            </div>
+          </div>
+
+          <div class="col-12 col-lg-6">
+            <div class="card">
+              <div class="card-body">
+                <h5>Edit / Add User</h5>
+                <div class="mb-2"><input id="u-username" class="form-control" placeholder="Username"></div>
+                <div class="mb-2"><input id="u-password" class="form-control" placeholder="Password (leave blank to keep)"></div>
+                <div class="mb-2">
+                  <select id="u-role" class="form-select">
+                    <option value="teller">teller</option>
+                    <option value="admin">admin</option>
+                  </select>
+                </div>
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" id="u-active" checked>
+                  <label class="form-check-label" for="u-active">Active</label>
+                </div>
+                <div class="d-grid gap-2">
+                  <button id="btn-add-user" class="btn btn-success">Add User</button>
+                  <button id="btn-update-user" class="btn btn-primary">Update User</button>
+                  <button id="btn-delete-user" class="btn btn-danger">Delete User</button>
+                </div>
+                <div class="small text-muted mt-2">Tip: click a user in the list to load it here.</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

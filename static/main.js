@@ -1,28 +1,24 @@
 
-// Farm Stall POS main.js — Teller-first UX & on-demand scanning
-// - Preserves all existing endpoints & flows
-// - Hides login card after login; shows compact Auth Bar
-// - Forces clean start (no auto-login) on fresh page load
-// - Product dropdown + search
-// - Start/Stop camera on demand with ZXing; beep, cooldown & flash
-// - Admin stats unchanged
+// Farm Stall POS main.js — Teller-first UX, thin cards for Products, full Users management
+// - All tabs can scroll (CSS in index.html), except Teller which stays one-screen.
+// - Products: thin card list + filter + modal editor (Add/Update/Delete/Purchases/Settings).
+// - Users: list + filter + edit (Add/Update/Delete/Active/Role).
+// - On-demand scanner (ZXing), session auth, stats/transactions unchanged.
 
 let STATE = {
   user: null,
   products: [],
-  cart: {}, // product_id -> {product_id, name, unit_price, qty}
-  scanCooldown: false, // retained for compatibility (unused by new scanner)
+  cart: {},                 // product_id -> { product_id, name, unit_price, qty }
+  users: [],
+  selectedUser: null,       // { username, role, active } from /api/users
+  scanCooldown: false
 };
 
-STATE.productsFiltered = [];
-STATE.productsPage = 1;
-STATE.productsPerPage = 6;
-
-
-// --- Helpers ---
+// ---------- Helpers ----------
 function show(el) { el && el.classList.remove('hidden'); }
 function hide(el) { el && el.classList.add('hidden'); }
 function fmt(n)   { return (Math.round(n * 100) / 100).toFixed(2); }
+
 async function api(path, opts = {}) {
   const res = await fetch(path, Object.assign({
     headers: { 'Content-Type': 'application/json' },
@@ -36,7 +32,7 @@ async function api(path, opts = {}) {
   try { return await res.json(); } catch { return {}; }
 }
 
-// Simple beep using Web Audio (tiny and instant)
+// Tiny beep for scan success
 function beep(durationMs = 120, frequency = 880) {
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
@@ -52,7 +48,7 @@ function beep(durationMs = 120, frequency = 880) {
   } catch {}
 }
 
-// --- Visibility & Auth UI ---
+// ---------- Visibility & Auth UI ----------
 function updateVisibility() {
   const tabs = document.getElementById('main-tabs');
   const contents = document.getElementById('tab-contents');
@@ -60,7 +56,6 @@ function updateVisibility() {
   const authBar = document.getElementById('auth-bar');
 
   if (!STATE.user) {
-    // Logged out
     show(loginCard);
     hide(authBar);
     hide(tabs);
@@ -68,7 +63,6 @@ function updateVisibility() {
     return;
   }
 
-  // Logged in
   hide(loginCard);
   show(authBar);
   const au = document.getElementById('auth-user');
@@ -77,203 +71,65 @@ function updateVisibility() {
   show(contents);
 
   // Admin-only tabs
-
-document.querySelectorAll('.admin-only').forEach(el => {
-  if (STATE.user.role === 'admin') show(el); else hide(el);
-});
-
+  document.querySelectorAll('.admin-only').forEach(el => {
+    if (STATE.user.role === 'admin') show(el); else hide(el);
+  });
 }
 
 async function refreshMe() {
   const me = await api('/api/me');
   if (me.logged_in) {
     STATE.user = { username: me.username, role: me.role };
-    const s = document.getElementById('login-status');
-    if (s) s.textContent = '';
+    const s = document.getElementById('login-status'); if (s) s.textContent = '';
     hide(document.getElementById('btn-login'));
     show(document.getElementById('btn-logout'));
   } else {
     STATE.user = null;
-    const s = document.getElementById('login-status');
-    if (s) s.textContent = '';
+    const s = document.getElementById('login-status'); if (s) s.textContent = '';
     show(document.getElementById('btn-login'));
     hide(document.getElementById('btn-logout'));
   }
   updateVisibility();
 }
 
-// --- Login / Logout ---
+// ---------- Login / Logout ----------
 document.getElementById('btn-login')?.addEventListener('click', async () => {
   const username = document.getElementById('login-username').value.trim();
   const password = document.getElementById('login-password').value;
   try {
     await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
     await refreshMe();
-    await loadProducts();
+    await loadProducts();    // prep for Products tab straight away
     await loadTransactions();
     if (STATE.user && STATE.user.role === 'admin') {
       await loadSettings();
       await loadStats();
+      await loadUsers();     // prep Users tab too
     }
-    // Do not auto-start the scanner
   } catch (e) {
     const s = document.getElementById('login-status');
     if (s) s.textContent = e.message;
   }
 });
 
-
 async function doLogout() {
   try { await api('/api/logout', { method: 'POST' }); } catch {}
   STATE.user = null; STATE.products = []; STATE.cart = {};
+  STATE.users = []; STATE.selectedUser = null;
   stopScanner(); // ensure camera is off
-  // Refresh session/UI state so Login button shows and tabs hide
   await refreshMe();
 }
-
 
 document.getElementById('btn-logout')?.addEventListener('click', doLogout);
 document.getElementById('btn-logout-top')?.addEventListener('click', doLogout);
 
-// --- Products ---
-async function loadProducts() {
-  if (!STATE.user) return;
-  try {
-    const products = await api('/api/products');
-    STATE.products = products;
-
-    // List (admin panel)
-    const list = document.getElementById('products-list');
-    if (list) {
-      list.innerHTML = '';
-      products.forEach(p => {
-        const item = document.createElement('a');
-        item.className = 'list-group-item list-group-item-action';
-        item.textContent = `#${p.id} ${p.name} — ${fmt(p.price)} — BAR:${p.barcode} — Stock:${p.stock_qty}`;
-        item.addEventListener('click', () => {
-          document.getElementById('p-id').value = p.id;
-          document.getElementById('p-name').value = p.name;
-          document.getElementById('p-price').value = p.price;
-          document.getElementById('p-barcode').value = p.barcode;
-          document.getElementById('p-stock').value = p.stock_qty;
-          const pid = document.getElementById('pur-product-id');
-          if (pid) pid.value = p.id;
-        });
-        list.appendChild(item);
-      });
-    }
-    
-function applyProductsFilter() {
-  const pf = document.getElementById('products-filter');
-  const q = (pf?.value || '').trim().toLowerCase();
-  STATE.productsFiltered = (STATE.products || []).filter(p =>
-    !q ||
-    p.name.toLowerCase().includes(q) ||
-    String(p.id) === q ||
-    (p.barcode && p.barcode.toLowerCase().includes(q))
-  );
-  STATE.productsPage = 1; // reset to first page after filtering
-  renderProductsGrid();
-}
-
-function renderProductsGrid() {
-  const grid = document.getElementById('products-grid');
-  const indi = document.getElementById('products-page-indicator');
-  const prev = document.getElementById('btn-page-prev');
-  const next = document.getElementById('btn-page-next');
-  if (!grid) return;
-
-  const items = STATE.productsFiltered.length ? STATE.productsFiltered : STATE.products;
-  const per = STATE.productsPerPage;
-  const totalPages = Math.max(1, Math.ceil(items.length / per));
-  STATE.productsPage = Math.min(Math.max(1, STATE.productsPage), totalPages);
-
-  const start = (STATE.productsPage - 1) * per;
-  const slice = items.slice(start, start + per);
-
-  grid.innerHTML = '';
-  slice.forEach(p => {
-    const card = document.createElement('div');
-    card.className = 'product-card';
-
-    const title = document.createElement('div');
-    title.className = 'product-title';
-    title.textContent = p.name;
-
-    const sub = document.createElement('div');
-    sub.className = 'product-sub';
-    sub.textContent = `#${p.id} • ${fmt(p.price)} • Stock ${p.stock_qty}`;
-
-    const actions = document.createElement('div');
-    actions.className = 'product-actions d-grid gap-2 mt-1';
-    const btnEdit = document.createElement('button');
-    btnEdit.className = 'btn btn-outline-primary';
-    btnEdit.textContent = 'Edit';
-    btnEdit.onclick = () => openProductEditor(p);
-    actions.appendChild(btnEdit);
-
-    card.appendChild(title);
-    card.appendChild(sub);
-    card.appendChild(actions);
-    grid.appendChild(card);
-  });
-
-  if (indi) indi.textContent = `${STATE.productsPage} / ${totalPages}`;
-  if (prev) prev.disabled = STATE.productsPage <= 1;
-  if (next) next.disabled = STATE.productsPage >= totalPages;
-}
-
-function openProductEditor(p) {
-  // Pre-fill editor fields (IDs already used in your code)
-  document.getElementById('p-id').value = p?.id ?? '';
-  document.getElementById('p-name').value = p?.name ?? '';
-  document.getElementById('p-price').value = p?.price ?? '';
-  document.getElementById('p-barcode').value = p?.barcode ?? '';
-  document.getElementById('p-stock').value = p?.stock_qty ?? '';
-  document.getElementById('pur-product-id').value = p?.id ?? '';
-
-  document.getElementById('productEditorTitle').textContent = p ? 'Edit Product' : 'New Product';
-
-  // Show the modal
-  const modalEl = document.getElementById('productEditorModal');
-  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-  modal.show();
-}
-
-// New Product → clear fields and open modal
-document.getElementById('btn-new-product')?.addEventListener('click', () => {
-  ['p-id','p-name','p-price','p-barcode','p-stock','pur-product-id','pur-qty','pur-price']
-    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.getElementById('productEditorTitle').textContent = 'New Product';
-  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal'));
-  modal.show();
-});
-
-// Filter & pager
-document.getElementById('products-filter')?.addEventListener('input', applyProductsFilter);
-document.getElementById('btn-page-prev')?.addEventListener('click', () => { STATE.productsPage--; renderProductsGrid(); });
-document.getElementById('btn-page-next')?.addEventListener('click', () => { STATE.productsPage++; renderProductsGrid(); });
-
-
-    
-// --- Products filter (client-side match by name, id, barcode) ---
-const productsFilter = document.getElementById('products-filter');
-productsFilter?.addEventListener('input', () => {
-  const q = productsFilter.value.trim().toLowerCase();
+// ---------- Products ----------
+function renderLegacyProductsList(products) {
+  // Keep legacy list compatible (hidden in UI) to avoid breaking previous flows
   const list = document.getElementById('products-list');
   if (!list) return;
-
-  // Build a filtered array from STATE.products
-  const filtered = (STATE.products || []).filter(p =>
-    !q ||
-    p.name.toLowerCase().includes(q) ||
-    String(p.id) === q ||
-    (p.barcode && p.barcode.toLowerCase().includes(q))
-  );
-
-  // Re-render list
   list.innerHTML = '';
-  filtered.forEach(p => {
+  products.forEach(p => {
     const item = document.createElement('a');
     item.className = 'list-group-item list-group-item-action';
     item.textContent = `#${p.id} ${p.name} — ${fmt(p.price)} — BAR:${p.barcode} — Stock:${p.stock_qty}`;
@@ -285,26 +141,72 @@ productsFilter?.addEventListener('input', () => {
       document.getElementById('p-stock').value = p.stock_qty;
       const pid = document.getElementById('pur-product-id');
       if (pid) pid.value = p.id;
+      openProductEditor(p); // also open modal editor for convenience
     });
     list.appendChild(item);
   });
-});
+}
 
+function renderProductsCards() {
+  const wrap = document.getElementById('products-card-list');
+  if (!wrap) return;
+  const filterEl = document.getElementById('products-filter');
+  const q = (filterEl?.value || '').trim().toLowerCase();
 
-  document.getElementById('btn-new-product')?.addEventListener('click', () => {
-    const clearIds = [
-      'p-id','p-name','p-price','p-barcode','p-stock',
-      'pur-product-id','pur-qty','pur-price'
-    ];
-    clearIds.forEach(id => {
-      const el = document.getElementById(id);
-      if (el) el.value = '';
-    });
-    // Keep focus on name for quick add
-    document.getElementById('p-name')?.focus();
+  const items = (STATE.products || []).filter(p =>
+    !q ||
+    p.name.toLowerCase().includes(q) ||
+    String(p.id) === q ||
+    (p.barcode && p.barcode.toLowerCase().includes(q))
+  );
+
+  wrap.innerHTML = '';
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'text-muted';
+    empty.textContent = q ? 'No products match your filter.' : 'No products yet.';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  items.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'product-thin-card';
+
+    const main = document.createElement('div');
+    main.className = 'product-thin-main';
+    const title = document.createElement('div');
+    title.className = 'product-title'; title.textContent = p.name;
+    const sub = document.createElement('div');
+    sub.className = 'product-sub';
+    sub.textContent = `#${p.id} • ${fmt(p.price)} • Stock ${p.stock_qty} • BAR ${p.barcode}`;
+
+    main.appendChild(title); main.appendChild(sub);
+
+    const actions = document.createElement('div');
+    actions.className = 'product-actions d-flex gap-2';
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'btn btn-outline-primary'; btnEdit.textContent = 'Edit';
+    btnEdit.onclick = () => openProductEditor(p);
+
+    actions.appendChild(btnEdit);
+    card.appendChild(main);
+    card.appendChild(actions);
+    wrap.appendChild(card);
   });
+}
 
-    // NEW: populate product dropdown on Teller toolbar
+async function loadProducts() {
+  if (!STATE.user) return;
+  try {
+    const products = await api('/api/products');
+    STATE.products = products;
+
+    // Legacy list (hidden) and new thin cards
+    renderLegacyProductsList(products);
+    renderProductsCards();
+
+    // Product dropdown (Teller)
     const sel = document.getElementById('product-select');
     if (sel) {
       const prev = sel.value;
@@ -317,7 +219,6 @@ productsFilter?.addEventListener('input', () => {
       });
       if (prev) sel.value = prev;
 
-      // One-time change handler (guard with a flag)
       if (!sel._boundChange) {
         sel.addEventListener('change', () => {
           const pid = parseInt(sel.value || '0', 10);
@@ -334,6 +235,35 @@ productsFilter?.addEventListener('input', () => {
   }
 }
 
+function openProductEditor(p) {
+  // Prefill fields
+  document.getElementById('p-id').value = p?.id ?? '';
+  document.getElementById('p-name').value = p?.name ?? '';
+  document.getElementById('p-price').value = p?.price ?? '';
+  document.getElementById('p-barcode').value = p?.barcode ?? '';
+  document.getElementById('p-stock').value = p?.stock_qty ?? '';
+  const pid = document.getElementById('pur-product-id');
+  if (pid) pid.value = p?.id ?? '';
+
+  document.getElementById('productEditorTitle').textContent = p ? 'Edit Product' : 'New Product';
+  // Show modal
+  const modalEl = document.getElementById('productEditorModal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+
+// New Product button: clear and open modal
+document.getElementById('btn-new-product')?.addEventListener('click', () => {
+  ['p-id','p-name','p-price','p-barcode','p-stock','pur-product-id','pur-qty','pur-price']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('productEditorTitle').textContent = 'New Product';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).show();
+});
+
+// Products filter
+document.getElementById('products-filter')?.addEventListener('input', renderProductsCards);
+
+// Product CRUD
 document.getElementById('btn-add-product')?.addEventListener('click', async () => {
   const name = document.getElementById('p-name').value.trim();
   const price = parseFloat(document.getElementById('p-price').value);
@@ -342,6 +272,7 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
   try {
     await api('/api/products', { method: 'POST', body: JSON.stringify({ name, price, barcode, stock_qty }) });
     await loadProducts();
+    alert('Product added');
   } catch (e) { alert(e.message); }
 });
 
@@ -354,6 +285,7 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
   try {
     await api('/api/products/update', { method: 'POST', body: JSON.stringify({ id, name, price, barcode, stock_qty }) });
     await loadProducts();
+    alert('Product updated');
   } catch (e) { alert(e.message); }
 });
 
@@ -363,10 +295,11 @@ document.getElementById('btn-delete-product')?.addEventListener('click', async (
   try {
     await api(`/api/products/${encodeURIComponent(name)}`, { method: 'DELETE' });
     await loadProducts();
+    alert('Product deleted');
   } catch (e) { alert(e.message); }
 });
 
-// --- Purchases & Suggested price (admin) ---
+// Purchases & Suggested price
 document.getElementById('btn-add-purchase')?.addEventListener('click', async () => {
   const pid = parseInt(document.getElementById('pur-product-id').value || '0', 10);
   const qty = parseInt(document.getElementById('pur-qty').value || '0', 10);
@@ -374,6 +307,7 @@ document.getElementById('btn-add-purchase')?.addEventListener('click', async () 
   try {
     await api('/api/purchases', { method: 'POST', body: JSON.stringify({ product_id: pid, qty_added: qty, purchase_price: price }) });
     await loadProducts();
+    alert('Purchase recorded and stock updated');
   } catch (e) { alert(e.message); }
 });
 
@@ -387,6 +321,7 @@ document.getElementById('btn-suggest-price')?.addEventListener('click', async ()
   } catch (e) { alert(e.message); }
 });
 
+// Settings
 async function loadSettings() {
   try {
     const j = await api('/api/settings');
@@ -397,11 +332,115 @@ async function loadSettings() {
 
 document.getElementById('btn-save-settings')?.addEventListener('click', async () => {
   const mp = parseFloat(document.getElementById('markup-percent').value || '0');
-  try { await api('/api/settings', { method: 'POST', body: JSON.stringify({ markup_percent: mp }) }); }
+  try { await api('/api/settings', { method: 'POST', body: JSON.stringify({ markup_percent: mp }) }); alert('Settings saved'); }
   catch (e) { alert(e.message); }
 });
 
-// --- Transactions ---
+// ---------- Users (admin) ----------
+function renderUsersList() {
+  const wrap = document.getElementById('users-list');
+  if (!wrap) return;
+
+  const q = (document.getElementById('users-filter')?.value || '').trim().toLowerCase();
+  const items = (STATE.users || []).filter(u =>
+    !q || u.username.toLowerCase().includes(q) || u.role.toLowerCase().includes(q)
+  );
+
+  wrap.innerHTML = '';
+  if (items.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'list-group-item text-muted';
+    empty.textContent = q ? 'No users match your filter.' : 'No users yet.';
+    wrap.appendChild(empty);
+    return;
+  }
+
+  items.forEach(u => {
+    const item = document.createElement('div');
+    item.className = 'list-group-item user-list-item';
+    const left = document.createElement('div');
+    left.innerHTML = `<strong>${u.username}</strong> <span class="user-meta">• ${u.role} • ${u.active ? 'active' : 'disabled'}</span>`;
+    const right = document.createElement('div');
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'btn btn-outline-primary btn-sm';
+    btnEdit.textContent = 'Edit';
+    btnEdit.onclick = () => fillUserEditor(u);
+    right.appendChild(btnEdit);
+    item.appendChild(left); item.appendChild(right);
+    wrap.appendChild(item);
+  });
+}
+
+function fillUserEditor(u) {
+  STATE.selectedUser = u;
+  document.getElementById('u-username').value = u.username;
+  document.getElementById('u-password').value = ''; // leave blank to keep
+  document.getElementById('u-role').value = u.role;
+  const act = document.getElementById('u-active'); if (act) act.checked = !!u.active;
+}
+
+async function loadUsers() {
+  if (!STATE.user || STATE.user.role !== 'admin') return;
+  try {
+    const data = await api('/api/users');
+    STATE.users = data || [];
+    renderUsersList();
+  } catch (e) {
+    console.error('loadUsers', e);
+  }
+}
+
+document.getElementById('users-filter')?.addEventListener('input', renderUsersList);
+document.getElementById('btn-refresh-users')?.addEventListener('click', loadUsers);
+
+document.getElementById('btn-add-user')?.addEventListener('click', async () => {
+  const username = document.getElementById('u-username').value.trim();
+  const password = document.getElementById('u-password').value;
+  const role = document.getElementById('u-role').value;
+  const active = document.getElementById('u-active').checked;
+  if (!username || !password) return alert('Username and password are required');
+  try {
+    await api('/api/users', { method: 'POST', body: JSON.stringify({ username, password, role }) });
+    if (active === false) {
+      // Immediately set inactive if requested
+      await api('/api/users/update', { method: 'POST', body: JSON.stringify({ username, active }) });
+    }
+    await loadUsers();
+    alert('User added');
+  } catch (e) { alert(e.message); }
+});
+
+document.getElementById('btn-update-user')?.addEventListener('click', async () => {
+  const username = document.getElementById('u-username').value.trim();
+  if (!username) return alert('Select a user first');
+  const password = document.getElementById('u-password').value;
+  const role = document.getElementById('u-role').value;
+  const active = document.getElementById('u-active').checked;
+  const payload = { username, role, active };
+  if (password) payload.password = password;
+  try {
+    await api('/api/users/update', { method: 'POST', body: JSON.stringify(payload) });
+    await loadUsers();
+    alert('User updated');
+  } catch (e) { alert(e.message); }
+});
+
+document.getElementById('btn-delete-user')?.addEventListener('click', async () => {
+  const username = document.getElementById('u-username').value.trim();
+  if (!username) return alert('Select a user first');
+  if (!confirm(`Delete user "${username}"?`)) return;
+  try {
+    await api(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
+    ['u-username','u-password'].forEach(id => { const el = document.getElementById(id); if (el) el.value=''; });
+    document.getElementById('u-role').value = 'teller';
+    document.getElementById('u-active').checked = true;
+    STATE.selectedUser = null;
+    await loadUsers();
+    alert('User deleted');
+  } catch (e) { alert(e.message); }
+});
+
+// ---------- Transactions ----------
 async function loadTransactions() {
   if (!STATE.user) return;
   try {
@@ -428,7 +467,7 @@ async function loadTransactions() {
 }
 document.getElementById('btn-refresh-trans')?.addEventListener('click', loadTransactions);
 
-// --- Cart ---
+// ---------- Teller: Cart ----------
 function renderCart() {
   const host = document.getElementById('cart'); if (!host) return;
   host.innerHTML = '';
@@ -472,7 +511,7 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   } catch (e) { alert(e.message); }
 });
 
-// --- Search (unchanged behavior; IDs preserved) ---
+// Teller search
 const searchInput = document.getElementById('search');
 searchInput?.addEventListener('input', () => {
   const q = searchInput.value.trim().toLowerCase();
@@ -492,7 +531,7 @@ searchInput?.addEventListener('input', () => {
   });
 });
 
-// --- On-demand Scanner (ZXing) ---
+// ---------- On-demand Scanner (ZXing) ----------
 let SCAN = { running: false, reader: null, controls: null, cooldown: false };
 
 function flashOK() {
@@ -527,7 +566,6 @@ async function startScanner() {
       SCAN.cooldown = true;
       setTimeout(() => SCAN.cooldown = false, 700);
 
-      // Match exact barcode first; then fallback
       const p = STATE.products.find(x => x.barcode === code)
              || STATE.products.find(x => String(x.id) === code)
              || STATE.products.find(x => x.name.toLowerCase() === code.toLowerCase());
@@ -561,7 +599,7 @@ function stopScanner() {
 document.getElementById('btn-start-scan')?.addEventListener('click', startScanner);
 document.getElementById('btn-stop-scan')?.addEventListener('click',  stopScanner);
 
-// --- Stats (admin; unchanged) ---
+// ---------- Stats ----------
 function drawBarChart(canvas, labels, values) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0,0,canvas.width,canvas.height);
@@ -601,11 +639,28 @@ async function loadStats() {
 }
 document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
 
-// --- Bootstrap (app init) ---
+// ---------- Tab show events (render on demand) ----------
+document.addEventListener('shown.bs.tab', async (evt) => {
+  const target = evt.target?.getAttribute('data-bs-target'); // "#products", "#users", etc.
+  if (!target || !STATE.user) return;
+
+  if (target === '#products') {
+    if (STATE.products.length === 0) await loadProducts();
+    else renderProductsCards();
+  } else if (target === '#users') {
+    if (STATE.user.role !== 'admin') return;
+    await loadUsers();
+  } else if (target === '#transactions') {
+    await loadTransactions();
+  } else if (target === '#stats') {
+    await loadStats();
+  }
+});
+
+// ---------- App init ----------
 let _didAutoLogout = false;
 (async function init(){
-  // Kiosk requirement: never “auto-login” on page open.
-  // Force a clean session once per page load.
+  // Kiosk requirement from earlier: start with clean session once per page load
   if (!_didAutoLogout) {
     try { await api('/api/logout', { method: 'POST' }); } catch {}
     _didAutoLogout = true;
@@ -615,9 +670,13 @@ let _didAutoLogout = false;
   await refreshMe();
 
   if (STATE.user) {
-    await loadProducts();
+    await loadProducts();      // prepare Products right away
     await loadTransactions();
-    if (STATE.user.role === 'admin') { await loadSettings(); await loadStats(); }
+    if (STATE.user.role === 'admin') {
+      await loadSettings();
+      await loadStats();
+      await loadUsers();       // prepare Users right away
+    }
     // Do NOT auto-start the scanner
   }
 })();
