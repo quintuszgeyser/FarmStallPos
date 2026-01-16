@@ -14,6 +14,11 @@ let STATE = {
   scanCooldown: false, // retained for compatibility (unused by new scanner)
 };
 
+STATE.productsFiltered = [];
+STATE.productsPage = 1;
+STATE.productsPerPage = 6;
+
+
 // --- Helpers ---
 function show(el) { el && el.classList.remove('hidden'); }
 function hide(el) { el && el.classList.add('hidden'); }
@@ -157,6 +162,99 @@ async function loadProducts() {
         list.appendChild(item);
       });
     }
+    
+function applyProductsFilter() {
+  const pf = document.getElementById('products-filter');
+  const q = (pf?.value || '').trim().toLowerCase();
+  STATE.productsFiltered = (STATE.products || []).filter(p =>
+    !q ||
+    p.name.toLowerCase().includes(q) ||
+    String(p.id) === q ||
+    (p.barcode && p.barcode.toLowerCase().includes(q))
+  );
+  STATE.productsPage = 1; // reset to first page after filtering
+  renderProductsGrid();
+}
+
+function renderProductsGrid() {
+  const grid = document.getElementById('products-grid');
+  const indi = document.getElementById('products-page-indicator');
+  const prev = document.getElementById('btn-page-prev');
+  const next = document.getElementById('btn-page-next');
+  if (!grid) return;
+
+  const items = STATE.productsFiltered.length ? STATE.productsFiltered : STATE.products;
+  const per = STATE.productsPerPage;
+  const totalPages = Math.max(1, Math.ceil(items.length / per));
+  STATE.productsPage = Math.min(Math.max(1, STATE.productsPage), totalPages);
+
+  const start = (STATE.productsPage - 1) * per;
+  const slice = items.slice(start, start + per);
+
+  grid.innerHTML = '';
+  slice.forEach(p => {
+    const card = document.createElement('div');
+    card.className = 'product-card';
+
+    const title = document.createElement('div');
+    title.className = 'product-title';
+    title.textContent = p.name;
+
+    const sub = document.createElement('div');
+    sub.className = 'product-sub';
+    sub.textContent = `#${p.id} • ${fmt(p.price)} • Stock ${p.stock_qty}`;
+
+    const actions = document.createElement('div');
+    actions.className = 'product-actions d-grid gap-2 mt-1';
+    const btnEdit = document.createElement('button');
+    btnEdit.className = 'btn btn-outline-primary';
+    btnEdit.textContent = 'Edit';
+    btnEdit.onclick = () => openProductEditor(p);
+    actions.appendChild(btnEdit);
+
+    card.appendChild(title);
+    card.appendChild(sub);
+    card.appendChild(actions);
+    grid.appendChild(card);
+  });
+
+  if (indi) indi.textContent = `${STATE.productsPage} / ${totalPages}`;
+  if (prev) prev.disabled = STATE.productsPage <= 1;
+  if (next) next.disabled = STATE.productsPage >= totalPages;
+}
+
+function openProductEditor(p) {
+  // Pre-fill editor fields (IDs already used in your code)
+  document.getElementById('p-id').value = p?.id ?? '';
+  document.getElementById('p-name').value = p?.name ?? '';
+  document.getElementById('p-price').value = p?.price ?? '';
+  document.getElementById('p-barcode').value = p?.barcode ?? '';
+  document.getElementById('p-stock').value = p?.stock_qty ?? '';
+  document.getElementById('pur-product-id').value = p?.id ?? '';
+
+  document.getElementById('productEditorTitle').textContent = p ? 'Edit Product' : 'New Product';
+
+  // Show the modal
+  const modalEl = document.getElementById('productEditorModal');
+  const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+  modal.show();
+}
+
+// New Product → clear fields and open modal
+document.getElementById('btn-new-product')?.addEventListener('click', () => {
+  ['p-id','p-name','p-price','p-barcode','p-stock','pur-product-id','pur-qty','pur-price']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  document.getElementById('productEditorTitle').textContent = 'New Product';
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal'));
+  modal.show();
+});
+
+// Filter & pager
+document.getElementById('products-filter')?.addEventListener('input', applyProductsFilter);
+document.getElementById('btn-page-prev')?.addEventListener('click', () => { STATE.productsPage--; renderProductsGrid(); });
+document.getElementById('btn-page-next')?.addEventListener('click', () => { STATE.productsPage++; renderProductsGrid(); });
+
+
     
 // --- Products filter (client-side match by name, id, barcode) ---
 const productsFilter = document.getElementById('products-filter');

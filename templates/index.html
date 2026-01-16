@@ -57,42 +57,44 @@
     .btn-lg-touch { padding: .55rem .9rem; font-size: 16px; }
 
     /* ---------------- Products mobile layout ---------------- */
-    #products-screen {
-      height: calc(100vh - 120px);
-      display: grid;
-      grid-template-rows: auto 1fr;     /* toolbar, content */
-      gap: .5rem;
-    }
-    .products-toolbar .form-control,
-    .products-toolbar .btn {
-      height: 44px;
-      font-size: 16px;
-    }
-    /* Two stacked panels that each scroll internally */
-    #products-panels {
-      display: grid;
-      grid-template-rows: 1fr 1fr;      /* inventory list, editor */
-      gap: .5rem;
-      height: 100%;
-    }
-    /* On larger screens, place side-by-side */
-    @media (min-width: 992px) {
-      #products-panels {
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: none;
-      }
-    }
-    #products-list-wrap, #product-editor-wrap {
-      overflow: auto;    /* internal scroll; page stays fixed */
-      border: 1px solid #dee2e6;
-      border-radius: .5rem;
-      padding: .5rem;
-      background: #fff;
-    }
-    #products-list .list-group-item {
-      padding: .5rem .6rem;
-      font-size: 15px;
-    }
+    
+  /* Products: one-screen, no page scroll */
+   #products-screen {
+     height: calc(100vh - 120px);
+     display: grid;
+     grid-template-rows: auto 1fr; /* toolbar, grid */
+     gap: .5rem;
+     overflow: hidden; /* ensure page never scrolls */
+   }
+   .products-toolbar .form-control,
+   .products-toolbar .btn {
+     height: 44px; font-size: 16px;
+   }
+   /* Fixed grid for up to 6 items: 2 cols × 3 rows */
+   #products-grid {
+     display: grid;
+     grid-template-columns: 1fr 1fr;
+     grid-template-rows: repeat(3, 1fr);
+     gap: .5rem;
+     height: 100%;
+   }
+   .product-card {
+     border: 1px solid #dee2e6;
+     border-radius: .5rem;
+     padding: .5rem;
+     display: flex;
+     flex-direction: column;
+     justify-content: space-between;
+     background: #fff;
+   }
+   .product-title { font-size: 15px; font-weight: 600; line-height: 1.1; }
+   .product-sub { font-size: 13px; color: #6c757d; line-height: 1.1; }
+   .product-actions .btn { height: 36px; font-size: 14px; }
+   @media (min-width: 576px) {
+     .product-title { font-size: 16px; }
+     .product-sub { font-size: 14px; }
+   }
+
     /* -------------------------------------------------------- */
 
   </style>
@@ -191,59 +193,82 @@
       </div>
 
       <!-- Products (admin) — mobile-first single-screen -->
+      
+      <!-- Products (admin) — one-screen, no-scroll, paginated grid + modal editor -->
       <div class="tab-pane fade" id="products">
         <div id="products-screen" class="container-fluid p-0">
-          <!-- Toolbar -->
+        
+          <!-- Toolbar: filter + new + pager (one line on mobile) -->
           <div class="products-toolbar">
             <div class="row g-2 align-items-center">
-              <div class="col-8">
-                <input id="products-filter" class="form-control" placeholder="Filter products…">
+              <div class="col-5">
+                <input id="products-filter" class="form-control" placeholder="Filter…">
               </div>
-              <div class="col-4 d-flex justify-content-end">
-                <button id="btn-new-product" class="btn btn-outline-primary w-100">New Product</button>
+              <div class="col-3 d-grid">
+                <button id="btn-new-product" class="btn btn-outline-primary">New</button>
+              </div>
+              <div class="col-4 d-flex align-items-center justify-content-end gap-2">
+                <button id="btn-page-prev" class="btn btn-outline-secondary">‹</button>
+                <div id="products-page-indicator" class="small text-muted">1 / 1</div>
+                <button id="btn-page-next" class="btn btn-outline-secondary">›</button>
               </div>
             </div>
           </div>
-
-          <!-- Two panels: inventory list + editor (both scroll internally) -->
-          <div id="products-panels">
-            <!-- Inventory list -->
-            <div id="products-list-wrap">
-              <h6 class="mb-2">Products</h6>
-              <div id="products-list" class="list-group"></div>
-            </div>
-
-            <!-- Editor -->
-            <div id="product-editor-wrap">
-              <h6 class="mb-2">Add / Update Product</h6>
-              <div class="mb-2"><input id="p-id" class="form-control" placeholder="(ID for update)"/></div>
-              <div class="mb-2"><input id="p-name" class="form-control" placeholder="Name"/></div>
-              <div class="mb-2"><input id="p-price" type="number" step="0.01" class="form-control" placeholder="Price"/></div>
-              <div class="mb-2"><input id="p-barcode" class="form-control" placeholder="Barcode"/></div>
-              <div class="mb-2"><input id="p-stock" type="number" class="form-control" placeholder="Stock Qty"/></div>
-              <div class="mb-2 d-flex gap-2">
-                <button id="btn-add-product" class="btn btn-success w-100">Add</button>
-                <button id="btn-update-product" class="btn btn-primary w-100">Update</button>
-                <button id="btn-delete-product" class="btn btn-danger w-100">Delete by Name</button>
+        
+          <!-- Fixed-size grid: 2 cols x 3 rows = 6 items (fits on phones) -->
+          <div id="products-grid" class="mt-2"></div>
+        </div>
+      
+        <!-- Product Editor Modal (keeps main Products view uncluttered) -->
+        <div class="modal fade" id="productEditorModal" tabindex="-1" aria-hidden="true">
+          <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+            
+              <div class="modal-header">
+                <h5 class="modal-title" id="productEditorTitle">Product</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
               </div>
-              <hr>
-              <h6>Add Stock (Purchase)</h6>
-              <div class="mb-2"><input id="pur-product-id" class="form-control" placeholder="Product ID"/></div>
-              <div class="mb-2"><input id="pur-qty" type="number" class="form-control" placeholder="Qty Added"/></div>
-              <div class="mb-2"><input id="pur-price" type="number" step="0.01" class="form-control" placeholder="Purchase Price per Unit"/></div>
-              <div class="mb-2 d-flex gap-2">
-                <button id="btn-add-purchase" class="btn btn-outline-success w-100">Record Purchase</button>
-                <button id="btn-suggest-price" class="btn btn-outline-primary w-100">Suggest Price</button>
+            
+              <div class="modal-body">
+                <!-- Existing IDs preserved so your JS continues to work -->
+                <div class="mb-2"><input id="p-id" class="form-control" placeholder="(ID for update)"/></div>
+                <div class="mb-2"><input id="p-name" class="form-control" placeholder="Name"/></div>
+                <div class="mb-2"><input id="p-price" type="number" step="0.01" class="form-control" placeholder="Price"/></div>
+                <div class="mb-2"><input id="p-barcode" class="form-control" placeholder="Barcode"/></div>
+                <div class="mb-2"><input id="p-stock" type="number" class="form-control" placeholder="Stock Qty"/></div>
+              
+                <div class="mb-2 d-flex gap-2">
+                  <button id="btn-add-product" class="btn btn-success w-100">Add</button>
+                  <button id="btn-update-product" class="btn btn-primary w-100">Update</button>
+                  <button id="btn-delete-product" class="btn btn-danger w-100">Delete by Name</button>
+                </div>
+              
+                <hr class="my-2">
+              
+                <h6 class="mb-2">Add Stock (Purchase)</h6>
+                <div class="mb-2"><input id="pur-product-id" class="form-control" placeholder="Product ID"/></div>
+                <div class="mb-2"><input id="pur-qty" type="number" class="form-control" placeholder="Qty Added"/></div>
+                <div class="mb-2"><input id="pur-price" type="number" step="0.01" class="form-control" placeholder="Purchase Price per Unit"/></div>
+              
+                <div class="mb-2 d-flex gap-2">
+                  <button id="btn-add-purchase" class="btn btn-outline-success w-100">Record Purchase</button>
+                  <button id="btn-suggest-price" class="btn btn-outline-primary w-100">Suggest Price</button>
+                </div>
+              
+                <div id="suggest-output" class="text-muted small"></div>
+              
+                <hr class="my-2">
+              
+                <h6>Settings</h6>
+                <div class="mb-2"><input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Markup % (default)"/></div>
+                <button id="btn-save-settings" class="btn btn-outline-secondary w-100">Save Settings</button>
               </div>
-              <div id="suggest-output" class="text-muted small"></div>
-              <hr>
-              <h6>Settings</h6>
-              <div class="mb-2"><input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Markup % (default)"/></div>
-              <button id="btn-save-settings" class="btn btn-outline-secondary w-100">Save Settings</button>
+            
             </div>
           </div>
         </div>
       </div>
+
 
       <!-- Users (admin) -->
       <div class="tab-pane fade" id="users">
