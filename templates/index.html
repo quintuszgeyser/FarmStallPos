@@ -145,6 +145,25 @@
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     </ul>
+    
+    <!-- Admin-only: Sales CSV Export -->
+    <div class="admin-only my-2 d-flex align-items-end gap-2">
+      <div>
+        <label for="export-start" class="form-label mb-1">Start date</label>
+        <input id="export-start" type="date" class="form-control form-control-sm" />
+      </div>
+      <div>
+        <label for="export-end" class="form-label mb-1">End date</label>
+        <input id="export-end" type="date" class="form-control form-control-sm" />
+      </div>
+      <div>
+        <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">Export Sales CSV</button>
+      </div>
+    </div>
+
+<!-- Optional: only if you require ADMIN_TOKEN -->
+<!-- <meta name="admin-token" content="YOUR_TOKEN_VALUE" /> -->
+
 
     <div id="tab-contents" class="tab-content hidden mt-3">
 
@@ -312,15 +331,7 @@
         </div>
       </div>
 
-      <!-- Exports (admin) -->
-      <div class="tab-pane fade" id="exports">
-        <h5>CSV Exports</h5>
-        <ul>
-          <li><a href="/admin/export/products" target="_blank">Products CSV</a></li>
-          <li><a href="/admin/export/transactions" target="_blank">Transactions CSV</a></li>
-          <li><a href="/admin/export/transaction_lines" target="_blank">Transaction Lines CSV</a></li>
-        </ul>
-      </div>
+ 
 
       <!-- Stats (admin) -->
       <div class="tab-pane fade" id="stats">

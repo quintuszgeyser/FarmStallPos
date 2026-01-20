@@ -749,6 +749,45 @@ document.addEventListener('shown.bs.tab', async (evt) => {
   }
 });
 
+
+
+// ----- Exports: init defaults + download handler -----
+(function initExportDateDefaults() {
+  const start = document.getElementById('export-start');
+  const end = document.getElementById('export-end');
+  if (!start || !end) return;
+
+  // Default suggestion: today → today
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const todayISO = `${yyyy}-${mm}-${dd}`;
+
+  start.value = todayISO;
+  end.value = todayISO;
+})();
+
+function getAdminToken() {
+  const meta = document.querySelector('meta[name="admin-token"]');
+  return meta?.content || ''; // empty if not used
+}
+
+document.getElementById('btn-export-csv')?.addEventListener('click', () => {
+  const s = document.getElementById('export-start')?.value;
+  const e = document.getElementById('export-end')?.value;
+  const token = getAdminToken();
+
+  const params = new URLSearchParams();
+  if (s) params.set('start', s);
+  if (e) params.set('end', e);
+  if (token) params.set('token', token);
+
+  const url = `/admin/export/transactions?${params.toString()}`;
+  window.open(url, '_blank', 'noopener'); // let browser download CSV
+});
+
+
 // ---------- App init ----------
 let _didAutoLogout = false;
 (async function init(){
