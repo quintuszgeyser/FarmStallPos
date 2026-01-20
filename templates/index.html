@@ -137,29 +137,17 @@
     <!-- Tabs -->
     <ul id="main-tabs" class="nav nav-tabs hidden">
       <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#teller">Teller</button></li>
-      <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
+      
 
       <!-- Admin-only tabs start hidden; JS will show for admins -->
+      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
       <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     </ul>
     
-    <!-- Admin-only: Sales CSV Export -->
-    <div class="admin-only my-2 d-flex align-items-end gap-2">
-      <div>
-        <label for="export-start" class="form-label mb-1">Start date</label>
-        <input id="export-start" type="date" class="form-control form-control-sm" />
-      </div>
-      <div>
-        <label for="export-end" class="form-label mb-1">End date</label>
-        <input id="export-end" type="date" class="form-control form-control-sm" />
-      </div>
-      <div>
-        <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">Export Sales CSV</button>
-      </div>
-    </div>
+  
 
 <!-- Optional: only if you require ADMIN_TOKEN -->
 <!-- <meta name="admin-token" content="YOUR_TOKEN_VALUE" /> -->
@@ -232,6 +220,35 @@
               </div>
             </div>
           </div>
+          
+<!-- Exports (admin-only) -->
+<div class="tab-pane fade admin-only" id="exports" role="tabpanel" aria-labelledby="tab-exports">
+  <h5 class="mt-3">Sales CSV Export</h5>
+
+  <div class="my-2 d-flex align-items-end gap-2">
+    <div>
+      <label for="export-start" class="form-label mb-1">Start date</label>
+      <input id="export-start" type="date" class="form-control form-control-sm" />
+    </div>
+    <div>
+      <label for="export-end" class="form-label mb-1">End date</label>
+      <input id="export-end" type="date" class="form-control form-control-sm" />
+    </div>
+    <div>
+      <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">Export Sales CSV</button>
+    </div>
+  </div>
+
+  <!-- Optional quick links -->
+  <div class="small">
+    <div class="text-muted mb-1">Quick exports</div>
+    <ul class="mb-0">
+      <li><a href="/admin/export/products" target="_blank">Products CSV</a></li>
+      <li><a href="/admin/export/transaction_lines" target="_blank">Transaction Lines CSV</a></li>
+    </ul>
+  </div>
+</div>
+
 
           <!-- Thin card list (new) -->
           <div id="products-card-list" class="mt-2"></div>
