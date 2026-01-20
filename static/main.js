@@ -246,24 +246,41 @@ function nextLocalProductId() {
 
 // Generate a numeric EAN-13 barcode using a prefix + id + random + checksum.
 // Returns a 13-digit string.
+
+
 function genBarcodeFromId(id) {
-  // Prefix '200' marks "internal" codes in many stores (not a formal rule, but common practice).
-  // Build 12 digits, then compute checksum as 13th.
-  const base = `200${String(id).padStart(5,'0')}${String(Math.floor(Math.random()*100000)).padStart(5,'0')}`.slice(0,12);
-  return base + ean13Checksum(base);
+  // 200 prefix is commonly used for internal/store-defined barcodes
+  let attempt = 0;
+  while (attempt < 20) {
+    const rnd = String(Math.floor(Math.random() * 100000)).padStart(5, '0');
+    const core = `200${String(id).padStart(5, '0')}${rnd}`.slice(0, 12);
+    const candidate = core + ean13Checksum(core);
+
+    const exists = (STATE.products || []).some(p => (p.barcode + '') === candidate);
+    if (!exists) return candidate;
+
+    attempt++;
+  }
+  // extremely unlikely fallback
+  const core = `200${Date.now()}`.slice(0, 12);
+  return core + ean13Checksum(core);
 }
 
+
+
 function ean13Checksum(code12) {
-  // EAN-13 checksum: (10 - ((3*sum(odd positions) + sum(even positions)) % 10)) % 10
+  // code12 must be exactly 12 digits
   let sum = 0;
-  for (let i = 0; i < code12.length; i++) {
-    const n = Number(code12[i]);
-    sum += (i % 2 === 0) ? n : 3*n; // positions are 0-indexed here
+  for (let i = 0; i < 12; i++) {
+    const n = Number(code12[11 - i]);         // walk from right to left
+    const weight = (i % 2 === 0) ? 1 : 3;     // positions: rightmost=pos1 => weight 1, pos2 => weight 3, etc.
+    sum += n * weight;
   }
   const check = (10 - (sum % 10)) % 10;
   return String(check);
 }
-``
+
+
 
 
 function openProductEditor(p) {
@@ -285,21 +302,28 @@ function openProductEditor(p) {
 
 // New Product button: clear and open modal
 
+
 document.getElementById('btn-new-product')?.addEventListener('click', () => {
   ['p-id','p-name','p-price','p-barcode','p-stock','pur-product-id','pur-qty','pur-price']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
 
-  // show a client-side suggested ID for UX (do NOT rely on it server-side)
+  // Client-side ID hint (display only)
   const pidEl = document.getElementById('p-id');
-  if (pidEl) pidEl.value = String(nextLocalProductId());
+  const nextId = nextLocalProductId();
+  if (pidEl) pidEl.value = String(nextId);
 
-  // prefill a barcode if empty so tellers can print/scan immediately
+  // Pre-fill barcode
   const bcEl = document.getElementById('p-barcode');
-  if (bcEl) bcEl.value = genBarcodeFromId(pidEl?.value || nextLocalProductId());
+  if (bcEl) bcEl.value = genBarcodeFromId(nextId);
+
+  // Keep purchase product id blank on brand-new item
+  const pidPur = document.getElementById('pur-product-id');
+  if (pidPur) pidPur.value = '';
 
   document.getElementById('productEditorTitle').textContent = 'New Product';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).show();
 });
+
 
 
 // Products filter

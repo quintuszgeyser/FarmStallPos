@@ -569,6 +569,46 @@ def export_products_csv():
     buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
     return send_file(buf, mimetype='text/csv', as_attachment=True, download_name='products.csv')
 
+
+from datetime import datetime, date, timedelta
+
+def _parse_dt(value: str, is_end=False) -> datetime:
+    """
+    Accepts:
+      - 'YYYY-MM-DD'          -> 00:00:00 for start, 23:59:59.999999 for end
+      - ISO 'YYYY-MM-DDTHH:MM[:SS[.ffffff]]' -> parsed as-is
+    """
+    if not value:
+        return None
+    v = value.strip()
+    try:
+        # Date-only
+        if len(v) == 10 and v[4] == '-' and v[7] == '-':
+            d = datetime.strptime(v, "%Y-%m-%d")
+            if is_end:
+                # end of day
+                return d.replace(hour=23, minute=59, second=59, microsecond=999999)
+            return d
+        # Try full ISO
+        # Allow 'Z' suffix or offset-less
+        v2 = v.replace('Z', '')
+        # Try with microseconds
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%f",
+                    "%Y-%m-%dT%H:%M:%S",
+                    "%Y-%m-%d %H:%M:%S.%f",
+                    "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(v2, fmt)
+            except ValueError:
+                pass
+        # Fallback: just date
+        d = datetime.strptime(v[:10], "%Y-%m-%d")
+        if is_end:
+            return d.replace(hour=23, minute=59, second=59, microsecond=999999)
+        return d
+    except Exception:
+        return None
+
 @app.route('/admin/export/transactions')
 def export_transactions_csv():
     if not require_role('admin'):
@@ -577,34 +617,50 @@ def export_transactions_csv():
     if admin_token and request.args.get('token') != admin_token:
         return jsonify({'error': 'Invalid token'}), 403
 
-    # group totals per sale_id
+    # -------- Date range handling --------
+    # Incoming query params (optional):
+    #   ?start=YYYY-MM-DD or ISO datetime
+    #   ?end=YYYY-MM-DD or ISO datetime
+    # If omitted, suggest today's range by default.
+    start_param = request.args.get('start')
+    end_param   = request.args.get('end')
+
+    # Default suggestion: today 00:00:00 → today 23:59:59.999999
+    today = date.today()
+    suggested_start = datetime(today.year, today.month, today.day, 0, 0, 0)
+    suggested_end   = datetime(today.year, today.month, today.day, 23, 59, 59, 999999)
+
+    start_dt = _parse_dt(start_param, is_end=False) or suggested_start
+    end_dt   = _parse_dt(end_param,   is_end=True)  or suggested_end
+
+    # Guardrail: if user swapped them accidentally
+    if end_dt < start_dt:
+        start_dt, end_dt = end_dt, start_dt
+
+    # -------- Query grouped totals per sale_id within date range --------
     q = (db.session.query(
             Sale.sale_id,
             func.min(Sale.date_time).label('dt'),
             func.sum(Sale.qty * Sale.unit_price).label('total'))
+         .filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt)
          .group_by(Sale.sale_id)
          .order_by(func.max(Sale.id).desc()))
+
+    # -------- CSV --------
     sio = StringIO()
     sio.write('id,date_time,total\n')
     for row in q.all():
-        sio.write(f"{row.sale_id},{row.dt.isoformat()},{round(row.total or 0, 2)}\n")
-    buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
-    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name='transactions.csv')
+        # dt = first datetime in the sale block
+        iso = row.dt.isoformat() if row.dt else ''
+        total = round(row.total or 0, 2)
+        # Note: minimal escaping since fields are simple; extend if names with commas ever added
+        sio.write(f"{row.sale_id},{iso},{total}\n")
 
-@app.route('/admin/export/transaction_lines')
-def export_transaction_lines_csv():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    admin_token = os.getenv('ADMIN_TOKEN')
-    if admin_token and request.args.get('token') != admin_token:
-        return jsonify({'error': 'Invalid token'}), 403
-
-    sio = StringIO()
-    sio.write('id,sale_id,date_time,product_id,qty,unit_price\n')
-    for ln in db.session.query(Sale).order_by(Sale.id.asc()).all():
-        sio.write(f"{ln.id},{ln.sale_id},{ln.date_time.isoformat()},{ln.product_id},{ln.qty},{ln.unit_price}\n")
     buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
-    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name='transaction_lines.csv')
+    # Surface the effective range as filename hint
+    fname = f"sales_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
+
 
 # -----------------------------
 # Settings (admin)
