@@ -74,7 +74,7 @@ class Setting(db.Model):
 class Sale(db.Model):
     __tablename__ = 'sales'
     id = db.Column(db.Integer, primary_key=True)
-    sale_id = db.Column(db.String(50), index=True, nullable=False)  # one receipt across multiple rows
+    sale_id = db.Column(db.Integer, index=True, nullable=False)  # one receipt across multiple rows
     date_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
     qty = db.Column(db.Integer, nullable=False)
