@@ -235,6 +235,37 @@ async function loadProducts() {
   }
 }
 
+
+
+// ---------- New helpers (place under "Helpers") ----------
+function nextLocalProductId() {
+  // purely for UI display when creating a product (NOT for server)
+  const maxId = Math.max(0, ...STATE.products.map(p => Number(p.id) || 0));
+  return maxId + 1;
+}
+
+// Generate a numeric EAN-13 barcode using a prefix + id + random + checksum.
+// Returns a 13-digit string.
+function genBarcodeFromId(id) {
+  // Prefix '200' marks "internal" codes in many stores (not a formal rule, but common practice).
+  // Build 12 digits, then compute checksum as 13th.
+  const base = `200${String(id).padStart(5,'0')}${String(Math.floor(Math.random()*100000)).padStart(5,'0')}`.slice(0,12);
+  return base + ean13Checksum(base);
+}
+
+function ean13Checksum(code12) {
+  // EAN-13 checksum: (10 - ((3*sum(odd positions) + sum(even positions)) % 10)) % 10
+  let sum = 0;
+  for (let i = 0; i < code12.length; i++) {
+    const n = Number(code12[i]);
+    sum += (i % 2 === 0) ? n : 3*n; // positions are 0-indexed here
+  }
+  const check = (10 - (sum % 10)) % 10;
+  return String(check);
+}
+``
+
+
 function openProductEditor(p) {
   // Prefill fields
   document.getElementById('p-id').value = p?.id ?? '';
@@ -253,37 +284,74 @@ function openProductEditor(p) {
 }
 
 // New Product button: clear and open modal
+
 document.getElementById('btn-new-product')?.addEventListener('click', () => {
   ['p-id','p-name','p-price','p-barcode','p-stock','pur-product-id','pur-qty','pur-price']
     .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+
+  // show a client-side suggested ID for UX (do NOT rely on it server-side)
+  const pidEl = document.getElementById('p-id');
+  if (pidEl) pidEl.value = String(nextLocalProductId());
+
+  // prefill a barcode if empty so tellers can print/scan immediately
+  const bcEl = document.getElementById('p-barcode');
+  if (bcEl) bcEl.value = genBarcodeFromId(pidEl?.value || nextLocalProductId());
+
   document.getElementById('productEditorTitle').textContent = 'New Product';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).show();
 });
+
 
 // Products filter
 document.getElementById('products-filter')?.addEventListener('input', renderProductsCards);
 
 // Product CRUD
+
 document.getElementById('btn-add-product')?.addEventListener('click', async () => {
   const name = document.getElementById('p-name').value.trim();
   const price = parseFloat(document.getElementById('p-price').value);
-  const barcode = document.getElementById('p-barcode').value.trim();
+  let barcode = document.getElementById('p-barcode').value.trim();
   const stock_qty = parseInt(document.getElementById('p-stock').value || '0', 10);
+
+  // If user left barcode empty, generate one now
+  if (!barcode) {
+    // Try to build from the UI hint id; if not present, still safe
+    const hinted = document.getElementById('p-id')?.value || nextLocalProductId();
+    barcode = genBarcodeFromId(hinted);
+    const bcEl = document.getElementById('p-barcode'); if (bcEl) bcEl.value = barcode;
+  }
+
   try {
-    await api('/api/products', { method: 'POST', body: JSON.stringify({ name, price, barcode, stock_qty }) });
+    // Do NOT include id; let the backend/database assign it
+    await api('/api/products', {
+      method: 'POST',
+      body: JSON.stringify({ name, price, barcode, stock_qty })
+    });
     await loadProducts();
     alert('Product added');
   } catch (e) { alert(e.message); }
 });
+``
+
+
 
 document.getElementById('btn-update-product')?.addEventListener('click', async () => {
   const id = parseInt(document.getElementById('p-id').value || '0', 10);
   const name = document.getElementById('p-name').value.trim();
   const price = document.getElementById('p-price').value;
-  const barcode = document.getElementById('p-barcode').value.trim();
+  let barcode = document.getElementById('p-barcode').value.trim();
   const stock_qty = document.getElementById('p-stock').value;
+
+  if (!barcode && id) {
+    barcode = genBarcodeFromId(id);
+    const bcEl = document.getElementById('p-barcode'); if (bcEl) bcEl.value = barcode;
+  }
+
   try {
-    await api('/api/products/update', { method: 'POST', body: JSON.stringify({ id, name, price, barcode, stock_qty }) });
+    await api('/api/products/update', {
+      method: 'POST',
+      body: JSON.stringify({ id, name, price, barcode, stock_qty })
+    });
     await loadProducts();
     alert('Product updated');
   } catch (e) { alert(e.message); }
