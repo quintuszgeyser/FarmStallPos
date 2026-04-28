@@ -723,6 +723,10 @@ function openProductEditor(p) {
   updatePkgSizeBaseDisplay();
   renderRecipeLines();
   renderPackagesTable();
+  const isEdit = !!p?.id;
+  document.getElementById('btn-add-product')   ?.classList.toggle('hidden', isEdit);
+  document.getElementById('btn-update-product') ?.classList.toggle('hidden', !isEdit);
+  document.getElementById('btn-delete-product') ?.classList.toggle('hidden', !isEdit);
   bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).show();
 }
 
