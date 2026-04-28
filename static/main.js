@@ -660,7 +660,7 @@ function openProductEditor(p) {
   document.getElementById('p-low-stock').value = p?.low_stock_threshold ?? '';
   document.getElementById('p-is-for-sale').checked   = p?.is_for_sale !== false;
   document.getElementById('p-is-prepared').checked  = !!p?.is_prepared;
-  document.getElementById('pur-product-id').value   = p?.id ?? '';
+  const purPid = document.getElementById('pur-product-id'); if (purPid) purPid.value = p?.id ?? '';
 
   // Single price field: weight/volume stock_items use price_per_unit, everything else uses price
   const isWeightOrVolume = (p?.unit_type === 'weight' || p?.unit_type === 'volume')
