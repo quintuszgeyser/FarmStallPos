@@ -275,15 +275,17 @@ function renderProductsCards() {
   });
 
   // Update count badges
+  const singleCount   = STATE.products.filter(p => !p.is_archived && p.is_for_sale !== false && p.product_type !== 'recipe').length;
   const ingCount      = STATE.products.filter(p => !p.is_archived && p.is_for_sale === false).length;
-  const archivedCount = STATE.products.filter(p => p.is_archived).length;
   const recipeCount   = STATE.products.filter(p => !p.is_archived && p.product_type === 'recipe').length;
-  const ingBadge  = document.getElementById('ingredients-count-badge');
-  const arcBadge  = document.getElementById('archived-count-badge');
-  const recBadge  = document.getElementById('recipes-count-badge');
-  if (ingBadge)  { ingBadge.textContent  = ingCount;      ingBadge.style.display  = ingCount > 0      ? '' : 'none'; }
-  if (arcBadge)  { arcBadge.textContent  = archivedCount; arcBadge.style.display  = archivedCount > 0 ? '' : 'none'; }
-  if (recBadge)  { recBadge.textContent  = recipeCount;   recBadge.style.display  = recipeCount > 0   ? '' : 'none'; }
+  const specialsCount = (STATE.specials || []).length;
+  const archivedCount = STATE.products.filter(p => p.is_archived).length;
+  const setBadge = (id, n) => { const el = document.getElementById(id); if (el) { el.textContent = n; el.style.display = n > 0 ? '' : 'none'; } };
+  setBadge('single-count-badge',     singleCount);
+  setBadge('ingredients-count-badge', ingCount);
+  setBadge('recipes-count-badge',    recipeCount);
+  setBadge('specials-count-badge',   specialsCount);
+  setBadge('archived-count-badge',   archivedCount);
 
   wrap.innerHTML = '';
   if (items.length === 0) {
