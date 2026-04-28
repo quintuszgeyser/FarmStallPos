@@ -137,7 +137,8 @@
       "Bash(netstat -ano)",
       "Bash(taskkill /PID 27596 /F)",
       "Bash(taskkill /PID 22972 /F)",
-      "Bash(powershell.exe *)"
+      "Bash(powershell.exe *)",
+      "Bash(openssl x509 *)"
     ]
   }
 }
