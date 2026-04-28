@@ -57,11 +57,17 @@ import time as _time
 @app.before_request
 def _log_request():
     g._req_start = _time.monotonic()
-    # Skip logging for static files
     if request.path.startswith('/static'):
         return
     user_id = session.get('user_id', '-')
     logger.info('REQ  %s %s  user=%s', request.method, request.path, user_id)
+    # Stamp last_active on every authenticated request
+    sid = session.get('session_id')
+    if sid:
+        sess = db.session.get(UserSession, sid)
+        if sess and sess.logged_out is None:
+            sess.last_active = datetime.utcnow()
+            db.session.commit()
 
 @app.after_request
 def _log_response(response):
@@ -232,10 +238,13 @@ class Setting(db.Model):
 
 class UserSession(db.Model):
     __tablename__ = 'user_sessions'
-    id         = db.Column(db.Integer, primary_key=True)
-    user_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    logged_in  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    logged_out = db.Column(db.DateTime, nullable=True)
+    id          = db.Column(db.Integer, primary_key=True)
+    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    logged_in   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    logged_out  = db.Column(db.DateTime, nullable=True)
+    last_active = db.Column(db.DateTime, nullable=True)
+
+SESSION_TIMEOUT_MINUTES = 10
 
 
 class Sale(db.Model):
@@ -293,7 +302,21 @@ def require_login():
     if 'user_id' not in session:
         return False
     user = db.session.get(User, session['user_id'])
-    return bool(user and user.active)
+    if not user or not user.active:
+        session.clear()
+        return False
+    sid = session.get('session_id')
+    if sid:
+        sess = db.session.get(UserSession, sid)
+        if sess and sess.logged_out is None:
+            cutoff = datetime.utcnow() - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+            last = sess.last_active or sess.logged_in
+            if last < cutoff:
+                sess.logged_out = last + timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+                db.session.commit()
+                session.clear()
+                return False
+    return True
 
 def current_user():
     if 'user_id' not in session:
@@ -874,6 +897,7 @@ def strong_migrate():
             )""")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_user_sessions_user ON user_sessions (user_id)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_user_sessions_in ON user_sessions (logged_in)")
+            pg_try("ALTER TABLE user_sessions ADD COLUMN last_active TIMESTAMP")
 
             # sub_log: JSON map {ingredient_id: replacement_id} for recipe substitutions
             pg_try("ALTER TABLE sales ADD COLUMN sub_log TEXT")
