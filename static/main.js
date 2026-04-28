@@ -2059,6 +2059,7 @@ function addPurchaseLine() {
 
   const line = document.createElement('div');
   line.className = 'border rounded p-2 mb-2';
+  line.dataset.lineId = Date.now() + Math.random();
 
   line.innerHTML = `
     <div class="d-flex gap-2 align-items-center mb-2">
@@ -2088,12 +2089,29 @@ function addPurchaseLine() {
 
   container.appendChild(line);
 
+  const unitSel = line.querySelector('[data-unit]');
+  const UNIT_OPTIONS = {
+    weight: [['g','g'],['kg','kg']],
+    volume: [['ml','ml'],['L','L']],
+    count:  [['unit','unit']],
+    simple: [['unit','unit']],
+  };
+
+  function updateUnitsForProduct(pid) {
+    const p = STATE.products.find(pr => pr.id === parseInt(pid));
+    const type = p ? (p.product_type === 'simple' ? 'simple' : p.unit_type || 'count') : null;
+    const opts = UNIT_OPTIONS[type] || [['unit','unit'],['g','g'],['kg','kg'],['ml','ml'],['L','L']];
+    unitSel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  }
+
+  line.querySelector('[data-product-select]')?.addEventListener('change', e => {
+    updateUnitsForProduct(e.target.value);
+  });
+
   // "Create New Product" — open the full product editor modal and come back
   line.querySelector('[data-create-product-btn]')?.addEventListener('click', () => {
     _pendingPurchaseLine = line;
     openProductEditor(null);
-    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal'));
-    modal.show();
   });
 
   line.querySelector('[data-remove-line]')?.addEventListener('click', () => line.remove());
