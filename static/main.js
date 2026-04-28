@@ -825,7 +825,8 @@ function openProductEditor(p) {
   document.getElementById('btn-update-product') ?.classList.toggle('hidden', !isEdit);
   document.getElementById('btn-delete-product') ?.classList.toggle('hidden', !isEdit);
   // Calculator only makes sense when editing — needs existing stock batches to compute cost
-  document.getElementById('section-calc')?.classList.toggle('hidden', !isEdit);
+  const calcSection = document.getElementById('section-calc');
+  if (calcSection) calcSection.style.display = isEdit ? '' : 'none';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).show();
 }
 
