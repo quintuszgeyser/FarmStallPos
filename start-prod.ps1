@@ -29,11 +29,11 @@ if ($status -match "server is running") {
 
 # Set environment variables
 $env:APP_ENV           = "production"
-$env:SECRET_KEY        = "CHANGE-ME-prod-secret-key"
+$env:SECRET_KEY        = "Nicolene0729021560"
 $env:DATABASE_URL      = "postgresql://farmstall:FarmStall@localhost:5432/farm_pos_prod"
 $env:LOCAL_TZ          = "Africa/Johannesburg"
 $env:ADMIN_USER        = "admin"
-$env:ADMIN_PASS        = "CHANGE-ME-prod-password"
+$env:ADMIN_PASS        = "admin123"
 $env:PORT              = "5443"
 
 Write-Host "Starting Farm POS PRODUCTION on https://localhost:5443 ..." -ForegroundColor Green

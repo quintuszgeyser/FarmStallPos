@@ -127,7 +127,9 @@
       "Bash(timeout 12 .venv/Scripts/python app.py)",
       "Bash(.venv/Scripts/python -c \"import ast; ast.parse\\(open\\('app.py'\\).read\\(\\)\\); print\\('app.py OK'\\)\")",
       "Bash(tasklist)",
-      "Bash(grep -E '\\\\.\\(py|js|html|sql|db\\)$')"
+      "Bash(grep -E '\\\\.\\(py|js|html|sql|db\\)$')",
+      "Bash(PGPASSWORD=FarmStall psql -U farmstall -h localhost -p 5432 -d postgres -c \"SELECT 1 FROM pg_database WHERE datname='farm_pos_prod';\")",
+      "Bash(PGPASSWORD=FarmStall psql *)"
     ]
   }
 }
