@@ -3108,20 +3108,20 @@ def api_stats():
         if uid not in emp_first or dt < emp_first[uid]: emp_first[uid] = dt
         if uid not in emp_last  or dt > emp_last[uid]:  emp_last[uid]  = dt
 
-    # Session durations — clamp each session to the selected date range so
-    # R/hour isn't diluted by time outside the window or unclosed sessions.
+    # Session durations — only sessions that started within the range, capped at range end.
+    # Excludes zombie sessions (started before range, never logged out) which would
+    # otherwise inflate time by 24h per unclosed session.
     sessions_in_range = UserSession.query.filter(
-        UserSession.logged_in <= end_dt,
-        db.or_(UserSession.logged_out == None, UserSession.logged_out >= start_dt)
+        UserSession.logged_in >= start_dt,
+        UserSession.logged_in <= end_dt
     ).all()
     emp_session_minutes = defaultdict(float)
     emp_session_count   = defaultdict(int)
     for s in sessions_in_range:
-        clamped_start = max(s.logged_in, start_dt)
-        clamped_end   = min(s.logged_out or end_dt, end_dt)
-        if clamped_end <= clamped_start:
+        clamped_end  = min(s.logged_out or end_dt, end_dt)
+        duration_min = (clamped_end - s.logged_in).total_seconds() / 60.0
+        if duration_min <= 0:
             continue
-        duration_min = (clamped_end - clamped_start).total_seconds() / 60.0
         emp_session_minutes[s.user_id] += duration_min
         emp_session_count[s.user_id]   += 1
 
