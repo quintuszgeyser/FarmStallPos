@@ -3539,7 +3539,7 @@ def api_stats_drilldown_profit():
 # -----------------------------
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html', app_env=os.getenv('APP_ENV', 'qa'))
 
 @app.route('/guide')
 def user_guide():

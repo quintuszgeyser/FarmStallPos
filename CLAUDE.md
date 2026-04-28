@@ -4,13 +4,31 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Running the App
 
-Always use `start.ps1` — it starts PostgreSQL, activates the venv, sets all env vars, and runs `python app.py`:
+Two environments, two scripts:
+
+| Environment | Script | URL | Database |
+|---|---|---|---|
+| QA (dev/testing) | `start-qa.ps1` | `http://localhost:5000` | `farm_pos` |
+| Production | `start-prod.ps1` | `https://localhost:5443` | `farm_pos_prod` |
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File start.ps1
+# QA
+powershell -ExecutionPolicy Bypass -File start-qa.ps1
+
+# Production
+powershell -ExecutionPolicy Bypass -File start-prod.ps1
 ```
 
-App runs at `http://127.0.0.1:5000`. Default login: `admin` / `admin123`.
+QA shows a yellow banner at the top so you can never confuse the two.
+Default login (both): `admin` / `admin123` (change prod password in `start-prod.ps1`).
+
+To promote QA → Production:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File promote.ps1
+```
+
+This merges `main` into the `production` GitHub branch and pushes both.
 
 To install new packages add `--trusted-host pypi.org --trusted-host files.pythonhosted.org` (Capitec corporate SSL proxy):
 
@@ -21,7 +39,7 @@ To install new packages add `--trusted-host pypi.org --trusted-host files.python
 ## Environment
 
 - **Database:** PostgreSQL at `postgresql://farmstall:FarmStall@localhost:5432/farm_pos`
-- **PostgreSQL location:** `C:\Users\CP368103\PostgreSQL\pgsql\` — not a Windows service, started manually by `start.ps1`
+- **PostgreSQL location:** `C:\Users\CP368103\PostgreSQL\pgsql\` — not a Windows service, started manually by the start scripts
 - **Python venv:** `.venv\` in project root
 - **Platform:** Windows 11, shell is bash (use Unix syntax in tool calls)
 
