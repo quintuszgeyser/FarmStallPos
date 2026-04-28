@@ -330,8 +330,12 @@
             <div class="card-body">
               <h6 id="supplier-form-title">Add Supplier</h6>
               <input type="hidden" id="sup-id">
-              <div class="mb-2"><input id="sup-name"    class="form-control"      placeholder="Supplier name *"></div>
-              <div class="mb-2"><input id="sup-contact" class="form-control"      placeholder="Phone / email / website"></div>
+              <div class="mb-2"><input id="sup-name" class="form-control" placeholder="Supplier name *"></div>
+              <div class="row g-2 mb-2">
+                <div class="col-12 col-sm-4"><input id="sup-phone"   class="form-control" placeholder="Phone"></div>
+                <div class="col-12 col-sm-4"><input id="sup-email"   class="form-control" placeholder="Email"></div>
+                <div class="col-12 col-sm-4"><input id="sup-website" class="form-control" placeholder="Website"></div>
+              </div>
               <div class="mb-2"><textarea id="sup-notes" class="form-control" rows="2" placeholder="Notes"></textarea></div>
               <div class="d-flex gap-2">
                 <button id="btn-save-supplier"   class="btn btn-success flex-fill">Save</button>

@@ -205,7 +205,9 @@ class Supplier(db.Model):
     __tablename__ = 'suppliers'
     id      = db.Column(db.Integer, primary_key=True)
     name    = db.Column(db.String(120), unique=True, nullable=False)
-    contact = db.Column(db.String(200), nullable=True)   # phone / email / website
+    phone   = db.Column(db.String(50),  nullable=True)
+    email   = db.Column(db.String(120), nullable=True)
+    website = db.Column(db.String(200), nullable=True)
     notes   = db.Column(db.String(500), nullable=True)
 
 
@@ -869,6 +871,11 @@ def strong_migrate():
             # Add supplier_id to stock_batches
             pg_try("ALTER TABLE stock_batches ADD COLUMN supplier_id INTEGER")
             pg_try("ALTER TABLE stock_batches ADD CONSTRAINT fk_batches_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id)")
+            # Split contact into phone/email/website
+            pg_try("ALTER TABLE suppliers ADD COLUMN phone   VARCHAR(50)")
+            pg_try("ALTER TABLE suppliers ADD COLUMN email   VARCHAR(120)")
+            pg_try("ALTER TABLE suppliers ADD COLUMN website VARCHAR(200)")
+            pg_try("UPDATE suppliers SET phone = contact WHERE contact IS NOT NULL AND email IS NULL AND website IS NULL")
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS recipe_lines (
@@ -1684,7 +1691,7 @@ def api_suppliers_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
     suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
-    return jsonify([{'id': s.id, 'name': s.name, 'contact': s.contact, 'notes': s.notes} for s in suppliers])
+    return jsonify([{'id': s.id, 'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website, 'notes': s.notes} for s in suppliers])
 
 @app.route('/api/suppliers', methods=['POST'])
 def api_suppliers_post():
@@ -1692,13 +1699,15 @@ def api_suppliers_post():
         return jsonify({'error': 'Forbidden'}), 403
     data = request.json or {}
     name    = data.get('name', '').strip()
-    contact = data.get('contact', '').strip() or None
-    notes   = data.get('notes', '').strip() or None
+    phone   = data.get('phone',   '').strip() or None
+    email   = data.get('email',   '').strip() or None
+    website = data.get('website', '').strip() or None
+    notes   = data.get('notes',   '').strip() or None
     if not name:
         return jsonify({'error': 'name required'}), 400
     if Supplier.query.filter_by(name=name).first():
         return jsonify({'error': 'Supplier already exists'}), 409
-    s = Supplier(name=name, contact=contact, notes=notes)
+    s = Supplier(name=name, phone=phone, email=email, website=website, notes=notes)
     db.session.add(s)
     db.session.commit()
     return jsonify({'ok': True, 'id': s.id})
@@ -1717,7 +1726,9 @@ def api_suppliers_update(sid):
         if clash:
             return jsonify({'error': 'Supplier name already exists'}), 409
         s.name = name
-    if 'contact' in data: s.contact = data['contact'].strip() or None
+    if 'phone'   in data: s.phone   = data['phone'].strip()   or None
+    if 'email'   in data: s.email   = data['email'].strip()   or None
+    if 'website' in data: s.website = data['website'].strip() or None
     if 'notes'   in data: s.notes   = data['notes'].strip()   or None
     db.session.commit()
     return jsonify({'ok': True})

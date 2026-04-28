@@ -1219,10 +1219,20 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
   const payload = buildProductPayload();
   if (!payload) return;
   try {
-    await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
+    const result = await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
     await loadProducts();
     toast('Product added');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
+    // If opened from a purchase run line, auto-select the new product in that line
+    if (_pendingPurchaseLine && result?.id) {
+      const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
+      const sel = _pendingPurchaseLine.querySelector('[data-product-select]');
+      if (sel) {
+        sel.innerHTML = _buildProductOptions(supplierProductIds);
+        sel.value = result.id;
+      }
+      _pendingPurchaseLine = null;
+    }
   } catch (e) { toast(e.message, 'error'); }
 });
 
@@ -1412,12 +1422,14 @@ function renderStockList(items) {
         const remaining = displayQty(b.qty_remaining_base, item.unit_type);
         const purchased = displayQty(b.qty_purchased_base, item.unit_type);
         const date         = new Date(b.purchased_at).toLocaleDateString('en-ZA');
-        const supplierStr  = b.supplier_name ? ` · ${b.supplier_name}` : '';
+        const supplierBadge = b.supplier_name
+          ? `<span class="badge bg-info text-dark ms-1" style="font-size:10px">${b.supplier_name}</span>`
+          : '<span class="badge bg-light text-muted ms-1" style="font-size:10px">No supplier</span>';
         const totalCost    = (b.cost_per_base_unit * b.qty_purchased_base).toFixed(2);
         const batchEl = document.createElement('div');
         batchEl.className = 'batch-row';
         batchEl.innerHTML = `
-            <span>${date}${supplierStr}</span>
+            <span>${date}${supplierBadge}</span>
             <span>Bought: ${purchased}</span>
             <span>Left: <strong>${remaining}</strong></span>
             <span>Cost: R${b.cost_per_base_unit.toFixed(6)}/${item.base_unit}</span>
@@ -1855,6 +1867,7 @@ let _suppliers = [];
 let _editingSupplierId = null;
 let _currentSupplier = null;
 let _purchaseRunLines = [];
+let _currentSupplierProducts = [];
 
 async function loadSuppliers() {
   if (STATE.user?.role !== 'admin') return;
@@ -1874,14 +1887,17 @@ function renderSuppliersList() {
   }
   _suppliers.forEach(s => {
     const item = document.createElement('div');
-    item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-start';
+    item.className = 'list-group-item list-group-item-action';
     item.style.cursor = 'pointer';
+    const contactBits = [
+      s.phone   ? `📞 ${s.phone}`   : '',
+      s.email   ? `✉ ${s.email}`   : '',
+      s.website ? `🌐 ${s.website}` : '',
+    ].filter(Boolean).join('  ');
     item.innerHTML = `
-      <div>
-        <strong>${s.name}</strong>
-        ${s.contact ? `<div class="small text-muted">${s.contact}</div>` : ''}
-        ${s.notes   ? `<div class="small text-muted fst-italic">${s.notes}</div>` : ''}
-      </div>
+      <strong>${s.name}</strong>
+      ${contactBits ? `<div class="small text-muted">${contactBits}</div>` : ''}
+      ${s.notes     ? `<div class="small text-muted fst-italic">${s.notes}</div>` : ''}
     `;
     item.addEventListener('click', () => openSupplierDetail(s));
     host.appendChild(item);
@@ -1903,6 +1919,7 @@ async function loadSupplierProducts(sid) {
   host.innerHTML = '<span class="text-muted small">Loading...</span>';
   try {
     const products = await api(`/api/suppliers/${sid}/products`);
+    _currentSupplierProducts = products;
     if (products.length === 0) {
       host.innerHTML = '<span class="text-muted small">No products on record yet.</span>';
       return;
@@ -1943,7 +1960,9 @@ function populateSupplierDropdowns() {
 
 function clearSupplierForm() {
   _editingSupplierId = null;
-  ['sup-id','sup-name','sup-contact','sup-notes'].forEach(id => {
+  _currentSupplier = null;
+  _currentSupplierProducts = [];
+  ['sup-id','sup-name','sup-phone','sup-email','sup-website','sup-notes'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('supplier-form-title').textContent = 'Add Supplier';
@@ -1957,15 +1976,17 @@ document.getElementById('btn-refresh-suppliers')?.addEventListener('click', load
 document.getElementById('btn-save-supplier')?.addEventListener('click', async () => {
   const id      = _editingSupplierId;
   const name    = document.getElementById('sup-name').value.trim();
-  const contact = document.getElementById('sup-contact').value.trim();
+  const phone   = document.getElementById('sup-phone').value.trim();
+  const email   = document.getElementById('sup-email').value.trim();
+  const website = document.getElementById('sup-website').value.trim();
   const notes   = document.getElementById('sup-notes').value.trim();
   if (!name) return toast('Supplier name required', 'warning');
   try {
     if (id) {
-      await api(`/api/suppliers/${id}`, { method: 'POST', body: JSON.stringify({ name, contact, notes }) });
+      await api(`/api/suppliers/${id}`, { method: 'POST', body: JSON.stringify({ name, phone, email, website, notes }) });
       toast('Supplier updated');
     } else {
-      await api('/api/suppliers', { method: 'POST', body: JSON.stringify({ name, contact, notes }) });
+      await api('/api/suppliers', { method: 'POST', body: JSON.stringify({ name, phone, email, website, notes }) });
       toast('Supplier added');
     }
     clearSupplierForm();
@@ -1990,7 +2011,9 @@ document.getElementById('btn-supplier-edit')?.addEventListener('click', () => {
   _editingSupplierId = _currentSupplier.id;
   document.getElementById('sup-id').value      = _currentSupplier.id;
   document.getElementById('sup-name').value    = _currentSupplier.name;
-  document.getElementById('sup-contact').value = _currentSupplier.contact || '';
+  document.getElementById('sup-phone').value   = _currentSupplier.phone   || '';
+  document.getElementById('sup-email').value   = _currentSupplier.email   || '';
+  document.getElementById('sup-website').value = _currentSupplier.website || '';
   document.getElementById('sup-notes').value   = _currentSupplier.notes   || '';
   document.getElementById('supplier-form-title').textContent = 'Edit Supplier';
   show(document.getElementById('supplier-edit-panel'));
@@ -2014,128 +2037,67 @@ document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', ()
 
 document.getElementById('btn-add-purchase-line')?.addEventListener('click', addPurchaseLine);
 
+// Track which purchase line is waiting for a new product to be created
+let _pendingPurchaseLine = null;
+
+function _buildProductOptions(supplierProductIds) {
+  // Supplier's own products first (sorted by name), then the rest
+  const active = STATE.products.filter(p => !p.is_archived);
+  const own    = active.filter(p => supplierProductIds.has(p.id));
+  const rest   = active.filter(p => !supplierProductIds.has(p.id));
+  const sep    = own.length ? `<option disabled>── Other products ──</option>` : '';
+  const opts   = (arr) => arr.map(p => `<option value="${p.id}">${p.name} (${p.product_type})</option>`).join('');
+  return `<option value="">— Select product —</option>${opts(own)}${sep}${opts(rest)}`;
+}
+
 function addPurchaseLine() {
   const container = document.getElementById('purchase-run-lines');
   if (!container) return;
 
-  const lineId = Date.now() + Math.random();
+  const supplierProductIds = new Set(
+    (_currentSupplierProducts || []).map(p => p.id)
+  );
+
   const line = document.createElement('div');
   line.className = 'border rounded p-2 mb-2';
-  line.dataset.lineId = lineId;
 
   line.innerHTML = `
     <div class="d-flex gap-2 align-items-center mb-2">
-      <div class="btn-group btn-group-sm" role="group">
-        <button type="button" class="btn btn-outline-secondary active" data-mode="existing">Existing</button>
-        <button type="button" class="btn btn-outline-secondary" data-mode="new">New Product</button>
-      </div>
-      <button class="btn btn-sm btn-outline-danger ms-auto" data-remove-line>Remove</button>
+      <span class="small fw-semibold text-muted">Item</span>
+      <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" data-create-product-btn>+ Create New Product</button>
+      <button class="btn btn-sm btn-outline-danger" data-remove-line>✕</button>
     </div>
-    <div data-existing-mode>
-      <div class="mb-2">
-        <select class="form-select form-select-sm" data-product-select>
-          <option value="">— Select product —</option>
-          ${STATE.products.filter(p => !p.is_archived).map(p =>
-            `<option value="${p.id}">${p.name} (${p.product_type})</option>`
-          ).join('')}
+    <div class="mb-2">
+      <select class="form-select form-select-sm" data-product-select>
+        ${_buildProductOptions(supplierProductIds)}
+      </select>
+    </div>
+    <div class="row g-2">
+      <div class="col-4"><input type="number" step="0.01" min="0.01" class="form-control form-control-sm" placeholder="Qty" data-qty></div>
+      <div class="col-4">
+        <select class="form-select form-select-sm" data-unit>
+          <option value="unit">unit</option>
+          <option value="g">g</option>
+          <option value="kg">kg</option>
+          <option value="ml">ml</option>
+          <option value="L">L</option>
         </select>
       </div>
-      <div class="row g-2">
-        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Qty" data-qty></div>
-        <div class="col-4">
-          <select class="form-select form-select-sm" data-unit>
-            <option value="unit">unit</option>
-            <option value="g">g</option>
-            <option value="kg">kg</option>
-            <option value="ml">ml</option>
-            <option value="L">L</option>
-          </select>
-        </div>
-        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Total R" data-price></div>
-      </div>
-    </div>
-    <div data-new-mode class="hidden">
-      <div class="mb-2"><input type="text" class="form-control form-control-sm" placeholder="Product name" data-new-name></div>
-      <div class="row g-2 mb-2">
-        <div class="col-6"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Sell price" data-new-price></div>
-        <div class="col-6">
-          <select class="form-select form-select-sm" data-new-type>
-            <option value="simple">Simple (count)</option>
-            <option value="stock_item">Stock Item (weight/volume)</option>
-          </select>
-        </div>
-      </div>
-      <div class="row g-2 mb-2 hidden" data-new-unit-row>
-        <div class="col-6">
-          <select class="form-select form-select-sm" data-new-unit-type>
-            <option value="">— Unit type —</option>
-            <option value="weight">Weight</option>
-            <option value="volume">Volume</option>
-            <option value="count">Count</option>
-          </select>
-        </div>
-        <div class="col-6">
-          <select class="form-select form-select-sm" data-new-base-unit>
-            <option value="g">g</option>
-            <option value="ml">ml</option>
-            <option value="unit">unit</option>
-          </select>
-        </div>
-      </div>
-      <div class="row g-2">
-        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Qty" data-qty></div>
-        <div class="col-4">
-          <select class="form-select form-select-sm" data-unit>
-            <option value="unit">unit</option>
-            <option value="g">g</option>
-            <option value="kg">kg</option>
-            <option value="ml">ml</option>
-            <option value="L">L</option>
-          </select>
-        </div>
-        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Total R" data-price></div>
-      </div>
+      <div class="col-4"><input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="Total R" data-price></div>
     </div>
   `;
 
   container.appendChild(line);
 
-  // Wire up mode toggle
-  const modeButtons = line.querySelectorAll('[data-mode]');
-  const existingMode = line.querySelector('[data-existing-mode]');
-  const newMode = line.querySelector('[data-new-mode]');
-  const newTypeSelect = line.querySelector('[data-new-type]');
-  const newUnitRow = line.querySelector('[data-new-unit-row]');
-
-  modeButtons.forEach(btn => {
-    btn.addEventListener('click', () => {
-      const mode = btn.dataset.mode;
-      modeButtons.forEach(b => b.classList.toggle('active', b === btn));
-      if (mode === 'existing') {
-        show(existingMode);
-        hide(newMode);
-      } else {
-        hide(existingMode);
-        show(newMode);
-      }
-    });
+  // "Create New Product" — open the full product editor modal and come back
+  line.querySelector('[data-create-product-btn]')?.addEventListener('click', () => {
+    _pendingPurchaseLine = line;
+    openProductEditor(null);
+    const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal'));
+    modal.show();
   });
 
-  // Show/hide unit fields for stock_item
-  newTypeSelect?.addEventListener('change', () => {
-    if (newTypeSelect.value === 'stock_item') {
-      show(newUnitRow);
-    } else {
-      hide(newUnitRow);
-    }
-  });
-
-  // Remove button
-  line.querySelector('[data-remove-line]')?.addEventListener('click', () => {
-    line.remove();
-  });
-
-  _purchaseRunLines.push({ lineId, element: line });
+  line.querySelector('[data-remove-line]')?.addEventListener('click', () => line.remove());
 }
 
 document.getElementById('btn-submit-purchase-run')?.addEventListener('click', async () => {
@@ -2146,43 +2108,15 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
 
   const lines = [];
   for (const lineEl of lineElements) {
-    const modeBtn = lineEl.querySelector('[data-mode].active');
-    const mode = modeBtn?.dataset.mode || 'existing';
+    const productId = parseInt(lineEl.querySelector('[data-product-select]')?.value || 0);
+    const qty       = parseFloat(lineEl.querySelector('[data-qty]')?.value || 0);
+    const price     = parseFloat(lineEl.querySelector('[data-price]')?.value || 0);
+    const unit      = lineEl.querySelector('[data-unit]')?.value || 'unit';
 
-    // Scope queries to the active mode's div
-    const modeDiv = mode === 'existing'
-      ? lineEl.querySelector('[data-existing-mode]')
-      : lineEl.querySelector('[data-new-mode]');
-
-    const qty = parseFloat(modeDiv.querySelector('[data-qty]').value || 0);
-    const price = parseFloat(modeDiv.querySelector('[data-price]').value || 0);
-    const unit = modeDiv.querySelector('[data-unit]').value;
-
-    if (qty <= 0 || price < 0) {
-      return toast('All quantities must be > 0 and prices >= 0', 'warning');
-    }
-
-    if (mode === 'existing') {
-      const productId = parseInt(lineEl.querySelector('[data-product-select]').value || 0);
-      if (!productId) return toast('Please select a product for all lines', 'warning');
-      lines.push({ product_id: productId, qty, unit, total_price: price });
-    } else {
-      const name = lineEl.querySelector('[data-new-name]').value.trim();
-      const sellPrice = parseFloat(lineEl.querySelector('[data-new-price]').value || 0);
-      const productType = lineEl.querySelector('[data-new-type]').value;
-
-      if (!name) return toast('Product name required for new products', 'warning');
-      if (sellPrice < 0) return toast('Sell price must be >= 0', 'warning');
-
-      const newProduct = { name, price: sellPrice, product_type: productType };
-
-      if (productType === 'stock_item') {
-        newProduct.unit_type = lineEl.querySelector('[data-new-unit-type]').value || null;
-        newProduct.base_unit = lineEl.querySelector('[data-new-base-unit]').value || null;
-      }
-
-      lines.push({ new_product: newProduct, qty, unit, total_price: price });
-    }
+    if (!productId) return toast('Please select a product for all lines', 'warning');
+    if (qty <= 0)   return toast('Quantity must be greater than 0', 'warning');
+    if (price < 0)  return toast('Price cannot be negative', 'warning');
+    lines.push({ product_id: productId, qty, unit, total_price: price });
   }
 
   if (lines.length === 0) return toast('Add at least one item', 'warning');
