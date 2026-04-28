@@ -3093,9 +3093,6 @@ def api_stats():
     minutely = [{'minute': m, 'revenue': round(v, 2)} for m, v in sorted(revenue_per_minute.items())]
 
     # ── Employee stats ──
-    all_user_ids = list({r.user_id for r in rows if r.user_id})
-    user_name_map = {u.id: u.username for u in User.query.filter(User.id.in_(all_user_ids)).all()} if all_user_ids else {}
-
     emp_revenue   = defaultdict(float)
     emp_tx        = defaultdict(set)
     emp_items     = defaultdict(float)
@@ -3111,19 +3108,28 @@ def api_stats():
         if uid not in emp_first or dt < emp_first[uid]: emp_first[uid] = dt
         if uid not in emp_last  or dt > emp_last[uid]:  emp_last[uid]  = dt
 
-    # Session durations from user_sessions table
+    # Session durations — clamp each session to the selected date range so
+    # R/hour isn't diluted by time outside the window or unclosed sessions.
     sessions_in_range = UserSession.query.filter(
-        UserSession.logged_in >= start_dt,
-        UserSession.logged_in <= end_dt
+        UserSession.logged_in <= end_dt,
+        db.or_(UserSession.logged_out == None, UserSession.logged_out >= start_dt)
     ).all()
     emp_session_minutes = defaultdict(float)
     emp_session_count   = defaultdict(int)
-    now_for_sessions = datetime.utcnow()
     for s in sessions_in_range:
-        end_time = s.logged_out or now_for_sessions
-        duration_min = (end_time - s.logged_in).total_seconds() / 60.0
+        clamped_start = max(s.logged_in, start_dt)
+        clamped_end   = min(s.logged_out or end_dt, end_dt)
+        if clamped_end <= clamped_start:
+            continue
+        duration_min = (clamped_end - clamped_start).total_seconds() / 60.0
         emp_session_minutes[s.user_id] += duration_min
         emp_session_count[s.user_id]   += 1
+
+    # Build name map from ALL user IDs that appear in sales or sessions
+    all_user_ids = list(
+        {r.user_id for r in rows if r.user_id} | set(emp_session_minutes.keys())
+    )
+    user_name_map = {u.id: u.username for u in User.query.filter(User.id.in_(all_user_ids)).all()} if all_user_ids else {}
 
     employee_stats = []
     for uid in set(list(emp_revenue.keys()) + list(emp_session_minutes.keys())):
