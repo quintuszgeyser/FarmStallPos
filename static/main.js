@@ -373,7 +373,7 @@ function renderProductsCards() {
       });
 
       // Wire stock action buttons
-      const stockItem = STATE._stockItems?.[p.id] || { id: p.id, name: p.name, unit_type: p.unit_type, package_size: p.package_size, package_unit: p.package_unit, sell_packages: [] };
+      const stockItem = STATE._stockItems?.[p.id] || { id: p.id, name: p.name, unit_type: p.unit_type, base_unit: p.base_unit, package_size: p.package_size, package_unit: p.package_unit, sell_packages: [], batches: [], stock_level: p.stock_level || 0 };
       header.querySelector('[data-receive-id]')?.addEventListener('click', e => { e.stopPropagation(); openReceiveStockModal(stockItem); });
       header.querySelector('[data-stocktake-id]')?.addEventListener('click', e => { e.stopPropagation(); openStocktakeModal(stockItem); });
       header.querySelector('[data-writeoff-id]')?.addEventListener('click', e => { e.stopPropagation(); openWriteoffModal(stockItem); });
