@@ -287,7 +287,7 @@ function renderProductsCards() {
 
   wrap.innerHTML = '';
   if (items.length === 0) {
-    const msg = showingHidden ? 'No hidden products.' : (q ? 'No products match.' : 'No products yet.');
+    const msg = q ? 'No products match.' : 'No products yet.';
     wrap.innerHTML = `<div class="text-muted">${msg}</div>`;
     return;
   }
@@ -4032,7 +4032,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
 
   if (target === '#products') {
     if (STATE.products.length === 0) await loadProducts(); else renderProductsCards();
-    loadIngredients();  // keep stock levels/costs fresh; non-blocking
+    loadIngredients();  // populates Stock Overview (expanded by default) and cost map
     setTimeout(() => {
       const wrap = document.getElementById('products-card-list');
       if (wrap?._pendingBarcodeItems) _renderBarcodes(wrap._pendingBarcodeItems);
