@@ -65,6 +65,9 @@ def _log_request():
     uid = session.get('user_id')
     if not uid:
         return
+    # /api/me is a passive presence-check — don't create sessions from it
+    if request.path == '/api/me':
+        return
     now = datetime.utcnow()
     sid = session.get('session_id')
     if sid:
@@ -73,7 +76,6 @@ def _log_request():
             cutoff = now - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
             last   = sess.last_active or sess.logged_in
             if last < cutoff:
-                # Close the idle session, then open a fresh one below
                 sess.logged_out = last + timedelta(minutes=SESSION_TIMEOUT_MINUTES)
                 db.session.commit()
                 session.pop('session_id', None)
@@ -81,12 +83,25 @@ def _log_request():
             else:
                 sess.last_active = now
                 db.session.commit()
+        elif sess is None:
+            # Cookie points at a deleted/missing session record — clear it
+            session.pop('session_id', None)
+            sid = None
     if not sid:
-        # Open a new activity session automatically — teller stays logged in
-        new_sess = UserSession(user_id=uid, logged_in=now, last_active=now)
-        db.session.add(new_sess)
-        db.session.commit()
-        session['session_id'] = new_sess.id
+        # Only open a new session if no other open session exists for this user
+        # (prevents duplicates from parallel browser requests)
+        existing = UserSession.query.filter_by(
+            user_id=uid, logged_out=None
+        ).order_by(UserSession.logged_in.desc()).first()
+        if existing:
+            session['session_id'] = existing.id
+            existing.last_active  = now
+            db.session.commit()
+        else:
+            new_sess = UserSession(user_id=uid, logged_in=now, last_active=now)
+            db.session.add(new_sess)
+            db.session.commit()
+            session['session_id'] = new_sess.id
 
 @app.after_request
 def _log_response(response):
@@ -961,6 +976,22 @@ def strong_migrate():
 with app.app_context():
     strong_migrate()
     seed_first_admin()
+    # Close any open sessions that are clearly stale:
+    # — no last_active (created before the column existed)
+    # — last_active more than SESSION_LOGOUT_HOURS ago
+    _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
+    _stale = UserSession.query.filter(
+        UserSession.logged_out == None,
+        db.or_(
+            UserSession.last_active == None,
+            UserSession.last_active < _stale_cutoff,
+        )
+    ).all()
+    for _s in _stale:
+        _s.logged_out = _s.last_active or _s.logged_in
+    if _stale:
+        db.session.commit()
+        logger.info('Closed %d stale sessions on startup', len(_stale))
 
 
 # -----------------------------
