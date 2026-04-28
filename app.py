@@ -354,6 +354,7 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0):
     batch_q = (StockBatch.query
                .filter_by(product_id=ingredient_id)
                .filter(StockBatch.qty_remaining_base > 0)
+               .with_for_update()
                .order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc()))
 
     batches = batch_q.filter(StockBatch.purchased_at <= now).all()
@@ -385,7 +386,7 @@ def reverse_fifo(sale_id):
     """Restore all batch quantities consumed by this sale_id. Delete consumption records."""
     records = StockConsumption.query.filter_by(sale_id=sale_id).all()
     for r in records:
-        batch = db.session.get(StockBatch, r.batch_id)
+        batch = db.session.get(StockBatch, r.batch_id, with_for_update=True)
         if batch:
             batch.qty_remaining_base = (
                 Decimal(str(batch.qty_remaining_base)) + Decimal(str(r.qty_consumed_base))
@@ -1812,7 +1813,7 @@ def api_stock_adjust():
     if not reason:
         return jsonify({'error': 'reason required'}), 400
 
-    p = db.session.get(Product, pid)
+    p = db.session.get(Product, pid, with_for_update=True)
     if not p or p.product_type != 'stock_item':
         return jsonify({'error': 'Product not found or not a stock_item'}), 404
 
@@ -1928,7 +1929,7 @@ def api_stock_writeoff():
     if qty <= 0:
         return jsonify({'error': 'qty must be positive'}), 400
 
-    p = db.session.get(Product, pid)
+    p = db.session.get(Product, pid, with_for_update=True)
     if not p or p.product_type != 'stock_item':
         return jsonify({'error': 'Product not found or not a stock_item'}), 404
 
@@ -2129,7 +2130,7 @@ def api_purchases_post():
         pid = int(pid); qty = int(qty); price = float(price)
     except Exception:
         return jsonify({'error': 'Invalid product_id/qty/price'}), 400
-    p = db.session.get(Product, pid)
+    p = db.session.get(Product, pid, with_for_update=True)
     if not p:
         return jsonify({'error': 'Product not found'}), 404
     if qty <= 0 or price < 0:
@@ -2449,7 +2450,7 @@ def api_transactions_post():
             sub_log=sub_log_val,
         ))
 
-        p = db.session.get(Product, pid)
+        p = db.session.get(Product, pid, with_for_update=True)
         if not p:
             continue
 
@@ -2617,7 +2618,7 @@ def api_transaction_void(sale_id):
         return jsonify({'error': 'Forbidden'}), 403
     data   = request.json or {}
     reason = data.get('reason', '').strip()
-    rows   = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
+    rows   = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows:
         return jsonify({'error': 'Transaction not found or already voided'}), 404
 
@@ -2628,7 +2629,7 @@ def api_transaction_void(sale_id):
         row.voided_by  = u.id if u else None
         row.voided_at  = now
         row.void_reason = reason
-        p = db.session.get(Product, row.product_id)
+        p = db.session.get(Product, row.product_id, with_for_update=True)
         if p and p.product_type == 'simple':
             p.stock_qty = (p.stock_qty or 0) + int(row.qty)
 
@@ -2647,7 +2648,7 @@ def api_transaction_edit(sale_id):
     if not lines:
         return jsonify({'error': 'lines required'}), 400
 
-    rows = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
+    rows = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows:
         return jsonify({'error': 'Transaction not found or voided'}), 404
 
@@ -2655,7 +2656,7 @@ def api_transaction_edit(sale_id):
 
     # Restore original stock
     for row in rows:
-        p = db.session.get(Product, row.product_id)
+        p = db.session.get(Product, row.product_id, with_for_update=True)
         if p and p.product_type == 'simple':
             p.stock_qty = (p.stock_qty or 0) + int(row.qty)
         db.session.delete(row)
@@ -2676,7 +2677,7 @@ def api_transaction_edit(sale_id):
             product_id=pid, qty=qty, unit_price=unit_price,
             user_id=u.id if u else None
         ))
-        p = db.session.get(Product, pid)
+        p = db.session.get(Product, pid, with_for_update=True)
         if not p:
             continue
         if p.product_type == 'simple':
