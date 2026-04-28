@@ -3161,8 +3161,11 @@ def api_stats():
     ).all()
     emp_session_minutes = defaultdict(float)
     emp_session_count   = defaultdict(int)
+    now_utc = datetime.utcnow()
     for s in sessions_in_range:
-        clamped_end  = min(s.logged_out or end_dt, end_dt)
+        # Open sessions cap at now, not end of day — avoids counting future hours
+        natural_end  = s.logged_out or now_utc
+        clamped_end  = min(natural_end, end_dt, now_utc)
         duration_min = (clamped_end - s.logged_in).total_seconds() / 60.0
         if duration_min <= 0:
             continue
