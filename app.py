@@ -263,7 +263,8 @@ class UserSession(db.Model):
     logged_out  = db.Column(db.DateTime, nullable=True)
     last_active = db.Column(db.DateTime, nullable=True)
 
-SESSION_TIMEOUT_MINUTES = 10
+SESSION_TIMEOUT_MINUTES = 10    # idle window for time-tracking purposes
+SESSION_LOGOUT_HOURS    = 2     # hard logout after this much total inactivity
 
 
 class Sale(db.Model):
@@ -324,6 +325,17 @@ def require_login():
     if not user or not user.active:
         session.clear()
         return False
+    # Hard logout after 2 hours of total inactivity
+    sid = session.get('session_id')
+    if sid:
+        sess = db.session.get(UserSession, sid)
+        if sess and sess.logged_out is None:
+            last = sess.last_active or sess.logged_in
+            if last < datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS):
+                sess.logged_out = last
+                db.session.commit()
+                session.clear()
+                return False
     return True
 
 def current_user():
