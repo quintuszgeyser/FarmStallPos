@@ -983,22 +983,19 @@ def strong_migrate():
 with app.app_context():
     strong_migrate()
     seed_first_admin()
-    # Close any open sessions that are clearly stale:
-    # — no last_active (created before the column existed)
-    # — last_active more than SESSION_LOGOUT_HOURS ago
-    _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
-    _stale = UserSession.query.filter(
-        UserSession.logged_out == None,
-        db.or_(
-            UserSession.last_active == None,
-            UserSession.last_active < _stale_cutoff,
-        )
-    ).all()
-    for _s in _stale:
-        _s.logged_out = _s.last_active or _s.logged_in
-    if _stale:
-        db.session.commit()
-        logger.info('Closed %d stale sessions on startup', len(_stale))
+    # Close stale open sessions using raw SQL so it works even on fresh DBs
+    # where last_active was just added by strong_migrate() above.
+    try:
+        _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
+        with db.engine.begin() as _conn:
+            _conn.exec_driver_sql("""
+                UPDATE user_sessions
+                SET logged_out = COALESCE(last_active, logged_in)
+                WHERE logged_out IS NULL
+                  AND (last_active IS NULL OR last_active < %(cutoff)s)
+            """, {'cutoff': _stale_cutoff})
+    except Exception as _e:
+        logger.warning('Stale session cleanup skipped: %s', _e)
 
 
 # -----------------------------
