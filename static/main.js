@@ -269,6 +269,7 @@ function renderProductsCards() {
     if (!matchesSearch) return false;
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
+    if (tab === 'recipes')      return p.is_archived !== true && p.product_type === 'recipe';
     // 'active' = for sale and not archived
     return p.is_archived !== true && p.is_for_sale !== false;
   });
@@ -276,10 +277,13 @@ function renderProductsCards() {
   // Update count badges
   const ingCount      = STATE.products.filter(p => !p.is_archived && p.is_for_sale === false).length;
   const archivedCount = STATE.products.filter(p => p.is_archived).length;
+  const recipeCount   = STATE.products.filter(p => !p.is_archived && p.product_type === 'recipe').length;
   const ingBadge  = document.getElementById('ingredients-count-badge');
   const arcBadge  = document.getElementById('archived-count-badge');
+  const recBadge  = document.getElementById('recipes-count-badge');
   if (ingBadge)  { ingBadge.textContent  = ingCount;      ingBadge.style.display  = ingCount > 0      ? '' : 'none'; }
   if (arcBadge)  { arcBadge.textContent  = archivedCount; arcBadge.style.display  = archivedCount > 0 ? '' : 'none'; }
+  if (recBadge)  { recBadge.textContent  = recipeCount;   recBadge.style.display  = recipeCount > 0   ? '' : 'none'; }
 
   wrap.innerHTML = '';
   if (items.length === 0) {
@@ -642,6 +646,8 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
     // Hide +New Product button on archived tab — you can't create archived products
     if (newProduct) newProduct.classList.toggle('hidden', STATE.productsSubTab === 'archived');
     renderProductsCards();
+    // Reload ingredients data when switching to recipes sub-tab so costs are current
+    if (STATE.productsSubTab === 'recipes') loadIngredients();
     setTimeout(() => {
       const wrap = document.getElementById('products-card-list');
       if (wrap?._pendingBarcodeItems) _renderBarcodes(wrap._pendingBarcodeItems);
@@ -1496,6 +1502,16 @@ function renderStockList(items) {
 }
 
 document.getElementById('btn-refresh-stock')?.addEventListener('click', loadIngredients);
+
+// Stock Overview toggle
+document.getElementById('stock-overview-toggle')?.addEventListener('click', () => {
+  const body    = document.getElementById('stock-overview-body');
+  const chevron = document.getElementById('stock-overview-chevron');
+  if (!body) return;
+  const nowHidden = body.classList.toggle('hidden');
+  if (chevron) chevron.textContent = nowHidden ? '▶' : '▼';
+  if (!nowHidden) loadIngredients();  // load/refresh when expanding
+});
 
 // ── Edit Batch (delegated — batch rows are dynamic) ──
 document.getElementById('stock-list')?.addEventListener('click', (e) => {
@@ -4016,13 +4032,11 @@ document.addEventListener('shown.bs.tab', async (evt) => {
 
   if (target === '#products') {
     if (STATE.products.length === 0) await loadProducts(); else renderProductsCards();
-    // Delay slightly to let Bootstrap finish the fade-in animation (tab fully visible)
+    loadIngredients();  // keep stock levels/costs fresh; non-blocking
     setTimeout(() => {
       const wrap = document.getElementById('products-card-list');
       if (wrap?._pendingBarcodeItems) _renderBarcodes(wrap._pendingBarcodeItems);
     }, 200);
-  } else if (target === '#stock') {
-    await loadIngredients();
   } else if (target === '#users') {
     if (STATE.user.role !== 'admin') return;
     await loadUsers();
