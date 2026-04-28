@@ -1735,6 +1735,159 @@ def api_suppliers_delete(sid):
     db.session.commit()
     return jsonify({'ok': True})
 
+@app.route('/api/suppliers/<int:sid>/products', methods=['GET'])
+def api_suppliers_products(sid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    s = db.session.get(Supplier, sid)
+    if not s:
+        return jsonify({'error': 'Not found'}), 404
+
+    # Get distinct products from batches for this supplier
+    batches = (db.session.query(StockBatch.product_id, func.max(StockBatch.purchased_at).label('last_received'))
+               .filter_by(supplier_id=sid)
+               .group_by(StockBatch.product_id)
+               .all())
+
+    result = []
+    for prod_id, last_received in batches:
+        p = db.session.get(Product, prod_id)
+        if p:
+            result.append({
+                'id': p.id,
+                'name': p.name,
+                'product_type': p.product_type,
+                'last_received': last_received.date().isoformat() if last_received else None,
+            })
+
+    result.sort(key=lambda x: x['name'])
+    return jsonify(result)
+
+@app.route('/api/suppliers/<int:sid>/purchase_run', methods=['POST'])
+def api_suppliers_purchase_run(sid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    s = db.session.get(Supplier, sid)
+    if not s:
+        return jsonify({'error': 'Not found'}), 404
+
+    data = request.json or {}
+    lines = data.get('lines', [])
+    date_str = data.get('date')
+
+    if not lines:
+        return jsonify({'error': 'No lines provided'}), 400
+
+    # Parse date if provided
+    purchase_date = datetime.now()
+    if date_str:
+        try:
+            parts = date_str.split('-')
+            purchase_date = datetime(int(parts[0]), int(parts[1]), int(parts[2]))
+        except Exception:
+            return jsonify({'error': 'Invalid date format'}), 400
+
+    u = current_user()
+    created_products = []
+    batches_created = 0
+
+    unit_conversions = {
+        'g': 1, 'kg': 1000,
+        'ml': 1, 'L': 1000,
+        'unit': 1, 'dozen': 12,
+    }
+
+    for line in lines:
+        pid = line.get('product_id')
+        new_prod = line.get('new_product')
+        qty = line.get('qty')
+        unit = line.get('unit', 'unit')
+        total_price = line.get('total_price')
+
+        try:
+            qty = float(qty)
+            total_price = float(total_price)
+        except Exception:
+            return jsonify({'error': 'Invalid qty or total_price'}), 400
+
+        # Create new product if requested
+        if new_prod:
+            name = new_prod.get('name', '').strip()
+            if not name:
+                return jsonify({'error': 'new_product.name required'}), 400
+
+            # Check for duplicate name
+            if Product.query.filter_by(name=name).first():
+                return jsonify({'error': f'Product name "{name}" already exists'}), 409
+
+            # Auto-generate barcode
+            next_id = (db.session.query(func.max(Product.id)).scalar() or 0) + 1
+            barcode = _gen_barcode(next_id)
+
+            price = new_prod.get('price')
+            product_type = new_prod.get('product_type', 'simple')
+            base_unit = new_prod.get('base_unit') or None
+            unit_type = new_prod.get('unit_type') or None
+
+            if product_type not in ('simple', 'stock_item'):
+                return jsonify({'error': 'Invalid product_type'}), 400
+
+            try:
+                price = float(price) if price is not None else None
+            except Exception:
+                return jsonify({'error': 'Invalid price'}), 400
+
+            p = Product(
+                name=name, barcode=barcode, stock_qty=0,
+                price=price, product_type=product_type,
+                unit_type=unit_type, base_unit=base_unit,
+            )
+            db.session.add(p)
+            db.session.flush()
+            pid = p.id
+            created_products.append({'id': p.id, 'name': p.name})
+        else:
+            # Use existing product
+            try:
+                pid = int(pid)
+            except Exception:
+                return jsonify({'error': 'product_id required'}), 400
+
+        p = db.session.get(Product, pid)
+        if not p:
+            return jsonify({'error': f'Product id {pid} not found'}), 404
+
+        # Handle stock based on product type
+        if p.product_type == 'stock_item':
+            # Create FIFO batch
+            conversion = unit_conversions.get(unit, 1)
+            qty_base = qty * conversion
+            cost_per_base = total_price / qty_base
+
+            batch = StockBatch(
+                product_id=pid,
+                qty_purchased_base=qty_base,
+                qty_remaining_base=qty_base,
+                cost_per_base_unit=cost_per_base,
+                supplier_id=sid,
+                user_id=u.id if u else None,
+                purchased_at=purchase_date
+            )
+            db.session.add(batch)
+            batches_created += 1
+        elif p.product_type == 'simple':
+            # Add to stock_qty
+            p.stock_qty = (p.stock_qty or 0) + int(qty)
+            batches_created += 1
+
+    db.session.commit()
+
+    return jsonify({
+        'ok': True,
+        'created_products': created_products,
+        'batches_created': batches_created
+    })
+
 
 # -----------------------------
 # Stock — FIFO batch management

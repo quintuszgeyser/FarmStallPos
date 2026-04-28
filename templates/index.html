@@ -315,15 +315,18 @@
     <!-- ═══════════════ SUPPLIERS ═══════════════ -->
     <div class="tab-pane fade" id="suppliers">
       <div class="row g-3">
-        <div class="col-12 col-lg-7">
+        <!-- Left: supplier list (now clickable to expand) -->
+        <div class="col-12 col-lg-5">
           <div class="d-flex align-items-center gap-2 mb-2">
             <h5 class="mb-0">Suppliers</h5>
             <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm ms-auto">Refresh</button>
           </div>
           <div id="suppliers-list" class="list-group"></div>
         </div>
-        <div class="col-12 col-lg-5">
-          <div class="card">
+        <!-- Right: supplier detail / form panel -->
+        <div class="col-12 col-lg-7">
+          <!-- Add/Edit supplier form (shown when no supplier selected or editing) -->
+          <div id="supplier-edit-panel" class="card">
             <div class="card-body">
               <h6 id="supplier-form-title">Add Supplier</h6>
               <input type="hidden" id="sup-id">
@@ -334,6 +337,36 @@
                 <button id="btn-save-supplier"   class="btn btn-success flex-fill">Save</button>
                 <button id="btn-clear-supplier"  class="btn btn-outline-secondary">Clear</button>
                 <button id="btn-delete-supplier" class="btn btn-outline-danger">Delete</button>
+              </div>
+            </div>
+          </div>
+          <!-- Supplier detail panel (shown when a supplier is selected) -->
+          <div id="supplier-detail-panel" class="hidden">
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <h5 id="supplier-detail-name" class="mb-0"></h5>
+              <button id="btn-supplier-edit" class="btn btn-outline-secondary btn-sm ms-auto">Edit</button>
+              <button id="btn-supplier-new-run" class="btn btn-success btn-sm">+ Purchase Run</button>
+            </div>
+            <!-- Products from this supplier -->
+            <div class="card mb-3">
+              <div class="card-header py-2 small fw-bold">Products from this supplier</div>
+              <div id="supplier-products-list" class="card-body p-2">
+                <span class="text-muted small">Loading...</span>
+              </div>
+            </div>
+            <!-- Purchase run form (hidden until + Purchase Run clicked) -->
+            <div id="purchase-run-panel" class="card hidden">
+              <div class="card-header py-2 d-flex align-items-center">
+                <span class="fw-bold small">New Purchase Run</span>
+                <input type="date" id="purchase-run-date" class="form-control form-control-sm ms-3" style="width:150px">
+              </div>
+              <div class="card-body p-2">
+                <div id="purchase-run-lines"></div>
+                <button id="btn-add-purchase-line" class="btn btn-outline-secondary btn-sm mt-2">+ Add Item</button>
+              </div>
+              <div class="card-footer d-flex gap-2">
+                <button id="btn-submit-purchase-run" class="btn btn-success">Save Purchase Run</button>
+                <button id="btn-cancel-purchase-run" class="btn btn-outline-secondary">Cancel</button>
               </div>
             </div>
           </div>

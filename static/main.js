@@ -1853,6 +1853,8 @@ document.getElementById('btn-writeoff-confirm')?.addEventListener('click', async
 // ═══════════════════════════════════════════════════════
 let _suppliers = [];
 let _editingSupplierId = null;
+let _currentSupplier = null;
+let _purchaseRunLines = [];
 
 async function loadSuppliers() {
   if (STATE.user?.role !== 'admin') return;
@@ -1872,25 +1874,56 @@ function renderSuppliersList() {
   }
   _suppliers.forEach(s => {
     const item = document.createElement('div');
-    item.className = 'list-group-item d-flex justify-content-between align-items-start';
+    item.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-start';
+    item.style.cursor = 'pointer';
     item.innerHTML = `
       <div>
         <strong>${s.name}</strong>
         ${s.contact ? `<div class="small text-muted">${s.contact}</div>` : ''}
         ${s.notes   ? `<div class="small text-muted fst-italic">${s.notes}</div>` : ''}
       </div>
-      <button class="btn btn-outline-primary btn-sm" data-sup-edit="${s.id}">Edit</button>
     `;
-    item.querySelector('[data-sup-edit]')?.addEventListener('click', () => {
-      _editingSupplierId = s.id;
-      document.getElementById('sup-id').value      = s.id;
-      document.getElementById('sup-name').value    = s.name;
-      document.getElementById('sup-contact').value = s.contact || '';
-      document.getElementById('sup-notes').value   = s.notes   || '';
-      document.getElementById('supplier-form-title').textContent = 'Edit Supplier';
-    });
+    item.addEventListener('click', () => openSupplierDetail(s));
     host.appendChild(item);
   });
+}
+
+function openSupplierDetail(supplier) {
+  _currentSupplier = supplier;
+  show(document.getElementById('supplier-detail-panel'));
+  hide(document.getElementById('supplier-edit-panel'));
+  hide(document.getElementById('purchase-run-panel'));
+  document.getElementById('supplier-detail-name').textContent = supplier.name;
+  loadSupplierProducts(supplier.id);
+}
+
+async function loadSupplierProducts(sid) {
+  const host = document.getElementById('supplier-products-list');
+  if (!host) return;
+  host.innerHTML = '<span class="text-muted small">Loading...</span>';
+  try {
+    const products = await api(`/api/suppliers/${sid}/products`);
+    if (products.length === 0) {
+      host.innerHTML = '<span class="text-muted small">No products on record yet.</span>';
+      return;
+    }
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-striped mb-0';
+    table.innerHTML = `
+      <thead><tr><th>Name</th><th>Type</th><th>Last Received</th></tr></thead>
+      <tbody>
+        ${products.map(p => `<tr>
+          <td>${p.name}</td>
+          <td><span class="badge bg-secondary small">${p.product_type}</span></td>
+          <td class="small text-muted">${p.last_received || 'N/A'}</td>
+        </tr>`).join('')}
+      </tbody>
+    `;
+    host.innerHTML = '';
+    host.appendChild(table);
+  } catch (e) {
+    host.innerHTML = `<span class="text-danger small">Error: ${e.message}</span>`;
+  }
 }
 
 function populateSupplierDropdowns() {
@@ -1914,6 +1947,8 @@ function clearSupplierForm() {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('supplier-form-title').textContent = 'Add Supplier';
+  show(document.getElementById('supplier-edit-panel'));
+  hide(document.getElementById('supplier-detail-panel'));
 }
 
 document.getElementById('btn-clear-supplier')?.addEventListener('click', clearSupplierForm);
@@ -1948,6 +1983,234 @@ document.getElementById('btn-delete-supplier')?.addEventListener('click', async 
     clearSupplierForm();
     await loadSuppliers();
   } catch (e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('btn-supplier-edit')?.addEventListener('click', () => {
+  if (!_currentSupplier) return;
+  _editingSupplierId = _currentSupplier.id;
+  document.getElementById('sup-id').value      = _currentSupplier.id;
+  document.getElementById('sup-name').value    = _currentSupplier.name;
+  document.getElementById('sup-contact').value = _currentSupplier.contact || '';
+  document.getElementById('sup-notes').value   = _currentSupplier.notes   || '';
+  document.getElementById('supplier-form-title').textContent = 'Edit Supplier';
+  show(document.getElementById('supplier-edit-panel'));
+  hide(document.getElementById('supplier-detail-panel'));
+});
+
+// Purchase Run
+document.getElementById('btn-supplier-new-run')?.addEventListener('click', () => {
+  const dateInput = document.getElementById('purchase-run-date');
+  if (dateInput) dateInput.value = todayISO();
+  _purchaseRunLines = [];
+  document.getElementById('purchase-run-lines').innerHTML = '';
+  show(document.getElementById('purchase-run-panel'));
+  addPurchaseLine();
+});
+
+document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', () => {
+  hide(document.getElementById('purchase-run-panel'));
+  _purchaseRunLines = [];
+});
+
+document.getElementById('btn-add-purchase-line')?.addEventListener('click', addPurchaseLine);
+
+function addPurchaseLine() {
+  const container = document.getElementById('purchase-run-lines');
+  if (!container) return;
+
+  const lineId = Date.now() + Math.random();
+  const line = document.createElement('div');
+  line.className = 'border rounded p-2 mb-2';
+  line.dataset.lineId = lineId;
+
+  line.innerHTML = `
+    <div class="d-flex gap-2 align-items-center mb-2">
+      <div class="btn-group btn-group-sm" role="group">
+        <button type="button" class="btn btn-outline-secondary active" data-mode="existing">Existing</button>
+        <button type="button" class="btn btn-outline-secondary" data-mode="new">New Product</button>
+      </div>
+      <button class="btn btn-sm btn-outline-danger ms-auto" data-remove-line>Remove</button>
+    </div>
+    <div data-existing-mode>
+      <div class="mb-2">
+        <select class="form-select form-select-sm" data-product-select>
+          <option value="">— Select product —</option>
+          ${STATE.products.filter(p => !p.is_archived).map(p =>
+            `<option value="${p.id}">${p.name} (${p.product_type})</option>`
+          ).join('')}
+        </select>
+      </div>
+      <div class="row g-2">
+        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Qty" data-qty></div>
+        <div class="col-4">
+          <select class="form-select form-select-sm" data-unit>
+            <option value="unit">unit</option>
+            <option value="g">g</option>
+            <option value="kg">kg</option>
+            <option value="ml">ml</option>
+            <option value="L">L</option>
+          </select>
+        </div>
+        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Total R" data-price></div>
+      </div>
+    </div>
+    <div data-new-mode class="hidden">
+      <div class="mb-2"><input type="text" class="form-control form-control-sm" placeholder="Product name" data-new-name></div>
+      <div class="row g-2 mb-2">
+        <div class="col-6"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Sell price" data-new-price></div>
+        <div class="col-6">
+          <select class="form-select form-select-sm" data-new-type>
+            <option value="simple">Simple (count)</option>
+            <option value="stock_item">Stock Item (weight/volume)</option>
+          </select>
+        </div>
+      </div>
+      <div class="row g-2 mb-2 hidden" data-new-unit-row>
+        <div class="col-6">
+          <select class="form-select form-select-sm" data-new-unit-type>
+            <option value="">— Unit type —</option>
+            <option value="weight">Weight</option>
+            <option value="volume">Volume</option>
+            <option value="count">Count</option>
+          </select>
+        </div>
+        <div class="col-6">
+          <select class="form-select form-select-sm" data-new-base-unit>
+            <option value="g">g</option>
+            <option value="ml">ml</option>
+            <option value="unit">unit</option>
+          </select>
+        </div>
+      </div>
+      <div class="row g-2">
+        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Qty" data-qty></div>
+        <div class="col-4">
+          <select class="form-select form-select-sm" data-unit>
+            <option value="unit">unit</option>
+            <option value="g">g</option>
+            <option value="kg">kg</option>
+            <option value="ml">ml</option>
+            <option value="L">L</option>
+          </select>
+        </div>
+        <div class="col-4"><input type="number" step="0.01" class="form-control form-control-sm" placeholder="Total R" data-price></div>
+      </div>
+    </div>
+  `;
+
+  container.appendChild(line);
+
+  // Wire up mode toggle
+  const modeButtons = line.querySelectorAll('[data-mode]');
+  const existingMode = line.querySelector('[data-existing-mode]');
+  const newMode = line.querySelector('[data-new-mode]');
+  const newTypeSelect = line.querySelector('[data-new-type]');
+  const newUnitRow = line.querySelector('[data-new-unit-row]');
+
+  modeButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.mode;
+      modeButtons.forEach(b => b.classList.toggle('active', b === btn));
+      if (mode === 'existing') {
+        show(existingMode);
+        hide(newMode);
+      } else {
+        hide(existingMode);
+        show(newMode);
+      }
+    });
+  });
+
+  // Show/hide unit fields for stock_item
+  newTypeSelect?.addEventListener('change', () => {
+    if (newTypeSelect.value === 'stock_item') {
+      show(newUnitRow);
+    } else {
+      hide(newUnitRow);
+    }
+  });
+
+  // Remove button
+  line.querySelector('[data-remove-line]')?.addEventListener('click', () => {
+    line.remove();
+  });
+
+  _purchaseRunLines.push({ lineId, element: line });
+}
+
+document.getElementById('btn-submit-purchase-run')?.addEventListener('click', async () => {
+  if (!_currentSupplier) return toast('No supplier selected', 'error');
+
+  const container = document.getElementById('purchase-run-lines');
+  const lineElements = container.querySelectorAll('[data-line-id]');
+
+  const lines = [];
+  for (const lineEl of lineElements) {
+    const modeBtn = lineEl.querySelector('[data-mode].active');
+    const mode = modeBtn?.dataset.mode || 'existing';
+
+    // Scope queries to the active mode's div
+    const modeDiv = mode === 'existing'
+      ? lineEl.querySelector('[data-existing-mode]')
+      : lineEl.querySelector('[data-new-mode]');
+
+    const qty = parseFloat(modeDiv.querySelector('[data-qty]').value || 0);
+    const price = parseFloat(modeDiv.querySelector('[data-price]').value || 0);
+    const unit = modeDiv.querySelector('[data-unit]').value;
+
+    if (qty <= 0 || price < 0) {
+      return toast('All quantities must be > 0 and prices >= 0', 'warning');
+    }
+
+    if (mode === 'existing') {
+      const productId = parseInt(lineEl.querySelector('[data-product-select]').value || 0);
+      if (!productId) return toast('Please select a product for all lines', 'warning');
+      lines.push({ product_id: productId, qty, unit, total_price: price });
+    } else {
+      const name = lineEl.querySelector('[data-new-name]').value.trim();
+      const sellPrice = parseFloat(lineEl.querySelector('[data-new-price]').value || 0);
+      const productType = lineEl.querySelector('[data-new-type]').value;
+
+      if (!name) return toast('Product name required for new products', 'warning');
+      if (sellPrice < 0) return toast('Sell price must be >= 0', 'warning');
+
+      const newProduct = { name, price: sellPrice, product_type: productType };
+
+      if (productType === 'stock_item') {
+        newProduct.unit_type = lineEl.querySelector('[data-new-unit-type]').value || null;
+        newProduct.base_unit = lineEl.querySelector('[data-new-base-unit]').value || null;
+      }
+
+      lines.push({ new_product: newProduct, qty, unit, total_price: price });
+    }
+  }
+
+  if (lines.length === 0) return toast('Add at least one item', 'warning');
+
+  const dateVal = document.getElementById('purchase-run-date')?.value;
+  const body = { lines, date: dateVal || todayISO() };
+
+  try {
+    const result = await api(`/api/suppliers/${_currentSupplier.id}/purchase_run`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+
+    let msg = `Purchase run saved: ${result.batches_created} batches created`;
+    if (result.created_products?.length > 0) {
+      msg += `, ${result.created_products.length} new products created`;
+    }
+    toast(msg, 'success', 5000);
+
+    hide(document.getElementById('purchase-run-panel'));
+    _purchaseRunLines = [];
+
+    // Reload products and supplier products
+    await loadProducts();
+    await loadSupplierProducts(_currentSupplier.id);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 });
 
 // Quick-add supplier from receive modal
