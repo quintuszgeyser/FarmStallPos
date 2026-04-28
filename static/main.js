@@ -37,6 +37,15 @@ function displayQty(qty_base, unitType) {
   return `${+qty_base.toFixed(qty_base < 1 ? 3 : 2)}${base}`;
 }
 
+// Returns cost per the same display unit that displayQty would use for qty_base
+function displayCost(cost_per_base, qty_base, unitType) {
+  if (!unitType || !UNITS[unitType]) return { cost: cost_per_base, unit: '' };
+  const thresholds = { weight: [1000, 'kg'], volume: [1000, 'L'], count: [Infinity, ''] };
+  const [threshold, bigUnit] = thresholds[unitType] || [Infinity, ''];
+  if (qty_base >= threshold) return { cost: cost_per_base * threshold, unit: bigUnit };
+  return { cost: cost_per_base, unit: UNITS[unitType].base };
+}
+
 // Build unit dropdown options including package unit
 function buildUnitOptions(unitType, packageSize, packageUnit) {
   const opts = [];
@@ -1426,13 +1435,15 @@ function renderStockList(items) {
           ? `<span class="badge bg-info text-dark ms-1" style="font-size:10px">${b.supplier_name}</span>`
           : '<span class="badge bg-light text-muted ms-1" style="font-size:10px">No supplier</span>';
         const totalCost    = (b.cost_per_base_unit * b.qty_purchased_base).toFixed(2);
+        const { cost: costPerDisplay, unit: displayUnit } = displayCost(b.cost_per_base_unit, b.qty_remaining_base, item.unit_type);
+        const costStr = `R${costPerDisplay < 0.01 ? costPerDisplay.toFixed(4) : costPerDisplay.toFixed(2)}/${displayUnit}`;
         const batchEl = document.createElement('div');
         batchEl.className = 'batch-row';
         batchEl.innerHTML = `
             <span>${date}${supplierBadge}</span>
             <span>Bought: ${purchased}</span>
             <span>Left: <strong>${remaining}</strong></span>
-            <span>Cost: R${b.cost_per_base_unit.toFixed(6)}/${item.base_unit}</span>
+            <span>Cost: ${costStr}</span>
             <button class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:11px"
               data-edit-batch-id="${b.id}"
               data-edit-batch-date="${b.purchased_at.slice(0,10)}"
