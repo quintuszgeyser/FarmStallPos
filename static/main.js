@@ -269,9 +269,9 @@ function renderProductsCards() {
     if (!matchesSearch) return false;
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
-    if (tab === 'recipes')      return p.is_archived !== true && p.product_type === 'recipe';
-    // 'active' = for sale and not archived
-    return p.is_archived !== true && p.is_for_sale !== false;
+    if (tab === 'recipes')      return p.is_archived !== true && p.product_type === 'recipe' && p.is_for_sale !== false;
+    // 'active' (Single Items) = for sale, not archived, not a recipe
+    return p.is_archived !== true && p.is_for_sale !== false && p.product_type !== 'recipe';
   });
 
   // Update count badges
