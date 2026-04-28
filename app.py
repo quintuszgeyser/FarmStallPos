@@ -61,13 +61,32 @@ def _log_request():
         return
     user_id = session.get('user_id', '-')
     logger.info('REQ  %s %s  user=%s', request.method, request.path, user_id)
-    # Stamp last_active on every authenticated request
+
+    uid = session.get('user_id')
+    if not uid:
+        return
+    now = datetime.utcnow()
     sid = session.get('session_id')
     if sid:
         sess = db.session.get(UserSession, sid)
         if sess and sess.logged_out is None:
-            sess.last_active = datetime.utcnow()
-            db.session.commit()
+            cutoff = now - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+            last   = sess.last_active or sess.logged_in
+            if last < cutoff:
+                # Close the idle session, then open a fresh one below
+                sess.logged_out = last + timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+                db.session.commit()
+                session.pop('session_id', None)
+                sid = None
+            else:
+                sess.last_active = now
+                db.session.commit()
+    if not sid:
+        # Open a new activity session automatically — teller stays logged in
+        new_sess = UserSession(user_id=uid, logged_in=now, last_active=now)
+        db.session.add(new_sess)
+        db.session.commit()
+        session['session_id'] = new_sess.id
 
 @app.after_request
 def _log_response(response):
@@ -305,17 +324,6 @@ def require_login():
     if not user or not user.active:
         session.clear()
         return False
-    sid = session.get('session_id')
-    if sid:
-        sess = db.session.get(UserSession, sid)
-        if sess and sess.logged_out is None:
-            cutoff = datetime.utcnow() - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
-            last = sess.last_active or sess.logged_in
-            if last < cutoff:
-                sess.logged_out = last + timedelta(minutes=SESSION_TIMEOUT_MINUTES)
-                db.session.commit()
-                session.clear()
-                return False
     return True
 
 def current_user():
