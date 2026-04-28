@@ -3341,6 +3341,55 @@ async function loadStats() {
         empWrap.innerHTML = '<div class="text-muted small">No employee data for this period.</div>';
       } else {
         const fmtMins = m => m >= 60 ? `${Math.floor(m/60)}h ${Math.round(m%60)}m` : `${Math.round(m)}m`;
+        const fmtTime = iso => iso ? iso.replace('T',' ').slice(0,16) : '—';
+        const COLS = 11;
+        let rows = '';
+        emps.forEach(e => {
+          rows += `
+            <tr class="emp-summary-row" style="cursor:pointer" data-emp-id="${e.user_id}" data-emp-name="${e.name}">
+              <td class="fw-semibold">
+                <span class="emp-toggle me-1 text-muted" style="font-size:11px">▶</span>${e.name}
+              </td>
+              <td class="text-end text-success">R${fmt(e.revenue)}</td>
+              <td class="text-end">${e.transactions}</td>
+              <td class="text-end">R${fmt(e.avg_tx_value)}</td>
+              <td class="text-end">${e.items_sold}</td>
+              <td class="text-end">${e.session_count || '—'}</td>
+              <td class="text-end">${e.session_minutes ? fmtMins(e.session_minutes) : '—'}</td>
+              <td class="text-end">${e.revenue_per_hour != null ? `R${fmt(e.revenue_per_hour)}` : '—'}</td>
+              <td class="text-end">${e.tx_per_hour != null ? e.tx_per_hour.toFixed(1) : '—'}</td>
+              <td class="text-end" style="font-size:11px">${e.first_sale ? e.first_sale.replace('T',' ').slice(0,16) : '—'}</td>
+              <td class="text-end" style="font-size:11px">${e.last_sale  ? e.last_sale.replace('T',' ').slice(0,16)  : '—'}</td>
+            </tr>
+            <tr class="emp-detail-row d-none" data-detail-for="${e.user_id}">
+              <td colspan="${COLS}" class="p-0 ps-3 pb-2">
+                <table class="table table-sm table-bordered mb-0" style="font-size:12px;background:#f8f9fa">
+                  <thead class="table-secondary">
+                    <tr>
+                      <th>#</th>
+                      <th>Login</th>
+                      <th>Logout</th>
+                      <th>Last Activity</th>
+                      <th class="text-end">Duration</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${(e.sessions || []).map((s, i) => `
+                      <tr>
+                        <td class="text-muted">${i + 1}</td>
+                        <td>${fmtTime(s.login)}</td>
+                        <td>${s.logout ? fmtTime(s.logout) : '—'}</td>
+                        <td>${s.last_active ? fmtTime(s.last_active) : '—'}</td>
+                        <td class="text-end">${fmtMins(s.duration_min)}</td>
+                        <td>${s.open ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Closed</span>'}</td>
+                      </tr>`).join('')}
+                    ${!(e.sessions || []).length ? `<tr><td colspan="6" class="text-muted text-center">No sessions</td></tr>` : ''}
+                  </tbody>
+                </table>
+              </td>
+            </tr>`;
+        });
         empWrap.innerHTML = `
           <div class="table-responsive">
           <table class="table table-sm table-hover align-middle mb-0">
@@ -3359,28 +3408,16 @@ async function loadStats() {
                 <th class="text-end">Last Sale</th>
               </tr>
             </thead>
-            <tbody>
-              ${emps.map(e => `
-                <tr style="cursor:pointer" data-emp-id="${e.user_id}" data-emp-name="${e.name}">
-                  <td class="fw-semibold">${e.name}</td>
-                  <td class="text-end text-success">R${fmt(e.revenue)}</td>
-                  <td class="text-end">${e.transactions}</td>
-                  <td class="text-end">R${fmt(e.avg_tx_value)}</td>
-                  <td class="text-end">${e.items_sold}</td>
-                  <td class="text-end">${e.session_count || '—'}</td>
-                  <td class="text-end">${e.session_minutes ? fmtMins(e.session_minutes) : '—'}</td>
-                  <td class="text-end">${e.revenue_per_hour != null ? `R${fmt(e.revenue_per_hour)}` : '—'}</td>
-                  <td class="text-end">${e.tx_per_hour != null ? e.tx_per_hour.toFixed(1) : '—'}</td>
-                  <td class="text-end" style="font-size:11px">${e.first_sale ? e.first_sale.replace('T',' ').slice(0,16) : '—'}</td>
-                  <td class="text-end" style="font-size:11px">${e.last_sale  ? e.last_sale.replace('T',' ').slice(0,16)  : '—'}</td>
-                </tr>`).join('')}
-            </tbody>
+            <tbody>${rows}</tbody>
           </table>
           </div>`;
 
-        empWrap.querySelectorAll('[data-emp-id]').forEach(row => {
+        empWrap.querySelectorAll('.emp-summary-row').forEach(row => {
           row.addEventListener('click', () => {
-            openDrilldown(`Sales by ${row.dataset.empName}`, 'user', row.dataset.empId);
+            const detail = empWrap.querySelector(`[data-detail-for="${row.dataset.empId}"]`);
+            const toggle = row.querySelector('.emp-toggle');
+            const open   = detail.classList.toggle('d-none');
+            toggle.textContent = open ? '▶' : '▼';
           });
         });
       }

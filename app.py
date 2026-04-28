@@ -3161,9 +3161,9 @@ def api_stats():
     ).all()
     emp_session_minutes = defaultdict(float)
     emp_session_count   = defaultdict(int)
+    emp_sessions        = defaultdict(list)
     now_utc = datetime.utcnow()
     for s in sessions_in_range:
-        # Open sessions cap at now, not end of day — avoids counting future hours
         natural_end  = s.logged_out or now_utc
         clamped_end  = min(natural_end, end_dt, now_utc)
         duration_min = (clamped_end - s.logged_in).total_seconds() / 60.0
@@ -3171,6 +3171,13 @@ def api_stats():
             continue
         emp_session_minutes[s.user_id] += duration_min
         emp_session_count[s.user_id]   += 1
+        emp_sessions[s.user_id].append({
+            'login':       s.logged_in.isoformat(),
+            'logout':      s.logged_out.isoformat() if s.logged_out else None,
+            'last_active': s.last_active.isoformat() if s.last_active else None,
+            'duration_min': round(duration_min, 1),
+            'open':        s.logged_out is None,
+        })
 
     # Build name map from ALL user IDs that appear in sales or sessions
     all_user_ids = list(
@@ -3206,6 +3213,7 @@ def api_stats():
             'tx_per_hour':     round(tx_per_hour, 2) if tx_per_hour is not None else None,
             'first_sale':      first_sale.isoformat() if first_sale else None,
             'last_sale':       last_sale.isoformat() if last_sale else None,
+            'sessions':        sorted(emp_sessions.get(uid, []), key=lambda x: x['login']),
         })
     employee_stats.sort(key=lambda x: x['revenue'], reverse=True)
 
