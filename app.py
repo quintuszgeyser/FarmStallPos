@@ -3876,9 +3876,7 @@ def version():
     return jsonify({'version': APP_VERSION})
 
 if __name__ == '__main__':
-    _is_qa = os.getenv('APP_ENV', 'qa') == 'qa'
-    _cert  = os.path.join(os.path.dirname(__file__), 'cert.pem')
-    _key   = os.path.join(os.path.dirname(__file__), 'cert.key')
-    # QA always runs plain HTTP so browser doesn't complain about self-signed certs
-    _ssl   = None if _is_qa else ((_cert, _key) if os.path.exists(_cert) and os.path.exists(_key) else None)
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5000')), ssl_context=_ssl)
+    _cert = os.path.join(os.path.dirname(__file__), 'cert.pem')
+    _key  = os.path.join(os.path.dirname(__file__), 'cert.key')
+    _ssl  = (_cert, _key) if os.path.exists(_cert) and os.path.exists(_key) else None
+    app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5443' if _ssl else '5000')), ssl_context=_ssl)
