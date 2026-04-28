@@ -302,7 +302,10 @@ function renderProductsCards() {
     // Price display — prominent, depends on product type
     let priceDisplay = '';
     if (p.sold_by_weight && p.price_per_unit != null) {
-      priceDisplay = `<span class="fw-semibold text-success">R${fmt(p.price_per_unit)}/${p.base_unit || UNITS[p.unit_type]?.base || 'unit'}</span>`;
+      const bigUnit   = p.unit_type === 'volume' ? 'L' : 'kg';
+      const conv      = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
+      const priceBig  = parseFloat(p.price_per_unit) * conv;
+      priceDisplay = `<span class="fw-semibold text-success">R${fmt(priceBig)}/${bigUnit}</span>`;
     } else if (p.price != null) {
       priceDisplay = `<span class="fw-semibold text-success">R${fmt(p.price)}</span>`;
     } else {
