@@ -293,70 +293,132 @@ function renderProductsCards() {
   }
 
   items.forEach(p => {
+    const isStockItem = p.product_type === 'stock_item';
+    const isSimple    = p.product_type === 'simple';
+    const hasStock    = isStockItem || isSimple;
+
+    // Use expandable stock-card layout for stock items; thin-card for everything else
     const card = document.createElement('div');
-    card.className = 'product-thin-card';
+    card.className = hasStock ? 'stock-card' : 'product-thin-card';
 
-    const typeLabel   = { simple: '', stock_item: '📦 Stock', recipe: '🍳 Recipe' }[p.product_type] || '';
+    const typeLabel   = { simple: '', stock_item: '📦', recipe: '🍳' }[p.product_type] || '';
     const marginLabel = p.margin_pct != null ? ` • ${p.margin_pct}% margin` : '';
-    const stockInfo   = p.product_type === 'stock_item'
-      ? ` • ${displayQty(p.stock_level || 0, p.unit_type)} ${p.low_stock ? '⚠️ LOW' : ''}`
-      : p.product_type === 'simple' ? ` • Stock ${p.stock_qty}` : '';
-    const hiddenBadge = '';
 
-    // Price display — prominent, depends on product type
+    let stockBadge = '';
+    if (isStockItem) {
+      const level   = displayQty(p.stock_level || 0, p.unit_type);
+      const lowBadge = p.low_stock ? ' <span class="badge bg-warning text-dark">⚠ LOW</span>' : '';
+      stockBadge = `<span class="badge bg-light text-dark ms-2">${level}</span>${lowBadge}`;
+    } else if (isSimple) {
+      stockBadge = `<span class="badge bg-light text-dark ms-2">Stock: ${p.stock_qty ?? 0}</span>`;
+    }
+
     let priceDisplay = '';
     if (p.sold_by_weight && p.price_per_unit != null) {
-      const bigUnit   = p.unit_type === 'volume' ? 'L' : 'kg';
-      const conv      = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
-      const priceBig  = parseFloat(p.price_per_unit) * conv;
-      priceDisplay = `<span class="fw-semibold text-success">R${fmt(priceBig)}/${bigUnit}</span>`;
+      const bigUnit  = p.unit_type === 'volume' ? 'L' : 'kg';
+      const conv     = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
+      const priceBig = parseFloat(p.price_per_unit) * conv;
+      priceDisplay = `R${fmt(priceBig)}/${bigUnit}`;
     } else if (p.price != null) {
-      priceDisplay = `<span class="fw-semibold text-success">R${fmt(p.price)}</span>`;
-    } else {
-      priceDisplay = `<span class="text-muted small">no price</span>`;
+      priceDisplay = `R${fmt(p.price)}`;
     }
 
-    // Scannable barcode SVG (rendered after DOM insertion)
     const barcodeId = `bc-${p.id}`;
-    const barcodeDisplay = p.barcode
-      ? `<svg id="${barcodeId}" class="product-barcode"></svg>`
-      : `<span class="text-muted small">no barcode</span>`;
+    const barcodeHtml = p.barcode ? `<svg id="${barcodeId}" class="product-barcode"></svg>` : '';
 
-    const main = document.createElement('div');
-    main.className = 'product-thin-main';
-    main.innerHTML = `
-      <div class="product-title">${p.name}
-        <span class="badge bg-light text-dark ms-1" style="font-size:10px">${typeLabel}</span>
-        ${hiddenBadge}
-      </div>
-      <div class="d-flex gap-3 align-items-center mt-1" style="flex-wrap:wrap">
-        ${priceDisplay}
-        ${barcodeDisplay}
-        <span class="text-muted" style="font-size:12px">${stockInfo.replace(' • ', '')}${marginLabel}</span>
-      </div>
-    `;
+    if (hasStock) {
+      // ── Expandable unified card ──
+      const header = document.createElement('div');
+      header.className = 'stock-card-header';
+      header.innerHTML = `
+        <div style="min-width:0;flex:1">
+          <span class="fw-semibold">${p.name}</span>
+          <span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>
+          ${stockBadge}
+          ${priceDisplay ? `<span class="text-success ms-2 fw-semibold">${priceDisplay}</span>` : ''}
+          ${marginLabel ? `<span class="text-muted ms-2" style="font-size:11px">${marginLabel}</span>` : ''}
+        </div>
+        <div class="d-flex gap-1 align-items-center flex-wrap">
+          ${isStockItem ? `
+            <button class="btn btn-success btn-sm"         data-receive-id="${p.id}"   data-receive-name="${p.name}">Receive</button>
+            <button class="btn btn-outline-warning btn-sm" data-stocktake-id="${p.id}" data-stocktake-name="${p.name}">Stocktake</button>
+            <button class="btn btn-outline-danger btn-sm"  data-writeoff-id="${p.id}"  data-writeoff-name="${p.name}">Write Off</button>
+          ` : ''}
+          <button class="btn btn-outline-primary btn-sm"   data-edit-product>Edit</button>
+          ${p.is_archived
+            ? `<button class="btn btn-outline-success btn-sm" data-restore-product>Restore</button>`
+            : `<button class="btn btn-outline-secondary btn-sm" data-archive-product>Archive</button>`}
+          <span class="text-muted small">▾</span>
+        </div>
+      `;
 
-    const actions = document.createElement('div');
-    actions.className = 'product-actions d-flex gap-1';
+      const body = document.createElement('div');
+      body.className = 'stock-card-body';
 
-    const btnEdit = document.createElement('button');
-    btnEdit.className = 'btn btn-outline-primary btn-sm'; btnEdit.textContent = 'Edit';
-    btnEdit.onclick = () => openProductEditor(p);
-    actions.appendChild(btnEdit);
+      if (isStockItem) {
+        const stockData = STATE._stockItems?.[p.id];
+        if (stockData) {
+          const batchBody = _buildStockBody(stockData);
+          body.appendChild(batchBody);
+        } else {
+          body.innerHTML = '<div class="small text-muted">Loading stock data…</div>';
+        }
+      }
+      if (barcodeHtml) body.innerHTML += `<div class="mt-2">${barcodeHtml}</div>`;
 
-    if (p.is_archived) {
-      const btnRestore = document.createElement('button');
-      btnRestore.className = 'btn btn-outline-success btn-sm'; btnRestore.textContent = 'Restore';
-      btnRestore.onclick = () => openRestoreModal(p);
-      actions.appendChild(btnRestore);
+      // Toggle body open/close on header click (not on button clicks)
+      header.addEventListener('click', e => {
+        if (e.target.closest('button')) return;
+        body.classList.toggle('open');
+      });
+
+      // Wire stock action buttons
+      const stockItem = STATE._stockItems?.[p.id] || { id: p.id, name: p.name, unit_type: p.unit_type, package_size: p.package_size, package_unit: p.package_unit, sell_packages: [] };
+      header.querySelector('[data-receive-id]')?.addEventListener('click', e => { e.stopPropagation(); openReceiveStockModal(stockItem); });
+      header.querySelector('[data-stocktake-id]')?.addEventListener('click', e => { e.stopPropagation(); openStocktakeModal(stockItem); });
+      header.querySelector('[data-writeoff-id]')?.addEventListener('click', e => { e.stopPropagation(); openWriteoffModal(stockItem); });
+      header.querySelector('[data-edit-product]')?.addEventListener('click', e => { e.stopPropagation(); openProductEditor(p); });
+      header.querySelector('[data-archive-product]')?.addEventListener('click', e => { e.stopPropagation(); openArchiveModal(p); });
+      header.querySelector('[data-restore-product]')?.addEventListener('click', e => { e.stopPropagation(); openRestoreModal(p); });
+
+      card.appendChild(header);
+      card.appendChild(body);
+
     } else {
-      const btnArchive = document.createElement('button');
-      btnArchive.className = 'btn btn-outline-danger btn-sm'; btnArchive.textContent = 'Archive';
-      btnArchive.onclick = () => openArchiveModal(p);
-      actions.appendChild(btnArchive);
+      // ── Standard thin card for recipes, ingredients without stock ──
+      const main = document.createElement('div');
+      main.className = 'product-thin-main';
+      main.innerHTML = `
+        <div class="product-title">${p.name}
+          <span class="badge bg-light text-dark ms-1" style="font-size:10px">${typeLabel}</span>
+        </div>
+        <div class="d-flex gap-3 align-items-center mt-1" style="flex-wrap:wrap">
+          ${priceDisplay ? `<span class="fw-semibold text-success">${priceDisplay}</span>` : '<span class="text-muted small">no price</span>'}
+          ${barcodeHtml}
+          ${marginLabel ? `<span class="text-muted" style="font-size:12px">${marginLabel.replace(' • ','')}</span>` : ''}
+        </div>
+      `;
+
+      const actions = document.createElement('div');
+      actions.className = 'product-actions d-flex gap-1';
+      const btnEdit = document.createElement('button');
+      btnEdit.className = 'btn btn-outline-primary btn-sm'; btnEdit.textContent = 'Edit';
+      btnEdit.onclick = () => openProductEditor(p);
+      actions.appendChild(btnEdit);
+      if (p.is_archived) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-outline-success btn-sm'; btn.textContent = 'Restore';
+        btn.onclick = () => openRestoreModal(p);
+        actions.appendChild(btn);
+      } else {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-outline-danger btn-sm'; btn.textContent = 'Archive';
+        btn.onclick = () => openArchiveModal(p);
+        actions.appendChild(btn);
+      }
+      card.appendChild(main); card.appendChild(actions);
     }
 
-    card.appendChild(main); card.appendChild(actions);
     wrap.appendChild(card);
   });
 
@@ -1391,130 +1453,73 @@ async function loadIngredients() {
   if (STATE.user?.role !== 'admin') return;
   try {
     const data = await api('/api/stock/ingredients');
-    // Cache FIFO cost per base unit for recipe line cost display
     STATE._stockCostMap = {};
+    STATE._stockItems   = {};
     data.forEach(item => {
+      STATE._stockItems[item.id] = item;
       const oldestWithStock = item.batches
         .slice()
         .sort((a, b) => new Date(a.purchased_at) - new Date(b.purchased_at))
         .find(b => b.qty_remaining_base > 0);
       if (oldestWithStock) STATE._stockCostMap[item.id] = oldestWithStock.cost_per_base_unit;
     });
-    renderStockList(data);
+    // Refresh any already-rendered product cards so stock levels update
+    renderProductsCards();
   } catch (e) { console.error('loadIngredients', e); }
 }
 
-function renderStockList(items) {
-  const host = document.getElementById('stock-list');
-  if (!host) return;
-  host.innerHTML = '';
-  if (items.length === 0) {
-    host.innerHTML = '<div class="text-muted">No stock items yet. Create a product with type "Stock Item".</div>';
-    return;
+// Build the expandable stock body for a stock_item product.
+// item = object from /api/stock/ingredients (has .batches, .sell_packages, etc.)
+function _buildStockBody(item) {
+  const body = document.createElement('div');
+  body.className = 'stock-card-body';
+
+  if (item.batches && item.batches.length > 0) {
+    body.innerHTML += `<div class="small fw-bold mb-1 text-muted">Batches (oldest first):</div>`;
+    [...item.batches].reverse().forEach(b => {
+      const remaining     = displayQty(b.qty_remaining_base, item.unit_type);
+      const purchased     = displayQty(b.qty_purchased_base, item.unit_type);
+      const date          = new Date(b.purchased_at).toLocaleDateString('en-ZA');
+      const supplierBadge = b.supplier_name
+        ? `<span class="badge bg-info text-dark ms-1" style="font-size:10px">${b.supplier_name}</span>`
+        : '<span class="badge bg-light text-muted ms-1" style="font-size:10px">No supplier</span>';
+      const totalCost = (b.cost_per_base_unit * b.qty_purchased_base).toFixed(2);
+      const { cost: costPerDisplay, unit: displayUnit } = displayCost(b.cost_per_base_unit, b.qty_remaining_base, item.unit_type);
+      const costStr   = `R${costPerDisplay < 0.01 ? costPerDisplay.toFixed(4) : costPerDisplay.toFixed(2)}/${displayUnit}`;
+      const batchEl   = document.createElement('div');
+      batchEl.className = 'batch-row';
+      batchEl.innerHTML = `
+          <span>${date}${supplierBadge}</span>
+          <span>Bought: ${purchased}</span>
+          <span>Left: <strong>${remaining}</strong></span>
+          <span>Cost: ${costStr}</span>
+          <button class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:11px"
+            data-edit-batch-id="${b.id}"
+            data-edit-batch-date="${b.purchased_at.slice(0,10)}"
+            data-edit-batch-supplier="${b.supplier_id || ''}"
+            data-edit-batch-total="${totalCost}"
+            data-edit-batch-qty="${purchased}">✏️</button>`;
+      body.appendChild(batchEl);
+    });
+  } else {
+    body.innerHTML += `<div class="small text-muted">No stock received yet.</div>`;
   }
-  items.forEach(item => {
-    const levelDisplay = displayQty(item.stock_level, item.unit_type);
-    const lowBadge     = item.low_stock ? '<span class="badge bg-warning text-dark ms-2">⚠ LOW</span>' : '';
-    const card = document.createElement('div');
-    card.className = 'stock-card';
 
-    const header = document.createElement('div');
-    header.className = 'stock-card-header';
-    header.innerHTML = `
-      <div>
-        <strong>${item.name}</strong>
-        <span class="stock-level-badge bg-light text-dark ms-2">${levelDisplay}</span>
-        ${lowBadge}
-      </div>
-      <div class="d-flex gap-2">
-        <button class="btn btn-success btn-sm"        data-receive-id="${item.id}"    data-receive-name="${item.name}">Receive</button>
-        <button class="btn btn-outline-warning btn-sm" data-stocktake-id="${item.id}" data-stocktake-name="${item.name}">Stocktake</button>
-        <button class="btn btn-outline-danger btn-sm"  data-writeoff-id="${item.id}"  data-writeoff-name="${item.name}">Write Off</button>
-        <span class="text-muted small mt-1">▾</span>
-      </div>
-    `;
-
-    const body = document.createElement('div');
-    body.className = 'stock-card-body';
-
-    // Batches
-    if (item.batches.length > 0) {
-      body.innerHTML += `<div class="small fw-bold mb-1 text-muted">Batches (oldest first):</div>`;
-      [...item.batches].reverse().forEach(b => {
-        const remaining = displayQty(b.qty_remaining_base, item.unit_type);
-        const purchased = displayQty(b.qty_purchased_base, item.unit_type);
-        const date         = new Date(b.purchased_at).toLocaleDateString('en-ZA');
-        const supplierBadge = b.supplier_name
-          ? `<span class="badge bg-info text-dark ms-1" style="font-size:10px">${b.supplier_name}</span>`
-          : '<span class="badge bg-light text-muted ms-1" style="font-size:10px">No supplier</span>';
-        const totalCost    = (b.cost_per_base_unit * b.qty_purchased_base).toFixed(2);
-        const { cost: costPerDisplay, unit: displayUnit } = displayCost(b.cost_per_base_unit, b.qty_remaining_base, item.unit_type);
-        const costStr = `R${costPerDisplay < 0.01 ? costPerDisplay.toFixed(4) : costPerDisplay.toFixed(2)}/${displayUnit}`;
-        const batchEl = document.createElement('div');
-        batchEl.className = 'batch-row';
-        batchEl.innerHTML = `
-            <span>${date}${supplierBadge}</span>
-            <span>Bought: ${purchased}</span>
-            <span>Left: <strong>${remaining}</strong></span>
-            <span>Cost: ${costStr}</span>
-            <button class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:11px"
-              data-edit-batch-id="${b.id}"
-              data-edit-batch-date="${b.purchased_at.slice(0,10)}"
-              data-edit-batch-supplier="${b.supplier_id || ''}"
-              data-edit-batch-total="${totalCost}"
-              data-edit-batch-qty="${purchased}">✏️</button>`;
-        body.appendChild(batchEl);
-      });
-    } else {
-      body.innerHTML += `<div class="small text-muted">No stock received yet.</div>`;
-    }
-
-    // Sell packages
-    if (item.sell_packages?.length > 0) {
-      body.innerHTML += `<div class="small fw-bold mt-2 mb-1 text-muted">Packages:</div>`;
-      item.sell_packages.forEach(pkg => {
-        body.innerHTML += `<div class="small">• ${pkg.name} — ${displayQty(pkg.qty_base, item.unit_type)} @ R${fmt(pkg.price || 0)}</div>`;
-      });
-    }
-
-    // Toggle
-    header.addEventListener('click', (e) => {
-      if (e.target.closest('button')) return;
-      body.classList.toggle('open');
+  if (item.sell_packages?.length > 0) {
+    body.innerHTML += `<div class="small fw-bold mt-2 mb-1 text-muted">Packages:</div>`;
+    item.sell_packages.forEach(pkg => {
+      body.innerHTML += `<div class="small">• ${pkg.name} — ${displayQty(pkg.qty_base, item.unit_type)} @ R${fmt(pkg.price || 0)}</div>`;
     });
-    header.querySelector('[data-receive-id]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openReceiveStockModal(item);
-    });
-    header.querySelector('[data-stocktake-id]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openStocktakeModal(item);
-    });
-    header.querySelector('[data-writeoff-id]')?.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openWriteoffModal(item);
-    });
-
-    card.appendChild(header);
-    card.appendChild(body);
-    host.appendChild(card);
-  });
+  }
+  return body;
 }
 
-document.getElementById('btn-refresh-stock')?.addEventListener('click', loadIngredients);
+function renderStockList(items) {
+  // kept for backward compat — no longer used for display, data goes via STATE._stockItems
+}
 
-// Stock Overview toggle
-document.getElementById('stock-overview-toggle')?.addEventListener('click', () => {
-  const body    = document.getElementById('stock-overview-body');
-  const chevron = document.getElementById('stock-overview-chevron');
-  if (!body) return;
-  const nowHidden = body.classList.toggle('hidden');
-  if (chevron) chevron.textContent = nowHidden ? '▶' : '▼';
-  if (!nowHidden) loadIngredients();  // load/refresh when expanding
-});
-
-// ── Edit Batch (delegated — batch rows are dynamic) ──
-document.getElementById('stock-list')?.addEventListener('click', (e) => {
+// ── Edit Batch (delegated off products-card-list since batch rows are dynamic) ──
+document.getElementById('products-card-list')?.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-edit-batch-id]');
   if (!btn) return;
   e.stopPropagation();
