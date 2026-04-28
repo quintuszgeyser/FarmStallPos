@@ -1913,7 +1913,8 @@ function openSupplierDetail(supplier) {
     el.classList.toggle('active', el.dataset.supplierId === String(supplier.id));
   });
 
-  // Show detail alongside the form (both visible)
+  // Detail replaces the form — form only shows when adding/editing
+  hide(document.getElementById('supplier-edit-panel'));
   show(document.getElementById('supplier-detail-panel'));
   hide(document.getElementById('purchase-run-panel'));
 
@@ -1985,11 +1986,14 @@ function populateSupplierDropdowns() {
 
 function clearSupplierForm() {
   _editingSupplierId = null;
+  _currentSupplier = null;
+  _currentSupplierProducts = [];
   ['sup-id','sup-name','sup-phone','sup-email','sup-website','sup-notes'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('supplier-form-title').textContent = 'Add Supplier';
-  // Remove active highlight from list
+  show(document.getElementById('supplier-edit-panel'));
+  hide(document.getElementById('supplier-detail-panel'));
   document.querySelectorAll('#suppliers-list .list-group-item').forEach(el => el.classList.remove('active'));
 }
 
@@ -2049,8 +2053,9 @@ document.getElementById('btn-supplier-edit')?.addEventListener('click', () => {
   document.getElementById('sup-email').value   = _currentSupplier.email   || '';
   document.getElementById('sup-website').value = _currentSupplier.website || '';
   document.getElementById('sup-notes').value   = _currentSupplier.notes   || '';
-  document.getElementById('supplier-form-title').textContent = 'Edit Supplier';
+  document.getElementById('supplier-form-title').textContent = `Edit — ${_currentSupplier.name}`;
   show(document.getElementById('supplier-edit-panel'));
+  hide(document.getElementById('supplier-detail-panel'));
   document.getElementById('sup-name')?.focus();
 });
 
