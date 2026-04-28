@@ -129,7 +129,15 @@
       "Bash(tasklist)",
       "Bash(grep -E '\\\\.\\(py|js|html|sql|db\\)$')",
       "Bash(PGPASSWORD=FarmStall psql -U farmstall -h localhost -p 5432 -d postgres -c \"SELECT 1 FROM pg_database WHERE datname='farm_pos_prod';\")",
-      "Bash(PGPASSWORD=FarmStall psql *)"
+      "Bash(PGPASSWORD=FarmStall psql *)",
+      "Bash(python -m py_compile app.py)",
+      "Bash(powershell.exe -ExecutionPolicy Bypass -File start-qa.ps1)",
+      "Bash(ls instance/)",
+      "Bash(ls __pycache__/)",
+      "Bash(netstat -ano)",
+      "Bash(taskkill /PID 27596 /F)",
+      "Bash(taskkill /PID 22972 /F)",
+      "Bash(powershell.exe *)"
     ]
   }
 }
