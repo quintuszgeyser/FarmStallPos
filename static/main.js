@@ -448,12 +448,15 @@ async function openArchiveModal(p) {
     _archivePreview = data;
     const affected = data.affected_recipes || [];
 
-    // Stock decision for stock_item products with remaining stock
+    // Stock decision for products with remaining stock (stock_item or simple with stock_qty > 0)
     // Use live stock_level from the preview response — always authoritative
     const stockLevel  = data.stock_level || 0;
-    const stockAction = p.product_type === 'stock_item' && stockLevel > 0
+    const simpleStock = p.product_type === 'simple' ? (p.stock_qty || 0) : 0;
+    const hasRemainingStock = (p.product_type === 'stock_item' && stockLevel > 0) || (p.product_type === 'simple' && simpleStock > 0);
+    const stockDisplay = p.product_type === 'stock_item' ? displayQty(stockLevel, p.unit_type) : `${simpleStock} units`;
+    const stockAction = hasRemainingStock
       ? `<div class="alert alert-info py-2 mb-3">
-          <strong>📦 ${displayQty(stockLevel, p.unit_type)} remaining in stock.</strong> What should happen to it?
+          <strong>📦 ${stockDisplay} remaining in stock.</strong> What should happen to it?
           <div class="mt-2">
             <div class="form-check">
               <input class="form-check-input" type="radio" name="archive-stock-action" id="stock-action-keep" value="keep" checked>
@@ -4158,6 +4161,9 @@ async function loadSpecials() {
   try {
     STATE.specials = await api('/api/specials');
     if (STATE.user?.role === 'admin') renderSpecialsList();
+    // Refresh badges now that specials count is known
+    const setBadge = (id, n) => { const el = document.getElementById(id); if (el) { el.textContent = n; el.style.display = n > 0 ? '' : 'none'; } };
+    setBadge('specials-count-badge', STATE.specials.length);
   }
   catch (e) { console.error('loadSpecials', e); }
 }

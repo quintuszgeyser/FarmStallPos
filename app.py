@@ -1358,6 +1358,8 @@ def api_product_archive(pid):
     p.archived_reason = data.get('reason') or None
 
     # Handle remaining stock
+    if data.get('stock_action') == 'writeoff' and p.product_type == 'simple':
+        p.stock_qty = 0
     if data.get('stock_action') == 'writeoff' and p.product_type == 'stock_item':
         stock_level = sum(
             Decimal(str(b.qty_remaining_base))
@@ -1470,7 +1472,12 @@ def api_product_archive_preview(pid):
                 ],
             })
 
-    stock_level = get_stock_level(pid) if p.product_type == 'stock_item' else 0
+    if p.product_type == 'stock_item':
+        stock_level = get_stock_level(pid)
+    elif p.product_type == 'simple':
+        stock_level = float(p.stock_qty or 0)
+    else:
+        stock_level = 0
     return jsonify({'affected_recipes': affected, 'stock_level': stock_level})
 
 
