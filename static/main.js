@@ -1572,8 +1572,9 @@ function openReceiveStockModal(item) {
   const sel = document.getElementById('receive-supplier');
   if (sel) sel.value = '';
   document.getElementById('quick-supplier-form')?.classList.add('hidden');
-  document.getElementById('quick-sup-name').value    = '';
-  document.getElementById('quick-sup-contact').value = '';
+  document.getElementById('quick-sup-name').value  = '';
+  document.getElementById('quick-sup-phone').value = '';
+  document.getElementById('quick-sup-email').value = '';
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('receiveStockModal')).show();
   document.getElementById('receive-qty').focus();
@@ -2222,19 +2223,21 @@ document.getElementById('btn-quick-add-supplier')?.addEventListener('click', () 
 });
 
 document.getElementById('btn-quick-sup-save')?.addEventListener('click', async () => {
-  const name    = document.getElementById('quick-sup-name').value.trim();
-  const contact = document.getElementById('quick-sup-contact').value.trim();
+  const name  = document.getElementById('quick-sup-name').value.trim();
+  const phone = document.getElementById('quick-sup-phone').value.trim();
+  const email = document.getElementById('quick-sup-email').value.trim();
   if (!name) return toast('Supplier name required', 'warning');
   try {
-    const j = await api('/api/suppliers', { method: 'POST', body: JSON.stringify({ name, contact }) });
+    const j = await api('/api/suppliers', { method: 'POST', body: JSON.stringify({ name, phone, email }) });
     await loadSuppliers();
     // Select the new supplier in the dropdown
     const sel = document.getElementById('receive-supplier');
     if (sel) sel.value = j.id || '';
     // Hide the form
     document.getElementById('quick-supplier-form')?.classList.add('hidden');
-    document.getElementById('quick-sup-name').value    = '';
-    document.getElementById('quick-sup-contact').value = '';
+    document.getElementById('quick-sup-name').value  = '';
+    document.getElementById('quick-sup-phone').value = '';
+    document.getElementById('quick-sup-email').value = '';
     toast(`Supplier "${name}" added`, 'success');
   } catch (e) { toast(e.message, 'error'); }
 });
