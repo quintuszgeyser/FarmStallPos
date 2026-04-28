@@ -2783,8 +2783,10 @@ function renderTransactions(trs) {
     const right = document.createElement('div');
     right.className = 'd-flex align-items-center gap-2 flex-wrap';
     let summaryHTML = `<strong>R${fmt(t.total)}</strong>`;
-    if (t.cogs != null)       summaryHTML += ` <span class="small text-success">COGS R${fmt(t.cogs)}</span>`;
-    if (t.margin_pct != null) summaryHTML += ` <span class="small text-success">${t.margin_pct}% margin</span>`;
+    if (STATE.user?.role === 'admin') {
+      if (t.cogs != null)       summaryHTML += ` <span class="small text-success">COGS R${fmt(t.cogs)}</span>`;
+      if (t.margin_pct != null) summaryHTML += ` <span class="small text-success">${t.margin_pct}% margin</span>`;
+    }
     if (t.flagged && !t.flag_resolved) summaryHTML += ` <span class="badge bg-warning text-dark">⚑ Flagged</span>`;
     if (t.flagged && t.flag_resolved)  summaryHTML += ` <span class="badge bg-secondary">✓ Reviewed</span>`;
     right.innerHTML = summaryHTML;
@@ -3419,26 +3421,30 @@ async function openProfitDrilldown() {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No data found.</div>';
       return;
     }
+    const isAdmin     = STATE.user?.role === 'admin';
     const totalRev    = items.reduce((s, i) => s + i.revenue, 0);
     const totalProfit = items.reduce((s, i) => s + i.profit, 0);
-    const totalCogs   = items.reduce((s, i) => s + i.cogs, 0);
     const overallMargin = totalRev > 0 ? (totalProfit / totalRev * 100).toFixed(1) : '—';
     let html = `<div class="row g-2 mb-3">
-      <div class="col-4"><div class="card border-success text-center py-2"><div class="small text-muted">Revenue</div><div class="fw-bold text-success">R${fmt(totalRev)}</div></div></div>
+      <div class="${isAdmin ? 'col-4' : 'col-12'}"><div class="card border-success text-center py-2"><div class="small text-muted">Revenue</div><div class="fw-bold text-success">R${fmt(totalRev)}</div></div></div>
+      ${isAdmin ? `
       <div class="col-4"><div class="card border-success text-center py-2"><div class="small text-muted">Gross Profit</div><div class="fw-bold text-success">R${fmt(totalProfit)}</div></div></div>
       <div class="col-4"><div class="card border-warning text-center py-2"><div class="small text-muted">Margin</div><div class="fw-bold text-warning">${overallMargin}%</div></div></div>
+      ` : ''}
     </div>`;
     html += `<table class="table table-sm table-hover">
-      <thead class="table-light"><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Revenue</th><th class="text-end">COGS</th><th class="text-end text-success">Profit</th><th class="text-end text-warning">Margin</th></tr></thead><tbody>`;
+      <thead class="table-light"><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Revenue</th>${isAdmin ? '<th class="text-end">COGS</th><th class="text-end text-success">Profit</th><th class="text-end text-warning">Margin</th>' : ''}</tr></thead><tbody>`;
     items.forEach(i => {
       const profitColor = i.profit >= 0 ? 'text-success' : 'text-danger';
       html += `<tr>
         <td>${i.product}</td>
         <td class="text-end">${i.qty_sold}</td>
         <td class="text-end">R${fmt(i.revenue)}</td>
+        ${isAdmin ? `
         <td class="text-end text-muted">R${fmt(i.cogs)}</td>
         <td class="text-end fw-semibold ${profitColor}">R${fmt(i.profit)}</td>
         <td class="text-end text-warning">${i.margin != null ? i.margin + '%' : '—'}</td>
+        ` : ''}
       </tr>`;
     });
     html += '</tbody></table>';
