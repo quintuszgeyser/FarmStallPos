@@ -1470,7 +1470,8 @@ def api_product_archive_preview(pid):
                 ],
             })
 
-    return jsonify({'affected_recipes': affected})
+    stock_level = get_stock_level(pid) if p.product_type == 'stock_item' else 0
+    return jsonify({'affected_recipes': affected, 'stock_level': stock_level})
 
 
 @app.route('/api/products/<name>', methods=['DELETE'])

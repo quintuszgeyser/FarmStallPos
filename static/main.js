@@ -447,8 +447,8 @@ async function openArchiveModal(p) {
     const affected = data.affected_recipes || [];
 
     // Stock decision for stock_item products with remaining stock
-    const stockData   = STATE._stockItems?.[p.id];
-    const stockLevel  = stockData ? stockData.stock_level : (p.stock_level || 0);
+    // Use live stock_level from the preview response — always authoritative
+    const stockLevel  = data.stock_level || 0;
     const stockAction = p.product_type === 'stock_item' && stockLevel > 0
       ? `<div class="alert alert-info py-2 mb-3">
           <strong>📦 ${displayQty(stockLevel, p.unit_type)} remaining in stock.</strong> What should happen to it?
