@@ -1918,15 +1918,15 @@ function openSupplierDetail(supplier) {
   show(document.getElementById('supplier-detail-panel'));
   hide(document.getElementById('purchase-run-panel'));
 
-  // Populate detail header
+  // Populate detail
   document.getElementById('supplier-detail-name').textContent = supplier.name;
-  const contactBits = [
-    supplier.phone   ? `📞 ${supplier.phone}`   : '',
-    supplier.email   ? `✉ ${supplier.email}`   : '',
-    supplier.website ? `🌐 ${supplier.website}` : '',
-    supplier.notes   ? supplier.notes            : '',
-  ].filter(Boolean).join('  ·  ');
-  document.getElementById('supplier-detail-contact').textContent = contactBits;
+  const rows = [
+    supplier.phone   ? `<div><span class="text-muted" style="width:70px;display:inline-block">Phone</span> <a href="tel:${supplier.phone}">${supplier.phone}</a></div>` : '',
+    supplier.email   ? `<div><span class="text-muted" style="width:70px;display:inline-block">Email</span> <a href="mailto:${supplier.email}">${supplier.email}</a></div>` : '',
+    supplier.website ? `<div><span class="text-muted" style="width:70px;display:inline-block">Website</span> <a href="${supplier.website}" target="_blank" rel="noopener">${supplier.website}</a></div>` : '',
+    supplier.notes   ? `<div class="mt-1 fst-italic text-muted small">${supplier.notes}</div>` : '',
+  ].filter(Boolean).join('');
+  document.getElementById('supplier-detail-contact').innerHTML = rows || '<span class="text-muted small">No contact details</span>';
 
   loadSupplierProducts(supplier.id);
 }
