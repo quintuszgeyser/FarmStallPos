@@ -1356,6 +1356,28 @@ def api_product_archive(pid):
 
     p.is_archived     = True
     p.archived_reason = data.get('reason') or None
+
+    # Handle remaining stock
+    if data.get('stock_action') == 'writeoff' and p.product_type == 'stock_item':
+        stock_level = sum(
+            Decimal(str(b.qty_remaining_base))
+            for b in StockBatch.query.filter_by(product_id=pid).filter(StockBatch.qty_remaining_base > 0).all()
+        )
+        if stock_level > 0:
+            u = current_user()
+            now = datetime.utcnow()
+            consume_fifo(pid, stock_level, f'archive-wo-{uuid.uuid4()}', now)
+            db.session.add(StockAdjustment(
+                product_id=pid,
+                adjustment_type='writeoff',
+                qty_change_base=-stock_level,
+                system_qty_before=stock_level,
+                cost_written_off=Decimal('0'),
+                reason='Product archived',
+                adjusted_at=now,
+                user_id=u.id if u else None
+            ))
+
     db.session.commit()
 
     cascaded = [r.id for r in affected_recipes if r.is_archived and r.archived_reason == 'cascade']

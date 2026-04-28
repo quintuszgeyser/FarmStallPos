@@ -337,6 +337,7 @@ function renderProductsCards() {
           ${stockBadge}
           ${priceDisplay ? `<span class="text-success ms-2 fw-semibold">${priceDisplay}</span>` : ''}
           ${marginLabel ? `<span class="text-muted ms-2" style="font-size:11px">${marginLabel}</span>` : ''}
+          ${barcodeHtml}
         </div>
         <div class="d-flex gap-1 align-items-center flex-wrap">
           ${isStockItem ? `
@@ -358,13 +359,11 @@ function renderProductsCards() {
       if (isStockItem) {
         const stockData = STATE._stockItems?.[p.id];
         if (stockData) {
-          const batchBody = _buildStockBody(stockData);
-          body.appendChild(batchBody);
+          body.appendChild(_buildStockBody(stockData, p));
         } else {
           body.innerHTML = '<div class="small text-muted">Loading stock data…</div>';
         }
       }
-      if (barcodeHtml) body.innerHTML += `<div class="mt-2">${barcodeHtml}</div>`;
 
       // Toggle body open/close on header click (not on button clicks)
       header.addEventListener('click', e => {
@@ -447,11 +446,32 @@ async function openArchiveModal(p) {
     _archivePreview = data;
     const affected = data.affected_recipes || [];
 
+    // Stock decision for stock_item products with remaining stock
+    const stockData   = STATE._stockItems?.[p.id];
+    const stockLevel  = stockData ? stockData.stock_level : (p.stock_level || 0);
+    const stockAction = p.product_type === 'stock_item' && stockLevel > 0
+      ? `<div class="alert alert-info py-2 mb-3">
+          <strong>📦 ${displayQty(stockLevel, p.unit_type)} remaining in stock.</strong> What should happen to it?
+          <div class="mt-2">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="archive-stock-action" id="stock-action-keep" value="keep" checked>
+              <label class="form-check-label" for="stock-action-keep">Keep stock — still visible in Archived tab</label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="archive-stock-action" id="stock-action-writeoff" value="writeoff">
+              <label class="form-check-label" for="stock-action-writeoff">Write off all remaining stock</label>
+            </div>
+          </div>
+        </div>`
+      : '';
+
     if (affected.length === 0) {
       body.innerHTML = `<p>Archive <strong>${p.name}</strong>?</p>
+        ${stockAction}
         <p class="text-muted small">It is not used in any active recipes. It will be moved to the Archived tab.</p>`;
     } else {
       let html = `<p class="mb-1">Archive <strong>${p.name}</strong>?</p>
+        ${stockAction}
         <div class="alert alert-warning py-2 small mb-3">
           ⚠ Used in ${affected.length} active recipe${affected.length>1?'s':''}. Choose what to do with each one.
         </div>`;
@@ -561,10 +581,11 @@ document.getElementById('btn-archive-confirm')?.addEventListener('click', async 
     }
     // action === 'archive' → no entry in replacements → backend cascades
   });
+  const stockAction = document.querySelector('input[name="archive-stock-action"]:checked')?.value || 'keep';
   try {
     const result = await api(`/api/products/${_archiveProduct.id}/archive`, {
       method: 'POST',
-      body: JSON.stringify({ replacements }),
+      body: JSON.stringify({ replacements, stock_action: stockAction }),
     });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('archiveProductModal')).hide();
     await loadProducts();
@@ -1469,49 +1490,87 @@ async function loadIngredients() {
 }
 
 // Build the expandable stock body for a stock_item product.
-// item = object from /api/stock/ingredients (has .batches, .sell_packages, etc.)
-function _buildStockBody(item) {
-  const body = document.createElement('div');
-  body.className = 'stock-card-body';
+// item  = object from /api/stock/ingredients (.batches, .sell_packages, .unit_type, etc.)
+// prod  = product object from STATE.products (optional, used for sale price)
+function _buildStockBody(item, prod) {
+  const wrap = document.createElement('div');
 
   if (item.batches && item.batches.length > 0) {
-    body.innerHTML += `<div class="small fw-bold mb-1 text-muted">Batches (oldest first):</div>`;
+    // Rich batch table
+    const table = document.createElement('table');
+    table.className = 'table table-sm table-hover mb-2';
+    table.style.fontSize = '12px';
+    table.innerHTML = `
+      <thead class="table-light">
+        <tr>
+          <th>Date</th>
+          <th>Supplier</th>
+          <th class="text-end">Bought</th>
+          <th class="text-end">Left</th>
+          <th class="text-end">Stock Value</th>
+          <th class="text-end">COGS/unit</th>
+          <th class="text-end">Sale/unit</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>`;
+    const tbody = table.querySelector('tbody');
+
     [...item.batches].reverse().forEach(b => {
-      const remaining     = displayQty(b.qty_remaining_base, item.unit_type);
-      const purchased     = displayQty(b.qty_purchased_base, item.unit_type);
-      const date          = new Date(b.purchased_at).toLocaleDateString('en-ZA');
-      const supplierBadge = b.supplier_name
-        ? `<span class="badge bg-info text-dark ms-1" style="font-size:10px">${b.supplier_name}</span>`
-        : '<span class="badge bg-light text-muted ms-1" style="font-size:10px">No supplier</span>';
-      const totalCost = (b.cost_per_base_unit * b.qty_purchased_base).toFixed(2);
+      const remaining  = displayQty(b.qty_remaining_base, item.unit_type);
+      const purchased  = displayQty(b.qty_purchased_base, item.unit_type);
+      const date       = new Date(b.purchased_at).toLocaleDateString('en-ZA');
+      const supplier   = b.supplier_name || '—';
+      const stockValue = (b.cost_per_base_unit * b.qty_remaining_base);
+      const totalCost  = (b.cost_per_base_unit * b.qty_purchased_base).toFixed(2);
       const { cost: costPerDisplay, unit: displayUnit } = displayCost(b.cost_per_base_unit, b.qty_remaining_base, item.unit_type);
-      const costStr   = `R${costPerDisplay < 0.01 ? costPerDisplay.toFixed(4) : costPerDisplay.toFixed(2)}/${displayUnit}`;
-      const batchEl   = document.createElement('div');
-      batchEl.className = 'batch-row';
-      batchEl.innerHTML = `
-          <span>${date}${supplierBadge}</span>
-          <span>Bought: ${purchased}</span>
-          <span>Left: <strong>${remaining}</strong></span>
-          <span>Cost: ${costStr}</span>
-          <button class="btn btn-outline-secondary btn-sm py-0 px-1" style="font-size:11px"
+      const cogsStr    = `R${costPerDisplay < 0.01 ? costPerDisplay.toFixed(4) : costPerDisplay.toFixed(2)}/${displayUnit}`;
+
+      // Sale value per display unit
+      let saleStr = '—';
+      if (prod) {
+        if (prod.sold_by_weight && prod.price_per_unit != null) {
+          const { cost: salePer, unit: saleUnit } = displayCost(parseFloat(prod.price_per_unit), b.qty_remaining_base, item.unit_type);
+          saleStr = `R${fmt(salePer)}/${saleUnit}`;
+        } else if (prod.price != null) {
+          saleStr = `R${fmt(prod.price)}`;
+        }
+      }
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${date}</td>
+        <td>${b.supplier_name ? `<span class="badge bg-info text-dark">${supplier}</span>` : `<span class="text-muted">${supplier}</span>`}</td>
+        <td class="text-end">${purchased}</td>
+        <td class="text-end"><strong>${remaining}</strong></td>
+        <td class="text-end text-muted">R${fmt(stockValue)}</td>
+        <td class="text-end text-muted">${cogsStr}</td>
+        <td class="text-end text-success">${saleStr}</td>
+        <td class="text-end">
+          <button class="btn btn-outline-secondary btn-sm py-0 px-1"
             data-edit-batch-id="${b.id}"
             data-edit-batch-date="${b.purchased_at.slice(0,10)}"
             data-edit-batch-supplier="${b.supplier_id || ''}"
             data-edit-batch-total="${totalCost}"
-            data-edit-batch-qty="${purchased}">✏️</button>`;
-      body.appendChild(batchEl);
+            data-edit-batch-qty="${purchased}">✏️</button>
+        </td>`;
+      tbody.appendChild(tr);
     });
+
+    wrap.appendChild(table);
   } else {
-    body.innerHTML += `<div class="small text-muted">No stock received yet.</div>`;
+    wrap.innerHTML = '<div class="small text-muted pb-2">No stock received yet.</div>';
   }
 
   if (item.sell_packages?.length > 0) {
-    body.innerHTML += `<div class="small fw-bold mt-2 mb-1 text-muted">Packages:</div>`;
+    const pkgDiv = document.createElement('div');
+    pkgDiv.innerHTML = `<div class="small fw-bold mb-1 text-muted">Packages:</div>`;
     item.sell_packages.forEach(pkg => {
-      body.innerHTML += `<div class="small">• ${pkg.name} — ${displayQty(pkg.qty_base, item.unit_type)} @ R${fmt(pkg.price || 0)}</div>`;
+      pkgDiv.innerHTML += `<div class="small">• ${pkg.name} — ${displayQty(pkg.qty_base, item.unit_type)} @ R${fmt(pkg.price || 0)}</div>`;
     });
+    wrap.appendChild(pkgDiv);
   }
-  return body;
+  return wrap;
 }
 
 function renderStockList(items) {
@@ -1631,8 +1690,9 @@ function updateReceivePreview() {
 
   if (qty_base > 0 && totalPrice > 0) {
     const cpu = totalPrice / qty_base;
+    const { cost: cpuDisplay, unit: cpuUnit } = displayCost(cpu, qty_base, unitType);
     show(preview);
-    preview.textContent = `Cost per ${baseUnit}: R${cpu.toFixed(6)}`;
+    preview.textContent = `Cost: R${cpuDisplay < 0.01 ? cpuDisplay.toFixed(4) : cpuDisplay.toFixed(2)}/${cpuUnit}`;
   } else {
     hide(preview);
   }
