@@ -1887,6 +1887,7 @@ function renderSuppliersList() {
   _suppliers.forEach(s => {
     const item = document.createElement('div');
     item.className = 'list-group-item list-group-item-action';
+    item.dataset.supplierId = s.id;
     item.style.cursor = 'pointer';
     const contactBits = [
       s.phone   ? `📞 ${s.phone}`   : '',
@@ -1905,10 +1906,26 @@ function renderSuppliersList() {
 
 function openSupplierDetail(supplier) {
   _currentSupplier = supplier;
+
+  // Highlight active supplier in list
+  document.querySelectorAll('#suppliers-list .list-group-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.supplierId === String(supplier.id));
+  });
+
+  // Show detail alongside the form (both visible)
   show(document.getElementById('supplier-detail-panel'));
-  hide(document.getElementById('supplier-edit-panel'));
   hide(document.getElementById('purchase-run-panel'));
+
+  // Populate detail header
   document.getElementById('supplier-detail-name').textContent = supplier.name;
+  const contactBits = [
+    supplier.phone   ? `📞 ${supplier.phone}`   : '',
+    supplier.email   ? `✉ ${supplier.email}`   : '',
+    supplier.website ? `🌐 ${supplier.website}` : '',
+    supplier.notes   ? supplier.notes            : '',
+  ].filter(Boolean).join('  ·  ');
+  document.getElementById('supplier-detail-contact').textContent = contactBits;
+
   loadSupplierProducts(supplier.id);
 }
 
@@ -1919,28 +1936,36 @@ async function loadSupplierProducts(sid) {
   try {
     const products = await api(`/api/suppliers/${sid}/products`);
     _currentSupplierProducts = products;
+    const countEl = document.getElementById('supplier-products-count');
+    if (countEl) countEl.textContent = products.length ? `${products.length} product${products.length > 1 ? 's' : ''}` : '';
     if (products.length === 0) {
       host.innerHTML = '<span class="text-muted small">No products on record yet.</span>';
       return;
     }
-    const table = document.createElement('table');
-    table.className = 'table table-sm table-striped mb-0';
-    table.innerHTML = `
-      <thead><tr><th>Name</th><th>Type</th><th>Last Received</th></tr></thead>
-      <tbody>
-        ${products.map(p => `<tr>
-          <td>${p.name}</td>
-          <td><span class="badge bg-secondary small">${p.product_type}</span></td>
-          <td class="small text-muted">${p.last_received || 'N/A'}</td>
-        </tr>`).join('')}
-      </tbody>
-    `;
-    host.innerHTML = '';
-    host.appendChild(table);
+    host.innerHTML = `
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr><th>Name</th><th>Type</th><th>Last Received</th></tr></thead>
+        <tbody>
+          ${products.map(p => `<tr>
+            <td>${p.name}</td>
+            <td><span class="badge bg-secondary" style="font-size:10px">${p.product_type}</span></td>
+            <td class="small text-muted">${p.last_received || '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
   } catch (e) {
     host.innerHTML = `<span class="text-danger small">Error: ${e.message}</span>`;
   }
 }
+
+// Toggle products collapse
+document.getElementById('supplier-products-toggle')?.addEventListener('click', () => {
+  const body    = document.getElementById('supplier-products-collapse');
+  const chevron = document.getElementById('supplier-products-chevron');
+  if (!body) return;
+  const collapsed = body.classList.toggle('hidden');
+  if (chevron) chevron.textContent = collapsed ? '▶' : '▼';
+});
 
 function populateSupplierDropdowns() {
   // Receive stock modal dropdown
@@ -1959,18 +1984,22 @@ function populateSupplierDropdowns() {
 
 function clearSupplierForm() {
   _editingSupplierId = null;
-  _currentSupplier = null;
-  _currentSupplierProducts = [];
   ['sup-id','sup-name','sup-phone','sup-email','sup-website','sup-notes'].forEach(id => {
     const el = document.getElementById(id); if (el) el.value = '';
   });
   document.getElementById('supplier-form-title').textContent = 'Add Supplier';
-  show(document.getElementById('supplier-edit-panel'));
-  hide(document.getElementById('supplier-detail-panel'));
+  // Remove active highlight from list
+  document.querySelectorAll('#suppliers-list .list-group-item').forEach(el => el.classList.remove('active'));
 }
 
 document.getElementById('btn-clear-supplier')?.addEventListener('click', clearSupplierForm);
 document.getElementById('btn-refresh-suppliers')?.addEventListener('click', loadSuppliers);
+document.getElementById('btn-new-supplier')?.addEventListener('click', () => {
+  clearSupplierForm();
+  hide(document.getElementById('supplier-detail-panel'));
+  show(document.getElementById('supplier-edit-panel'));
+  document.getElementById('sup-name')?.focus();
+});
 
 document.getElementById('btn-save-supplier')?.addEventListener('click', async () => {
   const id      = _editingSupplierId;
@@ -1981,15 +2010,20 @@ document.getElementById('btn-save-supplier')?.addEventListener('click', async ()
   const notes   = document.getElementById('sup-notes').value.trim();
   if (!name) return toast('Supplier name required', 'warning');
   try {
+    let savedId = id;
     if (id) {
       await api(`/api/suppliers/${id}`, { method: 'POST', body: JSON.stringify({ name, phone, email, website, notes }) });
       toast('Supplier updated');
     } else {
-      await api('/api/suppliers', { method: 'POST', body: JSON.stringify({ name, phone, email, website, notes }) });
+      const r = await api('/api/suppliers', { method: 'POST', body: JSON.stringify({ name, phone, email, website, notes }) });
+      savedId = r.id;
       toast('Supplier added');
     }
     clearSupplierForm();
     await loadSuppliers();
+    // Re-open the saved supplier's detail
+    const saved = _suppliers.find(s => s.id === savedId);
+    if (saved) openSupplierDetail(saved);
   } catch (e) { toast(e.message, 'error'); }
 });
 
@@ -2016,7 +2050,7 @@ document.getElementById('btn-supplier-edit')?.addEventListener('click', () => {
   document.getElementById('sup-notes').value   = _currentSupplier.notes   || '';
   document.getElementById('supplier-form-title').textContent = 'Edit Supplier';
   show(document.getElementById('supplier-edit-panel'));
-  hide(document.getElementById('supplier-detail-panel'));
+  document.getElementById('sup-name')?.focus();
 });
 
 // Purchase Run

@@ -315,18 +315,21 @@
     <!-- ═══════════════ SUPPLIERS ═══════════════ -->
     <div class="tab-pane fade" id="suppliers">
       <div class="row g-3">
-        <!-- Left: supplier list (now clickable to expand) -->
-        <div class="col-12 col-lg-5">
+        <!-- Left: supplier list — always visible -->
+        <div class="col-12 col-lg-4">
           <div class="d-flex align-items-center gap-2 mb-2">
             <h5 class="mb-0">Suppliers</h5>
-            <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm ms-auto">Refresh</button>
+            <button id="btn-new-supplier"     class="btn btn-success btn-sm ms-auto">+ New</button>
+            <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm">↺</button>
           </div>
           <div id="suppliers-list" class="list-group"></div>
         </div>
-        <!-- Right: supplier detail / form panel -->
-        <div class="col-12 col-lg-7">
-          <!-- Add/Edit supplier form (shown when no supplier selected or editing) -->
-          <div id="supplier-edit-panel" class="card">
+
+        <!-- Right: detail + form side-by-side, always visible -->
+        <div class="col-12 col-lg-8">
+
+          <!-- Add/Edit form — shown when adding new or editing -->
+          <div id="supplier-edit-panel" class="card mb-3">
             <div class="card-body">
               <h6 id="supplier-form-title">Add Supplier</h6>
               <input type="hidden" id="sup-id">
@@ -344,21 +347,37 @@
               </div>
             </div>
           </div>
-          <!-- Supplier detail panel (shown when a supplier is selected) -->
+
+          <!-- Supplier detail — shown when a supplier is selected -->
           <div id="supplier-detail-panel" class="hidden">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <h5 id="supplier-detail-name" class="mb-0"></h5>
-              <button id="btn-supplier-edit" class="btn btn-outline-secondary btn-sm ms-auto">Edit</button>
-              <button id="btn-supplier-new-run" class="btn btn-success btn-sm">+ Purchase Run</button>
-            </div>
-            <!-- Products from this supplier -->
+
+            <!-- Details card -->
             <div class="card mb-3">
-              <div class="card-header py-2 small fw-bold">Products from this supplier</div>
-              <div id="supplier-products-list" class="card-body p-2">
-                <span class="text-muted small">Loading...</span>
+              <div class="card-body py-2">
+                <div class="d-flex align-items-center gap-2 mb-1">
+                  <h6 id="supplier-detail-name" class="mb-0 fw-bold"></h6>
+                  <button id="btn-supplier-edit"    class="btn btn-outline-secondary btn-sm ms-auto">Edit</button>
+                  <button id="btn-supplier-new-run" class="btn btn-success btn-sm">+ Purchase Run</button>
+                </div>
+                <div id="supplier-detail-contact" class="small text-muted"></div>
               </div>
             </div>
-            <!-- Purchase run form (hidden until + Purchase Run clicked) -->
+
+            <!-- Products from this supplier — collapsed dropdown -->
+            <div class="card mb-3">
+              <div class="card-header py-2 d-flex align-items-center" style="cursor:pointer" id="supplier-products-toggle">
+                <span class="small fw-bold">Products from this supplier</span>
+                <span class="ms-auto small text-muted" id="supplier-products-count"></span>
+                <span class="ms-2 small" id="supplier-products-chevron">▼</span>
+              </div>
+              <div id="supplier-products-collapse">
+                <div id="supplier-products-list" class="card-body p-2">
+                  <span class="text-muted small">Loading...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Purchase run form -->
             <div id="purchase-run-panel" class="card hidden">
               <div class="card-header py-2 d-flex align-items-center">
                 <span class="fw-bold small">New Purchase Run</span>
