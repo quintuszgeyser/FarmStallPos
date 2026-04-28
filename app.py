@@ -1916,6 +1916,7 @@ def api_stock_ingredients():
     for p in products:
         batches = (StockBatch.query
                    .filter_by(product_id=p.id)
+                   .filter(StockBatch.qty_remaining_base > 0)
                    .order_by(StockBatch.purchased_at.desc())
                    .all())
         stock_level = sum(float(b.qty_remaining_base) for b in batches)
