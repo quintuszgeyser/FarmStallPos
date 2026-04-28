@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Farm Stall POS — User Guide</title>
+  <style>
+    :root {
+      --green:       #2a6f3e;
+      --green-light: #e8f5ed;
+      --green-mid:   #4a9460;
+      --amber:       #f0a500;
+      --amber-light: #fff8e6;
+      --red:         #c0392b;
+      --red-light:   #fdf0ee;
+      --blue:        #1a6fa8;
+      --blue-light:  #e8f3fb;
+      --border:      #dee2e6;
+      --bg:          #f8f9fa;
+      --text:        #212529;
+      --muted:       #6c757d;
+      --sidebar-w:   260px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 15px; color: var(--text); background: var(--bg); display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ── */
+    #sidebar {
+      width: var(--sidebar-w); min-width: var(--sidebar-w);
+      background: var(--green); color: #fff;
+      position: fixed; top: 0; left: 0; bottom: 0;
+      overflow-y: auto; padding: 0 0 40px 0;
+    }
+    #sidebar .brand { padding: 22px 20px 16px; border-bottom: 1px solid rgba(255,255,255,0.2); }
+    #sidebar .brand h1 { font-size: 17px; font-weight: 700; line-height: 1.3; }
+    #sidebar .brand p  { font-size: 12px; opacity: 0.7; margin-top: 3px; }
+    #sidebar nav { padding: 10px 0; }
+    #sidebar nav a {
+      display: block; padding: 9px 20px; color: rgba(255,255,255,0.85);
+      text-decoration: none; font-size: 13.5px; line-height: 1.3;
+      border-left: 3px solid transparent; transition: background 0.15s;
+    }
+    #sidebar nav a:hover  { background: rgba(255,255,255,0.12); color: #fff; }
+    #sidebar nav a.active { background: rgba(255,255,255,0.18); border-left-color: #fff; color: #fff; font-weight: 600; }
+    #sidebar nav .section-label {
+      font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+      color: rgba(255,255,255,0.5); padding: 16px 20px 4px; font-weight: 600;
+    }
+    #sidebar nav a.sub { padding-left: 34px; font-size: 13px; }
+
+    /* ── Content ── */
+    #content { margin-left: var(--sidebar-w); flex: 1; padding: 40px 48px 80px; max-width: 900px; }
+
+    h2 { font-size: 26px; font-weight: 700; color: var(--green); margin: 48px 0 6px; padding-top: 8px; border-top: 2px solid var(--green); }
+    h2:first-of-type { margin-top: 0; border-top: none; }
+    h3 { font-size: 18px; font-weight: 600; margin: 28px 0 10px; color: #1a1a1a; }
+    h4 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: #333; }
+    p  { margin-bottom: 12px; line-height: 1.65; }
+    ul, ol { margin: 0 0 14px 22px; }
+    li { margin-bottom: 6px; line-height: 1.6; }
+    code { background: #eee; border-radius: 3px; padding: 1px 5px; font-family: monospace; font-size: 13px; }
+
+    /* Role badges */
+    .badge {
+      display: inline-block; padding: 2px 9px; border-radius: 20px;
+      font-size: 11.5px; font-weight: 600; vertical-align: middle; white-space: nowrap;
+    }
+    .badge-teller { background: #d1ecf1; color: #0c5460; }
+    .badge-admin  { background: #fce8b2; color: #7d4e00; }
+    .badge-both   { background: #d4edda; color: #155724; }
+    .badge-green  { background: var(--green-light); color: var(--green); }
+    .badge-red    { background: var(--red-light);   color: var(--red);   }
+
+    /* Info boxes */
+    .box {
+      border-radius: 6px; padding: 14px 18px; margin: 16px 0;
+      border-left: 4px solid; line-height: 1.6;
+    }
+    .box-info  { background: var(--blue-light);  border-color: var(--blue);  color: #0d4f7a; }
+    .box-tip   { background: var(--green-light); border-color: var(--green); color: var(--green); }
+    .box-warn  { background: var(--amber-light); border-color: var(--amber); color: #7d4e00; }
+    .box-danger{ background: var(--red-light);   border-color: var(--red);   color: var(--red); }
+    .box strong { display: block; margin-bottom: 4px; }
+
+    /* Steps */
+    .steps { counter-reset: step; padding-left: 0; list-style: none; margin: 0 0 16px; }
+    .steps li {
+      counter-increment: step; position: relative;
+      padding: 10px 12px 10px 48px; margin-bottom: 8px;
+      background: #fff; border: 1px solid var(--border); border-radius: 6px;
+    }
+    .steps li::before {
+      content: counter(step);
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      width: 24px; height: 24px; border-radius: 50%;
+      background: var(--green); color: #fff;
+      font-size: 12px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* Tables */
+    table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 14px; }
+    th { background: var(--green); color: #fff; padding: 9px 12px; text-align: left; font-weight: 600; }
+    td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:nth-child(even) td { background: #f4f8f5; }
+
+    /* Scenario boxes */
+    .scenario {
+      background: #fff; border: 1px solid var(--border); border-radius: 8px;
+      margin: 18px 0; overflow: hidden;
+    }
+    .scenario-header {
+      background: var(--green-light); padding: 10px 16px;
+      font-weight: 600; font-size: 14px; color: var(--green); border-bottom: 1px solid var(--border);
+    }
+    .scenario-body { padding: 14px 16px; }
+
+    hr { border: none; border-top: 1px solid var(--border); margin: 36px 0; }
+    .toc-skip { display: none; }
+
+    @media (max-width: 768px) {
+      #sidebar { display: none; }
+      #content { margin-left: 0; padding: 24px 20px 60px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════ SIDEBAR ═══════════ -->
+<nav id="sidebar">
+  <div class="brand">
+    <h1>Farm Stall POS</h1>
+    <p>User Guide</p>
+  </div>
+  <nav>
+    <div class="section-label">Getting Started</div>
+    <a href="#login">Login &amp; Logout</a>
+    <a href="#roles">User Roles Overview</a>
+
+    <div class="section-label">Teller Flows</div>
+    <a href="#teller-pos">Processing a Sale</a>
+    <a href="#teller-scan">Scanning Barcodes</a>
+    <a href="#teller-weight">Weight &amp; Volume Items</a>
+    <a href="#teller-specials">Automatic Specials</a>
+    <a href="#teller-customise">Customising Recipes</a>
+    <a href="#teller-checkout">Checkout</a>
+    <a href="#teller-transactions">Viewing Transactions</a>
+    <a href="#teller-flag">Flagging a Transaction</a>
+    <a href="#kitchen">Kitchen Queue</a>
+
+    <div class="section-label">Admin Flows</div>
+    <a href="#admin-transactions">Managing Transactions</a>
+    <a href="#admin-products">Products</a>
+    <a href="#admin-specials">Setting Up Specials</a>
+    <a href="#admin-stock">Receiving Stock</a>
+    <a href="#admin-stocktake">Stocktake</a>
+    <a href="#admin-writeoff">Write-Off</a>
+    <a href="#admin-suppliers">Suppliers</a>
+    <a href="#admin-users">User Management</a>
+    <a href="#admin-stats">Stats &amp; Reports</a>
+    <a href="#admin-export">Exporting Data</a>
+  </nav>
+</nav>
+
+<!-- ═══════════ CONTENT ═══════════ -->
+<main id="content">
+
+  <!-- ─── COVER ─── -->
+  <div style="margin-bottom:40px;">
+    <h1 style="font-size:32px;color:var(--green);font-weight:800;">Farm Stall POS — User Guide</h1>
+    <p style="color:var(--muted);margin-top:6px;">Version 1.6 &nbsp;·&nbsp; App runs at <code>http://127.0.0.1:5000</code></p>
+    <p>This guide covers every feature of the Farm Stall POS system. Use the sidebar to jump to any section. Sections are marked with role badges: <span class="badge badge-teller">Teller</span> <span class="badge badge-admin">Admin</span> <span class="badge badge-both">Both</span></p>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════
+       GETTING STARTED
+  ════════════════════════════════════════════════ -->
+  <h2 id="login">Login &amp; Logout <span class="badge badge-both">Both</span></h2>
+
+  <h3>Logging In</h3>
+  <ol class="steps">
+    <li>Open <code>http://127.0.0.1:5000</code> in any browser.</li>
+    <li>Enter your <strong>Username</strong> and <strong>Password</strong> in the login card.</li>
+    <li>Click <strong>Login</strong>. You will land on the <em>Teller</em> tab automatically.</li>
+  </ol>
+  <p>Default admin credentials: username <code>admin</code>, password <code>admin123</code> — change this after first setup.</p>
+
+  <h3>Logging Out</h3>
+  <p>Click the <strong>Logout</strong> button (top-right of the screen, or in the user card). The session is immediately cleared and the login screen is shown.</p>
+
+  <hr>
+
+  <h2 id="roles">User Roles Overview</h2>
+
+  <table>
+    <tr><th>Feature</th><th>Teller</th><th>Admin</th></tr>
+    <tr><td>Process sales (Teller tab)</td><td>✓</td><td>✓</td></tr>
+    <tr><td>View last 5 transactions</td><td>✓</td><td>✓</td></tr>
+    <tr><td>Flag a transaction</td><td>✓</td><td>✓</td></tr>
+    <tr><td>Kitchen queue</td><td>✓</td><td>✓</td></tr>
+    <tr><td>View all transactions + date range</td><td>—</td><td>✓</td></tr>
+    <tr><td>Edit / void a transaction</td><td>—</td><td>✓</td></tr>
+    <tr><td>Resolve flags</td><td>—</td><td>✓</td></tr>
+    <tr><td>Products management</td><td>—</td><td>✓</td></tr>
+    <tr><td>Specials management</td><td>—</td><td>✓</td></tr>
+    <tr><td>Receive stock / stocktake / write-off</td><td>—</td><td>✓</td></tr>
+    <tr><td>Suppliers management</td><td>—</td><td>✓</td></tr>
+    <tr><td>Stats &amp; reports</td><td>—</td><td>✓</td></tr>
+    <tr><td>User management</td><td>—</td><td>✓</td></tr>
+  </table>
+
+  <!-- ═══════════════════════════════════════════════
+       TELLER FLOWS
+  ════════════════════════════════════════════════ -->
+  <h2 id="teller-pos">Processing a Sale <span class="badge badge-both">Both</span></h2>
+
+  <p>The <strong>Teller</strong> tab is the main point-of-sale screen. Items are added to the cart and then checked out as a single transaction.</p>
+
+  <h3>Adding Items to the Cart</h3>
+  <p>There are four ways to add a product:</p>
+
+  <h4>1 — Product Dropdown</h4>
+  <ol class="steps">
+    <li>Click the dropdown labelled <em>"Select a product…"</em> at the top of the Teller tab.</li>
+    <li>Scroll or type to find the product. The format shown is <code>Product name — R[price]</code>.</li>
+    <li>Click the product. It is added to the cart immediately.</li>
+  </ol>
+
+  <h4>2 — Search Bar</h4>
+  <ol class="steps">
+    <li>Type a product name, ID number, or barcode number in the search bar.</li>
+    <li>Matching results appear as a dropdown list showing name and stock level.</li>
+    <li>Click a result to add it to the cart. The search field clears automatically.</li>
+  </ol>
+
+  <h4>3 — USB / Bluetooth Barcode Scanner</h4>
+  <ol class="steps">
+    <li>Ensure you are on the <strong>Teller</strong> tab and no text input field is focused (click an empty area if needed).</li>
+    <li>Scan the barcode with the scanner. The scanner sends keystrokes ending with Enter — the system captures this automatically.</li>
+    <li>On a successful match: a beep plays, the screen flashes green, and the item is added to the cart.</li>
+    <li>If the barcode is not found, a warning toast appears showing the scanned code.</li>
+  </ol>
+
+  <h4>4 — Camera Scanner</h4>
+  <ol class="steps">
+    <li>Click the <strong>Scan</strong> button to activate the device camera.</li>
+    <li>Point the camera at the barcode. The system uses ZXing to detect barcodes in real time.</li>
+    <li>Once detected, the item is added and a 1.5-second cooldown prevents duplicate scans.</li>
+    <li>Click <strong>Stop</strong> to turn off the camera.</li>
+  </ol>
+
+  <hr>
+
+  <h2 id="teller-scan">Cart Management <span class="badge badge-both">Both</span></h2>
+
+  <h3>Adjusting Quantity</h3>
+  <p>For fixed-price (non-weight) items, use the <strong>+</strong> and <strong>−</strong> buttons on each cart line. The price updates automatically. The minimum quantity is 1.</p>
+
+  <h3>Removing an Item</h3>
+  <p>Click the <strong>Remove</strong> button on the cart line. The item is removed immediately with no confirmation required.</p>
+
+  <h3>Undo Last Scan</h3>
+  <p>Click the <strong>↩ Undo</strong> button at the top of the cart to reverse the most recent add. If the item has qty &gt; 1, qty decreases by 1; otherwise the item is removed.</p>
+
+  <div class="box box-tip">
+    <strong>Tip</strong>
+    For items sold by weight (e.g. biltong), quantity adjustment via + / − is not available. To correct a weight, remove the item and re-add it with the correct weight.
+  </div>
+
+  <hr>
+
+  <h2 id="teller-weight">Weight &amp; Volume Items <span class="badge badge-both">Both</span></h2>
+
+  <p>Some products are sold by weight (g / kg) or volume (ml / L) — for example, fresh biltong weighed at the counter.</p>
+
+  <ol class="steps">
+    <li>Add the product via scanner, search, or dropdown. The <strong>Weight Entry</strong> modal opens automatically.</li>
+    <li>Enter the quantity in the <strong>Quantity</strong> field.</li>
+    <li>Select the unit from the dropdown (g, kg, ml, L, or a custom package unit if configured).</li>
+    <li>The <strong>live price preview</strong> updates as you type: <code>250g = R62.50</code>.</li>
+    <li>Click <strong>Add to Cart</strong>.</li>
+  </ol>
+
+  <p>Each weight entry creates a separate line in the cart even if the same product is added multiple times — this allows multiple bags of different weights for the same customer.</p>
+
+  <hr>
+
+  <h2 id="teller-specials">Automatic Specials <span class="badge badge-both">Both</span></h2>
+
+  <p>Specials (combo deals) are detected and applied automatically every time the cart changes. You do not need to do anything — the system handles it.</p>
+
+  <h3>How It Works</h3>
+  <ul>
+    <li>The system checks all active specials against the cart.</li>
+    <li>It finds the <strong>combination that saves the customer the most money</strong>.</li>
+    <li>Each product unit is counted toward <em>at most one</em> special — no double-dipping.</li>
+    <li>A green toast appears: <em>"Family Deal ×1 — saving R5.00"</em>.</li>
+    <li>The discounted prices are shown on the cart lines and in the total.</li>
+  </ul>
+
+  <div class="box box-info">
+    <strong>Example — overlapping specials</strong>
+    Specials: "2× Coke = R30" and "1× Coke + 1× Cream Soda = R25".<br><br>
+    <strong>Cart: 2× Coke + 1× Cream Soda</strong><br>
+    The system compares both options and picks the one that saves more. In this case "Coke + Cream Soda" wins because applying it uses one Coke (leaving one at full price) whereas "2× Coke" would leave the Cream Soda at full price and save less overall.<br><br>
+    <strong>Cart: 3× Coke + 1× Cream Soda</strong><br>
+    Now both specials can apply without conflict: "Coke + Cream Soda" uses 1 Coke + 1 Cream Soda, and "2× Coke" uses the remaining 2 Cokes. Both discounts are applied simultaneously.
+  </div>
+
+  <hr>
+
+  <h2 id="teller-customise">Customising Recipes <span class="badge badge-both">Both</span></h2>
+
+  <p>Recipe products (cappuccinos, toasted sandwiches, etc.) can be customised per customer order.</p>
+
+  <ol class="steps">
+    <li>Add the recipe product to the cart.</li>
+    <li>Click the <strong>Customise</strong> button on that cart line.</li>
+    <li>In the modal, adjust any ingredient:
+      <ul>
+        <li><strong>Swap</strong>: Change the "Using" dropdown to a different ingredient (e.g. Oat Milk instead of Full Cream Milk). Previously used alternatives appear at the top for quick access.</li>
+        <li><strong>Remove</strong>: Click <em>Remove</em> to exclude an ingredient entirely.</li>
+        <li><strong>Extra</strong>: Click <em>+ Add extra ingredient</em> to add something not normally in the recipe.</li>
+      </ul>
+    </li>
+    <li>A <strong>price adjustment</strong> is shown at the bottom based on ingredient cost differences.</li>
+    <li>Click <strong>Add to Cart</strong> to confirm. The cart line name shows a summary of changes, e.g. <em>Cappuccino (Milk→Oat Milk, +Cinnamon)</em>.</li>
+  </ol>
+
+  <p>The kitchen order sent to the kitchen queue will show all substitutions, removals, and extras highlighted in colour so staff know exactly how to prepare the item.</p>
+
+  <hr>
+
+  <h2 id="teller-checkout">Checkout <span class="badge badge-both">Both</span></h2>
+
+  <ol class="steps">
+    <li>Confirm the cart items and total at the bottom of the cart panel.</li>
+    <li>Click the <strong>Checkout</strong> button (disabled if cart is empty).</li>
+    <li>The system records the transaction, deducts stock using FIFO costing, and sends any prepared items to the kitchen queue.</li>
+    <li>A success message shows the transaction ID and the number of kitchen orders created (if any).</li>
+    <li>The cart clears automatically, ready for the next customer.</li>
+  </ol>
+
+  <div class="box box-warn">
+    <strong>Important</strong>
+    Once checkout is complete, only an admin can edit or void the transaction. Confirm the cart is correct before checking out.
+  </div>
+
+  <hr>
+
+  <h2 id="teller-transactions">Viewing Transactions <span class="badge badge-teller">Teller</span></h2>
+
+  <p>Go to the <strong>Transactions</strong> tab to see your recent sales. As a teller, you see your last 5 transactions only.</p>
+
+  <p>Each transaction card shows:</p>
+  <ul>
+    <li>Transaction ID (first 8 characters)</li>
+    <li>Date and time</li>
+    <li>Your name (teller badge)</li>
+    <li>Each line item: product × qty @ price = subtotal</li>
+    <li>Total amount</li>
+  </ul>
+
+  <hr>
+
+  <h2 id="teller-flag">Flagging a Transaction <span class="badge badge-both">Both</span></h2>
+
+  <p>If something is wrong with a transaction (wrong product, price dispute, customer complaint), flag it for admin review without altering the transaction data.</p>
+
+  <ol class="steps">
+    <li>Find the transaction in the Transactions tab.</li>
+    <li>Click the <strong>⚑ Flag</strong> button on the transaction card.</li>
+    <li>Enter a clear note explaining the issue — e.g., <em>"Customer returned Coke, said it was warm"</em>.</li>
+    <li>Click <strong>Flag for Admin Review</strong>.</li>
+  </ol>
+
+  <p>The transaction is marked with a yellow <span class="badge badge-red">⚑ Flagged</span> badge. Admins can see all flagged transactions and will resolve them.</p>
+
+  <hr>
+
+  <h2 id="kitchen">Kitchen Queue <span class="badge badge-both">Both</span></h2>
+
+  <p>The <strong>Kitchen</strong> tab shows all pending preparation orders. A red badge on the tab shows the count of pending orders and updates every 30 seconds.</p>
+
+  <h3>Working the Queue</h3>
+  <ul>
+    <li>Each card shows: product name, quantity, ingredient details (including swaps and extras), the teller who placed the order, and a live timer.</li>
+    <li>The timer turns red after 10 minutes to indicate urgency.</li>
+    <li>Use <strong>▲ / ▼</strong> buttons to reprioritise orders.</li>
+    <li>Click <strong>✓ Done</strong> when the order is ready. The completion time and wait time are recorded.</li>
+    <li>Click <strong>✕ Cancel</strong> to cancel an order (with confirmation).</li>
+  </ul>
+
+  <h3>Viewing History</h3>
+  <p>Click <strong>Completed Today</strong> to toggle a list of completed and cancelled orders for the current day, including wait times.</p>
+
+  <!-- ═══════════════════════════════════════════════
+       ADMIN FLOWS
+  ════════════════════════════════════════════════ -->
+  <h2 id="admin-transactions">Managing Transactions <span class="badge badge-admin">Admin</span></h2>
+
+  <h3>Date Range Filter</h3>
+  <ol class="steps">
+    <li>Go to the <strong>Transactions</strong> tab.</li>
+    <li>Use the <strong>Start</strong> and <strong>End</strong> date pickers, then click <strong>Filter</strong>. Click <strong>Today</strong> for a quick today-only view.</li>
+  </ol>
+
+  <h3>Editing a Transaction</h3>
+  <ol class="steps">
+    <li>Find the transaction and click <strong>Edit / Void</strong>.</li>
+    <li>In the modal, adjust quantities or unit prices directly in the table. Remove a line with the <strong>✕</strong> button.</li>
+    <li>The total recalculates live as you type.</li>
+    <li>Click <strong>Save Changes</strong>. The system restores original stock and re-deducts based on the new values.</li>
+  </ol>
+
+  <div class="box box-warn">
+    <strong>Stock impact</strong>
+    Saving changes restores all original stock and then deducts the new quantities. There is a brief moment of reconciliation — do not refresh mid-save.
+  </div>
+
+  <h3>Voiding a Transaction</h3>
+  <ol class="steps">
+    <li>Click <strong>Edit / Void</strong> on the transaction.</li>
+    <li>Enter a <strong>void reason</strong> in the text field (required).</li>
+    <li>Click <strong>Void Transaction</strong>.</li>
+    <li>The transaction is marked voided, all stock is fully restored, and the reason is recorded for the audit trail.</li>
+  </ol>
+
+  <h3>Resolving Flags</h3>
+  <p>On a flagged transaction, click <strong>✓ Resolve</strong>. The badge changes from <span class="badge badge-red">⚑ Flagged</span> to <span class="badge badge-green">✓ Reviewed</span> and the note box turns grey.</p>
+
+  <hr>
+
+  <h2 id="admin-products">Products Management <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Go to the <strong>Products</strong> tab. Use the sub-tabs to navigate: <em>For Sale</em>, <em>Ingredients</em>, <em>Archived</em>, <em>Specials</em>.</p>
+
+  <h3>Adding a New Product</h3>
+  <ol class="steps">
+    <li>Click <strong>+ New Product</strong>.</li>
+    <li>Choose the <strong>product type</strong>:
+      <ul>
+        <li><strong>Stock Item</strong> — anything with trackable stock (drinks, biltong, produce).</li>
+        <li><strong>Recipe</strong> — made from stock items (cappuccino, toasted sandwich).</li>
+        <li><strong>Simple</strong> — legacy count-based stock (no FIFO costing).</li>
+      </ul>
+    </li>
+    <li>Fill in the required fields (see tables below).</li>
+    <li>Click <strong>Add Product</strong>.</li>
+  </ol>
+
+  <table>
+    <tr><th colspan="2">Stock Item Fields</th></tr>
+    <tr><td>Name</td><td>Required. Shown at till and on receipts.</td></tr>
+    <tr><td>Unit type</td><td>Weight (g/kg), Volume (ml/L), or Count. Determines how stock and price are tracked.</td></tr>
+    <tr><td>Selling price</td><td>Price per unit. For weight/volume items, choose the display unit (per g, per kg, etc.).</td></tr>
+    <tr><td>Available at till</td><td>Check to show at till. Uncheck to hide (ingredient-only).</td></tr>
+    <tr><td>Requires kitchen prep</td><td>Check if this item needs to be sent to the kitchen queue.</td></tr>
+    <tr><td>Low stock warning</td><td>Threshold quantity + unit. Shows ⚠ LOW badge on product card.</td></tr>
+    <tr><td>Purchase package</td><td>How you receive it (e.g. 5L carton). Simplifies stock receiving.</td></tr>
+    <tr><td>Sell packages</td><td>Pre-packed portions with their own names, quantities, prices, and barcodes.</td></tr>
+  </table>
+
+  <table>
+    <tr><th colspan="2">Recipe Fields</th></tr>
+    <tr><td>Name &amp; price</td><td>As above.</td></tr>
+    <tr><td>Recipe table</td><td>Each row: ingredient (stock item), quantity, unit. Click <strong>+ Add Ingredient</strong> to add rows.</td></tr>
+    <tr><td>Estimated cost</td><td>Live-calculated from current FIFO stock costs as you build the recipe.</td></tr>
+  </table>
+
+  <h3>Editing a Product</h3>
+  <p>Click <strong>Edit</strong> on any product card. Make your changes and click <strong>Update Product</strong>.</p>
+
+  <h3>Price Calculator</h3>
+  <ol class="steps">
+    <li>In the product editor, click <strong>Calculate Price</strong>.</li>
+    <li>Enter a target <strong>margin %</strong> (or click a quick button: 20%, 30%, 40%…).</li>
+    <li>Click <strong>Calculate &amp; Set Price</strong>. The breakdown shows ingredient/batch costs.</li>
+    <li>Click <strong>Use This Price</strong> to apply the suggested price.</li>
+  </ol>
+
+  <h3>Archiving &amp; Restoring</h3>
+
+  <div class="scenario">
+    <div class="scenario-header">Archiving a product that is used in recipes</div>
+    <div class="scenario-body">
+      <p>When you archive an ingredient used in recipes, the system shows you each affected recipe with three options:</p>
+      <ol>
+        <li>Archive the recipe too (cascade).</li>
+        <li>Remove the ingredient from the recipe.</li>
+        <li>Replace with a different ingredient.</li>
+      </ol>
+      <p>Choose the appropriate action per recipe, then click <strong>Archive</strong>.</p>
+    </div>
+  </div>
+
+  <p>To restore a product, go to the <strong>Archived</strong> sub-tab, click <strong>Restore</strong>, and optionally restore any recipes that were cascade-archived with it.</p>
+
+  <hr>
+
+  <h2 id="admin-specials">Setting Up Specials <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Go to <strong>Products → Specials</strong>. Specials are combo deals that automatically apply at the till.</p>
+
+  <h3>Creating a Special</h3>
+  <ol class="steps">
+    <li>Click <strong>+ New Special</strong>.</li>
+    <li>Enter a <strong>name</strong> (shown in toast notifications at the till) — e.g., <em>Family Deal</em>.</li>
+    <li>Enter the <strong>special price</strong> — the total price when all required products are in the cart.</li>
+    <li>In the <strong>Required Products</strong> table, click <strong>+ Add Product</strong> for each product in the deal. Set the required quantity per product.</li>
+    <li>Check <strong>Active</strong> to make the special available at the till immediately.</li>
+    <li>Click <strong>Save Special</strong>.</li>
+  </ol>
+
+  <div class="box box-tip">
+    <strong>Example</strong>
+    To create "2× Coke + 1× Chips = R30": name it "Braai Special", set price to R30, add Coke qty 2 and Chips qty 1.
+  </div>
+
+  <h3>Editing / Deleting a Special</h3>
+  <p>Click <strong>Edit</strong> on any special card. Modify the fields and click <strong>Save Special</strong>, or click <strong>Delete</strong> to remove it permanently.</p>
+
+  <h3>How the Till Handles Conflicting Specials</h3>
+  <p>If two specials share a product (e.g. Coke appears in both "2× Coke" and "Coke + Cream Soda"), the system automatically finds the combination that gives the customer the best saving. Each unit is counted toward at most one special. See the <a href="#teller-specials">Automatic Specials</a> section for a detailed example.</p>
+
+  <hr>
+
+  <h2 id="admin-stock">Receiving Stock <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Go to the <strong>Stock</strong> tab to manage all stock-item products.</p>
+
+  <ol class="steps">
+    <li>Find the product and click the green <strong>Receive</strong> button.</li>
+    <li>Enter the <strong>quantity received</strong>. If a purchase package is configured (e.g. 5L carton), you can enter <em>3 cartons</em> instead of <em>15 000ml</em> — the system converts automatically and shows the base-unit equivalent below.</li>
+    <li>Enter the <strong>total amount paid</strong> (R). The cost per base unit is calculated and shown live.</li>
+    <li>Optionally select a <strong>Supplier</strong>. Click <strong>+</strong> next to the dropdown to add a new supplier inline.</li>
+    <li>Click <strong>Confirm — Receive Stock</strong>.</li>
+  </ol>
+
+  <p>A new FIFO batch is created with its own cost per unit. Future sales will consume this batch after older batches are exhausted.</p>
+
+  <hr>
+
+  <h2 id="admin-stocktake">Stocktake (Physical Count) <span class="badge badge-admin">Admin</span></h2>
+
+  <ol class="steps">
+    <li>Click the yellow <strong>Stocktake</strong> button on a product in the Stock tab.</li>
+    <li>Enter the physically counted quantity. For stock split across locations, click <strong>+ Add another container</strong> for each location. The running total is shown.</li>
+    <li>A preview shows the difference vs. the system quantity:
+      <ul>
+        <li><strong>Green</strong>: Matches — no adjustment needed.</li>
+        <li><strong>Yellow</strong>: System will deduct the unexplained loss.</li>
+        <li><strong>Blue</strong>: System will add the surplus found.</li>
+      </ul>
+    </li>
+    <li>Enter a <strong>reason</strong> (required) — e.g., <em>Monthly stocktake</em>.</li>
+    <li>Click <strong>Apply Stocktake Adjustment</strong>.</li>
+  </ol>
+
+  <hr>
+
+  <h2 id="admin-writeoff">Write-Off (Spoilage / Damage) <span class="badge badge-admin">Admin</span></h2>
+
+  <div class="box box-danger">
+    <strong>Caution</strong>
+    Write-offs permanently remove stock and record a cost loss. Use only for genuinely spoiled or damaged goods.
+  </div>
+
+  <ol class="steps">
+    <li>Click the red <strong>Write Off</strong> button on a product in the Stock tab.</li>
+    <li>Enter the quantity to write off and select the unit.</li>
+    <li>The <strong>estimated cost</strong> consumed from FIFO batches is shown live.</li>
+    <li>Enter a <strong>reason</strong> (required) — e.g., <em>Milk expired 2026-04-25</em>.</li>
+    <li>Click <strong>Confirm Write-Off</strong>.</li>
+  </ol>
+
+  <p>The write-off loss appears on the Stats tab in the <em>Write-off Loss</em> card.</p>
+
+  <p>If you entered the wrong quantity, find the adjustment in the <strong>Adjustment History</strong> section of the Stock tab, click <strong>✏️ Edit</strong>, and correct the quantity.</p>
+
+  <hr>
+
+  <h2 id="admin-suppliers">Suppliers <span class="badge badge-admin">Admin</span></h2>
+
+  <h3>Adding a Supplier</h3>
+  <ol class="steps">
+    <li>Go to the <strong>Suppliers</strong> tab.</li>
+    <li>Fill in the form on the right: name (required), phone, email, website, notes.</li>
+    <li>Click <strong>Save</strong>.</li>
+  </ol>
+
+  <h3>Editing / Deleting a Supplier</h3>
+  <p>Click <strong>Edit</strong> on a supplier card in the list. The form loads on the right. Make changes and click <strong>Save</strong>, or click <strong>Delete</strong> to remove (historical purchase batches retain the supplier name).</p>
+
+  <hr>
+
+  <h2 id="admin-users">User Management <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Go to the <strong>Users</strong> tab.</p>
+
+  <h3>Adding a User</h3>
+  <ol class="steps">
+    <li>Fill in <strong>Username</strong>, <strong>Password</strong>, and select a <strong>Role</strong> (teller or admin).</li>
+    <li>Ensure <strong>Active</strong> is checked.</li>
+    <li>Click <strong>Add User</strong>.</li>
+  </ol>
+
+  <h3>Editing a User</h3>
+  <ol class="steps">
+    <li>Click <strong>Edit</strong> on the user in the list — the form loads on the right.</li>
+    <li>Change the role, active status, or password (leave password blank to keep the existing one).</li>
+    <li>Click <strong>Update User</strong>.</li>
+  </ol>
+
+  <div class="box box-tip">
+    <strong>Disabling a user</strong>
+    Instead of deleting, uncheck <strong>Active</strong> and click Update User. The user cannot log in but their transaction history is preserved.
+  </div>
+
+  <h3>Deleting a User</h3>
+  <p>Click <strong>Edit</strong> on the user, then click <strong>Delete User</strong>. A confirmation dialog appears. The action is permanent — consider disabling instead.</p>
+
+  <hr>
+
+  <h2 id="admin-stats">Stats &amp; Reports <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Go to the <strong>Stats</strong> tab.</p>
+
+  <h3>Selecting a Date Range</h3>
+  <p>Use the <strong>From / To</strong> date pickers, or click a preset button (<em>Today</em>, <em>Yesterday</em>, <em>This Week</em>, <em>This Month</em>, <em>This Year</em>), then click <strong>Load</strong>.</p>
+
+  <h3>Summary Cards</h3>
+  <table>
+    <tr><th>Card</th><th>What it shows</th></tr>
+    <tr><td>Revenue</td><td>Total sales value for the period</td></tr>
+    <tr><td>Gross Profit</td><td>Revenue minus COGS, with margin %</td></tr>
+    <tr><td>COGS</td><td>Cost of goods sold (FIFO costing)</td></tr>
+    <tr><td>Write-off Loss</td><td>Value of spoiled/damaged stock written off</td></tr>
+    <tr><td>Transactions</td><td>Number of completed sales</td></tr>
+    <tr><td>Avg Sale Value</td><td>Revenue ÷ transaction count</td></tr>
+    <tr><td>Items Sold</td><td>Total units / portions sold</td></tr>
+    <tr><td>Gross Margin %</td><td>(Profit ÷ Revenue) × 100</td></tr>
+    <tr><td>Best / Worst Day</td><td>Highest and lowest revenue day in the period</td></tr>
+    <tr><td>Kitchen Orders</td><td>Count of prepared items</td></tr>
+  </table>
+
+  <p>Click any card to see a detailed drilldown with individual transactions and breakdowns.</p>
+
+  <h3>Charts</h3>
+  <p>Click the tabs below the summary cards to switch between:</p>
+  <ul>
+    <li><strong>Daily Revenue</strong> — bar per day</li>
+    <li><strong>By Hour</strong> — revenue by hour of day</li>
+    <li><strong>Top Products (Qty)</strong> — units sold per product</li>
+    <li><strong>Top Products (Revenue)</strong> — revenue per product</li>
+    <li><strong>Supplier Spend</strong> — total spent per supplier</li>
+  </ul>
+  <p>Click any bar to open a drilldown modal for that period, product, or supplier.</p>
+
+  <h3>Employee Performance</h3>
+  <p>The table below the charts shows per-teller statistics: revenue, transaction count, average sale, time logged in, and revenue per hour. Click any row for a full drilldown of that teller's sales.</p>
+
+  <hr>
+
+  <h2 id="admin-export">Exporting Data <span class="badge badge-admin">Admin</span></h2>
+
+  <h3>Transactions CSV</h3>
+  <ol class="steps">
+    <li>Go to the <strong>Stats</strong> tab, scroll to the <em>Export</em> section.</li>
+    <li>Set the start and end dates.</li>
+    <li>Click <strong>Download Sales CSV</strong>. The file downloads immediately.</li>
+  </ol>
+
+  <h3>Products CSV</h3>
+  <p>Click the <strong>Products CSV</strong> link (also in the Stats export section) for a download of all products including IDs, names, barcodes, prices, and stock levels.</p>
+
+  <div class="box box-info">
+    <strong>Direct URL export</strong>
+    You can also download CSVs directly: <code>/admin/export/transactions?start=YYYY-MM-DD&amp;end=YYYY-MM-DD</code> and <code>/admin/export/products</code>. Admin login required.
+  </div>
+
+  <hr>
+  <p style="color:var(--muted);font-size:13px;text-align:center;margin-top:40px;">Farm Stall POS v1.6 &nbsp;·&nbsp; <a href="/" style="color:var(--green);">Back to App</a></p>
+
+</main>
+
+<script>
+  // Highlight active sidebar link on scroll
+  const links = document.querySelectorAll('#sidebar nav a[href^="#"]');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        links.forEach(l => l.classList.remove('active'));
+        const id = e.target.id;
+        const match = document.querySelector(`#sidebar nav a[href="#${id}"]`);
+        if (match) match.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px', threshold: 0 });
+  document.querySelectorAll('h2[id]').forEach(h => observer.observe(h));
+</script>
+</body>
+</html>

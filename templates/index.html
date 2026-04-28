@@ -1,412 +1,1093 @@
-
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Farm Stall POS</title>
-
-  <!-- Bootstrap -->
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- PWA -->
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#2a6f3e">
-
-  <!-- Base styles (kept) -->
   <style>
-    /* Allow page scrolling globally */
     html, body { height: 100%; }
     body { margin: 0; overflow-y: auto; overflow-x: hidden; }
-
     .hidden { display: none !important; }
 
-    /* Teller stays one-screen, no page scroll from Teller */
     #teller-screen {
-      height: calc(100vh - 120px); /* tabs + margins */
+      height: calc(100vh - 120px);
       display: grid;
-      grid-template-rows: auto auto 1fr auto; /* toolbar, scan panel, cart, checkout row */
-      gap: .5rem;
-      overflow: hidden; /* keep Teller contained */
+      grid-template-rows: auto auto 1fr auto;
+      gap: .25rem;
+      overflow: hidden;
     }
-    
-    /* Teller: tighten vertical spacing so the footer sits closer */
-    #teller-screen {
-      gap: .25rem; /* was .5rem */
-    }
-
-    /* Reduce Bootstrap gutters inside the toolbar row */
-    .teller-toolbar .row.g-2 {
-      --bs-gutter-y: .25rem;  /* was .5rem equivalent for g-2 */
-      --bs-gutter-x: .25rem;
-    }
-
-    /* Remove extra top margin from the search results list */
-    #product-search-results {
-      margin-top: .25rem !important; /* was .5rem via .mt-2 */
-    }
-
-    /* Make sure the cart block doesn't add extra bottom space */
-    #cart {
-      margin-bottom: .25rem;
-    }
-
-
-    /* Teller inputs/buttons sized for touch */
+    .teller-toolbar .row.g-2 { --bs-gutter-y: .25rem; --bs-gutter-x: .25rem; }
+    #product-search-results { margin-top: .25rem !important; }
+    #cart { margin-bottom: .25rem; overflow: auto; }
     .teller-toolbar .form-select,
-    .teller-toolbar .form-control {
-      height: 44px; font-size: 16px;
-    }
+    .teller-toolbar .form-control { height: 44px; font-size: 16px; }
     #scan-panel { display: none; }
     #video { width: 100%; height: 160px; object-fit: cover; border: 2px solid #ced4da; border-radius: 6px; }
     #scanner-flash { position: absolute; inset: 0; border: 3px solid transparent; border-radius: 6px; pointer-events: none; }
     #scanner-flash.ok { border-color: #4caf50; }
-
-    /* Cart may scroll within Teller (page itself does not) */
-    #cart { overflow: auto; }
     #cart .list-group-item { padding: .4rem .5rem; font-size: 15px; }
     .btn-lg-touch { padding: .55rem .9rem; font-size: 16px; }
 
-    /* -------- Products: thin card list (details-pane style) -------- */
-    #products-screen { /* now scrolls with page by default */ }
-    .products-toolbar .form-control,
-    .products-toolbar .btn {
-      height: 44px; font-size: 16px;
-    }
-    /* Thin, full-width cards */
+    /* Product cards */
+    .products-toolbar .form-control, .products-toolbar .btn { height: 44px; font-size: 16px; }
     #products-card-list { display: flex; flex-direction: column; gap: .5rem; }
     .product-thin-card {
-      border: 1px solid #dee2e6;
-      border-radius: .5rem;
-      padding: .5rem .75rem;
-      background: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: .75rem;
+      border: 1px solid #dee2e6; border-radius: .5rem; padding: .5rem .75rem;
+      background: #fff; display: flex; align-items: center; justify-content: space-between; gap: .75rem;
     }
-    .product-thin-main {
-      display: flex; flex-direction: column; min-width: 0; /* allow truncation */
-    }
-    .product-title {
-      font-size: 15px; font-weight: 600; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .product-sub {
-      font-size: 13px; color: #6c757d; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
+    .product-thin-main { display: flex; flex-direction: column; min-width: 0; }
+    .product-title { font-size: 15px; font-weight: 600; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .product-sub   { font-size: 13px; color: #6c757d; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .product-actions .btn { height: 36px; font-size: 14px; }
-
-    /* Keep hidden legacy list to preserve existing JS until we update main.js */
     #products-list { display: none; }
 
-    /* -------- Users list styling -------- */
-    .user-list-item {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: .5rem .75rem;
-    }
+    /* Product barcode in card */
+    .product-barcode { display: block; max-width: 160px; height: auto; }
+
+    /* Users */
+    .user-list-item { display: flex; align-items: center; justify-content: space-between; padding: .5rem .75rem; }
     .user-meta { font-size: 13px; color: #6c757d; }
+
+    /* Stock tab */
+    .stock-card { border: 1px solid #dee2e6; border-radius: .5rem; margin-bottom: .5rem; }
+    .stock-card-header { padding: .6rem .75rem; display: flex; align-items: center; justify-content: space-between; cursor: pointer; background: #f8f9fa; border-radius: .5rem .5rem 0 0; }
+    .stock-card-body { padding: .5rem .75rem; display: none; }
+    .stock-card-body.open { display: block; }
+    .stock-level-badge { font-size: 12px; padding: .2rem .5rem; border-radius: 1rem; }
+    .batch-row { font-size: 13px; padding: .2rem 0; border-bottom: 1px solid #f0f0f0; display: flex; gap: 1rem; flex-wrap: wrap; }
+
+    /* Recipe lines table */
+    .recipe-line-row td { vertical-align: middle; padding: .2rem .3rem; }
+
+    /* Kitchen Queue */
+    .kitchen-card {
+      border-radius: .75rem;
+      padding: 1rem 1.25rem;
+      margin-bottom: .75rem;
+      box-shadow: 0 2px 8px rgba(0,0,0,.08);
+      transition: box-shadow .15s;
+      background: #fff;
+    }
+    .kitchen-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.14); }
+    .kitchen-card.status-pending  { border-left: 5px solid #fd7e14; }
+    .kitchen-card.status-completed { border-left: 5px solid #198754; opacity: .75; }
+    .kitchen-card.status-cancelled { border-left: 5px solid #adb5bd; opacity: .5; }
+    .kitchen-timer { font-size: 1.1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .kitchen-timer.urgent { color: #dc3545; }
+    .kitchen-ingredient-list { font-size: .85rem; color: #495057; margin-top: .4rem; }
+    .kitchen-ingredient-list li { padding: .1rem 0; }
+    .kitchen-product-name { font-size: 1.15rem; font-weight: 700; }
+    .kitchen-qty-badge {
+      background: #0d6efd; color: #fff;
+      border-radius: 2rem; padding: .15rem .65rem;
+      font-size: .95rem; font-weight: 700;
+    }
+    .kitchen-actions { display: flex; gap: .5rem; margin-top: .75rem; flex-wrap: wrap; }
+    .kitchen-move-btns { display: flex; flex-direction: column; gap: .2rem; }
+    .kitchen-move-btns button { font-size: .7rem; padding: .1rem .4rem; line-height: 1.2; }
+    @keyframes kitchenPulse {
+      0%   { background: #fff3cd; box-shadow: 0 0 0 3px #fd7e14; }
+      60%  { background: #fff3cd; box-shadow: 0 0 0 3px #fd7e14; }
+      100% { background: #fff;    box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    }
+    .kitchen-moved { animation: kitchenPulse .8s ease-out forwards; }
+
+    /* Toast */
+    #toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
+    .pos-toast { min-width: 220px; max-width: 320px; padding: .6rem 1rem; border-radius: .5rem; color: #fff; font-size: 14px; box-shadow: 0 2px 8px rgba(0,0,0,.25); animation: slideIn .2s ease; }
+    .pos-toast.success { background: #2a6f3e; }
+    .pos-toast.error   { background: #dc3545; }
+    .pos-toast.info    { background: #0d6efd; }
+    .pos-toast.warning { background: #fd7e14; }
+    @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
   </style>
 </head>
 <body>
-  <div class="container">
+<div id="toast-container"></div>
+<div class="container">
 
-    <!-- Login Card (kept for compatibility; hidden after login) -->
-    <div id="login-card" class="card mb-3">
-      <div class="card-body">
-        <h5 class="card-title">Login</h5>
-        <div class="row g-2">
-          <div class="col-md-3"><input id="login-username" class="form-control" placeholder="Username"></div>
-          <div class="col-md-3"><input id="login-password" type="password" class="form-control" placeholder="Password"></div>
-          <div class="col-md-3">
-            <button id="btn-login" class="btn btn-success">Login</button>
-            <button id="btn-logout" class="btn btn-outline-secondary ms-2 hidden">Logout</button>
-          </div>
-          <div class="col-md-3"><span id="login-status" class="text-danger"></span></div>
+  <!-- Login -->
+  <div id="login-card" class="card mb-3">
+    <div class="card-body">
+      <h5 class="card-title">Login</h5>
+      <div class="row g-2">
+        <div class="col-md-3"><input id="login-username" class="form-control" placeholder="Username"></div>
+        <div class="col-md-3"><input id="login-password" type="password" class="form-control" placeholder="Password"></div>
+        <div class="col-md-3">
+          <button id="btn-login" class="btn btn-success">Login</button>
+          <button id="btn-logout" class="btn btn-outline-secondary ms-2 hidden">Logout</button>
         </div>
+        <div class="col-md-3"><span id="login-status" class="text-danger"></span></div>
       </div>
-    </div>
-
-    <!-- Compact Auth Bar -->
-    <div id="auth-bar" class="d-flex justify-content-between align-items-center mb-2 hidden">
-      <div id="auth-user" class="text-muted small"></div>
-      <div>
-        <button id="btn-logout-top" class="btn btn-sm btn-outline-secondary">Logout</button>
-      </div>
-    </div>
-
-    <!-- Tabs -->
-    <ul id="main-tabs" class="nav nav-tabs hidden">
-      <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#teller">Teller</button></li>
-      
-
-      <!-- Admin-only tabs start hidden; JS will show for admins -->
-      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
-      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
-      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
-      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#exports">Exports</button></li>
-      <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
-    </ul>
-    
-  
-
-<!-- Optional: only if you require ADMIN_TOKEN -->
-<!-- <meta name="admin-token" content="YOUR_TOKEN_VALUE" /> -->
-
-
-    <div id="tab-contents" class="tab-content hidden mt-3">
-
-      <!-- Teller (no page scroll) -->
-      <div class="tab-pane fade show active" id="teller">
-        <div id="teller-screen" class="container-fluid p-0">
-          <!-- Toolbar: dropdown + search + scan controls -->
-          <div class="teller-toolbar">
-            <div class="row g-2">
-              <div class="col-12">
-                <select id="product-select" class="form-select" aria-label="Select a product">
-                  <option value="">Select product…</option>
-                </select>
-              </div>
-              <div class="col-8">
-                <input id="search" class="form-control" placeholder="Search name, ID, or barcode">
-              </div>
-              <div class="col-4 d-flex gap-2">
-                <button id="btn-start-scan" class="btn btn-success w-100 btn-lg-touch">Scan</button>
-                <button id="btn-stop-scan"  class="btn btn-outline-danger w-100 btn-lg-touch hidden">Stop</button>
-              </div>
-            </div>
-            <div id="product-search-results" class="list-group mt-2"></div>
-          </div>
-
-          <!-- Scan panel -->
-          <div id="scan-panel">
-            <div class="position-relative">
-              <video id="video" playsinline muted></video>
-              <div id="scanner-flash"></div>
-            </div>
-          </div>
-
-          <!-- Cart -->
-          <div><div id="cart" class="list-group"></div></div>
-
-          <!-- Checkout row -->
-          <div class="d-flex justify-content-between align-items-center">
-            <strong>Total: <span id="cart-total">0.00</span></strong>
-            <button id="btn-checkout" class="btn btn-primary btn-lg-touch">Checkout</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Transactions (scrolls with page) -->
-      <div class="tab-pane fade" id="transactions">
-        <div class="d-flex justify-content-between align-items-center">
-          <h5>Transactions (Newest first)</h5>
-          <button class="btn btn-outline-secondary" id="btn-refresh-trans">Refresh</button>
-        </div>
-        <div id="transactions-list" class="mt-3"></div>
-      </div>
-
-      <!-- Products (admin) — thin card list + modal editor -->
-      <div class="tab-pane fade" id="products">
-        <div id="products-screen" class="container-fluid p-0">
-
-          <!-- Toolbar -->
-          <div class="products-toolbar">
-            <div class="row g-2 align-items-center">
-              <div class="col-8">
-                <input id="products-filter" class="form-control" placeholder="Filter products…">
-              </div>
-              <div class="col-4 d-grid">
-                <button id="btn-new-product" class="btn btn-outline-primary">New Product</button>
-              </div>
-            </div>
-          </div>
-          
-<!-- Exports (admin-only) -->
-<div class="tab-pane fade admin-only" id="exports" role="tabpanel" aria-labelledby="tab-exports">
-  <h5 class="mt-3">Sales CSV Export</h5>
-
-  <div class="my-2 d-flex align-items-end gap-2">
-    <div>
-      <label for="export-start" class="form-label mb-1">Start date</label>
-      <input id="export-start" type="date" class="form-control form-control-sm" />
-    </div>
-    <div>
-      <label for="export-end" class="form-label mb-1">End date</label>
-      <input id="export-end" type="date" class="form-control form-control-sm" />
-    </div>
-    <div>
-      <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">Export Sales CSV</button>
     </div>
   </div>
 
-  <!-- Optional quick links -->
-  <div class="small">
-    <div class="text-muted mb-1">Quick exports</div>
-    <ul class="mb-0">
-      <li><a href="/admin/export/products" target="_blank">Products CSV</a></li>
-      <li><a href="/admin/export/transaction_lines" target="_blank">Transaction Lines CSV</a></li>
-    </ul>
+  <!-- Auth bar -->
+  <div id="auth-bar" class="d-flex justify-content-between align-items-center mb-2 hidden">
+    <div id="auth-user" class="text-muted small"></div>
+    <a href="/guide" target="_blank" class="btn btn-sm btn-outline-secondary me-2">User Guide</a>
+    <button id="btn-logout-top" class="btn btn-sm btn-outline-secondary">Logout</button>
+  </div>
+
+  <!-- Tabs -->
+  <ul id="main-tabs" class="nav nav-tabs hidden">
+    <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#teller">Teller</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#transactions">Transactions</button></li>
+    <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#kitchen">Kitchen <span id="kitchen-badge" class="badge bg-danger ms-1 hidden">0</span></button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stock">Stock</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#products">Products</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#suppliers">Suppliers</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
+  </ul>
+
+  <div id="tab-contents" class="tab-content hidden mt-3">
+
+    <!-- ═══════════════ TELLER ═══════════════ -->
+    <div class="tab-pane fade show active" id="teller">
+      <div id="teller-screen" class="container-fluid p-0">
+        <div class="teller-toolbar">
+          <div class="row g-2">
+            <div class="col-12">
+              <select id="product-select" class="form-select"><option value="">Select product…</option></select>
+            </div>
+            <div class="col-7">
+              <input id="search" class="form-control" placeholder="Search name, ID or barcode">
+            </div>
+            <div class="col-5 d-flex gap-1">
+              <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan">↩ Undo</button>
+              <button id="btn-start-scan" class="btn btn-success btn-lg-touch">Scan</button>
+              <button id="btn-stop-scan"  class="btn btn-outline-danger btn-lg-touch hidden">Stop</button>
+            </div>
+          </div>
+          <div id="product-search-results" class="list-group mt-2"></div>
+        </div>
+        <div id="scan-panel">
+          <div class="position-relative">
+            <video id="video" playsinline muted></video>
+            <div id="scanner-flash"></div>
+          </div>
+        </div>
+        <div><div id="cart" class="list-group"></div></div>
+        <div class="d-flex justify-content-between align-items-center">
+          <strong>Total: R<span id="cart-total">0.00</span></strong>
+          <button id="btn-checkout" class="btn btn-primary btn-lg-touch">Checkout</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ TRANSACTIONS ═══════════════ -->
+    <div class="tab-pane fade" id="transactions">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <h5 class="mb-0">Transactions</h5>
+        <div class="d-flex gap-2 align-items-center flex-wrap admin-only hidden" id="tx-date-row">
+          <input type="date" id="tx-start" class="form-control form-control-sm" style="width:140px">
+          <span class="small">to</span>
+          <input type="date" id="tx-end" class="form-control form-control-sm" style="width:140px">
+          <button id="btn-tx-filter" class="btn btn-outline-primary btn-sm">Filter</button>
+          <button id="btn-tx-today" class="btn btn-outline-secondary btn-sm">Today</button>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-trans">Refresh</button>
+      </div>
+      <div class="small text-muted mt-1 teller-only" id="tx-teller-note">Showing your last 5 transactions</div>
+      <div id="transactions-list" class="mt-3"></div>
+    </div>
+
+    <!-- ═══════════════ KITCHEN ═══════════════ -->
+    <div class="tab-pane fade" id="kitchen">
+      <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+        <h5 class="mb-0">Kitchen Queue</h5>
+        <div class="d-flex gap-2">
+          <button id="btn-kitchen-history" class="btn btn-outline-secondary btn-sm">Completed Today</button>
+          <button id="btn-refresh-kitchen" class="btn btn-outline-secondary btn-sm">Refresh</button>
+        </div>
+      </div>
+      <div id="kitchen-queue-list"></div>
+      <div id="kitchen-history-list" class="hidden mt-3">
+        <h6 class="text-muted">Completed Orders — Today</h6>
+        <div id="kitchen-completed-list"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ STOCK ═══════════════ -->
+    <div class="tab-pane fade" id="stock">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Ingredient Stock</h5>
+        <button id="btn-refresh-stock" class="btn btn-outline-secondary btn-sm">Refresh</button>
+      </div>
+      <div id="stock-list"></div>
+
+      <!-- Adjustment history -->
+      <div class="mt-4 border-top pt-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0">Adjustment History</h6>
+          <div class="d-flex gap-2">
+            <select id="adj-type-filter" class="form-select form-select-sm" style="width:130px">
+              <option value="">All types</option>
+              <option value="stocktake">Stocktake</option>
+              <option value="writeoff">Write-offs</option>
+            </select>
+            <input type="date" id="adj-date-filter" class="form-control form-control-sm" style="width:140px">
+            <button id="btn-load-adjustments" class="btn btn-outline-secondary btn-sm">Load</button>
+          </div>
+        </div>
+        <div id="adjustments-list" class="small"></div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ PRODUCTS ═══════════════ -->
+    <div class="tab-pane fade" id="products">
+
+      <!-- Sub-tabs: Active / Hidden -->
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+        <ul class="nav nav-pills" id="products-sub-tabs">
+          <li class="nav-item">
+            <button class="nav-link active" data-products-sub="active">For Sale</button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-products-sub="ingredients">Ingredients <span id="ingredients-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-products-sub="archived">Archived <span id="archived-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+          </li>
+          <li class="nav-item">
+            <button class="nav-link" data-products-sub="specials">Specials</button>
+          </li>
+        </ul>
+        <div class="d-flex gap-2 align-items-center">
+          <input id="products-filter" class="form-control form-control-sm" placeholder="Filter…" style="width:180px">
+          <button id="btn-new-product" class="btn btn-outline-primary btn-sm">+ New Product</button>
+          <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
+        </div>
+      </div>
+
+      <div id="products-card-list" class="mt-1"></div>
+      <div id="products-list" class="list-group"></div>
+
+      <!-- Specials sub-tab content -->
+      <div id="specials-list" class="hidden mt-1"></div>
+    </div>
+
+    <!-- ═══════════════ USERS ═══════════════ -->
+    <div class="tab-pane fade" id="users">
+      <div class="row g-3">
+        <div class="col-12 col-lg-6">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <input id="users-filter" class="form-control" placeholder="Filter users…">
+            <button id="btn-refresh-users" class="btn btn-outline-secondary">Refresh</button>
+          </div>
+          <div id="users-list" class="list-group"></div>
+        </div>
+        <div class="col-12 col-lg-6">
+          <div class="card"><div class="card-body">
+            <h5>Edit / Add User</h5>
+            <div class="mb-2"><input id="u-username" class="form-control" placeholder="Username"></div>
+            <div class="mb-2"><input id="u-password" class="form-control" placeholder="Password (leave blank to keep)"></div>
+            <div class="mb-2">
+              <select id="u-role" class="form-select">
+                <option value="teller">teller</option>
+                <option value="admin">admin</option>
+              </select>
+            </div>
+            <div class="form-check mb-2">
+              <input class="form-check-input" type="checkbox" id="u-active" checked>
+              <label class="form-check-label" for="u-active">Active</label>
+            </div>
+            <div class="d-grid gap-2">
+              <button id="btn-add-user" class="btn btn-success">Add User</button>
+              <button id="btn-update-user" class="btn btn-primary">Update User</button>
+              <button id="btn-delete-user" class="btn btn-danger">Delete User</button>
+            </div>
+            <div class="small text-muted mt-2">Click a user in the list to load it here.</div>
+          </div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ SUPPLIERS ═══════════════ -->
+    <div class="tab-pane fade" id="suppliers">
+      <div class="row g-3">
+        <div class="col-12 col-lg-7">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <h5 class="mb-0">Suppliers</h5>
+            <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm ms-auto">Refresh</button>
+          </div>
+          <div id="suppliers-list" class="list-group"></div>
+        </div>
+        <div class="col-12 col-lg-5">
+          <div class="card">
+            <div class="card-body">
+              <h6 id="supplier-form-title">Add Supplier</h6>
+              <input type="hidden" id="sup-id">
+              <div class="mb-2"><input id="sup-name"    class="form-control"      placeholder="Supplier name *"></div>
+              <div class="mb-2"><input id="sup-contact" class="form-control"      placeholder="Phone / email / website"></div>
+              <div class="mb-2"><textarea id="sup-notes" class="form-control" rows="2" placeholder="Notes"></textarea></div>
+              <div class="d-flex gap-2">
+                <button id="btn-save-supplier"   class="btn btn-success flex-fill">Save</button>
+                <button id="btn-clear-supplier"  class="btn btn-outline-secondary">Clear</button>
+                <button id="btn-delete-supplier" class="btn btn-outline-danger">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ STATS ═══════════════ -->
+    <div class="tab-pane fade" id="stats">
+
+      <!-- ── Date filter ── -->
+      <div class="d-flex align-items-end gap-2 flex-wrap mb-3 pt-1">
+        <div>
+          <label class="form-label mb-1 small fw-bold">From</label>
+          <input id="stats-start" type="date" class="form-control form-control-sm" style="width:140px">
+        </div>
+        <div>
+          <label class="form-label mb-1 small fw-bold">To</label>
+          <input id="stats-end" type="date" class="form-control form-control-sm" style="width:140px">
+        </div>
+        <div class="d-flex gap-1 flex-wrap">
+          <button class="btn btn-outline-secondary btn-sm" data-stats-preset="today">Today</button>
+          <button class="btn btn-outline-secondary btn-sm" data-stats-preset="yesterday">Yesterday</button>
+          <button class="btn btn-outline-secondary btn-sm" data-stats-preset="week">This Week</button>
+          <button class="btn btn-outline-secondary btn-sm" data-stats-preset="month">This Month</button>
+          <button class="btn btn-outline-secondary btn-sm" data-stats-preset="year">This Year</button>
+        </div>
+        <button id="btn-refresh-stats" class="btn btn-primary btn-sm">Load</button>
+        <span id="stats-period-label" class="text-muted small ms-1 align-self-center"></span>
+      </div>
+
+      <!-- ── Row 1: Revenue & profit ── -->
+      <div class="row g-2 mb-2">
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Revenue</div>
+            <h4 class="mb-0 text-dark" id="stat-total">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-success"><div class="card-body py-2">
+            <div class="text-success small">Gross Profit</div>
+            <h4 class="mb-0 text-success" id="stat-profit">—</h4>
+            <div class="text-muted" style="font-size:11px" id="stat-margin-sub"></div>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">COGS</div>
+            <h4 class="mb-0" id="stat-cogs">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-danger"><div class="card-body py-2">
+            <div class="text-danger small">Write-off Loss</div>
+            <h4 class="mb-0 text-danger" id="stat-writeoff-cost">—</h4>
+            <div class="text-muted" style="font-size:11px" id="stat-writeoff-count-sub"></div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- ── Row 2: Transaction metrics ── -->
+      <div class="row g-2 mb-2">
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Transactions</div>
+            <h4 class="mb-0" id="stat-tx">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Avg Sale Value</div>
+            <h4 class="mb-0" id="stat-avg">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Items Sold</div>
+            <h4 class="mb-0" id="stat-items">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-warning"><div class="card-body py-2">
+            <div class="text-warning small">Gross Margin %</div>
+            <h4 class="mb-0 text-warning" id="stat-margin">—</h4>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- ── Row 3: Best/worst day + kitchen ── -->
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-success"><div class="card-body py-2">
+            <div class="text-success small">Best Day</div>
+            <div class="fw-semibold" id="stat-best-day">—</div>
+            <div class="text-muted" style="font-size:11px" id="stat-best-day-val"></div>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-secondary"><div class="card-body py-2">
+            <div class="text-secondary small">Worst Day</div>
+            <div class="fw-semibold" id="stat-worst-day">—</div>
+            <div class="text-muted" style="font-size:11px" id="stat-worst-day-val"></div>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-info"><div class="card-body py-2">
+            <div class="text-info small">Kitchen Orders</div>
+            <h4 class="mb-0 text-info" id="stat-kitchen-count">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-info"><div class="card-body py-2">
+            <div class="text-info small">Avg Wait Time</div>
+            <h4 class="mb-0 text-info" id="stat-avg-wait">—</h4>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- ── Charts: sub-tab toggle ── -->
+      <div class="d-flex gap-1 mb-2 border-bottom pb-1 flex-wrap">
+        <button class="btn btn-sm btn-primary"          data-chart-tab="daily">Daily Revenue</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="hourly">By Hour</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="minute">By Minute</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="top-qty">Top Products (Qty)</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="top-rev">Top Products (Revenue)</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="suppliers">Supplier Spend</button>
+      </div>
+      <div class="text-muted small mb-1" id="chart-click-hint" style="display:none">Click a bar to drill into those transactions</div>
+      <div id="stats-chart-area" style="position:relative; height:320px;">
+        <canvas id="chart-daily"     style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-hourly"    style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-minute"    style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-top"       style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-top-rev"   style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-suppliers" style="display:none; width:100%; height:100%"></canvas>
+      </div>
+
+      <!-- ── Employee Performance ── -->
+      <div class="mt-3 border-top pt-3">
+        <h6 class="mb-2">Employee Performance</h6>
+        <div id="employee-stats-table">
+          <div class="text-muted small">Load stats to see employee data.</div>
+        </div>
+      </div>
+
+      <!-- ── Export ── -->
+      <div class="mt-3 border-top pt-3">
+        <div class="d-flex align-items-end gap-2 flex-wrap">
+          <div><label class="form-label mb-1 small">Export start</label><input id="export-start" type="date" class="form-control form-control-sm"></div>
+          <div><label class="form-label mb-1 small">Export end</label><input id="export-end" type="date" class="form-control form-control-sm"></div>
+          <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">Download Sales CSV</button>
+          <a href="/admin/export/products" target="_blank" class="btn btn-outline-secondary btn-sm">Products CSV</a>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /tab-contents -->
+</div><!-- /container -->
+
+<!-- ═══════════ WEIGHT ENTRY MODAL ═══════════ -->
+<div class="modal fade" id="weightModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" id="weight-modal-title">Enter Weight</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-2 mb-2">
+          <div class="col-5">
+            <input id="weight-qty" type="number" step="0.01" min="0.01" class="form-control form-control-lg" placeholder="0" autofocus>
+          </div>
+          <div class="col-7">
+            <select id="weight-unit" class="form-select form-select-lg"></select>
+          </div>
+        </div>
+        <div id="weight-price-preview" class="text-center fw-bold fs-5 text-success"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button id="btn-weight-add" class="btn btn-primary w-100 btn-lg-touch">Add to Cart</button>
+      </div>
+    </div>
   </div>
 </div>
 
-
-          <!-- Thin card list (new) -->
-          <div id="products-card-list" class="mt-2"></div>
-
-          <!-- Legacy list kept (hidden) so existing JS remains compatible while we update main.js -->
-          <div id="products-list" class="list-group"></div>
-        </div>
-
-        <!-- Product Editor Modal -->
-        <div class="modal fade" id="productEditorModal" tabindex="-1" aria-hidden="true">
-          <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-
-              <div class="modal-header">
-                <h5 class="modal-title" id="productEditorTitle">Product</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-              </div>
-
-              <div class="modal-body">
-                <!-- Existing IDs preserved -->
-                <div class="mb-2"><input id="p-id" class="form-control" placeholder="(ID for update)"/></div>
-                <div class="mb-2"><input id="p-name" class="form-control" placeholder="Name"/></div>
-                <div class="mb-2"><input id="p-price" type="number" step="0.01" class="form-control" placeholder="Price"/></div>
-                <div class="mb-2"><input id="p-barcode" class="form-control" placeholder="Barcode"/></div>
-                <div class="mb-2"><input id="p-stock" type="number" class="form-control" placeholder="Stock Qty"/></div>
-
-                <div class="mb-2 d-flex gap-2">
-                  <button id="btn-add-product" class="btn btn-success w-100">Add</button>
-                  <button id="btn-update-product" class="btn btn-primary w-100">Update</button>
-                  <button id="btn-delete-product" class="btn btn-danger w-100">Delete by Name</button>
-                </div>
-
-                <hr class="my-2">
-
-                <h6 class="mb-2">Add Stock (Purchase)</h6>
-                <div class="mb-2"><input id="pur-product-id" class="form-control" placeholder="Product ID"/></div>
-                <div class="mb-2"><input id="pur-qty" type="number" class="form-control" placeholder="Qty Added"/></div>
-                <div class="mb-2"><input id="pur-price" type="number" step="0.01" class="form-control" placeholder="Purchase Price per Unit"/></div>
-
-                <div class="mb-2 d-flex gap-2">
-                  <button id="btn-add-purchase" class="btn btn-outline-success w-100">Record Purchase</button>
-                  <button id="btn-suggest-price" class="btn btn-outline-primary w-100">Suggest Price</button>
-                </div>
-
-                <div id="suggest-output" class="text-muted small"></div>
-
-                <hr class="my-2">
-
-                <h6>Settings</h6>
-                <div class="mb-2"><input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Markup % (default)"/></div>
-                <button id="btn-save-settings" class="btn btn-outline-secondary w-100">Save Settings</button>
-              </div>
-
-            </div>
-          </div>
-        </div>
+<!-- ═══════════ FLAG TRANSACTION MODAL ═══════════ -->
+<div class="modal fade" id="flagModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Flag Transaction</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-
-      <!-- Users (admin) — filter + list + edit controls -->
-      <div class="tab-pane fade" id="users">
-        <div class="row g-3">
-          <div class="col-12 col-lg-6">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <input id="users-filter" class="form-control" placeholder="Filter users…">
-              <button id="btn-refresh-users" class="btn btn-outline-secondary">Refresh</button>
-            </div>
-            <div id="users-list" class="list-group">
-              <!-- will be populated by main.js -->
-            </div>
-          </div>
-
-          <div class="col-12 col-lg-6">
-            <div class="card">
-              <div class="card-body">
-                <h5>Edit / Add User</h5>
-                <div class="mb-2"><input id="u-username" class="form-control" placeholder="Username"></div>
-                <div class="mb-2"><input id="u-password" class="form-control" placeholder="Password (leave blank to keep)"></div>
-                <div class="mb-2">
-                  <select id="u-role" class="form-select">
-                    <option value="teller">teller</option>
-                    <option value="admin">admin</option>
-                  </select>
-                </div>
-                <div class="form-check mb-2">
-                  <input class="form-check-input" type="checkbox" id="u-active" checked>
-                  <label class="form-check-label" for="u-active">Active</label>
-                </div>
-                <div class="d-grid gap-2">
-                  <button id="btn-add-user" class="btn btn-success">Add User</button>
-                  <button id="btn-update-user" class="btn btn-primary">Update User</button>
-                  <button id="btn-delete-user" class="btn btn-danger">Delete User</button>
-                </div>
-                <div class="small text-muted mt-2">Tip: click a user in the list to load it here.</div>
-              </div>
-            </div>
-          </div>
-        </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">Add a note for the admin to review. The transaction is not changed — it is just flagged for attention.</p>
+        <input type="hidden" id="flag-sale-id">
+        <textarea id="flag-note" class="form-control" rows="3" placeholder="Describe what happened — e.g. Customer returned item, wrong product scanned, price dispute..."></textarea>
       </div>
-
- 
-
-      <!-- Stats (admin) -->
-      <div class="tab-pane fade" id="stats">
-        <div class="d-flex justify-content-between align-items-center">
-          <h5>Today's Stats</h5>
-          <button id="btn-refresh-stats" class="btn btn-outline-secondary">Refresh</button>
-        </div>
-        <div class="row mt-3">
-          <div class="col-md-3">
-            <div class="card"><div class="card-body">
-              <div>Total Sales</div><h5 id="stat-total">0.00</h5>
-            </div></div>
-          </div>
-          <div class="col-md-3">
-            <div class="card"><div class="card-body">
-              <div>Items Sold</div><h5 id="stat-items">0</h5>
-            </div></div>
-          </div>
-          <div class="col-md-3">
-            <div class="card"><div class="card-body">
-              <div>Transactions</div><h5 id="stat-tx">0</h5>
-            </div></div>
-          </div>
-          <div class="col-md-3">
-            <div class="card"><div class="card-body">
-              <div>Avg Basket Size</div><h5 id="stat-avg">0</h5>
-            </div></div>
-          </div>
-        </div>
-        <div class="row mt-3">
-          <div class="col-md-6">
-            <h6>Top Products (Qty)</h6>
-            <canvas id="chart-top" width="600" height="300"></canvas>
-          </div>
-          <div class="col-md-6">
-            <h6>Revenue per Hour</h6>
-            <canvas id="chart-hourly" width="600" height="300"></canvas>
-          </div>
-        </div>
+      <div class="modal-footer py-2">
+        <button id="btn-flag-submit" class="btn btn-warning w-100">Flag for Admin Review</button>
       </div>
-
     </div>
   </div>
+</div>
 
-  <!-- Bootstrap bundle -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<!-- ═══════════ TRANSACTION VOID/EDIT MODAL ═══════════ -->
+<div class="modal fade" id="txModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="txModalTitle">Transaction</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-2" id="tx-modal-meta"></div>
+        <table class="table table-sm" id="tx-edit-table">
+          <thead><tr><th>Product</th><th style="width:90px">Qty</th><th style="width:100px">Price</th><th style="width:80px">Subtotal</th><th style="width:50px"></th></tr></thead>
+          <tbody id="tx-edit-body"></tbody>
+        </table>
+        <div class="fw-bold text-end" id="tx-edit-total"></div>
+        <hr>
+        <div class="mb-2">
+          <label class="form-label small">Void reason (required to void)</label>
+          <input id="tx-void-reason" class="form-control form-control-sm" placeholder="e.g. Wrong items scanned">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-tx-save-edit" class="btn btn-primary">Save Changes</button>
+        <button id="btn-tx-void" class="btn btn-danger">Void Transaction</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
 
-  <!-- Service worker registration -->
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/static/sw.js').catch(console.warn);
-    }
-  </script>
+<!-- ═══════════ PRODUCT EDITOR MODAL ═══════════ -->
+<div class="modal fade" id="productEditorModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="productEditorTitle">Product</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
 
-  <!-- ZXing UMD for barcode scanning -->
-  <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+        <!-- ── Step 1: Product Type ── drives everything below -->
+        <div class="mb-2">
+          <label class="form-label small fw-bold">Product Type</label>
+          <select id="p-type" class="form-select">
+            <option value="stock_item">Stock Item — tracked by unit, g or ml (Milk, Biltong, Coke, Chips)</option>
+            <option value="recipe">Recipe — made from stock items (Cappuccino, Toasted Sandwich)</option>
+          </select>
+        </div>
 
-  <!-- App logic -->
-  <script src="/static/main.js"></script>
+        <!-- ── Step 2 (stock items only): Unit Type — must come BEFORE price so labels are correct ── -->
+        <div id="section-unit-type-early" class="mb-2 hidden">
+          <label class="form-label small fw-bold">Unit Type <span class="text-muted fw-normal">(sets price label &amp; all unit dropdowns)</span></label>
+          <select id="p-unit-type" class="form-select">
+            <option value="weight">Weight (g / kg)</option>
+            <option value="volume">Volume (ml / L)</option>
+            <option value="count">Count (units)</option>
+          </select>
+        </div>
+
+        <!-- ── Step 3: Common fields ── -->
+        <div class="row g-2 mb-2">
+          <div class="col-8"><input id="p-name" class="form-control" placeholder="Product Name" required></div>
+          <div class="col-4"><input id="p-id" class="form-control" placeholder="ID" readonly tabindex="-1"></div>
+        </div>
+        <div class="mb-2">
+          <input id="p-barcode" class="form-control" placeholder="Barcode (auto-generated if blank)">
+        </div>
+        <div class="form-check mb-2" id="is-for-sale-row">
+          <input class="form-check-input" type="checkbox" id="p-is-for-sale">
+          <label class="form-check-label" for="p-is-for-sale">Available at till <span class="text-muted small">(uncheck for internal ingredients only)</span></label>
+        </div>
+
+        <!-- ── Kitchen prep flag ── -->
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="p-is-prepared">
+          <label class="form-check-label" for="p-is-prepared">
+            Requires kitchen preparation <span class="text-muted small">(adds to kitchen queue on checkout)</span>
+          </label>
+        </div>
+
+        <!-- ── Selling price — label &amp; unit selector now correct because unit type was set first ── -->
+        <div class="mb-2" id="price-row">
+          <label class="form-label small fw-bold" id="price-row-label">Selling price</label>
+          <div class="input-group">
+            <span class="input-group-text">R</span>
+            <input id="p-price" type="number" step="0.0001" class="form-control" placeholder="0.00">
+            <span class="input-group-text text-muted small hidden" id="price-unit-suffix" style="min-width:50px">per g</span>
+            <select class="form-select hidden" id="p-price-unit" style="width:auto"></select>
+          </div>
+        </div>
+
+        <!-- ── Simple: stock qty ── -->
+        <div class="mb-2" id="row-stock-qty">
+          <input id="p-stock" type="number" class="form-control" placeholder="Stock Qty (units)">
+        </div>
+
+        <!-- ── Stock Item: package + low stock (unit type already chosen above) ── -->
+        <div id="section-stock-item" class="hidden">
+          <hr class="my-2">
+          <div class="row g-2 mb-2">
+            <div class="col-6">
+              <label class="form-label small">Low stock warning</label>
+              <div class="input-group">
+                <input id="p-low-stock" type="number" step="0.01" class="form-control" placeholder="e.g. 500">
+                <select id="p-low-stock-unit" class="form-select" style="width:auto"></select>
+              </div>
+            </div>
+          </div>
+          <!-- Purchase package — how it arrives from the supplier -->
+          <div class="border rounded p-2 mb-2 bg-light">
+            <div class="fw-semibold small mb-2">📦 Purchase Package <span class="text-muted fw-normal">— how you buy it from the supplier</span></div>
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small">Package size</label>
+                <div class="input-group">
+                  <input id="p-pkg-size" type="number" step="0.01" class="form-control" placeholder="e.g. 1">
+                  <select id="p-pkg-size-unit" class="form-select" style="width:auto"></select>
+                </div>
+                <div class="small text-muted mt-1" id="pkg-size-base-display"></div>
+              </div>
+              <div class="col-6">
+                <label class="form-label small">Package name</label>
+                <input id="p-pkg-unit" class="form-control" placeholder="e.g. packet, carton, bag">
+              </div>
+            </div>
+            <div class="small text-muted mt-1">Used when receiving stock — lets you enter "4 cartons" instead of "4000ml".</div>
+          </div>
+
+          <!-- hidden inputs kept for JS compatibility -->
+          <input type="hidden" id="p-sold-by-weight" value="0">
+          <input type="hidden" id="p-price-per-unit" value="">
+
+          <!-- Sell packages — how it's sold to customers -->
+          <div class="border rounded p-2 mb-2" style="border-color:#0d6efd !important;">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <div class="fw-semibold small">🛒 Sell Packages <span class="text-muted fw-normal">— pre-packed portions you sell to customers</span></div>
+              <button id="btn-add-package" class="btn btn-outline-primary btn-sm">+ Add</button>
+            </div>
+            <div class="small text-muted mb-2">Each package becomes a scannable product at the till (e.g. "Biltong 100g Bag").</div>
+          <table class="table table-sm table-borderless mb-0" id="packages-table">
+            <thead class="table-light"><tr><th>Name</th><th>Qty</th><th>Unit</th><th>Selling Price</th><th>Barcode</th><th></th></tr></thead>
+            <tbody id="packages-body"></tbody>
+          </table>
+          </div><!-- /sell packages box -->
+        </div>
+
+        <!-- ── Recipe: ingredients ── -->
+        <div id="section-recipe" class="hidden">
+          <hr class="my-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <h6 class="mb-0">Recipe</h6>
+            <button id="btn-add-recipe-line" class="btn btn-outline-secondary btn-sm">+ Add Ingredient</button>
+          </div>
+          <table class="table table-sm">
+            <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Est. cost</th><th></th></tr></thead>
+            <tbody id="recipe-lines-body"></tbody>
+          </table>
+          <div id="recipe-cost-total" class="text-muted small"></div>
+        </div>
+
+        <!-- ── Price Calculator (all product types) ── -->
+        <hr class="my-2">
+        <div class="row g-2 mb-2 align-items-end">
+          <div class="col-5">
+            <label class="form-label small mb-1">Margin %</label>
+            <div class="input-group input-group-sm">
+              <input id="calc-markup" type="number" step="1" min="1" max="99" class="form-control" placeholder="e.g. 40">
+              <span class="input-group-text">%</span>
+            </div>
+          </div>
+          <div class="col-7 d-grid">
+            <button id="btn-calc-price" class="btn btn-outline-info btn-sm">Calculate &amp; Set Price</button>
+          </div>
+        </div>
+        <div id="calc-result" class="hidden mb-2">
+          <div class="table-responsive">
+            <table class="table table-sm table-borderless mb-1" id="calc-breakdown-table"></table>
+          </div>
+          <div class="d-flex justify-content-between align-items-center p-2 rounded" style="background:#f0f7f0">
+            <span class="small text-muted">Avg cost: <strong id="calc-avg-cost"></strong></span>
+            <span class="fw-bold text-success" id="calc-suggested"></span>
+            <button id="btn-calc-apply" class="btn btn-success btn-sm">Use This Price</button>
+          </div>
+        </div>
+
+        <hr class="my-2">
+        <div class="d-flex gap-2 mb-2">
+          <button id="btn-add-product"    class="btn btn-success  flex-fill">Add</button>
+          <button id="btn-update-product" class="btn btn-primary  flex-fill">Update</button>
+          <button id="btn-delete-product" class="btn btn-danger   flex-fill">Delete</button>
+        </div>
+
+        <!-- ── Simple/Legacy purchase section ── -->
+        <div id="section-purchase" class="hidden">
+          <hr class="my-2">
+          <h6>Add Stock (Simple Product)</h6>
+          <div class="row g-2 mb-2">
+            <div class="col-4"><input id="pur-product-id" class="form-control form-control-sm" placeholder="Product ID"></div>
+            <div class="col-4"><input id="pur-qty" type="number" class="form-control form-control-sm" placeholder="Qty"></div>
+            <div class="col-4"><input id="pur-price" type="number" step="0.01" class="form-control form-control-sm" placeholder="Price/unit"></div>
+          </div>
+          <div class="d-flex gap-2 mb-2">
+            <button id="btn-add-purchase"  class="btn btn-outline-success btn-sm flex-fill">Record Purchase</button>
+            <button id="btn-suggest-price" class="btn btn-outline-primary  btn-sm flex-fill">Suggest Price</button>
+          </div>
+          <div id="suggest-output" class="text-muted small"></div>
+        </div>
+
+        <hr class="my-2">
+        <h6>Settings</h6>
+        <div class="input-group mb-2">
+          <span class="input-group-text small">Markup %</span>
+          <input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Default markup">
+          <button id="btn-save-settings" class="btn btn-outline-secondary">Save</button>
+        </div>
+
+      </div><!-- /modal-body -->
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ STOCKTAKE MODAL ═══════════ -->
+<div class="modal fade" id="stocktakeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Stocktake — <span id="stocktake-product-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="stocktake-product-id">
+        <div class="alert alert-info py-2 small mb-3">
+          Count the actual stock on hand and enter it below. The system will calculate the difference and adjust automatically.
+        </div>
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <label class="form-label small mb-0">Actual count <span class="text-muted">(add a row per container/location)</span></label>
+          <div class="text-muted small">System: <strong id="stocktake-system-qty">—</strong></div>
+        </div>
+        <div id="stocktake-rows"></div>
+        <button type="button" id="btn-stocktake-add-row" class="btn btn-outline-secondary btn-sm w-100 mb-2">+ Add another container</button>
+        <div id="stocktake-total-preview" class="text-muted small mb-2 hidden"></div>
+        <div id="stocktake-diff-preview" class="alert py-2 small hidden"></div>
+        <div class="mb-2">
+          <label class="form-label small">Reason / Notes</label>
+          <input id="stocktake-reason" class="form-control" placeholder="e.g. Monthly stocktake, scale calibration">
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button id="btn-stocktake-confirm" class="btn btn-warning w-100">Apply Stocktake Adjustment</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ WRITE-OFF MODAL ═══════════ -->
+<div class="modal fade" id="writeoffModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Write Off Stock — <span id="writeoff-product-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="writeoff-product-id">
+        <div class="alert alert-danger py-2 small mb-3">
+          Use this for stock that has spoiled, been damaged, or must be discarded. This cannot be undone.
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-7">
+            <label class="form-label small">Quantity to write off</label>
+            <div class="row g-1">
+              <div class="col-5">
+                <input id="writeoff-qty" type="number" step="0.01" min="0.01" class="form-control" placeholder="0">
+              </div>
+              <div class="col-7">
+                <select id="writeoff-unit" class="form-select"></select>
+              </div>
+            </div>
+          </div>
+          <div class="col-5">
+            <label class="form-label small">Available stock</label>
+            <div class="form-control bg-light" id="writeoff-available" style="height:38px;line-height:1.8">—</div>
+          </div>
+        </div>
+        <div id="writeoff-cost-preview" class="alert alert-warning py-2 small hidden"></div>
+        <div class="mb-2">
+          <label class="form-label small">Reason <span class="text-danger">*</span></label>
+          <input id="writeoff-reason" class="form-control" placeholder="e.g. Cheese expired, Milk spilled, Biltong went mouldy">
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button id="btn-writeoff-confirm" class="btn btn-danger w-100">Confirm Write-Off</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ RECEIVE STOCK MODAL ═══════════ -->
+<div class="modal fade" id="receiveStockModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Receive Stock — <span id="receive-product-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="receive-product-id">
+        <div class="mb-2">
+          <label class="form-label small">Quantity received</label>
+          <div class="row g-2">
+            <div class="col-5">
+              <input id="receive-qty" type="number" step="0.01" min="0.01" class="form-control" placeholder="0">
+            </div>
+            <div class="col-7">
+              <select id="receive-unit" class="form-select"></select>
+            </div>
+          </div>
+          <div id="receive-qty-base-display" class="small text-muted mt-1"></div>
+        </div>
+        <div class="row g-2 mb-3">
+          <div class="col-12">
+            <label class="form-label small">Total amount paid (R)</label>
+            <div class="input-group">
+              <span class="input-group-text">R</span>
+              <input id="receive-total-price" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
+            </div>
+          </div>
+        </div>
+        <div id="receive-cost-preview" class="alert alert-info py-2 small hidden"></div>
+        <div class="mt-2">
+          <label class="form-label small">Supplier (optional)</label>
+          <div class="input-group">
+            <select id="receive-supplier" class="form-select">
+              <option value="">— No supplier —</option>
+            </select>
+            <button id="btn-quick-add-supplier" class="btn btn-outline-secondary btn-sm" type="button" title="Quick add supplier">+</button>
+          </div>
+          <div id="quick-supplier-form" class="mt-2 hidden">
+            <div class="row g-1">
+              <div class="col-7"><input id="quick-sup-name"    class="form-control form-control-sm" placeholder="Supplier name"></div>
+              <div class="col-5"><input id="quick-sup-contact" class="form-control form-control-sm" placeholder="Phone / email"></div>
+            </div>
+            <button id="btn-quick-sup-save" class="btn btn-success btn-sm w-100 mt-1">Add Supplier</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button id="btn-receive-confirm" class="btn btn-success w-100">Confirm — Receive Stock</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="editWriteoffModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Edit Write-off</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="editwo-adj-id">
+        <div class="mb-2 text-muted small" id="editwo-product-name"></div>
+        <div class="mb-2">
+          <label class="form-label small">Corrected quantity</label>
+          <div class="input-group">
+            <input id="editwo-qty" type="number" step="0.01" min="0.01" class="form-control" placeholder="0">
+            <select id="editwo-unit" class="form-select" style="max-width:120px"></select>
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Reason</label>
+          <input id="editwo-reason" class="form-control" placeholder="Reason for correction">
+        </div>
+        <div id="editwo-preview" class="alert alert-info py-2 small hidden"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning btn-sm" id="btn-editwo-confirm">Save Correction</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="archiveProductModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Archive Product</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="archive-modal-body">
+        <div class="text-muted">Loading…</div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="btn-archive-confirm">Archive</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="restoreProductModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Restore Product</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="restore-modal-body"></div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success btn-sm" id="btn-restore-confirm">Restore</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="statsDrilldownModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" id="drilldown-title">Transactions</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2" id="drilldown-body">
+        <div class="text-muted">Loading…</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="editBatchModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Edit Purchase Batch</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-batch-id">
+        <div class="mb-2">
+          <label class="form-label small">Date received</label>
+          <input id="edit-batch-date" type="date" class="form-control">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Supplier</label>
+          <select id="edit-batch-supplier" class="form-select">
+            <option value="">— No supplier —</option>
+          </select>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Total amount paid (R) <span class="text-muted" id="edit-batch-qty-label"></span></label>
+          <div class="input-group">
+            <span class="input-group-text">R</span>
+            <input id="edit-batch-total-price" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button id="btn-edit-batch-confirm" class="btn btn-primary w-100">Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ INGREDIENT SUBSTITUTION MODAL ═══════════ -->
+<div class="modal fade" id="subsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Customise — <span id="subs-product-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2">Swap or add ingredients. Suggested alternatives (based on previous orders) appear at the top.</p>
+        <table class="table table-sm mb-2" id="subs-table">
+          <thead class="table-light">
+            <tr><th>Default ingredient</th><th>Using</th><th>Qty &amp; unit</th><th></th></tr>
+          </thead>
+          <tbody id="subs-body"></tbody>
+        </table>
+        <button id="btn-add-extra" class="btn btn-outline-secondary btn-sm">+ Add extra ingredient</button>
+      </div>
+      <div class="modal-footer py-2">
+        <div class="text-muted small me-auto">Price adjustment: <strong id="subs-price-delta"></strong></div>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="btn-subs-confirm" class="btn btn-success">Add to Cart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ SPECIALS EDITOR MODAL ═══════════ -->
+<div class="modal fade" id="specialEditorModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" id="special-editor-title">Special</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="special-id">
+        <div class="row g-2 mb-2">
+          <div class="col-8">
+            <label class="form-label small fw-bold">Special name</label>
+            <input id="special-name" class="form-control" placeholder="e.g. Family Deal">
+          </div>
+          <div class="col-4">
+            <label class="form-label small fw-bold">Special price</label>
+            <div class="input-group">
+              <span class="input-group-text">R</span>
+              <input id="special-price" type="number" step="0.01" class="form-control" placeholder="0.00">
+            </div>
+          </div>
+        </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="special-active" checked>
+          <label class="form-check-label small" for="special-active">Active (visible in cart detection)</label>
+        </div>
+        <hr class="my-2">
+        <div class="d-flex justify-content-between align-items-center mb-1">
+          <strong class="small">Required products</strong>
+          <button id="btn-add-special-line" class="btn btn-outline-secondary btn-sm">+ Add product</button>
+        </div>
+        <p class="small text-muted">When ALL of these products are in the cart the special price will be offered automatically.</p>
+        <table class="table table-sm" id="special-lines-table">
+          <thead class="table-light"><tr><th>Product</th><th>Qty</th><th></th></tr></thead>
+          <tbody id="special-lines-body"></tbody>
+        </table>
+      </div>
+      <div class="modal-footer py-2">
+        <button id="btn-delete-special" class="btn btn-outline-danger me-auto hidden">Delete</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="btn-save-special" class="btn btn-success">Save Special</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    // Unregister any old service workers, then register fresh
+    navigator.serviceWorker.getRegistrations().then(regs => {
+      Promise.all(regs.map(r => r.unregister())).then(() => {
+        navigator.serviceWorker.register('/static/sw.js').catch(console.warn);
+      });
+    });
+  }
+</script>
+<script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
+<script src="/static/JsBarcode.all.min.js"></script>
+<script src="/static/main.js?v=24a73204"></script>
 </body>
 </html>

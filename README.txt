@@ -1,381 +1,172 @@
-🐄 Farm Stall POS
-Lightweight Browser‑Based POS for Farm Stalls, Markets & Small Shops
-PWA • Barcode Scanner • Products • Users & Roles • Transactions • CSV Export
+# Farm Stall POS
 
-📋 Table of Contents
+Lightweight browser-based point-of-sale system for farm stalls, markets, and small shops.
 
-#overview
-#features
-#technology-stack
-#user-roles--authentication
-#product-management
-#barcode-scanning
-#sales--transactions
-#api-reference
-#database-structure
-#pwa--fullscreen-mode
-#environment-variables
-#role-based-ui-logic
-#deployment-checklist
-#service-worker-notes
-#future-features--roadmap
-#files-of-interest
+Stack: Python Flask · SQLAlchemy · PostgreSQL · Vanilla JS · Bootstrap 5 · PWA
 
+---
 
-1) Overview
-Farm Stall POS is a lightweight, fully browser‑based point‑of‑sale system designed for:
+QUICK START
 
-farm stalls
-market stands
-small retail shops
-kiosk devices and tablets
+Run the app with the start script (starts PostgreSQL, activates venv, sets env vars, launches Flask):
 
-It runs entirely in the browser (no native app required) and can be installed as a PWA for fullscreen operation on mobile or desktop.
-Key capabilities include:
+  powershell -ExecutionPolicy Bypass -File start.ps1
 
-Barcode scanning (camera-based)
-Product & user management (admin only)
-Teller checkout screen
-Transaction history
-CSV exports
-Offline asset caching (via service worker)
+App runs at: http://127.0.0.1:5000
 
+Default login: admin / admin123
 
-2) Features
-✔ Simple POS for touch devices
-✔ Barcode scanning with ZXing
-✔ Users & roles (admin/teller)
-✔ Products with unique EAN‑13 barcodes
-✔ Full transaction history
-✔ CSV exports (products, transactions, lines)
-✔ Works as fullscreen PWA
-✔ Designed for low-inventory environments
+On the local network, also accessible at http://<your-IP>:5000 from tablets/phones on the same Wi-Fi.
 
-3) Technology Stack
-Backend
+---
 
-Python Flask
-SQLAlchemy ORM
-Flask‑SQLAlchemy
+PREREQUISITES
 
-Database
+  Python 3.11+     .venv\ in project root
+  PostgreSQL       Installed at C:\Users\<you>\PostgreSQL\pgsql\ — NOT a Windows service
+  Windows 11       start.ps1 is PowerShell only
 
-PostgreSQL (DATABASE_URL)
+PostgreSQL is started manually by start.ps1 via pg_ctl. It is not registered as a Windows service.
 
-Frontend
+---
 
-HTML + Bootstrap 5
-Vanilla JavaScript
-ZXing UMD build (camera barcode scanning)
+WHAT start.ps1 DOES
 
-PWA
+  1. Checks if PostgreSQL is running via pg_ctl status -D %USERPROFILE%\PostgreSQL\data
+  2. Starts it if not running (log at %USERPROFILE%\PostgreSQL\pg.log)
+  3. Activates .venv\Scripts\Activate.ps1
+  4. Sets environment variables:
+       SECRET_KEY   = local-dev-secret
+       DATABASE_URL = postgresql://frauduser:Fraud@localhost:5432/farm_pos
+       LOCAL_TZ     = Africa/Johannesburg
+       ADMIN_USER   = admin
+       ADMIN_PASS   = admin123
+  5. Runs python app.py
 
-manifest.json
-sw.js (versioned cache)
+---
 
-Deployment
+INSTALLING PACKAGES
 
-Render Web Service + Render PostgreSQL
+The Capitec corporate SSL proxy requires trusted-host flags:
 
+  .venv\Scripts\pip install <package> --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
-4) User Roles & Authentication
-Session-based authentication using hashed passwords (Werkzeug).
-Roles
+---
 
+ARCHITECTURE
 
+Single-file Flask backend + single-page frontend.
 
+  app.py                   Flask backend — all routes, ORM models, migrations
+  templates/index.html     SPA shell — tabs, login form
+  static/main.js           All client-side logic (no framework)
+  static/sw.js             Service worker — versioned asset cache
+  static/manifest.json     PWA manifest
+  start.ps1                Dev startup script
 
+Backend (app.py)
+  - All API routes are under /api/. Root / serves the SPA. /admin/export/ serves CSV downloads.
+  - Auth: Flask session-based. require_login() / require_role('admin') decorators. No JWT.
+  - DB: SQLAlchemy ORM. All money columns are Numeric(10,2) — never Float.
+  - Migration: strong_migrate() runs on every startup. Idempotent — uses SAVEPOINT/rollback per
+    DDL statement. Add all schema changes there, not via Alembic.
+  - Sales model: Each receipt is a group of sales rows sharing the same sale_id (UUID string).
+    Voided sales have voided=True and are excluded from all queries.
 
+Frontend (static/main.js)
+  - All UI state lives in the STATE object at the top of the file.
+  - api(path, opts) is the single fetch wrapper — throws on non-2xx with the server's error message.
+  - toast(msg, type, durationMs) is used for all user notifications — never alert().
+  - USB barcode scanner: global keydown listener buffers rapid keystrokes ending in Enter
+    (scanner wedge mode). Active only on the Teller tab when no input is focused.
+  - Camera scanner: ZXing BrowserMultiFormatReader, toggled on-demand, 1.5s cooldown.
 
+---
 
+USER ROLES
 
+  admin    Teller, Transactions (full date range), Products, Users, Settings, CSV Exports
+  teller   Teller tab + last 5 transactions only
 
+On first run, if no users exist, the system creates an admin from ADMIN_USER / ADMIN_PASS env vars.
 
+---
 
+DATABASE SCHEMA
 
+  users           — id, username, password_hash, role, active
+  products        — id, name, price (Numeric), barcode, stock_qty
+  purchases       — id, product_id, qty_added, purchase_price (Numeric), date_time, user_id
+  settings        — id, key, value
+  sales           — id, sale_id (UUID), date_time, product_id, qty, unit_price (Numeric),
+                    user_id, voided, voided_by, voided_at, void_reason
 
+Upcoming (recipe/FIFO system in progress):
+  recipe_lines      — id, product_id, ingredient_id, qty_base (Numeric)
+  stock_batches     — id, product_id, qty_purchased_base, qty_remaining_base,
+                      cost_per_base_unit (Numeric 10,6), purchased_at, user_id
+  stock_consumption — id, sale_id, ingredient_id, batch_id, qty_consumed,
+                      cost_per_unit, consumed_at
 
+---
 
+API REFERENCE
 
+  POST   /api/login                           { username, password }
+  POST   /api/logout
+  GET    /api/me
 
-RoleAccessadminFull access: Teller, Transactions, Manage Products, Users, CSV ExportstellerTeller + Transactions only
-First-Run Auto Admin
-If no users exist, the system creates a first admin from env vars:
-ADMIN_USER
-ADMIN_PASS
+  GET    /api/products
+  POST   /api/products                        admin — create product
+  POST   /api/products/update                 admin — edit product
+  DELETE /api/products/<name>                 admin
+  GET    /api/products/<id>/suggested_price   ?markup=
 
+  POST   /api/purchases                       admin — receive stock
 
-5) Product Management
-Each product includes:
+  GET    /api/transactions                    admin: ?start=&end= date range / teller: last 5
+  POST   /api/transactions                    { cart: [{product_id, qty, unit_price}] }
+  POST   /api/transactions/<sale_id>/void     admin — { reason }
+  POST   /api/transactions/<sale_id>/edit     admin — { lines: [{product_id, qty, unit_price}] }
 
-name (unique)
-price
-barcode (unique EAN‑13)
-Optional auto-generated EAN‑13 with checksum
+  GET    /api/stats/today                     admin
+  GET    /api/settings                        admin
+  POST   /api/settings                        admin
 
-Example API response:
-JSON{  "Apples": { "id": 3, "price": 12.5, "barcode": "2004428073279" },  "Milk":   { "id": 4, "price": 18.0, "barcode": "2004428073286" }}Show more lines
-Admins can create, update, and delete products.
+  GET    /admin/export/products               CSV
+  GET    /admin/export/transactions           ?start=&end= CSV
 
-6) Barcode Scanning
-Scanner uses ZXing BrowserMultiFormatReader.
-Supports:
+---
 
-EAN‑13
-Multiple formats via ZXing
+KEY BEHAVIOURS
 
-UX Enhancements:
+  - Edit vs Void: editing a sale restores original stock then deducts new stock atomically.
+    Voiding requires a reason and fully restores stock.
+  - sale_id is a UUID string — always display as sale_id.slice(0, 8) in the UI.
+  - Stock is integer for simple products (stock_qty). Will be Numeric for ingredient products
+    once the recipe/FIFO system lands.
+  - Transactions tab is role-aware: tellers see last 5 only; admins get a full date-range
+    picker defaulting to today.
 
-Beep on successful scan
-700 ms cooldown to prevent duplicates
-Green visual flash around video feed
+---
 
-Matches scanned code against:
+PWA / KIOSK MODE
 
-name
-product ID
-barcode
+The app can be installed as a PWA (Add to Home Screen on Android/iOS, or Install in Chrome on Windows).
 
+For dedicated kiosk use on Windows + Chrome:
+  chrome.exe --kiosk --app=http://127.0.0.1:5000
 
-7) Sales & Transactions
-Process
+Service worker caches static assets under pos-cache-vX. Bump the version in static/sw.js when
+deploying changes to main.js or other static files.
 
-Add items to cart (qty automatically increments)
-Checkout creates:
+---
 
-Transaction entry
-TransactionLine rows
+ROADMAP
 
-
-
-Transactions View
-
-Grouped by transaction ID
-Shows date/time, totals, line items
-
-
-8) API Reference
-Authentication
-POST /api/login
-POST /api/logout
-GET  /api/me
-
-Users (admin only)
-GET    /api/users
-POST   /api/users
-POST   /api/users/update
-DELETE /api/users/<username>
-
-Products (admin only)
-GET    /api/products
-POST   /api/products
-POST   /api/products/update
-DELETE /api/products/<name>
-
-Transactions
-GET /api/transactions
-POST /api/transactions
-
-CSV Exports (admin)
-/admin/export/products
-/admin/export/transactions
-/admin/export/transaction_lines
-
-Diagnostics
-/api/db-health
-/__version
-
-
-9) Database Structure
-users
-
-id
-username
-password_hash
-role
-active
-
-products
-
-id
-name
-price
-barcode
-
-transactions
-
-id
-date_time
-
-transaction_lines
-
-id
-transaction_id
-product_id
-qty
-unit_price
-
-
-10) PWA & Fullscreen Mode
-PWA Features
-
-Installable on Android / iOS / Windows
-Fullscreen (display: fullscreen)
-Offline caching for assets
-
-Kiosk Mode Examples
-Windows + Chrome
-chrome.exe --kiosk --app=https://your-app-url
-
-
-11) Environment Variables
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-VariableRequiredPurposeDATABASE_URL✔Postgres connection stringSECRET_KEY✔Flask session signingADMIN_USERoptionalFirst admin usernameADMIN_PASSoptionalFirst admin passwordADMIN_TOKENoptionalSecures CSV exports
-
-12) Role-Based UI Logic
-Before Login
-
-Only login card visible
-Tabs + main UI hidden
-
-Teller View
-
-Visible: Teller, Transactions
-Hidden: Products, Users, Exports
-
-Admin View
-
-All tabs visible
-Users admin panel enabled
-Products + exports available
-
-Frontend JavaScript adjusts visibility based on /api/me.
-
-13) Deployment Checklist
-🟩 Step 1 — Configure Environment Variables
-Set at minimum:
-
-DATABASE_URL
-SECRET_KEY
-
-Optional:
-
-ADMIN_USER + ADMIN_PASS
-ADMIN_TOKEN
-
-
-🟩 Step 2 — Deploy to Render
-Render detects Flask → deploys with:
-gunicorn app:app
-
-
-🟩 Step 3 — First Login
-
-Log in as seeded admin
-Change password
-Create teller users
-
-
-🟩 Step 4 — Add Products
-
-Add products
-Generate barcodes
-Export CSV for labels
-
-
-🟩 Step 5 — Test Scanner
-On a phone:
-
-Add to Home Screen
-Allow camera
-Test scanning
-
-
-🟩 Step 6 — Confirm PWA & Cache
-If UI stale → bump SW version.
-
-14) Service Worker Notes
-
-Cache name is versioned: pos-cache-vX
-Bump version when changing:
-
-main.js
-any static assets
-
-
-Avoid caching "/" in development
-Hard refresh + SW unregister when debugging
-
-
-15) Future Features & Roadmap
-Authentication
-
-PIN login
-Auto-logout timer
-Multi-teller fast switching
-
-Sales & Reporting
-
-Printable receipts (thermal/PDF)
-Transaction filtering
-End-of-day Z-reports
-
-Inventory
-
-Stock tracking
-Product categories
-Bulk CSV import/export
-A4/label barcode printing
-
-UI
-
-Dark mode
-Customizable layout
-Large touch-friendly buttons
-
-Offline & Multi-Store
-
-Full offline db with sync
-Multi-branch support
-
-
-16) Files of Interest
-app.py                # Flask app, routes, ORM, RBAC, exports, barcode generation
-templates/index.html  # App UI skeleton, tabs, login
-static/main.js        # Client logic: auth, users, products, transactions, scanning
-static/manifest.json  # PWA metadata
-static/sw.js          # Service worker, cache versioning
+  - Recipe-based products (ingredients with FIFO cost tracking)
+  - Variable-weight products
+  - Thermal/PDF receipt printing
+  - End-of-day Z-reports
+  - PIN login + auto-logout timer
+  - A4/label barcode printing
