@@ -1037,7 +1037,7 @@ function initCalcMarkup(product) {
   if (product?.margin_pct != null) {
     calcMarkup.value = product.margin_pct;
   } else {
-    calcMarkup.value = parseFloat(document.getElementById('markup-percent')?.value || 40) || 40;
+    calcMarkup.value = _globalMarkupPct;
   }
 }
 
@@ -1342,7 +1342,7 @@ function buildProductPayload() {
 
 // ── Legacy purchase (simple products) ──
 document.getElementById('btn-add-purchase')?.addEventListener('click', async () => {
-  const pid   = parseInt(document.getElementById('pur-product-id').value || '0', 10);
+  const pid   = parseInt(document.getElementById('p-id').value || '0', 10);
   const qty   = parseInt(document.getElementById('pur-qty').value || '0', 10);
   const price = parseFloat(document.getElementById('pur-price').value || '0');
   try {
@@ -1353,10 +1353,9 @@ document.getElementById('btn-add-purchase')?.addEventListener('click', async () 
 });
 
 document.getElementById('btn-suggest-price')?.addEventListener('click', async () => {
-  const pid    = parseInt(document.getElementById('pur-product-id').value || '0', 10);
-  const markup = document.getElementById('markup-percent').value;
+  const pid = parseInt(document.getElementById('p-id').value || '0', 10);
   try {
-    const j = await api(`/api/products/${pid}/suggested_price${markup ? `?markup=${markup}` : ''}`);
+    const j = await api(`/api/products/${pid}/suggested_price?markup=${_globalMarkupPct}`);
     const out = document.getElementById('suggest-output');
     if (out) out.textContent = `WAC R${j.wac.toFixed(4)} + ${j.markup_percent}% → R${j.suggested_price}`;
   } catch (e) { toast(e.message, 'error'); }
@@ -3645,17 +3644,14 @@ document.getElementById('btn-export-csv')?.addEventListener('click', () => {
 // ═══════════════════════════════════════════════════════
 // SETTINGS
 // ═══════════════════════════════════════════════════════
+let _globalMarkupPct = 40;  // default; overwritten by loadSettings
+
 async function loadSettings() {
   try {
     const j = await api('/api/settings');
-    const el = document.getElementById('markup-percent'); if (el) el.value = j.markup_percent;
+    _globalMarkupPct = parseFloat(j.markup_percent) || 40;
   } catch {}
 }
-document.getElementById('btn-save-settings')?.addEventListener('click', async () => {
-  const mp = parseFloat(document.getElementById('markup-percent').value || '0');
-  try { await api('/api/settings', { method: 'POST', body: JSON.stringify({ markup_percent: mp }) }); toast('Settings saved'); }
-  catch (e) { toast(e.message, 'error'); }
-});
 
 // ═══════════════════════════════════════════════════════
 // KITCHEN QUEUE

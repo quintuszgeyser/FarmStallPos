@@ -638,8 +638,8 @@
 
         <!-- ── Step 3: Common fields ── -->
         <div class="row g-2 mb-2">
-          <div class="col-8"><input id="p-name" class="form-control" placeholder="Product Name" required></div>
-          <div class="col-4"><input id="p-id" class="form-control" placeholder="ID" readonly tabindex="-1"></div>
+          <div class="col-12"><input id="p-name" class="form-control" placeholder="Product Name" required></div>
+          <input type="hidden" id="p-id">
         </div>
         <div class="mb-2">
           <input id="p-barcode" class="form-control" placeholder="Barcode (auto-generated if blank)">
@@ -774,9 +774,8 @@
           <hr class="my-2">
           <h6>Add Stock (Simple Product)</h6>
           <div class="row g-2 mb-2">
-            <div class="col-4"><input id="pur-product-id" class="form-control form-control-sm" placeholder="Product ID"></div>
-            <div class="col-4"><input id="pur-qty" type="number" class="form-control form-control-sm" placeholder="Qty"></div>
-            <div class="col-4"><input id="pur-price" type="number" step="0.01" class="form-control form-control-sm" placeholder="Price/unit"></div>
+            <div class="col-6"><input id="pur-qty" type="number" class="form-control form-control-sm" placeholder="Qty"></div>
+            <div class="col-6"><input id="pur-price" type="number" step="0.01" class="form-control form-control-sm" placeholder="Price/unit"></div>
           </div>
           <div class="d-flex gap-2 mb-2">
             <button id="btn-add-purchase"  class="btn btn-outline-success btn-sm flex-fill">Record Purchase</button>
@@ -785,13 +784,6 @@
           <div id="suggest-output" class="text-muted small"></div>
         </div>
 
-        <hr class="my-2">
-        <h6>Settings</h6>
-        <div class="input-group mb-2">
-          <span class="input-group-text small">Markup %</span>
-          <input id="markup-percent" type="number" step="0.1" class="form-control" placeholder="Default markup">
-          <button id="btn-save-settings" class="btn btn-outline-secondary">Save</button>
-        </div>
 
       </div><!-- /modal-body -->
     </div>
