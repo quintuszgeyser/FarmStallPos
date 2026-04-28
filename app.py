@@ -3358,6 +3358,8 @@ def api_stats():
     emp_session_minutes = defaultdict(float)
     emp_session_count   = defaultdict(int)
     emp_sessions        = defaultdict(list)
+    emp_first_login     = {}   # earliest login in range
+    emp_last_activity   = {}   # latest last_active / logged_out in range
     now_utc = datetime.utcnow()
     for s in sessions_in_range:
         natural_end  = s.logged_out or now_utc
@@ -3374,6 +3376,13 @@ def api_stats():
             'duration_min': round(duration_min, 1),
             'open':        s.logged_out is None,
         })
+        # Track span for rate calculation
+        uid = s.user_id
+        if uid not in emp_first_login or s.logged_in < emp_first_login[uid]:
+            emp_first_login[uid] = s.logged_in
+        activity_end = s.last_active or clamped_end
+        if uid not in emp_last_activity or activity_end > emp_last_activity[uid]:
+            emp_last_activity[uid] = activity_end
 
     # Build name map from ALL user IDs that appear in sales or sessions
     all_user_ids = list(
@@ -3391,8 +3400,15 @@ def api_stats():
         items        = emp_items.get(uid, 0)
         sess_mins    = emp_session_minutes.get(uid, 0)
         sess_count   = emp_session_count.get(uid, 0)
-        rev_per_hour = (rev / (sess_mins / 60)) if sess_mins > 0 else None
-        tx_per_hour  = (tx_count / (sess_mins / 60)) if sess_mins > 0 else None
+        # Work span = first login to last activity — more realistic denominator for rates
+        first_login    = emp_first_login.get(uid)
+        last_activity  = emp_last_activity.get(uid)
+        if first_login and last_activity and last_activity > first_login:
+            work_span_mins = (last_activity - first_login).total_seconds() / 60.0
+        else:
+            work_span_mins = sess_mins
+        rev_per_hour = (rev / (work_span_mins / 60)) if work_span_mins > 0 else None
+        tx_per_hour  = (tx_count / (work_span_mins / 60)) if work_span_mins > 0 else None
         avg_tx_val   = (rev / tx_count) if tx_count > 0 else 0
         first_sale   = emp_first.get(uid)
         last_sale    = emp_last.get(uid)
