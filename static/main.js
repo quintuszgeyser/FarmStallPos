@@ -1230,6 +1230,7 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
       if (sel) {
         sel.innerHTML = _buildProductOptions(supplierProductIds);
         sel.value = result.id;
+        sel.dispatchEvent(new Event('change'));
       }
       _pendingPurchaseLine = null;
     }
