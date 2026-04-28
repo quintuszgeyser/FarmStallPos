@@ -12385,3 +12385,889 @@ werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on 
 2026-04-28 11:02:20,385 [INFO] REQ  GET /api/kitchen/orders/count  user=-
 2026-04-28 11:02:20,386 [WARNING] RESP GET /api/kitchen/orders/count  status=401  0ms
 2026-04-28 11:02:20,388 [INFO] 192.168.1.4 - - [28/Apr/2026 11:02:20] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
+2026-04-28 11:06:30,753 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5443
+ * Running on https://192.168.1.4:5443
+2026-04-28 11:06:30,754 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 11:07:20,389 [INFO] REQ  GET /api/kitchen/orders/count  user=-
+2026-04-28 11:07:20,390 [WARNING] RESP GET /api/kitchen/orders/count  status=401  0ms
+2026-04-28 11:07:20,391 [INFO] 192.168.1.4 - - [28/Apr/2026 11:07:20] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
+2026-04-28 11:07:41,734 [INFO] REQ  GET /  user=1
+2026-04-28 11:07:41,773 [INFO] RESP GET /  status=200  31ms
+2026-04-28 11:07:41,774 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:41] "GET / HTTP/1.1" 200 -
+2026-04-28 11:07:42,634 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:42] "GET /static/JsBarcode.all.min.js HTTP/1.1" 200 -
+2026-04-28 11:07:42,653 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:42] "GET /static/main.js?v=24a73204 HTTP/1.1" 200 -
+2026-04-28 11:07:42,675 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 11:07:42,691 [INFO] RESP POST /api/logout  status=200  16ms
+2026-04-28 11:07:42,692 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:42] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:07:42,709 [INFO] REQ  GET /favicon.ico  user=1
+2026-04-28 11:07:42,715 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:07:42,717 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:07:42,718 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:42] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:07:42,721 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:07:42,722 [WARNING] RESP GET /favicon.ico  status=500  16ms
+2026-04-28 11:07:42,723 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:42] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:07:42,763 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:42] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:07:52,847 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:07:53,032 [INFO] RESP POST /api/login  status=200  187ms
+2026-04-28 11:07:53,033 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:07:53,052 [INFO] REQ  GET /api/me  user=1
+2026-04-28 11:07:53,059 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:07:53,060 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:07:53,134 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:07:53,142 [INFO] RESP GET /api/products  status=200  16ms
+2026-04-28 11:07:53,143 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:07:53,160 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:07:53,168 [INFO] RESP GET /api/transactions  status=200  0ms
+2026-04-28 11:07:53,170 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:07:53,185 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:07:53,190 [INFO] RESP GET /api/specials  status=200  0ms
+2026-04-28 11:07:53,192 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:07:53,206 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 11:07:53,215 [INFO] RESP GET /api/settings  status=200  0ms
+2026-04-28 11:07:53,216 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:07:53,229 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:07:53,240 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 11:07:53,240 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:07:53,269 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:07:53,275 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:07:53,276 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:07:53,290 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:07:53,295 [INFO] RESP GET /api/stock/ingredients  status=200  16ms
+2026-04-28 11:07:53,296 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:07:53,310 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:07:53,318 [INFO] RESP GET /api/suppliers  status=200  0ms
+2026-04-28 11:07:53,319 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:07:53,335 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:07:53,340 [INFO] RESP GET /api/specials  status=200  0ms
+2026-04-28 11:07:53,341 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:53] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:07:54,547 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:07:54,551 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:07:54,553 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:54] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:07:56,224 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:07:56,230 [INFO] RESP GET /api/suppliers  status=200  0ms
+2026-04-28 11:07:56,232 [INFO] 127.0.0.1 - - [28/Apr/2026 11:07:56] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:08:11,527 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:08:11,539 [INFO] RESP GET /api/transactions  status=200  15ms
+2026-04-28 11:08:11,541 [INFO] 127.0.0.1 - - [28/Apr/2026 11:08:11] "GET /api/transactions?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:08:12,595 [INFO] REQ  GET /api/kitchen/orders  user=1
+2026-04-28 11:08:12,601 [INFO] RESP GET /api/kitchen/orders  status=200  0ms
+2026-04-28 11:08:12,603 [INFO] 127.0.0.1 - - [28/Apr/2026 11:08:12] "GET /api/kitchen/orders HTTP/1.1" 200 -
+2026-04-28 11:08:13,532 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:08:13,538 [INFO] RESP GET /api/stock/ingredients  status=200  0ms
+2026-04-28 11:08:13,539 [INFO] 127.0.0.1 - - [28/Apr/2026 11:08:13] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:08:14,437 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:08:14,443 [INFO] RESP GET /api/products  status=200  0ms
+2026-04-28 11:08:14,445 [INFO] 127.0.0.1 - - [28/Apr/2026 11:08:14] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:08:15,068 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:08:15,073 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:08:15,074 [INFO] 127.0.0.1 - - [28/Apr/2026 11:08:15] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:08:15,839 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:08:15,846 [INFO] RESP GET /api/suppliers  status=200  16ms
+2026-04-28 11:08:15,848 [INFO] 127.0.0.1 - - [28/Apr/2026 11:08:15] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:08:20,366 [INFO] REQ  GET /api/kitchen/orders/count  user=-
+2026-04-28 11:08:20,367 [WARNING] RESP GET /api/kitchen/orders/count  status=401  0ms
+2026-04-28 11:08:20,367 [INFO] 192.168.1.4 - - [28/Apr/2026 11:08:20] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
+2026-04-28 11:08:33,690 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5000
+ * Running on https://192.168.1.4:5000
+2026-04-28 11:08:33,691 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 11:16:26,032 [INFO] REQ  GET /  user=-
+2026-04-28 11:16:26,073 [INFO] RESP GET /  status=200  32ms
+2026-04-28 11:16:26,075 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:26] "GET / HTTP/1.1" 200 -
+2026-04-28 11:16:26,912 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:26] "GET /static/main.js?v=24a73204 HTTP/1.1" 200 -
+2026-04-28 11:16:26,937 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:26] "GET /static/JsBarcode.all.min.js HTTP/1.1" 200 -
+2026-04-28 11:16:26,964 [INFO] REQ  POST /api/logout  user=-
+2026-04-28 11:16:26,965 [INFO] RESP POST /api/logout  status=200  0ms
+2026-04-28 11:16:26,966 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:26] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:16:26,986 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:16:26,987 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:16:26,988 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:26] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:16:26,992 [INFO] REQ  GET /favicon.ico  user=-
+2026-04-28 11:16:26,998 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:16:26,999 [WARNING] RESP GET /favicon.ico  status=500  15ms
+2026-04-28 11:16:27,000 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:27] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:16:27,105 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:27] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:16:35,628 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:16:35,782 [WARNING] RESP POST /api/login  status=401  156ms
+2026-04-28 11:16:35,785 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:35] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+2026-04-28 11:16:44,080 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:16:44,232 [WARNING] RESP POST /api/login  status=401  157ms
+2026-04-28 11:16:44,234 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:44] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+2026-04-28 11:16:52,734 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:16:52,856 [WARNING] RESP POST /api/login  status=401  125ms
+2026-04-28 11:16:52,857 [INFO] 127.0.0.1 - - [28/Apr/2026 11:16:52] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+2026-04-28 11:17:01,693 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:17:01,867 [INFO] RESP POST /api/login  status=200  172ms
+2026-04-28 11:17:01,867 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:01] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:17:01,887 [INFO] REQ  GET /api/me  user=2
+2026-04-28 11:17:01,895 [INFO] RESP GET /api/me  status=200  16ms
+2026-04-28 11:17:01,896 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:01] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:17:01,921 [INFO] REQ  GET /api/products  user=2
+2026-04-28 11:17:01,955 [INFO] RESP GET /api/products  status=200  31ms
+2026-04-28 11:17:01,956 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:01] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:17:01,971 [INFO] REQ  GET /api/transactions  user=2
+2026-04-28 11:17:02,001 [INFO] RESP GET /api/transactions  status=200  31ms
+2026-04-28 11:17:02,002 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:02] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:17:02,023 [INFO] REQ  GET /api/specials  user=2
+2026-04-28 11:17:02,040 [INFO] RESP GET /api/specials  status=200  15ms
+2026-04-28 11:17:02,040 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:02] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:17:06,591 [INFO] REQ  POST /api/logout  user=2
+2026-04-28 11:17:06,602 [INFO] RESP POST /api/logout  status=200  0ms
+2026-04-28 11:17:06,603 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:06] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:17:06,622 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:17:06,623 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:17:06,624 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:06] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:17:19,043 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:17:19,207 [INFO] RESP POST /api/login  status=200  172ms
+2026-04-28 11:17:19,207 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:17:19,222 [INFO] REQ  GET /api/me  user=5
+2026-04-28 11:17:19,225 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:17:19,226 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:17:19,251 [INFO] REQ  GET /api/products  user=5
+2026-04-28 11:17:19,281 [INFO] RESP GET /api/products  status=200  31ms
+2026-04-28 11:17:19,281 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:17:19,295 [INFO] REQ  GET /api/transactions  user=5
+2026-04-28 11:17:19,306 [INFO] RESP GET /api/transactions  status=200  0ms
+2026-04-28 11:17:19,307 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:17:19,320 [INFO] REQ  GET /api/specials  user=5
+2026-04-28 11:17:19,340 [INFO] RESP GET /api/specials  status=200  15ms
+2026-04-28 11:17:19,341 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:17:19,356 [INFO] REQ  GET /api/settings  user=5
+2026-04-28 11:17:19,365 [INFO] RESP GET /api/settings  status=200  0ms
+2026-04-28 11:17:19,366 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:17:19,382 [INFO] REQ  GET /api/stats  user=5
+2026-04-28 11:17:19,406 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:17:19,407 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:19,428 [INFO] REQ  GET /api/users  user=5
+2026-04-28 11:17:19,434 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:17:19,434 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:17:19,449 [INFO] REQ  GET /api/stock/ingredients  user=5
+2026-04-28 11:17:19,489 [INFO] RESP GET /api/stock/ingredients  status=200  47ms
+2026-04-28 11:17:19,489 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:17:19,509 [INFO] REQ  GET /api/suppliers  user=5
+2026-04-28 11:17:19,514 [INFO] RESP GET /api/suppliers  status=200  16ms
+2026-04-28 11:17:19,516 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:17:19,531 [INFO] REQ  GET /api/specials  user=5
+2026-04-28 11:17:19,546 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 11:17:19,546 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:19] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:17:21,099 [INFO] REQ  GET /api/users  user=5
+2026-04-28 11:17:21,104 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:17:21,106 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:21] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:17:27,456 [INFO] REQ  POST /api/users/update  user=5
+2026-04-28 11:17:27,644 [INFO] RESP POST /api/users/update  status=200  188ms
+2026-04-28 11:17:27,644 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:27] "POST /api/users/update HTTP/1.1" 200 -
+2026-04-28 11:17:27,660 [INFO] REQ  GET /api/users  user=5
+2026-04-28 11:17:27,665 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:17:27,666 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:27] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:17:30,401 [INFO] REQ  GET /api/kitchen/orders  user=5
+2026-04-28 11:17:30,406 [INFO] RESP GET /api/kitchen/orders  status=200  15ms
+2026-04-28 11:17:30,408 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:30] "GET /api/kitchen/orders HTTP/1.1" 200 -
+2026-04-28 11:17:31,007 [INFO] REQ  GET /api/transactions  user=5
+2026-04-28 11:17:31,021 [INFO] RESP GET /api/transactions  status=200  16ms
+2026-04-28 11:17:31,022 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:31] "GET /api/transactions?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:32,073 [INFO] REQ  GET /api/kitchen/orders/count  user=5
+2026-04-28 11:17:32,079 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:17:32,079 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:32] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:17:37,132 [INFO] REQ  GET /api/stats  user=5
+2026-04-28 11:17:37,149 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 11:17:37,151 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:37] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:37,767 [INFO] REQ  GET /api/stats  user=5
+2026-04-28 11:17:37,788 [INFO] RESP GET /api/stats  status=200  15ms
+2026-04-28 11:17:37,789 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:37] "GET /api/stats?start=2026-04-27&end=2026-04-27 HTTP/1.1" 200 -
+2026-04-28 11:17:39,703 [INFO] REQ  GET /api/stats  user=5
+2026-04-28 11:17:39,728 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 11:17:39,730 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:39] "GET /api/stats?start=2026-04-26&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:40,834 [INFO] REQ  GET /api/stats  user=5
+2026-04-28 11:17:40,906 [INFO] RESP GET /api/stats  status=200  78ms
+2026-04-28 11:17:40,907 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:40] "GET /api/stats?start=2026-04-01&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:42,068 [INFO] REQ  GET /api/stats  user=5
+2026-04-28 11:17:42,118 [INFO] RESP GET /api/stats  status=200  47ms
+2026-04-28 11:17:42,119 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:42] "GET /api/stats?start=2026-01-01&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:42,877 [INFO] REQ  GET /api/stats  user=5
+2026-04-28 11:17:42,891 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 11:17:42,893 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:42] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:46,932 [INFO] REQ  GET /api/transactions  user=5
+2026-04-28 11:17:46,942 [INFO] RESP GET /api/transactions  status=200  16ms
+2026-04-28 11:17:46,943 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:46] "GET /api/transactions?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:17:47,801 [INFO] REQ  GET /api/kitchen/orders  user=5
+2026-04-28 11:17:47,807 [INFO] RESP GET /api/kitchen/orders  status=200  0ms
+2026-04-28 11:17:47,809 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:47] "GET /api/kitchen/orders HTTP/1.1" 200 -
+2026-04-28 11:17:48,577 [INFO] REQ  GET /api/stock/ingredients  user=5
+2026-04-28 11:17:48,613 [INFO] RESP GET /api/stock/ingredients  status=200  32ms
+2026-04-28 11:17:48,616 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:48] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:17:50,139 [INFO] REQ  GET /api/suppliers  user=5
+2026-04-28 11:17:50,144 [INFO] RESP GET /api/suppliers  status=200  0ms
+2026-04-28 11:17:50,146 [INFO] 127.0.0.1 - - [28/Apr/2026 11:17:50] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:18:02,063 [INFO] REQ  GET /api/kitchen/orders/count  user=5
+2026-04-28 11:18:02,071 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:18:02,073 [INFO] 127.0.0.1 - - [28/Apr/2026 11:18:02] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:18:32,072 [INFO] REQ  GET /api/kitchen/orders/count  user=5
+2026-04-28 11:18:32,082 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:18:32,083 [INFO] 127.0.0.1 - - [28/Apr/2026 11:18:32] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:19:02,071 [INFO] REQ  GET /api/kitchen/orders/count  user=5
+2026-04-28 11:19:02,075 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:19:02,076 [INFO] 127.0.0.1 - - [28/Apr/2026 11:19:02] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:19:32,080 [INFO] REQ  GET /api/kitchen/orders/count  user=5
+2026-04-28 11:19:32,087 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:19:32,091 [INFO] 127.0.0.1 - - [28/Apr/2026 11:19:32] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:20:02,074 [INFO] REQ  GET /api/kitchen/orders/count  user=5
+2026-04-28 11:20:02,083 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:20:02,085 [INFO] 127.0.0.1 - - [28/Apr/2026 11:20:02] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:20:32,061 [INFO] REQ  GET /api/kitchen/orders/count  user=5
+2026-04-28 11:20:32,071 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:20:32,073 [INFO] 127.0.0.1 - - [28/Apr/2026 11:20:32] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:21:04,232 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5000
+ * Running on https://192.168.1.4:5000
+2026-04-28 11:21:04,232 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 11:21:05,953 [INFO] REQ  GET /  user=5
+2026-04-28 11:21:05,978 [INFO] RESP GET /  status=200  16ms
+2026-04-28 11:21:05,980 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:05] "GET / HTTP/1.1" 200 -
+2026-04-28 11:21:06,924 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:06] "[36mGET /static/JsBarcode.all.min.js HTTP/1.1[0m" 304 -
+2026-04-28 11:21:06,941 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:06] "[36mGET /static/main.js?v=24a73204 HTTP/1.1[0m" 304 -
+2026-04-28 11:21:06,978 [INFO] REQ  POST /api/logout  user=5
+2026-04-28 11:21:06,985 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:06] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:21:06,994 [INFO] REQ  GET /favicon.ico  user=5
+2026-04-28 11:21:06,995 [INFO] RESP POST /api/logout  status=200  16ms
+2026-04-28 11:21:06,996 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:06] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:21:07,001 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:21:07,002 [WARNING] RESP GET /favicon.ico  status=500  15ms
+2026-04-28 11:21:07,003 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:07] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:21:07,017 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:21:07,018 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:21:07,019 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:07] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:21:14,894 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:21:15,055 [INFO] RESP POST /api/login  status=200  156ms
+2026-04-28 11:21:15,057 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:21:15,076 [INFO] REQ  GET /api/me  user=1
+2026-04-28 11:21:15,084 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:21:15,086 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:21:15,105 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:21:15,138 [INFO] RESP GET /api/products  status=200  47ms
+2026-04-28 11:21:15,138 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:21:15,152 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:21:15,167 [INFO] RESP GET /api/transactions  status=200  15ms
+2026-04-28 11:21:15,167 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:21:15,182 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:21:15,201 [INFO] RESP GET /api/specials  status=200  31ms
+2026-04-28 11:21:15,202 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:21:15,215 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 11:21:15,221 [INFO] RESP GET /api/settings  status=200  16ms
+2026-04-28 11:21:15,222 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:21:15,234 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:21:15,257 [INFO] RESP GET /api/stats  status=200  15ms
+2026-04-28 11:21:15,260 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:21:15,274 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:21:15,279 [INFO] RESP GET /api/users  status=200  15ms
+2026-04-28 11:21:15,281 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:21:15,291 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:21:15,334 [INFO] RESP GET /api/stock/ingredients  status=200  47ms
+2026-04-28 11:21:15,334 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:21:15,350 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:21:15,357 [INFO] RESP GET /api/suppliers  status=200  16ms
+2026-04-28 11:21:15,359 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:21:15,374 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:21:15,392 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 11:21:15,394 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:15] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:21:18,077 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:21:18,080 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:21:18,081 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:18] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:21:35,532 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:21:35,557 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 11:21:35,559 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:35] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:21:39,954 [INFO] REQ  GET /api/stats/drilldown  user=1
+2026-04-28 11:21:39,963 [INFO] RESP GET /api/stats/drilldown  status=200  0ms
+2026-04-28 11:21:39,963 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:39] "GET /api/stats/drilldown?start=2026-04-28&end=2026-04-28&type=user&value=1 HTTP/1.1" 200 -
+2026-04-28 11:21:45,226 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:21:45,233 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:21:45,234 [INFO] 127.0.0.1 - - [28/Apr/2026 11:21:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:22:15,223 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:22:15,232 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:22:15,234 [INFO] 127.0.0.1 - - [28/Apr/2026 11:22:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:22:45,225 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:22:45,230 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:22:45,231 [INFO] 127.0.0.1 - - [28/Apr/2026 11:22:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:23:15,235 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:23:15,241 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:23:15,243 [INFO] 127.0.0.1 - - [28/Apr/2026 11:23:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:23:45,237 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:23:45,244 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:23:45,245 [INFO] 127.0.0.1 - - [28/Apr/2026 11:23:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:24:15,234 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:24:15,242 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:24:15,242 [INFO] 127.0.0.1 - - [28/Apr/2026 11:24:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:24:45,252 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:24:45,261 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:24:45,263 [INFO] 127.0.0.1 - - [28/Apr/2026 11:24:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:25:15,242 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:25:15,257 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:25:15,259 [INFO] 127.0.0.1 - - [28/Apr/2026 11:25:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:25:45,233 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:25:45,241 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:25:45,243 [INFO] 127.0.0.1 - - [28/Apr/2026 11:25:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:26:15,226 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:26:15,234 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:26:15,236 [INFO] 127.0.0.1 - - [28/Apr/2026 11:26:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:26:45,229 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:26:45,234 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:26:45,236 [INFO] 127.0.0.1 - - [28/Apr/2026 11:26:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:27:15,229 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:27:15,234 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:27:15,235 [INFO] 127.0.0.1 - - [28/Apr/2026 11:27:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:27:45,230 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:27:45,240 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:27:45,242 [INFO] 127.0.0.1 - - [28/Apr/2026 11:27:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:28:15,233 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:28:15,239 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:28:15,241 [INFO] 127.0.0.1 - - [28/Apr/2026 11:28:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:28:45,221 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:28:45,229 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:28:45,231 [INFO] 127.0.0.1 - - [28/Apr/2026 11:28:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:29:15,230 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:29:15,237 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:29:15,239 [INFO] 127.0.0.1 - - [28/Apr/2026 11:29:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:29:45,224 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:29:45,228 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:29:45,230 [INFO] 127.0.0.1 - - [28/Apr/2026 11:29:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:30:15,230 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:30:15,242 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:30:15,243 [INFO] 127.0.0.1 - - [28/Apr/2026 11:30:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:30:45,232 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:30:45,240 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:30:45,242 [INFO] 127.0.0.1 - - [28/Apr/2026 11:30:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:31:15,232 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:31:15,237 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:31:15,239 [INFO] 127.0.0.1 - - [28/Apr/2026 11:31:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:31:45,245 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:31:45,252 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:31:45,256 [INFO] 127.0.0.1 - - [28/Apr/2026 11:31:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:32:15,226 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:32:15,229 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:32:15,230 [INFO] 127.0.0.1 - - [28/Apr/2026 11:32:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:32:45,235 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:32:45,244 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:32:45,245 [INFO] 127.0.0.1 - - [28/Apr/2026 11:32:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:33:07,889 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5000
+ * Running on https://192.168.1.4:5000
+2026-04-28 11:33:07,889 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 11:33:09,716 [INFO] REQ  GET /  user=1
+2026-04-28 11:33:09,741 [INFO] RESP GET /  status=200  16ms
+2026-04-28 11:33:09,743 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:09] "GET / HTTP/1.1" 200 -
+2026-04-28 11:33:10,735 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:10] "[36mGET /static/JsBarcode.all.min.js HTTP/1.1[0m" 304 -
+2026-04-28 11:33:10,742 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:10] "[36mGET /static/main.js?v=24a73204 HTTP/1.1[0m" 304 -
+2026-04-28 11:33:10,774 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:10] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:33:10,806 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 11:33:10,815 [INFO] REQ  GET /favicon.ico  user=1
+2026-04-28 11:33:10,821 [INFO] RESP POST /api/logout  status=200  16ms
+2026-04-28 11:33:10,822 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:10] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:33:10,836 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:33:10,837 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:33:10,839 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:10] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:33:11,191 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:33:11,191 [WARNING] RESP GET /favicon.ico  status=500  375ms
+2026-04-28 11:33:11,192 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:11] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:33:16,571 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:33:16,737 [INFO] RESP POST /api/login  status=200  172ms
+2026-04-28 11:33:16,738 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:16] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:33:16,752 [INFO] REQ  GET /api/me  user=1
+2026-04-28 11:33:16,763 [INFO] RESP GET /api/me  status=200  16ms
+2026-04-28 11:33:16,764 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:16] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:33:16,780 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:33:16,832 [INFO] RESP GET /api/products  status=200  47ms
+2026-04-28 11:33:16,833 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:16] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:33:16,848 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:33:16,877 [INFO] RESP GET /api/transactions  status=200  31ms
+2026-04-28 11:33:16,878 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:16] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:33:16,892 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:33:16,923 [INFO] RESP GET /api/specials  status=200  31ms
+2026-04-28 11:33:16,925 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:16] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:33:16,937 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 11:33:16,947 [INFO] RESP GET /api/settings  status=200  0ms
+2026-04-28 11:33:16,949 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:16] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:33:16,989 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:33:17,024 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:33:17,025 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:17] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:33:17,037 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:33:17,046 [INFO] RESP GET /api/users  status=200  16ms
+2026-04-28 11:33:17,047 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:17] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:33:17,058 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:33:17,109 [INFO] RESP GET /api/stock/ingredients  status=200  63ms
+2026-04-28 11:33:17,110 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:17] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:33:17,123 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:33:17,132 [INFO] RESP GET /api/suppliers  status=200  0ms
+2026-04-28 11:33:17,134 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:17] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:33:17,146 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:33:17,168 [INFO] RESP GET /api/specials  status=200  15ms
+2026-04-28 11:33:17,168 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:17] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:33:18,193 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:33:18,203 [INFO] RESP GET /api/suppliers  status=200  15ms
+2026-04-28 11:33:18,204 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:18] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:33:23,923 [INFO] REQ  GET /  user=1
+2026-04-28 11:33:23,930 [INFO] RESP GET /  status=200  0ms
+2026-04-28 11:33:23,931 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:23] "GET / HTTP/1.1" 200 -
+2026-04-28 11:33:23,980 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:23] "[36mGET /static/JsBarcode.all.min.js HTTP/1.1[0m" 304 -
+2026-04-28 11:33:23,986 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:23] "[36mGET /static/main.js?v=24a73204 HTTP/1.1[0m" 304 -
+2026-04-28 11:33:23,995 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:23] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:33:24,038 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 11:33:24,050 [INFO] RESP POST /api/logout  status=200  16ms
+2026-04-28 11:33:24,050 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:24] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:33:24,065 [INFO] REQ  GET /favicon.ico  user=1
+2026-04-28 11:33:24,069 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:33:24,070 [WARNING] RESP GET /favicon.ico  status=500  0ms
+2026-04-28 11:33:24,071 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:24] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:33:24,072 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:33:24,073 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:33:24,074 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:24] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:33:31,081 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:33:31,238 [INFO] RESP POST /api/login  status=200  157ms
+2026-04-28 11:33:31,239 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:33:31,253 [INFO] REQ  GET /api/me  user=1
+2026-04-28 11:33:31,264 [INFO] RESP GET /api/me  status=200  16ms
+2026-04-28 11:33:31,265 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:33:31,281 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:33:31,309 [INFO] RESP GET /api/products  status=200  16ms
+2026-04-28 11:33:31,311 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:33:31,323 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:33:31,342 [INFO] RESP GET /api/transactions  status=200  31ms
+2026-04-28 11:33:31,343 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:33:31,356 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:33:31,373 [INFO] RESP GET /api/specials  status=200  31ms
+2026-04-28 11:33:31,373 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:33:31,391 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 11:33:31,402 [INFO] RESP GET /api/settings  status=200  0ms
+2026-04-28 11:33:31,402 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:33:31,420 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:33:31,437 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 11:33:31,437 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:33:31,449 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:33:31,456 [INFO] RESP GET /api/users  status=200  15ms
+2026-04-28 11:33:31,457 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:33:31,470 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:33:31,509 [INFO] RESP GET /api/stock/ingredients  status=200  31ms
+2026-04-28 11:33:31,510 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:33:31,524 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:33:31,533 [INFO] RESP GET /api/suppliers  status=200  15ms
+2026-04-28 11:33:31,534 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:33:31,547 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:33:31,566 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 11:33:31,567 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:31] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:33:47,363 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:33:47,389 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:33:47,390 [INFO] 127.0.0.1 - - [28/Apr/2026 11:33:47] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:34:01,408 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:34:01,420 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:34:01,423 [INFO] 127.0.0.1 - - [28/Apr/2026 11:34:01] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:34:31,405 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:34:31,422 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:34:31,424 [INFO] 127.0.0.1 - - [28/Apr/2026 11:34:31] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:35:01,397 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:35:01,415 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:35:01,418 [INFO] 127.0.0.1 - - [28/Apr/2026 11:35:01] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:35:31,408 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:35:31,419 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:35:31,421 [INFO] 127.0.0.1 - - [28/Apr/2026 11:35:31] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:36:01,410 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:36:01,420 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:36:01,422 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:01] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:36:31,402 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:36:31,417 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:36:31,418 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:31] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:36:53,095 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5000
+ * Running on https://192.168.1.4:5000
+2026-04-28 11:36:53,097 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 11:36:56,991 [INFO] REQ  GET /  user=1
+2026-04-28 11:36:57,020 [INFO] RESP GET /  status=200  31ms
+2026-04-28 11:36:57,020 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:57] "GET / HTTP/1.1" 200 -
+2026-04-28 11:36:57,962 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:57] "[36mGET /static/JsBarcode.all.min.js HTTP/1.1[0m" 304 -
+2026-04-28 11:36:58,095 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:58] "[36mGET /static/main.js?v=24a73204 HTTP/1.1[0m" 304 -
+2026-04-28 11:36:58,113 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:58] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:36:58,117 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 11:36:58,129 [INFO] RESP POST /api/logout  status=200  15ms
+2026-04-28 11:36:58,130 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:58] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:36:58,137 [INFO] REQ  GET /favicon.ico  user=1
+2026-04-28 11:36:58,145 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:36:58,146 [WARNING] RESP GET /favicon.ico  status=500  16ms
+2026-04-28 11:36:58,148 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:36:58,148 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:58] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:36:58,149 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:36:58,150 [INFO] 127.0.0.1 - - [28/Apr/2026 11:36:58] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:37:04,144 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:37:04,393 [INFO] RESP POST /api/login  status=200  250ms
+2026-04-28 11:37:04,395 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:37:04,411 [INFO] REQ  GET /api/me  user=1
+2026-04-28 11:37:04,423 [INFO] RESP GET /api/me  status=200  16ms
+2026-04-28 11:37:04,424 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:37:04,443 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:37:04,505 [INFO] RESP GET /api/products  status=200  62ms
+2026-04-28 11:37:04,507 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:37:04,519 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:37:04,543 [INFO] RESP GET /api/transactions  status=200  15ms
+2026-04-28 11:37:04,544 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:37:04,554 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:37:04,586 [INFO] RESP GET /api/specials  status=200  31ms
+2026-04-28 11:37:04,588 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:37:04,623 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 11:37:04,637 [INFO] RESP GET /api/settings  status=200  16ms
+2026-04-28 11:37:04,638 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:37:04,650 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:37:04,678 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:37:04,678 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:37:04,694 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:37:04,703 [INFO] RESP GET /api/users  status=200  15ms
+2026-04-28 11:37:04,705 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:37:04,720 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:37:04,785 [INFO] RESP GET /api/stock/ingredients  status=200  62ms
+2026-04-28 11:37:04,786 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:37:04,800 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:37:04,813 [INFO] RESP GET /api/suppliers  status=200  16ms
+2026-04-28 11:37:04,813 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:37:04,827 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:37:04,848 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 11:37:04,849 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:04] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:37:20,954 [INFO] REQ  GET /api/stats/drilldown  user=1
+2026-04-28 11:37:20,970 [INFO] RESP GET /api/stats/drilldown  status=200  16ms
+2026-04-28 11:37:20,970 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:20] "GET /api/stats/drilldown?start=2026-04-28&end=2026-04-28&type=user&value=2 HTTP/1.1" 200 -
+2026-04-28 11:37:34,615 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:37:34,632 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:37:34,634 [INFO] 127.0.0.1 - - [28/Apr/2026 11:37:34] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:38:04,619 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:38:04,632 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:38:04,633 [INFO] 127.0.0.1 - - [28/Apr/2026 11:38:04] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:38:34,626 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:38:34,639 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:38:34,640 [INFO] 127.0.0.1 - - [28/Apr/2026 11:38:34] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:39:04,607 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:39:04,620 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:39:04,620 [INFO] 127.0.0.1 - - [28/Apr/2026 11:39:04] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:39:34,624 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:39:34,634 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:39:34,634 [INFO] 127.0.0.1 - - [28/Apr/2026 11:39:34] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:40:02,356 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5000
+ * Running on https://192.168.1.4:5000
+2026-04-28 11:40:02,358 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 11:40:04,479 [INFO] REQ  GET /  user=1
+2026-04-28 11:40:04,503 [INFO] RESP GET /  status=200  31ms
+2026-04-28 11:40:04,504 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:04] "GET / HTTP/1.1" 200 -
+2026-04-28 11:40:05,458 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:05] "[36mGET /static/JsBarcode.all.min.js HTTP/1.1[0m" 304 -
+2026-04-28 11:40:05,498 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:05] "GET /static/main.js?v=24a73204 HTTP/1.1" 200 -
+2026-04-28 11:40:05,506 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:05] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:40:05,561 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 11:40:05,569 [INFO] REQ  GET /favicon.ico  user=1
+2026-04-28 11:40:05,577 [INFO] RESP POST /api/logout  status=200  15ms
+2026-04-28 11:40:05,578 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:05] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:40:05,591 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:40:05,592 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:40:05,594 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:05] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:40:05,969 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:40:05,969 [WARNING] RESP GET /favicon.ico  status=500  406ms
+2026-04-28 11:40:05,970 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:05] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:40:10,259 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:40:10,266 [WARNING] RESP POST /api/login  status=401  16ms
+2026-04-28 11:40:10,268 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:10] "[31m[1mPOST /api/login HTTP/1.1[0m" 401 -
+2026-04-28 11:40:14,790 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:40:14,962 [INFO] RESP POST /api/login  status=200  172ms
+2026-04-28 11:40:14,962 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:14] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:40:14,986 [INFO] REQ  GET /api/me  user=1
+2026-04-28 11:40:14,996 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:40:14,997 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:14] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:40:15,018 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:40:15,055 [INFO] RESP GET /api/products  status=200  31ms
+2026-04-28 11:40:15,057 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:40:15,070 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:40:15,089 [INFO] RESP GET /api/transactions  status=200  15ms
+2026-04-28 11:40:15,089 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:40:15,101 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:40:15,120 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 11:40:15,123 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:40:15,135 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 11:40:15,146 [INFO] RESP GET /api/settings  status=200  16ms
+2026-04-28 11:40:15,147 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:40:15,160 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:40:15,184 [INFO] RESP GET /api/stats  status=200  32ms
+2026-04-28 11:40:15,188 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:40:15,201 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:40:15,209 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:40:15,210 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:40:15,222 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:40:15,260 [INFO] RESP GET /api/stock/ingredients  status=200  31ms
+2026-04-28 11:40:15,262 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:40:15,277 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:40:15,287 [INFO] RESP GET /api/suppliers  status=200  15ms
+2026-04-28 11:40:15,288 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:40:15,299 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:40:15,317 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 11:40:15,317 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:15] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:40:40,779 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:40:40,806 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 11:40:40,808 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:40] "GET /api/stats?start=2026-04-27&end=2026-04-27 HTTP/1.1" 200 -
+2026-04-28 11:40:45,144 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:40:45,159 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:40:45,160 [INFO] 127.0.0.1 - - [28/Apr/2026 11:40:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:41:00,464 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:41:00,489 [INFO] RESP GET /api/stats  status=200  32ms
+2026-04-28 11:41:00,490 [INFO] 127.0.0.1 - - [28/Apr/2026 11:41:00] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:41:02,429 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:41:02,461 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:41:02,462 [INFO] 127.0.0.1 - - [28/Apr/2026 11:41:02] "GET /api/stats?start=2026-04-26&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:41:15,147 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:41:15,166 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:41:15,168 [INFO] 127.0.0.1 - - [28/Apr/2026 11:41:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:41:45,149 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:41:45,162 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:41:45,162 [INFO] 127.0.0.1 - - [28/Apr/2026 11:41:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:42:15,148 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:42:15,157 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:42:15,157 [INFO] 127.0.0.1 - - [28/Apr/2026 11:42:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:42:45,140 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:42:45,151 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:42:45,152 [INFO] 127.0.0.1 - - [28/Apr/2026 11:42:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:43:15,155 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:43:15,167 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:43:15,168 [INFO] 127.0.0.1 - - [28/Apr/2026 11:43:15] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:43:45,140 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:43:45,154 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 11:43:45,156 [INFO] 127.0.0.1 - - [28/Apr/2026 11:43:45] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:44:14,097 [INFO] Closed 12 stale sessions on startup
+2026-04-28 11:44:14,131 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5000
+ * Running on https://192.168.1.4:5000
+2026-04-28 11:44:14,131 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 11:44:15,063 [INFO] REQ  GET /  user=1
+2026-04-28 11:44:15,081 [INFO] RESP GET /  status=200  15ms
+2026-04-28 11:44:15,081 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:15] "GET / HTTP/1.1" 200 -
+2026-04-28 11:44:15,375 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:15] "[36mGET /static/main.js?v=24a73204 HTTP/1.1[0m" 304 -
+2026-04-28 11:44:15,398 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:15] "[36mGET /static/JsBarcode.all.min.js HTTP/1.1[0m" 304 -
+2026-04-28 11:44:15,400 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:15] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 11:44:15,414 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 11:44:15,425 [INFO] RESP POST /api/logout  status=200  16ms
+2026-04-28 11:44:15,426 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:15] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 11:44:15,436 [INFO] REQ  GET /favicon.ico  user=1
+2026-04-28 11:44:15,442 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 11:44:15,443 [WARNING] RESP GET /favicon.ico  status=500  0ms
+2026-04-28 11:44:15,446 [INFO] REQ  GET /api/me  user=-
+2026-04-28 11:44:15,447 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:15] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 11:44:15,447 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:44:15,448 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:15] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:44:22,260 [INFO] REQ  POST /api/login  user=-
+2026-04-28 11:44:22,423 [INFO] RESP POST /api/login  status=200  172ms
+2026-04-28 11:44:22,423 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 11:44:22,441 [INFO] REQ  GET /api/me  user=1
+2026-04-28 11:44:22,446 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 11:44:22,448 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 11:44:22,467 [INFO] REQ  GET /api/products  user=1
+2026-04-28 11:44:22,502 [INFO] RESP GET /api/products  status=200  31ms
+2026-04-28 11:44:22,504 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 11:44:22,518 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:44:22,536 [INFO] RESP GET /api/transactions  status=200  15ms
+2026-04-28 11:44:22,536 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 11:44:22,549 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:44:22,572 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 11:44:22,573 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:44:22,585 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 11:44:22,595 [INFO] RESP GET /api/settings  status=200  16ms
+2026-04-28 11:44:22,595 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 11:44:22,608 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:44:22,628 [INFO] RESP GET /api/stats  status=200  15ms
+2026-04-28 11:44:22,632 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:44:22,648 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:44:22,656 [INFO] RESP GET /api/users  status=200  15ms
+2026-04-28 11:44:22,657 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:44:22,669 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:44:22,705 [INFO] RESP GET /api/stock/ingredients  status=200  31ms
+2026-04-28 11:44:22,707 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:44:22,720 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:44:22,729 [INFO] RESP GET /api/suppliers  status=200  0ms
+2026-04-28 11:44:22,729 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:44:22,742 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 11:44:22,761 [INFO] RESP GET /api/specials  status=200  15ms
+2026-04-28 11:44:22,762 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:22] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 11:44:52,177 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:44:52,212 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:44:52,214 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:52] "GET /api/stats?start=2026-04-27&end=2026-04-27 HTTP/1.1" 200 -
+2026-04-28 11:44:52,595 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:44:52,607 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:44:52,607 [INFO] 127.0.0.1 - - [28/Apr/2026 11:44:52] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:45:16,738 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:45:16,769 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:45:16,769 [INFO] 127.0.0.1 - - [28/Apr/2026 11:45:16] "GET /api/stats?start=2026-04-26&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:45:22,600 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:45:22,612 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:45:22,613 [INFO] 127.0.0.1 - - [28/Apr/2026 11:45:22] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:45:34,960 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:45:34,987 [INFO] RESP GET /api/stats  status=200  32ms
+2026-04-28 11:45:34,988 [INFO] 127.0.0.1 - - [28/Apr/2026 11:45:34] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:45:45,001 [INFO] REQ  GET /api/stats/drilldown  user=1
+2026-04-28 11:45:45,012 [INFO] RESP GET /api/stats/drilldown  status=200  16ms
+2026-04-28 11:45:45,017 [INFO] 127.0.0.1 - - [28/Apr/2026 11:45:45] "GET /api/stats/drilldown?start=2026-04-28&end=2026-04-28&type=day&value=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:45:52,598 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:45:52,611 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:45:52,612 [INFO] 127.0.0.1 - - [28/Apr/2026 11:45:52] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:45:58,675 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 11:45:58,694 [INFO] RESP GET /api/transactions  status=200  16ms
+2026-04-28 11:45:58,695 [INFO] 127.0.0.1 - - [28/Apr/2026 11:45:58] "GET /api/transactions?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:46:00,390 [INFO] REQ  GET /api/users  user=1
+2026-04-28 11:46:00,400 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 11:46:00,401 [INFO] 127.0.0.1 - - [28/Apr/2026 11:46:00] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 11:46:02,440 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:46:02,451 [INFO] RESP GET /api/suppliers  status=200  15ms
+2026-04-28 11:46:02,452 [INFO] 127.0.0.1 - - [28/Apr/2026 11:46:02] "GET /api/suppliers HTTP/1.1" 200 -
+2026-04-28 11:46:19,007 [INFO] REQ  GET /api/stats/drilldown  user=1
+2026-04-28 11:46:19,019 [INFO] RESP GET /api/stats/drilldown  status=200  16ms
+2026-04-28 11:46:19,020 [INFO] 127.0.0.1 - - [28/Apr/2026 11:46:19] "GET /api/stats/drilldown?start=2026-04-28&end=2026-04-28&type=day&value=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:46:22,605 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:46:22,617 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 11:46:22,618 [INFO] 127.0.0.1 - - [28/Apr/2026 11:46:22] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:46:34,140 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:46:34,183 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 11:46:34,184 [INFO] 127.0.0.1 - - [28/Apr/2026 11:46:34] "GET /api/stats?start=2026-04-26&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:46:38,562 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 11:46:38,607 [INFO] RESP GET /api/stats  status=200  47ms
+2026-04-28 11:46:38,607 [INFO] 127.0.0.1 - - [28/Apr/2026 11:46:38] "GET /api/stats?start=2026-04-01&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 11:46:52,607 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 11:46:52,617 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 11:46:52,617 [INFO] 127.0.0.1 - - [28/Apr/2026 11:46:52] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 11:47:01,244 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 11:47:01,284 [INFO] RESP GET /api/stock/ingredients  status=200  46ms
+2026-04-28 11:47:01,289 [INFO] 127.0.0.1 - - [28/Apr/2026 11:47:01] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 11:47:10,551 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 11:47:10,562 [INFO] RESP GET /api/suppliers  status=200  16ms
+2026-04-28 11:47:10,564 [INFO] 127.0.0.1 - - [28/Apr/2026 11:47:10] "GET /api/suppliers HTTP/1.1" 200 -
