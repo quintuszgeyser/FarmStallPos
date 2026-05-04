@@ -39,7 +39,7 @@ function Get-LocalHash {
 
 function Start-App {
     Log "Starting app ($Env)..."
-    $global:AppProcess = Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$StartScript`"" -WorkingDirectory $ScriptDir -PassThru
+    $global:AppProcess = Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$StartScript`"" -WorkingDirectory $ScriptDir -PassThru
     Log "App started (pid $($global:AppProcess.Id))."
 }
 
