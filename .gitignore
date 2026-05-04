@@ -1,1 +1,11 @@
-[]
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+logs/
+*.log
+cert.pem
+key.pem
+_exports/
+.claude-flow/
+.claude/settings.local.json
