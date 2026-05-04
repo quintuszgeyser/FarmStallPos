@@ -13,8 +13,8 @@ param(
     [int]$PollSeconds = 60
 )
 
-$ErrorActionPreference = "Stop"
-$ScriptDir = $PSScriptRoot
+$ErrorActionPreference = "Continue"
+$ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } else { "C:\Users\Quintusz\farm_pos_web" }
 
 $Branch      = if ($Env -eq "prod") { "production" } else { "main" }
 $StartScript = if ($Env -eq "prod") { "$ScriptDir\start-prod.ps1" } else { "$ScriptDir\start-qa.ps1" }
