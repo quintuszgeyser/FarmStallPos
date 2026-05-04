@@ -39,20 +39,15 @@ function Get-LocalHash {
 
 function Start-App {
     Log "Starting app ($Env)..."
-    $script = $StartScript
-    $global:AppJob = Start-Job -ScriptBlock {
-        param($s)
-        powershell -ExecutionPolicy Bypass -File $s
-    } -ArgumentList $script
-    Log "App started (job id $($global:AppJob.Id))."
+    $global:AppProcess = Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$StartScript`"" -WorkingDirectory $ScriptDir -PassThru
+    Log "App started (pid $($global:AppProcess.Id))."
 }
 
 function Stop-App {
-    if ($global:AppJob) {
-        Log "Stopping app (job id $($global:AppJob.Id))..."
-        Stop-Job $global:AppJob -ErrorAction SilentlyContinue
-        Remove-Job $global:AppJob -Force -ErrorAction SilentlyContinue
-        $global:AppJob = $null
+    if ($global:AppProcess -and -not $global:AppProcess.HasExited) {
+        Log "Stopping app (pid $($global:AppProcess.Id))..."
+        Stop-Process -Id $global:AppProcess.Id -Force -ErrorAction SilentlyContinue
+        $global:AppProcess = $null
     }
     $port = if ($Env -eq "prod") { 5443 } else { 5000 }
     $pids = (netstat -ano | Select-String ":$port ") |
