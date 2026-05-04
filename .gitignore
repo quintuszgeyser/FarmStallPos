@@ -7,3 +7,5 @@ logs/
 cert.pem
 key.pem
 _exports/
+.claude-flow/
+.claude/settings.local.json
