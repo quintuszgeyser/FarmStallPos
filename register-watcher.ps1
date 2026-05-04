@@ -14,21 +14,17 @@ $TaskName  = "FarmPOS-Watcher-$Env"
 $ScriptDir = $PSScriptRoot
 $Watcher   = "$ScriptDir\watch-deploy.ps1"
 
-# Remove existing task if re-registering
 if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
     Write-Host "Removing existing task '$TaskName'..." -ForegroundColor Yellow
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
 }
 
-$action  = New-ScheduledTaskAction `
+$action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
     -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Watcher`" -Env $Env" `
     -WorkingDirectory $ScriptDir
 
-# Trigger: at system startup + immediately now
-$triggers = @(
-    $(New-ScheduledTaskTrigger -AtStartup)
-)
+$trigger = New-ScheduledTaskTrigger -AtStartup
 
 $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
@@ -36,21 +32,23 @@ $settings = New-ScheduledTaskSettingsSet `
     -StopIfGoingOnBatteries:$false `
     -DisallowStartIfOnBatteries:$false
 
-# Run as current user (interactive session so postgres can start)
 $principal = New-ScheduledTaskPrincipal `
     -UserId "$env:USERDOMAIN\$env:USERNAME" `
     -LogonType Interactive `
     -RunLevel Highest
 
+$desc = "Farm POS auto-deploy watcher ($Env) - polls GitHub every 60s"
+
 Register-ScheduledTask `
     -TaskName $TaskName `
     -Action $action `
-    -Trigger $triggers `
+    -Trigger $trigger `
     -Settings $settings `
     -Principal $principal `
-    -Description "Farm POS auto-deploy watcher ($Env) — polls GitHub every 60s"
+    -Description $desc
 
 Write-Host ""
 Write-Host "Task '$TaskName' registered. Starting it now..." -ForegroundColor Green
 Start-ScheduledTask -TaskName $TaskName
-Write-Host "Done. The watcher is running. Check logs\watch-deploy-$Env.log for status." -ForegroundColor Cyan
+$logPath = "logs\watch-deploy-$Env.log"
+Write-Host "Done. Check $logPath for status." -ForegroundColor Cyan
