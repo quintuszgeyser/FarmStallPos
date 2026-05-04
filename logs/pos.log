@@ -18512,3 +18512,1382 @@ werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on 
 2026-04-28 15:53:44,180 [INFO] REQ  GET /api/kitchen/orders/count  user=1
 2026-04-28 15:53:44,197 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
 2026-04-28 15:53:44,199 [INFO] 192.168.1.4 - - [28/Apr/2026 15:53:44] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 15:58:25,013 [WARNING] Stale session cleanup skipped: (psycopg.errors.UndefinedColumn) column "last_active" does not exist
+LINE 5:                   AND (last_active IS NULL OR last_active < ...
+                               ^
+[SQL: 
+                UPDATE user_sessions
+                SET logged_out = COALESCE(last_active, logged_in)
+                WHERE logged_out IS NULL
+                  AND (last_active IS NULL OR last_active < %(cutoff)s)
+            ]
+[parameters: {'cutoff': datetime.datetime(2026, 4, 28, 11, 58, 24, 611528)}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+2026-04-28 15:58:25,053 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5443
+ * Running on https://192.168.1.4:5443
+2026-04-28 15:58:25,054 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 15:58:33,353 [INFO] REQ  GET /  user=-
+2026-04-28 15:58:33,391 [INFO] RESP GET /  status=200  31ms
+2026-04-28 15:58:33,394 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:33] "GET / HTTP/1.1" 200 -
+2026-04-28 15:58:34,375 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:34] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 15:58:34,486 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:34] "GET /static/JsBarcode.all.min.js HTTP/1.1" 200 -
+2026-04-28 15:58:34,496 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:34] "GET /static/main.js?v=20260428b HTTP/1.1" 200 -
+2026-04-28 15:58:34,517 [INFO] REQ  POST /api/logout  user=-
+2026-04-28 15:58:34,519 [INFO] RESP POST /api/logout  status=200  0ms
+2026-04-28 15:58:34,521 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:34] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 15:58:34,533 [INFO] REQ  GET /favicon.ico  user=-
+2026-04-28 15:58:34,545 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 15:58:34,547 [INFO] REQ  GET /api/me  user=-
+2026-04-28 15:58:34,548 [WARNING] RESP GET /favicon.ico  status=500  15ms
+2026-04-28 15:58:34,550 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 15:58:34,553 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:34] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 15:58:34,553 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:34] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 15:58:42,687 [INFO] REQ  POST /api/login  user=-
+2026-04-28 15:58:42,878 [ERROR] UNHANDLED EXCEPTION  POST /api/login
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column "last_active" of relation "user_sessions" does not exist
+LINE 1: ...TO user_sessions (user_id, logged_in, logged_out, last_activ...
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1015, in api_login
+    db.session.commit()
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\scoping.py", line 597, in commit
+    return self._proxied.commit()
+           ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2030, in commit
+    trans.commit(_to_root=True)
+  File "<string>", line 2, in commit
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 1311, in commit
+    self._prepare_impl()
+  File "<string>", line 2, in _prepare_impl
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\state_changes.py", line 137, in _go
+    ret_value = fn(self, *arg, **kw)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 1286, in _prepare_impl
+    self.session.flush()
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 4331, in flush
+    self._flush(objects)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 4466, in _flush
+    with util.safe_reraise():
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\util\langhelpers.py", line 224, in __exit__
+    raise exc_value.with_traceback(exc_tb)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 4427, in _flush
+    flush_context.execute()
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py", line 466, in execute
+    rec.execute(self)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\unitofwork.py", line 642, in execute
+    util.preloaded.orm_persistence.save_obj(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\persistence.py", line 93, in save_obj
+    _emit_insert_statements(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\persistence.py", line 1233, in _emit_insert_statements
+    result = connection.execute(
+             ^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column "last_active" of relation "user_sessions" does not exist
+LINE 1: ...TO user_sessions (user_id, logged_in, logged_out, last_activ...
+                                                             ^
+[SQL: INSERT INTO user_sessions (user_id, logged_in, logged_out, last_active) VALUES (%(user_id)s::INTEGER, %(logged_in)s::TIMESTAMP WITHOUT TIME ZONE, %(logged_out)s::TIMESTAMP WITHOUT TIME ZONE, %(last_active)s::TIMESTAMP WITHOUT TIME ZONE) RETURNING user_sessions.id]
+[parameters: {'user_id': 1, 'logged_in': datetime.datetime(2026, 4, 28, 13, 58, 42, 856059), 'logged_out': None, 'last_active': None}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 15:58:42,878 [WARNING] RESP POST /api/login  status=500  188ms
+2026-04-28 15:58:42,878 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:42] "[35m[1mPOST /api/login HTTP/1.1[0m" 500 -
+2026-04-28 15:58:50,981 [INFO] REQ  POST /api/login  user=1
+2026-04-28 15:58:50,995 [ERROR] UNHANDLED EXCEPTION  POST /api/login
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 868, in full_dispatch_request
+    rv = self.preprocess_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 1243, in preprocess_request
+    rv = self.ensure_sync(before_func)()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 95, in _log_request
+    ).order_by(UserSession.logged_in.desc()).first()
+                                             ^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2759, in first
+    return self.limit(1)._iter().first()  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+[SQL: SELECT user_sessions.id AS user_sessions_id, user_sessions.user_id AS user_sessions_user_id, user_sessions.logged_in AS user_sessions_logged_in, user_sessions.logged_out AS user_sessions_logged_out, user_sessions.last_active AS user_sessions_last_active 
+FROM user_sessions 
+WHERE user_sessions.user_id = %(user_id_1)s::INTEGER AND user_sessions.logged_out IS NULL ORDER BY user_sessions.logged_in DESC 
+ LIMIT %(param_1)s::INTEGER]
+[parameters: {'user_id_1': 1, 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 15:58:50,996 [WARNING] RESP POST /api/login  status=500  16ms
+2026-04-28 15:58:50,997 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:50] "[35m[1mPOST /api/login HTTP/1.1[0m" 500 -
+2026-04-28 15:58:58,293 [INFO] REQ  POST /api/login  user=1
+2026-04-28 15:58:58,300 [ERROR] UNHANDLED EXCEPTION  POST /api/login
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 868, in full_dispatch_request
+    rv = self.preprocess_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 1243, in preprocess_request
+    rv = self.ensure_sync(before_func)()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 95, in _log_request
+    ).order_by(UserSession.logged_in.desc()).first()
+                                             ^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2759, in first
+    return self.limit(1)._iter().first()  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+[SQL: SELECT user_sessions.id AS user_sessions_id, user_sessions.user_id AS user_sessions_user_id, user_sessions.logged_in AS user_sessions_logged_in, user_sessions.logged_out AS user_sessions_logged_out, user_sessions.last_active AS user_sessions_last_active 
+FROM user_sessions 
+WHERE user_sessions.user_id = %(user_id_1)s::INTEGER AND user_sessions.logged_out IS NULL ORDER BY user_sessions.logged_in DESC 
+ LIMIT %(param_1)s::INTEGER]
+[parameters: {'user_id_1': 1, 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 15:58:58,302 [WARNING] RESP POST /api/login  status=500  16ms
+2026-04-28 15:58:58,303 [INFO] 192.168.1.4 - - [28/Apr/2026 15:58:58] "[35m[1mPOST /api/login HTTP/1.1[0m" 500 -
+2026-04-28 15:59:20,386 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 15:59:20,394 [ERROR] UNHANDLED EXCEPTION  GET /api/kitchen/orders/count
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 868, in full_dispatch_request
+    rv = self.preprocess_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 1243, in preprocess_request
+    rv = self.ensure_sync(before_func)()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 95, in _log_request
+    ).order_by(UserSession.logged_in.desc()).first()
+                                             ^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2759, in first
+    return self.limit(1)._iter().first()  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+[SQL: SELECT user_sessions.id AS user_sessions_id, user_sessions.user_id AS user_sessions_user_id, user_sessions.logged_in AS user_sessions_logged_in, user_sessions.logged_out AS user_sessions_logged_out, user_sessions.last_active AS user_sessions_last_active 
+FROM user_sessions 
+WHERE user_sessions.user_id = %(user_id_1)s::INTEGER AND user_sessions.logged_out IS NULL ORDER BY user_sessions.logged_in DESC 
+ LIMIT %(param_1)s::INTEGER]
+[parameters: {'user_id_1': 1, 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 15:59:20,394 [WARNING] RESP GET /api/kitchen/orders/count  status=500  0ms
+2026-04-28 15:59:20,394 [INFO] 192.168.1.4 - - [28/Apr/2026 15:59:20] "[35m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 500 -
+2026-04-28 16:00:20,374 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:00:20,385 [ERROR] UNHANDLED EXCEPTION  GET /api/kitchen/orders/count
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 868, in full_dispatch_request
+    rv = self.preprocess_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 1243, in preprocess_request
+    rv = self.ensure_sync(before_func)()
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 95, in _log_request
+    ).order_by(UserSession.logged_in.desc()).first()
+                                             ^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2759, in first
+    return self.limit(1)._iter().first()  # type: ignore
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column user_sessions.last_active does not exist
+LINE 1: ..._sessions.logged_out AS user_sessions_logged_out, user_sessi...
+                                                             ^
+[SQL: SELECT user_sessions.id AS user_sessions_id, user_sessions.user_id AS user_sessions_user_id, user_sessions.logged_in AS user_sessions_logged_in, user_sessions.logged_out AS user_sessions_logged_out, user_sessions.last_active AS user_sessions_last_active 
+FROM user_sessions 
+WHERE user_sessions.user_id = %(user_id_1)s::INTEGER AND user_sessions.logged_out IS NULL ORDER BY user_sessions.logged_in DESC 
+ LIMIT %(param_1)s::INTEGER]
+[parameters: {'user_id_1': 1, 'param_1': 1}]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:00:20,387 [WARNING] RESP GET /api/kitchen/orders/count  status=500  15ms
+2026-04-28 16:00:20,389 [INFO] 192.168.1.4 - - [28/Apr/2026 16:00:20] "[35m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 500 -
+2026-04-28 16:01:20,373 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:01:20,398 [INFO] RESP GET /api/kitchen/orders/count  status=200  31ms
+2026-04-28 16:01:20,399 [INFO] 192.168.1.4 - - [28/Apr/2026 16:01:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:02:20,379 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:02:20,393 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:02:20,393 [INFO] 192.168.1.4 - - [28/Apr/2026 16:02:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:03:20,388 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:03:20,399 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:03:20,399 [INFO] 192.168.1.4 - - [28/Apr/2026 16:03:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:04:20,382 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:04:20,396 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:04:20,398 [INFO] 192.168.1.4 - - [28/Apr/2026 16:04:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:05:11,792 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5443
+ * Running on https://192.168.1.4:5443
+2026-04-28 16:05:11,792 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 16:05:20,373 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:05:20,394 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:05:20,395 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:05:35,215 [INFO] REQ  POST /api/login  user=1
+2026-04-28 16:05:35,313 [INFO] RESP POST /api/login  status=200  94ms
+2026-04-28 16:05:35,315 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 16:05:35,330 [INFO] REQ  GET /api/me  user=1
+2026-04-28 16:05:35,333 [INFO] RESP GET /api/me  status=200  15ms
+2026-04-28 16:05:35,335 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:05:35,355 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:05:35,371 [INFO] RESP GET /api/products  status=200  16ms
+2026-04-28 16:05:35,373 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:05:35,391 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 16:05:35,404 [INFO] RESP GET /api/transactions  status=200  16ms
+2026-04-28 16:05:35,405 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 16:05:35,416 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:05:35,425 [INFO] RESP GET /api/specials  status=200  0ms
+2026-04-28 16:05:35,426 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:05:35,438 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 16:05:35,448 [INFO] RESP GET /api/settings  status=200  16ms
+2026-04-28 16:05:35,448 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 16:05:35,459 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 16:05:35,480 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 16:05:35,480 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 16:05:35,495 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:05:35,503 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 16:05:35,503 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:05:35,517 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:05:35,524 [INFO] RESP GET /api/stock/ingredients  status=200  16ms
+2026-04-28 16:05:35,525 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:05:35,535 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:05:35,552 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:05:35,552 [WARNING] RESP GET /api/suppliers  status=500  31ms
+2026-04-28 16:05:35,553 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:05:35,562 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:05:35,569 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 16:05:35,570 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:35] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:05:38,695 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:05:38,706 [INFO] RESP GET /api/products  status=200  0ms
+2026-04-28 16:05:38,707 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:38] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:05:38,723 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:05:38,735 [INFO] RESP GET /api/stock/ingredients  status=200  0ms
+2026-04-28 16:05:38,736 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:38] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:05:39,804 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:05:39,811 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 16:05:39,812 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:39] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:05:41,289 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:05:41,299 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:05:41,300 [WARNING] RESP GET /api/suppliers  status=500  0ms
+2026-04-28 16:05:41,300 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:41] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:05:44,480 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:05:44,491 [INFO] RESP GET /api/products  status=200  16ms
+2026-04-28 16:05:44,491 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:44] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:05:44,509 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:05:44,521 [INFO] RESP GET /api/stock/ingredients  status=200  16ms
+2026-04-28 16:05:44,522 [INFO] 192.168.1.4 - - [28/Apr/2026 16:05:44] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:06:05,470 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:06:05,487 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:06:05,488 [INFO] 192.168.1.4 - - [28/Apr/2026 16:06:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:06:20,388 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:06:20,401 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:06:20,402 [INFO] 192.168.1.4 - - [28/Apr/2026 16:06:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:06:35,453 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:06:35,464 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:06:35,465 [INFO] 192.168.1.4 - - [28/Apr/2026 16:06:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:07:05,459 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:07:05,468 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:07:05,469 [INFO] 192.168.1.4 - - [28/Apr/2026 16:07:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:07:20,374 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:07:20,385 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:07:20,387 [INFO] 192.168.1.4 - - [28/Apr/2026 16:07:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:07:35,459 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:07:35,469 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:07:35,470 [INFO] 192.168.1.4 - - [28/Apr/2026 16:07:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:08:05,453 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:08:05,464 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:08:05,465 [INFO] 192.168.1.4 - - [28/Apr/2026 16:08:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:08:20,370 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:08:20,382 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:08:20,383 [INFO] 192.168.1.4 - - [28/Apr/2026 16:08:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:08:35,457 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:08:35,470 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:08:35,470 [INFO] 192.168.1.4 - - [28/Apr/2026 16:08:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:09:05,463 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:09:05,475 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:09:05,475 [INFO] 192.168.1.4 - - [28/Apr/2026 16:09:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:09:20,374 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:09:20,389 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:09:20,390 [INFO] 192.168.1.4 - - [28/Apr/2026 16:09:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:09:35,458 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:09:35,470 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:09:35,471 [INFO] 192.168.1.4 - - [28/Apr/2026 16:09:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:10:05,452 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:10:05,469 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:10:05,469 [INFO] 192.168.1.4 - - [28/Apr/2026 16:10:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:10:20,365 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:10:20,382 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:10:20,385 [INFO] 192.168.1.4 - - [28/Apr/2026 16:10:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:10:35,445 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:10:35,455 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:10:35,456 [INFO] 192.168.1.4 - - [28/Apr/2026 16:10:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:11:05,451 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:11:05,460 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:11:05,462 [INFO] 192.168.1.4 - - [28/Apr/2026 16:11:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:11:20,382 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:11:20,392 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:11:20,392 [INFO] 192.168.1.4 - - [28/Apr/2026 16:11:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:11:35,441 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:11:35,448 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:11:35,449 [INFO] 192.168.1.4 - - [28/Apr/2026 16:11:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:12:05,448 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:12:05,457 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:12:05,458 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:12:20,362 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:12:20,370 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:12:20,370 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:12:33,387 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:12:33,397 [INFO] RESP GET /api/stock/ingredients  status=200  16ms
+2026-04-28 16:12:33,399 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:33] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:12:35,452 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:12:35,465 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:12:35,468 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:12:37,111 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:12:37,124 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:12:37,125 [WARNING] RESP GET /api/suppliers  status=500  16ms
+2026-04-28 16:12:37,126 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:37] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:12:37,979 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:12:37,993 [INFO] RESP GET /api/users  status=200  16ms
+2026-04-28 16:12:37,995 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:37] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:12:59,586 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 16:12:59,596 [INFO] RESP POST /api/logout  status=200  0ms
+2026-04-28 16:12:59,598 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:59] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 16:12:59,615 [INFO] REQ  GET /api/me  user=-
+2026-04-28 16:12:59,617 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 16:12:59,617 [INFO] 192.168.1.4 - - [28/Apr/2026 16:12:59] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:13:00,829 [INFO] REQ  POST /api/login  user=-
+2026-04-28 16:13:01,000 [INFO] RESP POST /api/login  status=200  172ms
+2026-04-28 16:13:01,002 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 16:13:01,016 [INFO] REQ  GET /api/me  user=1
+2026-04-28 16:13:01,020 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 16:13:01,021 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:13:01,043 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:13:01,052 [INFO] RESP GET /api/products  status=200  16ms
+2026-04-28 16:13:01,053 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:13:01,065 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 16:13:01,076 [INFO] RESP GET /api/transactions  status=200  16ms
+2026-04-28 16:13:01,077 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 16:13:01,089 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:13:01,096 [INFO] RESP GET /api/specials  status=200  0ms
+2026-04-28 16:13:01,097 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:13:01,107 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 16:13:01,115 [INFO] RESP GET /api/settings  status=200  16ms
+2026-04-28 16:13:01,116 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 16:13:01,126 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 16:13:01,141 [INFO] RESP GET /api/stats  status=200  15ms
+2026-04-28 16:13:01,141 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 16:13:01,152 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:13:01,159 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 16:13:01,159 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:13:01,171 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:13:01,178 [INFO] RESP GET /api/stock/ingredients  status=200  16ms
+2026-04-28 16:13:01,178 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:13:01,189 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:13:01,199 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:13:01,199 [WARNING] RESP GET /api/suppliers  status=500  16ms
+2026-04-28 16:13:01,201 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:13:01,211 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:13:01,220 [INFO] RESP GET /api/specials  status=200  0ms
+2026-04-28 16:13:01,221 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:01] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:13:02,813 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:13:02,825 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:13:02,826 [WARNING] RESP GET /api/suppliers  status=500  16ms
+2026-04-28 16:13:02,826 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:02] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:13:04,537 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:13:04,546 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 16:13:04,546 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:04] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:13:05,444 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:13:05,456 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:13:05,456 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:13:06,061 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:13:06,072 [INFO] RESP GET /api/products  status=200  16ms
+2026-04-28 16:13:06,072 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:06] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:13:06,083 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:13:06,092 [INFO] RESP GET /api/stock/ingredients  status=200  0ms
+2026-04-28 16:13:06,093 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:06] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:13:20,401 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:13:20,421 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:13:20,422 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:13:35,457 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:13:35,473 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:13:35,475 [INFO] 192.168.1.4 - - [28/Apr/2026 16:13:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:14:05,454 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:14:05,466 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:14:05,467 [INFO] 192.168.1.4 - - [28/Apr/2026 16:14:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:14:20,378 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:14:20,395 [INFO] RESP GET /api/kitchen/orders/count  status=200  31ms
+2026-04-28 16:14:20,404 [INFO] 192.168.1.4 - - [28/Apr/2026 16:14:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:14:35,469 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:14:35,483 [INFO] RESP GET /api/kitchen/orders/count  status=200  16ms
+2026-04-28 16:14:35,483 [INFO] 192.168.1.4 - - [28/Apr/2026 16:14:35] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:15:05,455 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:15:05,471 [INFO] RESP GET /api/kitchen/orders/count  status=200  15ms
+2026-04-28 16:15:05,473 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:05] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:15:09,318 [INFO] REQ  GET /  user=1
+2026-04-28 16:15:09,364 [INFO] RESP GET /  status=200  47ms
+2026-04-28 16:15:09,364 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:09] "GET / HTTP/1.1" 200 -
+2026-04-28 16:15:10,331 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:10] "[36mGET /static/JsBarcode.all.min.js HTTP/1.1[0m" 304 -
+2026-04-28 16:15:10,397 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:10] "[36mGET /static/main.js?v=20260428b HTTP/1.1[0m" 304 -
+2026-04-28 16:15:10,422 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 16:15:10,435 [INFO] RESP POST /api/logout  status=200  16ms
+2026-04-28 16:15:10,435 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:10] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 16:15:10,437 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:10] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 16:15:10,454 [INFO] REQ  GET /favicon.ico  user=1
+2026-04-28 16:15:10,460 [INFO] REQ  GET /api/me  user=-
+2026-04-28 16:15:10,461 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 16:15:10,462 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 16:15:10,463 [WARNING] RESP GET /favicon.ico  status=500  15ms
+2026-04-28 16:15:10,466 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:10] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:15:10,467 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:10] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 16:15:19,493 [INFO] REQ  POST /api/login  user=-
+2026-04-28 16:15:19,675 [INFO] RESP POST /api/login  status=200  171ms
+2026-04-28 16:15:19,677 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 16:15:19,690 [INFO] REQ  GET /api/me  user=1
+2026-04-28 16:15:19,693 [INFO] RESP GET /api/me  status=200  16ms
+2026-04-28 16:15:19,695 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:15:19,714 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:15:19,719 [INFO] RESP GET /api/products  status=200  0ms
+2026-04-28 16:15:19,720 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:15:19,734 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 16:15:19,747 [INFO] RESP GET /api/transactions  status=200  16ms
+2026-04-28 16:15:19,748 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 16:15:19,759 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:15:19,766 [INFO] RESP GET /api/specials  status=200  0ms
+2026-04-28 16:15:19,766 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:15:19,775 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 16:15:19,782 [INFO] RESP GET /api/settings  status=200  0ms
+2026-04-28 16:15:19,782 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 16:15:19,793 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 16:15:19,802 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 16:15:19,803 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 16:15:19,816 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:15:19,824 [INFO] RESP GET /api/users  status=200  16ms
+2026-04-28 16:15:19,825 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:15:19,837 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:15:19,845 [INFO] RESP GET /api/stock/ingredients  status=200  0ms
+2026-04-28 16:15:19,845 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:15:19,857 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:15:19,866 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:15:19,867 [WARNING] RESP GET /api/suppliers  status=500  16ms
+2026-04-28 16:15:19,867 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:15:19,877 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:15:19,883 [INFO] RESP GET /api/specials  status=200  15ms
+2026-04-28 16:15:19,884 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:19] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:15:20,370 [INFO] REQ  GET /api/kitchen/orders/count  user=1
+2026-04-28 16:15:20,377 [INFO] RESP GET /api/kitchen/orders/count  status=200  0ms
+2026-04-28 16:15:20,378 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:20] "GET /api/kitchen/orders/count HTTP/1.1" 200 -
+2026-04-28 16:15:34,066 [INFO] REQ  GET /api/stats/drilldown/profit  user=1
+2026-04-28 16:15:34,081 [INFO] RESP GET /api/stats/drilldown/profit  status=200  16ms
+2026-04-28 16:15:34,082 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:34] "GET /api/stats/drilldown/profit?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 16:15:37,288 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 16:15:37,303 [INFO] RESP GET /api/stats  status=200  16ms
+2026-04-28 16:15:37,303 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:37] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 16:15:41,401 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 16:15:41,412 [INFO] RESP POST /api/logout  status=200  15ms
+2026-04-28 16:15:41,414 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:41] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 16:15:41,435 [INFO] REQ  GET /api/me  user=-
+2026-04-28 16:15:41,436 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 16:15:41,437 [INFO] 192.168.1.4 - - [28/Apr/2026 16:15:41] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:19:38,094 [INFO] [31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on https://127.0.0.1:5443
+ * Running on https://192.168.1.4:5443
+2026-04-28 16:19:38,095 [INFO] [33mPress CTRL+C to quit[0m
+2026-04-28 16:20:20,378 [INFO] REQ  GET /api/kitchen/orders/count  user=-
+2026-04-28 16:20:20,379 [WARNING] RESP GET /api/kitchen/orders/count  status=401  0ms
+2026-04-28 16:20:20,380 [INFO] 192.168.1.4 - - [28/Apr/2026 16:20:20] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
+2026-04-28 16:20:20,391 [INFO] REQ  GET /api/kitchen/orders/count  user=-
+2026-04-28 16:20:20,395 [WARNING] RESP GET /api/kitchen/orders/count  status=401  16ms
+2026-04-28 16:20:20,401 [INFO] 192.168.1.4 - - [28/Apr/2026 16:20:20] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
+2026-04-28 16:20:49,305 [INFO] REQ  GET /  user=-
+2026-04-28 16:20:49,318 [INFO] RESP GET /  status=200  16ms
+2026-04-28 16:20:49,319 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:49] "GET / HTTP/1.1" 200 -
+2026-04-28 16:20:49,518 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:49] "GET /static/JsBarcode.all.min.js HTTP/1.1" 200 -
+2026-04-28 16:20:49,569 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:49] "GET /static/main.js?v=20260428b HTTP/1.1" 200 -
+2026-04-28 16:20:49,716 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:49] "GET /static/manifest.json HTTP/1.1" 200 -
+2026-04-28 16:20:50,395 [INFO] REQ  POST /api/logout  user=-
+2026-04-28 16:20:50,396 [INFO] RESP POST /api/logout  status=200  16ms
+2026-04-28 16:20:50,396 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:50] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 16:20:50,657 [INFO] REQ  GET /favicon.ico  user=-
+2026-04-28 16:20:50,661 [INFO] REQ  GET /api/me  user=-
+2026-04-28 16:20:50,662 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 16:20:50,663 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:50] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:20:50,663 [ERROR] UNHANDLED EXCEPTION  GET /favicon.ico
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 844, in dispatch_request
+    self.raise_routing_exception(req)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 453, in raise_routing_exception
+    raise request.routing_exception  # type: ignore[misc]
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\ctx.py", line 362, in match_request
+    result = self.url_adapter.match(return_rule=True)  # type: ignore
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\werkzeug\routing\map.py", line 629, in match
+    raise NotFound() from None
+werkzeug.exceptions.NotFound: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+
+2026-04-28 16:20:50,664 [WARNING] RESP GET /favicon.ico  status=500  15ms
+2026-04-28 16:20:50,665 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:50] "[35m[1mGET /favicon.ico HTTP/1.1[0m" 500 -
+2026-04-28 16:20:50,693 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:50] "GET /static/sw.js HTTP/1.1" 200 -
+2026-04-28 16:20:50,728 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:50] "GET /static/icons/icon-192.png HTTP/1.1" 200 -
+2026-04-28 16:20:51,039 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:51] "GET /static/icons/icon-512.png HTTP/1.1" 200 -
+2026-04-28 16:20:51,039 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:51] "[36mGET /static/manifest.json HTTP/1.1[0m" 304 -
+2026-04-28 16:20:58,750 [INFO] REQ  POST /api/login  user=-
+2026-04-28 16:20:58,835 [INFO] RESP POST /api/login  status=200  93ms
+2026-04-28 16:20:58,836 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:58] "POST /api/login HTTP/1.1" 200 -
+2026-04-28 16:20:59,017 [INFO] REQ  GET /api/me  user=1
+2026-04-28 16:20:59,021 [INFO] RESP GET /api/me  status=200  16ms
+2026-04-28 16:20:59,022 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:59] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:20:59,149 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:20:59,162 [INFO] RESP GET /api/products  status=200  15ms
+2026-04-28 16:20:59,163 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:59] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:20:59,388 [INFO] REQ  GET /api/transactions  user=1
+2026-04-28 16:20:59,406 [INFO] RESP GET /api/transactions  status=200  16ms
+2026-04-28 16:20:59,407 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:59] "GET /api/transactions HTTP/1.1" 200 -
+2026-04-28 16:20:59,480 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:20:59,492 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 16:20:59,493 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:59] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:20:59,728 [INFO] REQ  GET /api/settings  user=1
+2026-04-28 16:20:59,746 [INFO] RESP GET /api/settings  status=200  16ms
+2026-04-28 16:20:59,749 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:59] "GET /api/settings HTTP/1.1" 200 -
+2026-04-28 16:20:59,813 [INFO] REQ  GET /api/stats  user=1
+2026-04-28 16:20:59,837 [INFO] RESP GET /api/stats  status=200  31ms
+2026-04-28 16:20:59,837 [INFO] 127.0.0.1 - - [28/Apr/2026 16:20:59] "GET /api/stats?start=2026-04-28&end=2026-04-28 HTTP/1.1" 200 -
+2026-04-28 16:21:00,069 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:21:00,077 [INFO] RESP GET /api/users  status=200  0ms
+2026-04-28 16:21:00,078 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:00] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:21:00,154 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:21:00,163 [INFO] RESP GET /api/stock/ingredients  status=200  15ms
+2026-04-28 16:21:00,164 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:00] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:21:00,397 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:21:00,420 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:21:00,422 [WARNING] RESP GET /api/suppliers  status=500  15ms
+2026-04-28 16:21:00,423 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:00] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:21:00,485 [INFO] REQ  GET /api/specials  user=1
+2026-04-28 16:21:00,493 [INFO] RESP GET /api/specials  status=200  16ms
+2026-04-28 16:21:00,494 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:00] "GET /api/specials HTTP/1.1" 200 -
+2026-04-28 16:21:02,000 [INFO] REQ  GET /api/products  user=1
+2026-04-28 16:21:02,009 [INFO] RESP GET /api/products  status=200  15ms
+2026-04-28 16:21:02,010 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:02] "GET /api/products?full=1 HTTP/1.1" 200 -
+2026-04-28 16:21:02,335 [INFO] REQ  GET /api/stock/ingredients  user=1
+2026-04-28 16:21:02,343 [INFO] RESP GET /api/stock/ingredients  status=200  0ms
+2026-04-28 16:21:02,344 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:02] "GET /api/stock/ingredients HTTP/1.1" 200 -
+2026-04-28 16:21:03,267 [INFO] REQ  GET /api/users  user=1
+2026-04-28 16:21:03,276 [INFO] RESP GET /api/users  status=200  16ms
+2026-04-28 16:21:03,277 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:03] "GET /api/users HTTP/1.1" 200 -
+2026-04-28 16:21:04,688 [INFO] REQ  GET /api/suppliers  user=1
+2026-04-28 16:21:04,699 [ERROR] UNHANDLED EXCEPTION  GET /api/suppliers
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+psycopg.errors.UndefinedColumn: column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 870, in full_dispatch_request
+    rv = self.dispatch_request()
+         ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\flask\app.py", line 855, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\app.py", line 1720, in api_suppliers_get
+    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2704, in all
+    return self._iter().all()  # type: ignore
+           ^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\query.py", line 2857, in _iter
+    result: Union[ScalarResult[_T], Result[_T]] = self.session.execute(
+                                                  ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2351, in execute
+    return self._execute_internal(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\session.py", line 2249, in _execute_internal
+    result: Result[Any] = compile_state_cls.orm_execute_statement(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\orm\context.py", line 306, in orm_execute_statement
+    result = conn.execute(
+             ^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+           ^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+          ^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\CP368103\OneDrive - Capitec Bank Ltd\Documents\Pers\Quintusz\Projects\farm_pos_web\.venv\Lib\site-packages\psycopg\cursor.py", line 117, in execute
+    raise ex.with_traceback(None)
+sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedColumn) column suppliers.phone does not exist
+LINE 1: ...S suppliers_id, suppliers.name AS suppliers_name, suppliers....
+                                                             ^
+[SQL: SELECT suppliers.id AS suppliers_id, suppliers.name AS suppliers_name, suppliers.phone AS suppliers_phone, suppliers.email AS suppliers_email, suppliers.website AS suppliers_website, suppliers.notes AS suppliers_notes 
+FROM suppliers ORDER BY suppliers.name ASC]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+2026-04-28 16:21:04,700 [WARNING] RESP GET /api/suppliers  status=500  16ms
+2026-04-28 16:21:04,701 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:04] "[35m[1mGET /api/suppliers HTTP/1.1[0m" 500 -
+2026-04-28 16:21:11,534 [INFO] REQ  POST /api/logout  user=1
+2026-04-28 16:21:11,539 [INFO] RESP POST /api/logout  status=200  15ms
+2026-04-28 16:21:11,540 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:11] "POST /api/logout HTTP/1.1" 200 -
+2026-04-28 16:21:11,867 [INFO] REQ  GET /api/me  user=-
+2026-04-28 16:21:11,867 [INFO] RESP GET /api/me  status=200  0ms
+2026-04-28 16:21:11,869 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:11] "GET /api/me HTTP/1.1" 200 -
+2026-04-28 16:21:20,366 [INFO] REQ  GET /api/kitchen/orders/count  user=-
+2026-04-28 16:21:20,367 [WARNING] RESP GET /api/kitchen/orders/count  status=401  0ms
+2026-04-28 16:21:20,368 [INFO] 192.168.1.4 - - [28/Apr/2026 16:21:20] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
+2026-04-28 16:21:20,374 [INFO] REQ  GET /api/kitchen/orders/count  user=-
+2026-04-28 16:21:20,374 [WARNING] RESP GET /api/kitchen/orders/count  status=401  0ms
+2026-04-28 16:21:20,375 [INFO] 192.168.1.4 - - [28/Apr/2026 16:21:20] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
+2026-04-28 16:21:29,508 [INFO] REQ  GET /api/kitchen/orders/count  user=-
+2026-04-28 16:21:29,509 [WARNING] RESP GET /api/kitchen/orders/count  status=401  0ms
+2026-04-28 16:21:29,510 [INFO] 127.0.0.1 - - [28/Apr/2026 16:21:29] "[31m[1mGET /api/kitchen/orders/count HTTP/1.1[0m" 401 -
