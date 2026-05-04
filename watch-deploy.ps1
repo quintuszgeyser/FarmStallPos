@@ -67,7 +67,6 @@ function Stop-App {
 
 function Deploy-Latest {
     Log "Pulling latest from origin/$Branch..."
-    git -C $ScriptDir checkout $Branch --quiet
     git -C $ScriptDir pull origin $Branch --quiet
     Log "Installing/updating Python packages..."
     & "$ScriptDir\.venv\Scripts\pip" install -r "$ScriptDir\requirements.txt" `
