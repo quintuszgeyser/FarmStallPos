@@ -31,7 +31,7 @@ $triggers = @(
 )
 
 $settings = New-ScheduledTaskSettingsSet `
-    -ExecutionTimeLimit (New-TimeSpan -Hours 0) `  # no time limit
+    -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
     -RestartOnIdle:$false `
     -StopIfGoingOnBatteries:$false `
     -DisallowStartIfOnBatteries:$false
