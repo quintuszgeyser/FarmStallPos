@@ -48,10 +48,10 @@ function Start-App {
 }
 
 function Stop-App {
-    if ($global:AppJob -and $global:AppJob.State -eq "Running") {
+    if ($global:AppJob) {
         Log "Stopping app (job id $($global:AppJob.Id))..."
-        Stop-Job $global:AppJob
-        Remove-Job $global:AppJob -Force
+        Stop-Job $global:AppJob -ErrorAction SilentlyContinue
+        Remove-Job $global:AppJob -Force -ErrorAction SilentlyContinue
         $global:AppJob = $null
     }
     $port = if ($Env -eq "prod") { 5443 } else { 5000 }
@@ -63,6 +63,7 @@ function Stop-App {
             try { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue } catch {}
         }
     }
+    Start-Sleep -Seconds 2
 }
 
 function Deploy-Latest {
