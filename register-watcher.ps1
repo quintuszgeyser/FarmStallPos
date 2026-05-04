@@ -28,9 +28,7 @@ $trigger = New-ScheduledTaskTrigger -AtStartup
 
 $settings = New-ScheduledTaskSettingsSet `
     -ExecutionTimeLimit (New-TimeSpan -Hours 0) `
-    -RestartOnIdle:$false `
-    -StopIfGoingOnBatteries:$false `
-    -DisallowStartIfOnBatteries:$false
+    -RestartOnIdle:$false
 
 $principal = New-ScheduledTaskPrincipal `
     -UserId "$env:USERDOMAIN\$env:USERNAME" `
