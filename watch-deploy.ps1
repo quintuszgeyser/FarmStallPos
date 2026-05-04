@@ -5,8 +5,8 @@
 #   powershell -ExecutionPolicy Bypass -File watch-deploy.ps1 -Env qa
 #   powershell -ExecutionPolicy Bypass -File watch-deploy.ps1 -Env prod
 #
-# -Env qa   → tracks branch 'main',       runs start-qa.ps1
-# -Env prod → tracks branch 'production', runs start-prod.ps1
+# -Env qa   -> tracks branch 'main',       runs start-qa.ps1
+# -Env prod -> tracks branch 'production', runs start-prod.ps1
 
 param(
     [Parameter(Mandatory)][ValidateSet("qa","prod")] [string]$Env,
@@ -16,9 +16,9 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
 
-$Branch    = if ($Env -eq "prod") { "production" } else { "main" }
+$Branch      = if ($Env -eq "prod") { "production" } else { "main" }
 $StartScript = if ($Env -eq "prod") { "$ScriptDir\start-prod.ps1" } else { "$ScriptDir\start-qa.ps1" }
-$LogFile   = "$ScriptDir\logs\watch-deploy-$Env.log"
+$LogFile     = "$ScriptDir\logs\watch-deploy-$Env.log"
 
 New-Item -ItemType Directory -Force -Path "$ScriptDir\logs" | Out-Null
 
@@ -29,7 +29,6 @@ function Log($msg) {
 }
 
 function Get-RemoteHash {
-    # Fetch without merging, then read the remote branch tip
     git -C $ScriptDir fetch origin $Branch --quiet 2>&1 | Out-Null
     return (git -C $ScriptDir rev-parse "origin/$Branch").Trim()
 }
@@ -55,7 +54,6 @@ function Stop-App {
         Remove-Job $global:AppJob -Force
         $global:AppJob = $null
     }
-    # Also kill any orphaned python processes holding the port
     $port = if ($Env -eq "prod") { 5443 } else { 5000 }
     $pids = (netstat -ano | Select-String ":$port ") |
             ForEach-Object { ($_ -split '\s+')[-1] } |
@@ -81,10 +79,8 @@ function Deploy-Latest {
     Start-App
 }
 
-# ── Main loop ──────────────────────────────────────────────────────────────
 Log "=== watch-deploy started | env=$Env | branch=$Branch | poll=${PollSeconds}s ==="
 
-# Initial deploy on startup
 Deploy-Latest
 $lastHash = Get-LocalHash
 Log "Running at commit $($lastHash.Substring(0,8))."
@@ -95,12 +91,12 @@ while ($true) {
     try {
         $remote = Get-RemoteHash
         if ($remote -ne $lastHash) {
-            Log "New commit detected: $($lastHash.Substring(0,8)) → $($remote.Substring(0,8))"
+            Log "New commit detected: $($lastHash.Substring(0,8)) -> $($remote.Substring(0,8))"
             Deploy-Latest
             $lastHash = Get-LocalHash
             Log "Deployed. Now at $($lastHash.Substring(0,8))."
         }
     } catch {
-        Log "WARNING: poll failed — $_"
+        Log "WARNING: poll failed - $_"
     }
 }
