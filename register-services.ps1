@@ -62,8 +62,10 @@ foreach ($envName in @("qa", "prod")) {
     $existing = & sc.exe query $ServiceName 2>&1
     if ($existing -notmatch "does not exist") {
         Write-Host "Removing existing service '$ServiceName'..." -ForegroundColor Yellow
-        & $SvcExe stop    2>&1 | Out-Null
+        & sc.exe stop $ServiceName 2>&1 | Out-Null
+        Start-Sleep -Seconds 2
         & $SvcExe uninstall 2>&1 | Out-Null
+        & sc.exe delete $ServiceName 2>&1 | Out-Null
         Start-Sleep -Seconds 2
     }
 
