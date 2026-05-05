@@ -83,7 +83,7 @@ foreach ($envName in @("qa", "prod")) {
   <workingdirectory>$ScriptDir</workingdirectory>
   <logpath>$ScriptDir\logs</logpath>
   <logmode>append</logmode>
-  <onfailure action="restart" delay="5000 ms"/>
+  <onfailure action="restart" delay="30000 ms"/>
   <startmode>Automatic</startmode>
   <serviceaccount>
     <username>$accountUser</username>

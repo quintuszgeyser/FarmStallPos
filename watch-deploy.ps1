@@ -85,7 +85,11 @@ function Deploy-Latest {
 Log "=== watch-deploy started | env=$Env | branch=$Branch | poll=${PollSeconds}s ==="
 
 try {
-    Deploy-Latest
+    try {
+        Deploy-Latest
+    } catch {
+        Log "WARNING: initial deploy failed - $_. App may not be running."
+    }
     $lastHash = Get-LocalHash
     Log "Running at commit $($lastHash.Substring(0,8))."
 
