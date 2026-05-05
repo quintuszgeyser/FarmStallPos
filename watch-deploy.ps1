@@ -22,6 +22,21 @@ $LogFile     = "$ScriptDir\logs\watch-deploy-$Env.log"
 
 New-Item -ItemType Directory -Force -Path "$ScriptDir\logs" | Out-Null
 
+# Ensure git and pg bin are in PATH (services don't inherit the user's PATH)
+$gitPaths = @(
+    "C:\Program Files\Git\cmd",
+    "C:\Program Files\Git\bin"
+)
+foreach ($p in $gitPaths) {
+    if ((Test-Path $p) -and ($env:PATH -notlike "*$p*")) {
+        $env:PATH = "$p;$env:PATH"
+    }
+}
+$pgBin = "$env:USERPROFILE\PostgreSQL\pgsql\bin"
+if ((Test-Path $pgBin) -and ($env:PATH -notlike "*$pgBin*")) {
+    $env:PATH = "$pgBin;$env:PATH"
+}
+
 function Log($msg) {
     $line = "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')  $msg"
     Write-Host $line
