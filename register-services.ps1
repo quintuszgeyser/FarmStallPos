@@ -81,6 +81,8 @@ foreach ($envName in @("qa", "prod")) {
   <workingdirectory>$ScriptDir</workingdirectory>
   <logpath>$ScriptDir\logs</logpath>
   <logmode>append</logmode>
+  <stopexecutable>powershell.exe</stopexecutable>
+  <stoparguments>-ExecutionPolicy Bypass -File "$ScriptDir\kill-app.ps1" -Env $envName</stoparguments>
   <onfailure action="restart" delay="5000 ms"/>
   <startmode>Automatic</startmode>
   <serviceaccount>
