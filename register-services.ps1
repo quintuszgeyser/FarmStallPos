@@ -1,5 +1,5 @@
 # register-services.ps1
-# Installs FarmPOS-QA and FarmPOS-Prod as Windows services using NSSM.
+# Installs FarmPOS-QA and FarmPOS-Prod as Windows services using WinSW.
 # Run ONCE on the Mini PC as Administrator.
 #
 # Usage:
@@ -7,33 +7,24 @@
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
-$NssmExe   = "$ScriptDir\tools\nssm.exe"
+$WinSW     = "$ScriptDir\tools\winsw.exe"
 
-# --- Get NSSM ---
-if (-not (Test-Path $NssmExe)) {
+# --- Download WinSW if not present ---
+if (-not (Test-Path $WinSW)) {
     New-Item -ItemType Directory -Force -Path "$ScriptDir\tools" | Out-Null
-
-    # Try winget first (built into Windows 11)
-    $winget = Get-Command winget -ErrorAction SilentlyContinue
-    if ($winget) {
-        Write-Host "Installing NSSM via winget..." -ForegroundColor Yellow
-        winget install --id NSSM.NSSM --silent --accept-package-agreements --accept-source-agreements
-        $installed = Get-Command nssm -ErrorAction SilentlyContinue
-        if ($installed) {
-            Copy-Item $installed.Source $NssmExe
-        }
-    }
-
-    if (-not (Test-Path $NssmExe)) {
+    Write-Host "Downloading WinSW from GitHub..." -ForegroundColor Yellow
+    try {
+        Invoke-WebRequest "https://github.com/winsw/winsw/releases/latest/download/WinSW-x64.exe" `
+            -OutFile $WinSW -UseBasicParsing
+    } catch {
         Write-Host ""
-        Write-Host "ERROR: Could not download NSSM automatically." -ForegroundColor Red
-        Write-Host "Please download nssm.exe manually and place it at:" -ForegroundColor Red
-        Write-Host "  $NssmExe" -ForegroundColor Yellow
-        Write-Host "Download from: https://nssm.cc/download  (or search 'nssm.exe download')" -ForegroundColor Yellow
+        Write-Host "ERROR: Could not download WinSW automatically." -ForegroundColor Red
+        Write-Host "Please download WinSW-x64.exe manually and place it at:" -ForegroundColor Red
+        Write-Host "  $WinSW" -ForegroundColor Yellow
+        Write-Host "Download from: https://github.com/winsw/winsw/releases/latest" -ForegroundColor Yellow
         exit 1
     }
-
-    Write-Host "NSSM ready." -ForegroundColor Green
+    Write-Host "WinSW ready." -ForegroundColor Green
 }
 
 # --- Prompt once for the Windows account password ---
@@ -41,6 +32,7 @@ Write-Host ""
 Write-Host "Services will run as: $env:USERDOMAIN\$env:USERNAME" -ForegroundColor Cyan
 $cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" `
         -Message "Enter your Windows password so the services can run as your account"
+$accountUser = "$env:USERDOMAIN\$env:USERNAME"
 $accountPass = $cred.GetNetworkCredential().Password
 
 $ErrorActionPreference = "Continue"
@@ -60,44 +52,46 @@ foreach ($envName in @("qa", "prod")) {
     $ServiceName = "FarmPOS-$envName"
     $DisplayName = "Farm POS $($envName.ToUpper())"
     $LogFile     = "$ScriptDir\logs\watch-deploy-$envName.log"
+    $XmlFile     = "$ScriptDir\tools\$ServiceName.xml"
 
-    # Remove existing service
+    # Stop and uninstall existing service
     $existing = & sc.exe query $ServiceName 2>&1
     if ($existing -notmatch "does not exist") {
         Write-Host "Removing existing service '$ServiceName'..." -ForegroundColor Yellow
-        & $NssmExe stop $ServiceName confirm 2>&1 | Out-Null
-        & $NssmExe remove $ServiceName confirm 2>&1 | Out-Null
+        & $WinSW stop $XmlFile 2>&1 | Out-Null
+        & $WinSW uninstall $XmlFile 2>&1 | Out-Null
         Start-Sleep -Seconds 2
     }
 
+    # Write WinSW XML config
+    @"
+<service>
+  <id>$ServiceName</id>
+  <name>$DisplayName</name>
+  <description>Farm POS auto-deploy watcher ($envName) - polls GitHub, restarts on new commits</description>
+  <executable>powershell.exe</executable>
+  <arguments>-ExecutionPolicy Bypass -WindowStyle Hidden -File "$ScriptDir\watch-deploy.ps1" -Env $envName</arguments>
+  <workingdirectory>$ScriptDir</workingdirectory>
+  <logpath>$ScriptDir\logs</logpath>
+  <logmode>append</logmode>
+  <onfailure action="restart" delay="5000 ms"/>
+  <startmode>Automatic</startmode>
+  <serviceaccount>
+    <username>$accountUser</username>
+    <password>$accountPass</password>
+  </serviceaccount>
+</service>
+"@ | Set-Content -Path $XmlFile -Encoding UTF8
+
     Write-Host "[$envName] Installing service '$ServiceName'..." -ForegroundColor Green
-
-    & $NssmExe install $ServiceName powershell.exe
-    & $NssmExe set $ServiceName AppParameters "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$ScriptDir\watch-deploy.ps1`" -Env $envName"
-    & $NssmExe set $ServiceName AppDirectory $ScriptDir
-    & $NssmExe set $ServiceName DisplayName $DisplayName
-    & $NssmExe set $ServiceName Description "Farm POS auto-deploy watcher ($envName) - polls GitHub, restarts on new commits"
-    & $NssmExe set $ServiceName Start SERVICE_AUTO_START
-
-    # Run as the current user so it can access PostgreSQL, git, venv, etc.
-    & $NssmExe set $ServiceName ObjectName "$env:USERDOMAIN\$env:USERNAME" $accountPass
-
-    # Log stdout + stderr to the same log file (append)
-    & $NssmExe set $ServiceName AppStdout $LogFile
-    & $NssmExe set $ServiceName AppStderr $LogFile
-    & $NssmExe set $ServiceName AppStdoutCreationDisposition 4
-    & $NssmExe set $ServiceName AppStderrCreationDisposition 4
-
-    # Restart the service automatically if it crashes
-    & $NssmExe set $ServiceName AppExit Default Restart
-    & $NssmExe set $ServiceName AppRestartDelay 5000
+    & $WinSW install $XmlFile
 
     Write-Host "[$envName] Starting service..." -ForegroundColor Green
-    & $NssmExe start $ServiceName
+    & $WinSW start $XmlFile
     Start-Sleep -Seconds 2
 
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
-    if ($svc.Status -eq "Running") {
+    if ($svc -and $svc.Status -eq "Running") {
         Write-Host "[$envName] Running. Log: $LogFile" -ForegroundColor Cyan
     } else {
         Write-Host "[$envName] WARNING: service did not start. Check: $LogFile" -ForegroundColor Red
