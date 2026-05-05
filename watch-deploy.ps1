@@ -84,22 +84,28 @@ function Deploy-Latest {
 
 Log "=== watch-deploy started | env=$Env | branch=$Branch | poll=${PollSeconds}s ==="
 
-Deploy-Latest
-$lastHash = Get-LocalHash
-Log "Running at commit $($lastHash.Substring(0,8))."
+try {
+    Deploy-Latest
+    $lastHash = Get-LocalHash
+    Log "Running at commit $($lastHash.Substring(0,8))."
 
-while ($true) {
-    Start-Sleep -Seconds $PollSeconds
+    while ($true) {
+        Start-Sleep -Seconds $PollSeconds
 
-    try {
-        $remote = Get-RemoteHash
-        if ($remote -ne $lastHash) {
-            Log "New commit detected: $($lastHash.Substring(0,8)) -> $($remote.Substring(0,8))"
-            Deploy-Latest
-            $lastHash = Get-LocalHash
-            Log "Deployed. Now at $($lastHash.Substring(0,8))."
+        try {
+            $remote = Get-RemoteHash
+            if ($remote -ne $lastHash) {
+                Log "New commit detected: $($lastHash.Substring(0,8)) -> $($remote.Substring(0,8))"
+                Deploy-Latest
+                $lastHash = Get-LocalHash
+                Log "Deployed. Now at $($lastHash.Substring(0,8))."
+            }
+        } catch {
+            Log "WARNING: poll failed - $_"
         }
-    } catch {
-        Log "WARNING: poll failed - $_"
     }
+} finally {
+    Log "Watcher stopping — killing app..."
+    Stop-App
+    Log "App stopped."
 }
