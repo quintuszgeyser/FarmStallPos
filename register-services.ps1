@@ -5,20 +5,34 @@
 # Usage:
 #   powershell -ExecutionPolicy Bypass -File register-services.ps1
 
+$ErrorActionPreference = "Stop"
 $ScriptDir = $PSScriptRoot
 $NssmExe   = "$ScriptDir\tools\nssm.exe"
 
-# --- Download NSSM if not present ---
+# --- Get NSSM ---
 if (-not (Test-Path $NssmExe)) {
-    Write-Host "Downloading NSSM..." -ForegroundColor Yellow
     New-Item -ItemType Directory -Force -Path "$ScriptDir\tools" | Out-Null
-    $zip     = "$env:TEMP\nssm.zip"
-    $extract = "$env:TEMP\nssm_extract"
-    Invoke-WebRequest "https://nssm.cc/release/nssm-2.24.zip" -OutFile $zip -UseBasicParsing
-    Expand-Archive $zip -DestinationPath $extract -Force
-    $arch = if ([Environment]::Is64BitOperatingSystem) { "win64" } else { "win32" }
-    Copy-Item "$extract\nssm-2.24\$arch\nssm.exe" $NssmExe
-    Remove-Item $zip, $extract -Recurse -Force
+
+    # Try winget first (built into Windows 11)
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        Write-Host "Installing NSSM via winget..." -ForegroundColor Yellow
+        winget install --id NSSM.NSSM --silent --accept-package-agreements --accept-source-agreements
+        $installed = Get-Command nssm -ErrorAction SilentlyContinue
+        if ($installed) {
+            Copy-Item $installed.Source $NssmExe
+        }
+    }
+
+    if (-not (Test-Path $NssmExe)) {
+        Write-Host ""
+        Write-Host "ERROR: Could not download NSSM automatically." -ForegroundColor Red
+        Write-Host "Please download nssm.exe manually and place it at:" -ForegroundColor Red
+        Write-Host "  $NssmExe" -ForegroundColor Yellow
+        Write-Host "Download from: https://nssm.cc/download  (or search 'nssm.exe download')" -ForegroundColor Yellow
+        exit 1
+    }
+
     Write-Host "NSSM ready." -ForegroundColor Green
 }
 
@@ -29,6 +43,7 @@ $cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" `
         -Message "Enter your Windows password so the services can run as your account"
 $accountPass = $cred.GetNetworkCredential().Password
 
+$ErrorActionPreference = "Continue"
 New-Item -ItemType Directory -Force -Path "$ScriptDir\logs" | Out-Null
 
 # --- Remove old scheduled tasks if present ---
