@@ -6,32 +6,33 @@
 #   powershell -ExecutionPolicy Bypass -File register-services.ps1
 
 $ErrorActionPreference = "Stop"
-$ScriptDir = $PSScriptRoot
-$WinSW     = "$ScriptDir\tools\winsw.exe"
+$ScriptDir  = $PSScriptRoot
+$ToolsDir   = "$ScriptDir\tools"
+$WinSwBase  = "$ToolsDir\winsw.exe"
 
 # --- Download WinSW if not present ---
-if (-not (Test-Path $WinSW)) {
-    New-Item -ItemType Directory -Force -Path "$ScriptDir\tools" | Out-Null
+if (-not (Test-Path $WinSwBase)) {
+    New-Item -ItemType Directory -Force -Path $ToolsDir | Out-Null
     Write-Host "Downloading WinSW from GitHub..." -ForegroundColor Yellow
     try {
         Invoke-WebRequest "https://github.com/winsw/winsw/releases/latest/download/WinSW-x64.exe" `
-            -OutFile $WinSW -UseBasicParsing
+            -OutFile $WinSwBase -UseBasicParsing
     } catch {
         Write-Host ""
         Write-Host "ERROR: Could not download WinSW automatically." -ForegroundColor Red
         Write-Host "Please download WinSW-x64.exe manually and place it at:" -ForegroundColor Red
-        Write-Host "  $WinSW" -ForegroundColor Yellow
+        Write-Host "  $WinSwBase" -ForegroundColor Yellow
         Write-Host "Download from: https://github.com/winsw/winsw/releases/latest" -ForegroundColor Yellow
         exit 1
     }
-    Write-Host "WinSW ready." -ForegroundColor Green
+    Write-Host "WinSW downloaded." -ForegroundColor Green
 }
 
 # --- Prompt once for the Windows account password ---
 Write-Host ""
 Write-Host "Services will run as: $env:USERDOMAIN\$env:USERNAME" -ForegroundColor Cyan
-$cred = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" `
-        -Message "Enter your Windows password so the services can run as your account"
+$cred        = Get-Credential -UserName "$env:USERDOMAIN\$env:USERNAME" `
+               -Message "Enter your Windows password so the services can run as your account"
 $accountUser = "$env:USERDOMAIN\$env:USERNAME"
 $accountPass = $cred.GetNetworkCredential().Password
 
@@ -48,22 +49,28 @@ foreach ($envName in @("qa", "prod")) {
 }
 
 # --- Register services ---
+# WinSW requires the exe and xml to share the same base name in the same folder.
+# We copy winsw.exe to FarmPOS-qa.exe / FarmPOS-prod.exe alongside their XML files.
 foreach ($envName in @("qa", "prod")) {
     $ServiceName = "FarmPOS-$envName"
     $DisplayName = "Farm POS $($envName.ToUpper())"
     $LogFile     = "$ScriptDir\logs\watch-deploy-$envName.log"
-    $XmlFile     = "$ScriptDir\tools\$ServiceName.xml"
+    $SvcExe      = "$ToolsDir\$ServiceName.exe"
+    $XmlFile     = "$ToolsDir\$ServiceName.xml"
 
     # Stop and uninstall existing service
     $existing = & sc.exe query $ServiceName 2>&1
     if ($existing -notmatch "does not exist") {
         Write-Host "Removing existing service '$ServiceName'..." -ForegroundColor Yellow
-        & $WinSW stop $XmlFile 2>&1 | Out-Null
-        & $WinSW uninstall $XmlFile 2>&1 | Out-Null
+        & $SvcExe stop    2>&1 | Out-Null
+        & $SvcExe uninstall 2>&1 | Out-Null
         Start-Sleep -Seconds 2
     }
 
-    # Write WinSW XML config
+    # Each service needs its own copy of the exe next to its xml
+    Copy-Item $WinSwBase $SvcExe -Force
+
+    # Write WinSW XML config (same base name as exe, same folder)
     @"
 <service>
   <id>$ServiceName</id>
@@ -84,10 +91,10 @@ foreach ($envName in @("qa", "prod")) {
 "@ | Set-Content -Path $XmlFile -Encoding UTF8
 
     Write-Host "[$envName] Installing service '$ServiceName'..." -ForegroundColor Green
-    & $WinSW install $XmlFile
+    & $SvcExe install
 
     Write-Host "[$envName] Starting service..." -ForegroundColor Green
-    & $WinSW start $XmlFile
+    & $SvcExe start
     Start-Sleep -Seconds 2
 
     $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
