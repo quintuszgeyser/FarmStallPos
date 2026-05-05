@@ -28,6 +28,9 @@ if ($status -match "server is running") {
     }
 }
 
+# Ensure libpq.dll is findable (required by psycopg when not in system PATH)
+$env:PATH = "$pgBin;$env:PATH"
+
 # Set environment variables
 $env:APP_ENV      = "qa"
 $env:SECRET_KEY   = "local-dev-secret"
