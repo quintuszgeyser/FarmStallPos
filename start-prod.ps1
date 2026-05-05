@@ -1,8 +1,8 @@
 # Start PostgreSQL if not running
-$pgBin   = "$env:USERPROFILE\PostgreSQL\pgsql\bin"
+$pgBin   = "C:\Users\Quintusz\PostgreSQL\pgsql\bin"
 $pgCtl   = "$pgBin\pg_ctl.exe"
-$pgData  = "$env:USERPROFILE\PostgreSQL\data"
-$pgLog   = "$env:USERPROFILE\PostgreSQL\pg.log"
+$pgData  = "C:\Users\Quintusz\PostgreSQL\data"
+$pgLog   = "C:\Users\Quintusz\PostgreSQL\pg.log"
 $python  = "$PSScriptRoot\.venv\Scripts\python.exe"
 
 $status = & $pgCtl status -D $pgData 2>&1

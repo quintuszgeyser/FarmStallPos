@@ -32,7 +32,7 @@ foreach ($p in $gitPaths) {
         $env:PATH = "$p;$env:PATH"
     }
 }
-$pgBin = "$env:USERPROFILE\PostgreSQL\pgsql\bin"
+$pgBin = "C:\Users\Quintusz\PostgreSQL\pgsql\bin"
 if ((Test-Path $pgBin) -and ($env:PATH -notlike "*$pgBin*")) {
     $env:PATH = "$pgBin;$env:PATH"
 }
