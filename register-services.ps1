@@ -79,7 +79,7 @@ foreach ($envName in @("qa", "prod")) {
   <name>$DisplayName</name>
   <description>Farm POS auto-deploy watcher ($envName) - polls GitHub, restarts on new commits</description>
   <executable>powershell.exe</executable>
-  <arguments>-ExecutionPolicy Bypass -WindowStyle Hidden -File "$ScriptDir\watch-deploy.ps1" -Env $envName</arguments>
+  <arguments>-ExecutionPolicy Bypass -NonInteractive -File "$ScriptDir\watch-deploy.ps1" -Env $envName</arguments>
   <workingdirectory>$ScriptDir</workingdirectory>
   <logpath>$ScriptDir\logs</logpath>
   <logmode>append</logmode>
