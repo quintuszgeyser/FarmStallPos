@@ -124,7 +124,7 @@ try {
         }
     }
 } finally {
-    Log "Watcher stopping — killing app..."
+    Log "Watcher stopping - killing app..."
     Stop-App
     Log "App stopped."
 }
