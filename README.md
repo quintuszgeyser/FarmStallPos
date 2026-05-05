@@ -6,19 +6,27 @@ Lightweight browser-based point-of-sale system for farm stalls, markets, and sma
 
 ---
 
-## Quick Start
+## Environments
 
-Run the app with the start script (starts PostgreSQL, activates venv, sets env vars, launches Flask):
+| Environment | Script | URL | Database |
+|---|---|---|---|
+| QA (testing) | `start-qa.ps1` | `https://127.0.0.1:5000` | `farm_pos` |
+| Production | `start-prod.ps1` | `https://localhost:5443` | `farm_pos_prod` |
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File start.ps1
-```
+# Start QA
+powershell -ExecutionPolicy Bypass -File start-qa.ps1
 
-App runs at: **http://127.0.0.1:5000**
+# Start Production
+powershell -ExecutionPolicy Bypass -File start-prod.ps1
+
+# Promote QA → Production
+powershell -ExecutionPolicy Bypass -File promote.ps1
+```
 
 Default login: `admin` / `admin123`
 
-> On the local network, also accessible at `http://<your-IP>:5000` from tablets/phones on the same Wi-Fi.
+QA shows a **yellow banner** at the top — you can never confuse the two environments.
 
 ---
 
@@ -28,24 +36,21 @@ Default login: `admin` / `admin123`
 |---|---|
 | Python 3.11+ | `.venv\` in project root |
 | PostgreSQL | Installed at `C:\Users\<you>\PostgreSQL\pgsql\` — NOT a Windows service |
-| Windows 11 | `start.ps1` is PowerShell only |
+| Windows 11 | Start scripts are PowerShell only |
 
-PostgreSQL is started manually by `start.ps1` via `pg_ctl`. It is not registered as a Windows service.
+PostgreSQL is started manually by the start scripts via `pg_ctl`. It is not registered as a Windows service.
 
 ---
 
-## What `start.ps1` Does
+## First-Time Setup
 
-1. Checks if PostgreSQL is running via `pg_ctl status -D %USERPROFILE%\PostgreSQL\data`
-2. Starts it if not running (log at `%USERPROFILE%\PostgreSQL\pg.log`)
-3. Activates `.venv\Scripts\Activate.ps1`
-4. Sets environment variables:
-   - `SECRET_KEY=local-dev-secret`
-   - `DATABASE_URL=postgresql://frauduser:Fraud@localhost:5432/farm_pos`
-   - `LOCAL_TZ=Africa/Johannesburg`
-   - `ADMIN_USER=admin`
-   - `ADMIN_PASS=admin123`
-5. Runs `python app.py`
+1. Run `start-qa.ps1` — creates all tables and seeds the admin user automatically on first run.
+2. Trust the self-signed HTTPS certificate (required once per machine for camera scanning):
+   ```powershell
+   # Run as Administrator
+   powershell -ExecutionPolicy Bypass -File install-cert.ps1
+   ```
+3. Open `https://127.0.0.1:5000` in Edge or Chrome. No certificate warning after step 2.
 
 ---
 
@@ -65,28 +70,35 @@ Single-file Flask backend + single-page frontend.
 
 ```
 app.py                   Flask backend — all routes, ORM models, migrations
-templates/index.html     SPA shell — tabs, login form
+templates/index.html     SPA shell — tabs, modals, login form
 static/main.js           All client-side logic (no framework)
-static/sw.js             Service worker — versioned asset cache
-static/manifest.json     PWA manifest
-start.ps1                Dev startup script
+start-qa.ps1             QA startup script
+start-prod.ps1           Production startup script
+promote.ps1              Promote QA → Production branch
+install-cert.ps1         Trust self-signed cert in Windows (run once as admin)
+cert.pem / cert.key      Self-signed TLS certificate (SAN: 127.0.0.1, 192.168.1.4)
+cert.conf                OpenSSL config used to regenerate the cert
 ```
 
 ### Backend (`app.py`)
 
 - All API routes are under `/api/`. Root `/` serves the SPA. `/admin/export/` serves CSV downloads.
-- **Auth:** Flask session-based. `require_login()` / `require_role('admin')` decorators. No JWT.
+- **Auth:** Flask session-based. `require_login()` / `require_role('admin')`. No JWT.
+- **Session tracking:** `UserSession` records login/logout/last_active. Sessions auto-close after 10 min idle (for accurate time stats) and force-logout after 2 h total inactivity.
 - **DB:** SQLAlchemy ORM. All money columns are `Numeric(10,2)` — never `Float`.
-- **Migration:** `strong_migrate()` runs on every startup. Idempotent — uses `SAVEPOINT`/rollback per DDL statement. Add all schema changes there, not via Alembic.
-- **Sales model:** Each receipt is a group of `sales` rows sharing the same `sale_id` (UUID string). Voided sales have `voided=True` and are excluded from all queries.
+- **Migration:** `strong_migrate()` runs on every startup. Idempotent via `SAVEPOINT`/rollback per DDL. Add all schema changes there.
+- **Concurrency:** All stock-mutating routes use `with_for_update=True` to prevent race conditions under concurrent users.
+- **Sales model:** Each receipt is a group of `sales` rows sharing the same `sale_id` (UUID string). Voided sales have `voided=True`.
 
 ### Frontend (`static/main.js`)
 
-- All UI state lives in the `STATE` object at the top of the file.
-- `api(path, opts)` is the single fetch wrapper — throws on non-2xx with the server's error message.
-- `toast(msg, type, durationMs)` is used for all user notifications — never `alert()`.
-- **USB barcode scanner:** global `keydown` listener buffers rapid keystrokes ending in Enter (scanner wedge mode). Active only on the Teller tab when no input is focused.
-- **Camera scanner:** ZXing `BrowserMultiFormatReader`, toggled on-demand, 1.5 s cooldown.
+- All UI state lives in the `STATE` object at the top.
+- `api(path, opts)` — single fetch wrapper, throws on non-2xx.
+- `toast(msg, type, durationMs)` — all notifications. Never `alert()`.
+- `displayQty(qty_base, unitType)` — converts g/ml to kg/L with auto-threshold at 1000.
+- `displayCost(cost_per_base, qty_base, unitType)` — scales cost to the same display unit.
+- **USB barcode scanner:** global `keydown` listener buffers rapid keystrokes ending in Enter. Active only on Teller tab when no input is focused.
+- **Camera scanner:** ZXing `BrowserMultiFormatReader`, toggled on-demand, 1.5 s cooldown. Requires HTTPS.
 
 ---
 
@@ -94,92 +106,62 @@ start.ps1                Dev startup script
 
 | Role | Access |
 |---|---|
-| `admin` | Teller, Transactions (full date range), Products, Users, Settings, CSV Exports |
-| `teller` | Teller tab + last 5 transactions only |
-
-On first run, if no users exist, the system creates an admin from `ADMIN_USER` / `ADMIN_PASS` env vars.
+| `admin` | All tabs including Products, Users, Suppliers, Stats, CSV exports |
+| `teller` | Teller tab + last 5 own transactions only. No COGS/margin visibility. |
 
 ---
 
-## Database Schema
+## Product Types
 
-```
-users           — id, username, password_hash, role, active
-products        — id, name, price (Numeric), barcode, stock_qty
-purchases       — id, product_id, qty_added, purchase_price (Numeric), date_time, user_id
-settings        — id, key, value
-sales           — id, sale_id (UUID), date_time, product_id, qty, unit_price (Numeric),
-                  user_id, voided, voided_by, voided_at, void_reason
-```
-
-Upcoming (recipe/FIFO system in progress):
-```
-recipe_lines      — id, product_id, ingredient_id, qty_base (Numeric)
-stock_batches     — id, product_id, qty_purchased_base, qty_remaining_base,
-                    cost_per_base_unit (Numeric 10,6), purchased_at, user_id
-stock_consumption — id, sale_id, ingredient_id, batch_id, qty_consumed,
-                    cost_per_unit, consumed_at
-```
-
----
-
-## API Reference
-
-```
-POST   /api/login                           { username, password }
-POST   /api/logout
-GET    /api/me
-
-GET    /api/products
-POST   /api/products                        admin — create product
-POST   /api/products/update                 admin — edit product
-DELETE /api/products/<name>                 admin
-GET    /api/products/<id>/suggested_price   ?markup=
-
-POST   /api/purchases                       admin — receive stock
-
-GET    /api/transactions                    admin: ?start=&end= date range / teller: last 5
-POST   /api/transactions                    { cart: [{product_id, qty, unit_price}] }
-POST   /api/transactions/<sale_id>/void     admin — { reason }
-POST   /api/transactions/<sale_id>/edit     admin — { lines: [{product_id, qty, unit_price}] }
-
-GET    /api/stats/today                     admin
-GET    /api/settings                        admin
-POST   /api/settings                        admin
-
-GET    /admin/export/products               CSV
-GET    /admin/export/transactions           ?start=&end= CSV
-```
+| Type | Stock tracked by | Sold by | COGS |
+|---|---|---|---|
+| `simple` | `stock_qty` (integer) | unit | none |
+| `stock_item` | `stock_batches` (FIFO) | weight/volume/unit | FIFO |
+| `recipe` | ingredients' batches | unit (portions) | sum of ingredient COGS |
 
 ---
 
 ## Key Behaviours
 
-- **Edit vs Void:** editing a sale restores original stock then deducts new stock atomically. Voiding requires a reason and fully restores stock.
-- **`sale_id` is a UUID string** — always display as `sale_id.slice(0, 8)` in the UI.
-- **Stock is integer** for simple products (`stock_qty`). Will be `Numeric` for ingredient products once the recipe/FIFO system lands.
-- **Transactions tab is role-aware:** tellers see last 5 only; admins get a full date-range picker defaulting to today.
+- **Edit vs Void:** editing restores original stock then deducts new atomically. Voiding requires a reason and fully restores all stock.
+- **Archive with stock:** when archiving a stock_item or simple product with remaining stock, you choose: **Keep** (stock stays, visible in Archived tab) or **Write off** (FIFO consumed, adjustment logged).
+- **Transactions tab is role-aware:** tellers see last 5 only; admins get a full date-range picker.
+- **Tellers never see COGS or margin** — these are admin-only in the transaction drilldown.
+- **`sale_id` is a UUID string** — always display as `sale_id.slice(0, 8)`.
+
+---
+
+## Regenerating the TLS Certificate
+
+If the cert expires or you change the server's IP address:
+
+```powershell
+# Regenerate (updates cert.pem and cert.key)
+openssl req -x509 -newkey rsa:2048 -keyout cert.key -out cert.pem -days 3650 -nodes -config cert.conf
+
+# Re-trust in Windows (as Administrator)
+powershell -ExecutionPolicy Bypass -File install-cert.ps1
+```
+
+Then restart the app and restart Edge.
 
 ---
 
 ## PWA / Kiosk Mode
 
-The app can be installed as a PWA (Add to Home Screen on Android/iOS, or Install in Chrome on Windows).
+Install as a PWA via Edge or Chrome "Add to Home Screen" / "Install App".
 
-For dedicated kiosk use on Windows + Chrome:
+For dedicated kiosk mode on Windows:
 ```
-chrome.exe --kiosk --app=http://127.0.0.1:5000
+msedge.exe --kiosk --app=https://127.0.0.1:5000
 ```
-
-Service worker caches static assets under `pos-cache-vX`. Bump the version in `static/sw.js` when deploying changes to `main.js` or other static files.
 
 ---
 
-## Roadmap
+## Promoting to Production
 
-- Recipe-based products (ingredients with FIFO cost tracking)
-- Variable-weight products
-- Thermal/PDF receipt printing
-- End-of-day Z-reports
-- PIN login + auto-logout timer
-- A4/label barcode printing
+```powershell
+powershell -ExecutionPolicy Bypass -File promote.ps1
+```
+
+This merges `main` → `production` branch on GitHub and pushes both. Type `yes` to confirm.

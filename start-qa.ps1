@@ -1,24 +1,26 @@
 # Start PostgreSQL if not running
-$pgData = "$env:USERPROFILE\PostgreSQL\data"
-$pgLog  = "$env:USERPROFILE\PostgreSQL\pg.log"
-$status = & pg_ctl status -D $pgData 2>&1
+$pgBin   = "C:\Users\Quintusz\PostgreSQL\pgsql\bin"
+$pgCtl   = "$pgBin\pg_ctl.exe"
+$pgData  = "C:\Users\Quintusz\PostgreSQL\data"
+$pgLog   = "C:\Users\Quintusz\PostgreSQL\pg.log"
+$python  = "$PSScriptRoot\.venv\Scripts\python.exe"
+
+$status = & $pgCtl status -D $pgData 2>&1
 if ($status -match "server is running") {
     Write-Host "PostgreSQL already running." -ForegroundColor Green
 } else {
-    # Remove stale pid file if present (left by a crash)
     $pidFile = "$pgData\postmaster.pid"
     if (Test-Path $pidFile) { Remove-Item $pidFile -Force }
 
     Write-Host "Starting PostgreSQL..." -ForegroundColor Yellow
-    # Try starting; if log file is locked (another process owns it) use a temp log
-    $result = & pg_ctl start -D $pgData -l $pgLog 2>&1
+    $result = & $pgCtl start -D $pgData -l $pgLog 2>&1
     if ($result -match "Permission denied") {
         $tmpLog = "$env:TEMP\pg_start.log"
-        & pg_ctl start -D $pgData -l $tmpLog
+        & $pgCtl start -D $pgData -l $tmpLog
     }
     Start-Sleep -Seconds 2
 
-    $check = & pg_ctl status -D $pgData 2>&1
+    $check = & $pgCtl status -D $pgData 2>&1
     if ($check -match "server is running") {
         Write-Host "PostgreSQL started." -ForegroundColor Green
     } else {
@@ -26,17 +28,17 @@ if ($status -match "server is running") {
     }
 }
 
-# Activate venv
-& "$PSScriptRoot\.venv\Scripts\Activate.ps1"
+# Ensure libpq.dll is findable (required by psycopg when not in system PATH)
+$env:PATH = "$pgBin;$env:PATH"
 
 # Set environment variables
-$env:APP_ENV           = "qa"
-$env:SECRET_KEY        = "local-dev-secret"
-$env:DATABASE_URL      = "postgresql://farmstall:FarmStall@localhost:5432/farm_pos"
-$env:LOCAL_TZ          = "Africa/Johannesburg"
-$env:ADMIN_USER        = "admin"
-$env:ADMIN_PASS        = "admin123"
-$env:PORT              = "5000"
+$env:APP_ENV      = "qa"
+$env:SECRET_KEY   = "local-dev-secret"
+$env:DATABASE_URL = "postgresql://farmstall:FarmStall@localhost:5432/farm_pos"
+$env:LOCAL_TZ     = "Africa/Johannesburg"
+$env:ADMIN_USER   = "admin"
+$env:ADMIN_PASS   = "admin123"
+$env:PORT         = "5000"
 
 Write-Host "Starting Farm POS QA on http://localhost:5000 ..." -ForegroundColor Yellow
-python app.py
+& $python "$PSScriptRoot\app.py"
