@@ -39,4 +39,4 @@ $env:ADMIN_PASS        = "admin123"
 $env:PORT              = "5000"
 
 Write-Host "Starting Farm POS QA on http://localhost:5000 ..." -ForegroundColor Yellow
-python app.py
+python "$PSScriptRoot\app.py"

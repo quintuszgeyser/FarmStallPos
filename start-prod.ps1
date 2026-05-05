@@ -37,4 +37,4 @@ $env:ADMIN_PASS        = "admin123"
 $env:PORT              = "5443"
 
 Write-Host "Starting Farm POS PRODUCTION on https://localhost:5443 ..." -ForegroundColor Green
-python app.py
+python "$PSScriptRoot\app.py"
