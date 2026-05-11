@@ -319,6 +319,70 @@ class SpecialLine(db.Model):
     qty        = db.Column(db.Integer, nullable=False, default=1)
 
 
+class Customer(db.Model):
+    __tablename__ = 'customers'
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(120), nullable=False)
+    phone       = db.Column(db.String(50),  nullable=True)
+    email       = db.Column(db.String(120), nullable=True)
+    notes       = db.Column(db.Text,        nullable=True)
+    enrolled_at = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
+    enrolled_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    last_visit  = db.Column(db.DateTime,    nullable=True)
+    visit_count = db.Column(db.Integer,     nullable=False, default=0)
+    active      = db.Column(db.Boolean,     nullable=False, default=True)
+
+
+class CustomerPlate(db.Model):
+    __tablename__ = 'customer_plates'
+    id          = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    plate_number = db.Column(db.String(20), nullable=False, unique=True)
+    enrolled_at = db.Column(db.DateTime,   nullable=False, default=datetime.utcnow)
+    active      = db.Column(db.Boolean,    nullable=False, default=True)
+
+
+class CustomerFace(db.Model):
+    __tablename__ = 'customer_faces'
+    id          = db.Column(db.Integer, primary_key=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    embedding   = db.Column(db.LargeBinary, nullable=False)  # float32[512] = 2048 bytes
+    enrolled_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    active      = db.Column(db.Boolean,  nullable=False, default=True)
+
+
+class CustomerGait(db.Model):
+    __tablename__ = 'customer_gaits'
+    id            = db.Column(db.Integer, primary_key=True)
+    customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    gait_features = db.Column(db.LargeBinary, nullable=False)  # serialized numpy float32 vector
+    enrolled_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    active        = db.Column(db.Boolean,  nullable=False, default=True)
+
+
+class CustomerVisit(db.Model):
+    __tablename__ = 'customer_visits'
+    id               = db.Column(db.Integer, primary_key=True)
+    customer_id      = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    detected_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    matched_signals  = db.Column(db.String(50),  nullable=False)  # e.g. "plate,face"
+    confidence_scores = db.Column(db.Text,       nullable=True)   # JSON {"plate":1.0,"face":0.92}
+    camera_source    = db.Column(db.String(20),  nullable=True)   # 'indoor' | 'outdoor'
+    acknowledged     = db.Column(db.Boolean,     nullable=False, default=False)
+
+
+class PlateDetection(db.Model):
+    __tablename__ = 'plate_detections'
+    id            = db.Column(db.Integer, primary_key=True)
+    plate_number  = db.Column(db.String(20),  nullable=False)
+    confidence    = db.Column(Numeric(3, 2),  nullable=True)
+    detected_at   = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
+    customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    matched       = db.Column(db.Boolean,     nullable=False, default=False)
+    snapshot_path = db.Column(db.Text,        nullable=True)
+    camera_source = db.Column(db.String(20),  nullable=True)
+
+
 # -----------------------------
 # Utilities
 # -----------------------------
@@ -754,6 +818,79 @@ def strong_migrate():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_adj_product ON stock_adjustments (product_id)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_adj_date ON stock_adjustments (adjusted_at)")
 
+            # ---- customer identification tables (SQLite) ----
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customers (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              name        TEXT NOT NULL,
+              phone       TEXT,
+              email       TEXT,
+              notes       TEXT,
+              enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              enrolled_by INTEGER,
+              last_visit  TIMESTAMP,
+              visit_count INTEGER NOT NULL DEFAULT 0,
+              active      INTEGER NOT NULL DEFAULT 1
+            )""")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_plates (
+              id           INTEGER PRIMARY KEY AUTOINCREMENT,
+              customer_id  INTEGER NOT NULL,
+              plate_number TEXT NOT NULL UNIQUE,
+              enrolled_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              active       INTEGER NOT NULL DEFAULT 1
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_plates_cid ON customer_plates (customer_id)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_faces (
+              id          INTEGER PRIMARY KEY AUTOINCREMENT,
+              customer_id INTEGER NOT NULL,
+              embedding   BLOB NOT NULL,
+              enrolled_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              active      INTEGER NOT NULL DEFAULT 1
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_faces_cid ON customer_faces (customer_id)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_gaits (
+              id            INTEGER PRIMARY KEY AUTOINCREMENT,
+              customer_id   INTEGER NOT NULL,
+              gait_features BLOB NOT NULL,
+              enrolled_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              active        INTEGER NOT NULL DEFAULT 1
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_gaits_cid ON customer_gaits (customer_id)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_visits (
+              id                INTEGER PRIMARY KEY AUTOINCREMENT,
+              customer_id       INTEGER NOT NULL,
+              detected_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              matched_signals   TEXT NOT NULL,
+              confidence_scores TEXT,
+              camera_source     TEXT,
+              acknowledged      INTEGER NOT NULL DEFAULT 0
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_visits_cid ON customer_visits (customer_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_visits_dt  ON customer_visits (detected_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_visits_ack ON customer_visits (acknowledged)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS plate_detections (
+              id            INTEGER PRIMARY KEY AUTOINCREMENT,
+              plate_number  TEXT NOT NULL,
+              confidence    REAL,
+              detected_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              customer_id   INTEGER,
+              matched       INTEGER NOT NULL DEFAULT 0,
+              snapshot_path TEXT,
+              camera_source TEXT
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_dt  ON plate_detections (detected_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_cid ON plate_detections (customer_id)")
+
         else:
             # ---- PostgreSQL ----
             def pg_try(sql):
@@ -960,6 +1097,80 @@ def strong_migrate():
               qty        INTEGER NOT NULL DEFAULT 1
             )""")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_special_lines_special ON special_lines (special_id)")
+
+            # ---- customer identification tables (PostgreSQL) ----
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customers (
+              id          SERIAL PRIMARY KEY,
+              name        VARCHAR(120) NOT NULL,
+              phone       VARCHAR(50),
+              email       VARCHAR(120),
+              notes       TEXT,
+              enrolled_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              enrolled_by INTEGER REFERENCES users(id),
+              last_visit  TIMESTAMP,
+              visit_count INTEGER NOT NULL DEFAULT 0,
+              active      BOOLEAN NOT NULL DEFAULT TRUE
+            )""")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_plates (
+              id           SERIAL PRIMARY KEY,
+              customer_id  INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+              plate_number VARCHAR(20) NOT NULL,
+              enrolled_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+              active       BOOLEAN NOT NULL DEFAULT TRUE
+            )""")
+            pg_try("ALTER TABLE customer_plates ADD CONSTRAINT uq_customer_plates_plate UNIQUE (plate_number)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_plates_cid ON customer_plates (customer_id)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_faces (
+              id          SERIAL PRIMARY KEY,
+              customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+              embedding   BYTEA NOT NULL,
+              enrolled_at TIMESTAMP NOT NULL DEFAULT NOW(),
+              active      BOOLEAN NOT NULL DEFAULT TRUE
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_faces_cid ON customer_faces (customer_id)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_gaits (
+              id            SERIAL PRIMARY KEY,
+              customer_id   INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+              gait_features BYTEA NOT NULL,
+              enrolled_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+              active        BOOLEAN NOT NULL DEFAULT TRUE
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_gaits_cid ON customer_gaits (customer_id)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_visits (
+              id                SERIAL PRIMARY KEY,
+              customer_id       INTEGER NOT NULL REFERENCES customers(id),
+              detected_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+              matched_signals   VARCHAR(50) NOT NULL,
+              confidence_scores TEXT,
+              camera_source     VARCHAR(20),
+              acknowledged      BOOLEAN NOT NULL DEFAULT FALSE
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_visits_cid ON customer_visits (customer_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_visits_dt  ON customer_visits (detected_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_visits_ack ON customer_visits (acknowledged)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS plate_detections (
+              id            SERIAL PRIMARY KEY,
+              plate_number  VARCHAR(20) NOT NULL,
+              confidence    NUMERIC(3,2),
+              detected_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+              customer_id   INTEGER REFERENCES customers(id),
+              matched       BOOLEAN NOT NULL DEFAULT FALSE,
+              snapshot_path TEXT,
+              camera_source VARCHAR(20)
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_dt  ON plate_detections (detected_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_cid ON plate_detections (customer_id)")
 
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
@@ -1925,6 +2136,251 @@ def api_suppliers_purchase_run(sid):
         'created_products': created_products,
         'batches_created': batches_created
     })
+
+
+# -----------------------------
+# Customers (identification)
+# -----------------------------
+import json as _json
+
+def _customer_dict(c):
+    return {
+        'id': c.id, 'name': c.name, 'phone': c.phone, 'email': c.email,
+        'notes': c.notes, 'visit_count': c.visit_count, 'active': c.active,
+        'enrolled_at': c.enrolled_at.isoformat() if c.enrolled_at else None,
+        'last_visit': c.last_visit.isoformat() if c.last_visit else None,
+        'plates': [p.plate_number for p in CustomerPlate.query.filter_by(customer_id=c.id, active=True).all()],
+        'has_face': CustomerFace.query.filter_by(customer_id=c.id, active=True).count() > 0,
+        'has_gait': CustomerGait.query.filter_by(customer_id=c.id, active=True).count() > 0,
+    }
+
+@app.route('/api/customers', methods=['GET'])
+def api_customers_get():
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    customers = Customer.query.order_by(Customer.name.asc()).all()
+    return jsonify([_customer_dict(c) for c in customers])
+
+@app.route('/api/customers', methods=['POST'])
+def api_customers_post():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    name = data.get('name', '').strip()
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    u = current_user()
+    c = Customer(
+        name=name,
+        phone=data.get('phone', '').strip() or None,
+        email=data.get('email', '').strip() or None,
+        notes=data.get('notes', '').strip() or None,
+        enrolled_by=u.id if u else None,
+    )
+    db.session.add(c)
+    db.session.commit()
+    return jsonify({'ok': True, 'id': c.id})
+
+@app.route('/api/customers/<int:cid>', methods=['POST'])
+def api_customers_update(cid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.json or {}
+    if 'name'  in data: c.name  = data['name'].strip()
+    if 'phone' in data: c.phone = data['phone'].strip() or None
+    if 'email' in data: c.email = data['email'].strip() or None
+    if 'notes' in data: c.notes = data['notes'].strip() or None
+    if 'active' in data: c.active = bool(data['active'])
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/<int:cid>', methods=['DELETE'])
+def api_customers_delete(cid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    c.active = False
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/<int:cid>/enroll/plate', methods=['POST'])
+def api_customers_enroll_plate(cid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.json or {}
+    plate = data.get('plate_number', '').strip().upper()
+    if not plate:
+        return jsonify({'error': 'plate_number required'}), 400
+    existing = CustomerPlate.query.filter_by(plate_number=plate).first()
+    if existing:
+        return jsonify({'error': 'Plate already enrolled'}), 409
+    db.session.add(CustomerPlate(customer_id=cid, plate_number=plate))
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/<int:cid>/enroll/plate/<int:pid>', methods=['DELETE'])
+def api_customers_delete_plate(cid, pid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    cp = db.session.get(CustomerPlate, pid)
+    if not cp or cp.customer_id != cid:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(cp)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/<int:cid>/enroll/face', methods=['POST'])
+def api_customers_enroll_face(cid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.json or {}
+    embedding_b64 = data.get('embedding_b64')
+    if not embedding_b64:
+        return jsonify({'error': 'embedding_b64 required'}), 400
+    import base64
+    embedding_bytes = base64.b64decode(embedding_b64)
+    CustomerFace.query.filter_by(customer_id=cid).update({'active': False})
+    db.session.add(CustomerFace(customer_id=cid, embedding=embedding_bytes))
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/<int:cid>/enroll/gait', methods=['POST'])
+def api_customers_enroll_gait(cid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.json or {}
+    features_b64 = data.get('features_b64')
+    if not features_b64:
+        return jsonify({'error': 'features_b64 required'}), 400
+    import base64
+    features_bytes = base64.b64decode(features_b64)
+    CustomerGait.query.filter_by(customer_id=cid).update({'active': False})
+    db.session.add(CustomerGait(customer_id=cid, gait_features=features_bytes))
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/identify', methods=['POST'])
+def api_customers_identify():
+    """Called by recognition_service to log a visit when a customer is identified."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    data = request.json or {}
+    cid             = data.get('customer_id')
+    matched_signals = data.get('matched_signals', '')
+    confidence_scores = data.get('confidence_scores')
+    camera_source   = data.get('camera_source')
+    if not cid:
+        return jsonify({'error': 'customer_id required'}), 400
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    visit = CustomerVisit(
+        customer_id=cid,
+        matched_signals=matched_signals,
+        confidence_scores=_json.dumps(confidence_scores) if confidence_scores else None,
+        camera_source=camera_source,
+    )
+    db.session.add(visit)
+    c.visit_count = (c.visit_count or 0) + 1
+    c.last_visit = datetime.utcnow()
+    db.session.commit()
+    return jsonify({'ok': True, 'visit_id': visit.id})
+
+@app.route('/api/customers/log_plate', methods=['POST'])
+def api_customers_log_plate():
+    """Called by recognition_service to log every plate detection (matched or not)."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    data = request.json or {}
+    pd = PlateDetection(
+        plate_number=data.get('plate_number', '').upper(),
+        confidence=data.get('confidence'),
+        customer_id=data.get('customer_id'),
+        matched=bool(data.get('matched', False)),
+        snapshot_path=data.get('snapshot_path'),
+        camera_source=data.get('camera_source'),
+    )
+    db.session.add(pd)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/pending_visits', methods=['GET'])
+def api_customers_pending_visits():
+    """Returns unacknowledged visits from the last 5 minutes for teller greeting."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    cutoff = datetime.utcnow() - timedelta(minutes=5)
+    visits = (CustomerVisit.query
+              .filter_by(acknowledged=False)
+              .filter(CustomerVisit.detected_at >= cutoff)
+              .order_by(CustomerVisit.detected_at.desc())
+              .all())
+    result = []
+    for v in visits:
+        c = db.session.get(Customer, v.customer_id)
+        if c:
+            result.append({
+                'id': v.id,
+                'customer_name': c.name,
+                'visit_count': c.visit_count,
+                'matched_signals': v.matched_signals,
+                'detected_at': v.detected_at.isoformat(),
+            })
+    return jsonify(result)
+
+@app.route('/api/customers/visits/<int:vid>/acknowledge', methods=['POST'])
+def api_customers_acknowledge_visit(vid):
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    v = db.session.get(CustomerVisit, vid)
+    if v:
+        v.acknowledged = True
+        db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/customers/faces_raw', methods=['GET'])
+def api_customers_faces_raw():
+    """Internal: returns all active face embeddings as base64 for the recognition service."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    import base64
+    rows = CustomerFace.query.filter_by(active=True).all()
+    return jsonify([{'customer_id': r.customer_id, 'embedding_b64': base64.b64encode(r.embedding).decode()} for r in rows])
+
+@app.route('/api/customers/gaits_raw', methods=['GET'])
+def api_customers_gaits_raw():
+    """Internal: returns all active gait features as base64 for the recognition service."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    import base64
+    rows = CustomerGait.query.filter_by(active=True).all()
+    return jsonify([{'customer_id': r.customer_id, 'features_b64': base64.b64encode(r.gait_features).decode()} for r in rows])
+
+@app.route('/api/customers/plate_log', methods=['GET'])
+def api_customers_plate_log():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    limit = int(request.args.get('limit', 50))
+    rows = PlateDetection.query.order_by(PlateDetection.detected_at.desc()).limit(limit).all()
+    return jsonify([{
+        'id': r.id, 'plate_number': r.plate_number, 'confidence': float(r.confidence) if r.confidence else None,
+        'detected_at': r.detected_at.isoformat(), 'customer_id': r.customer_id,
+        'matched': r.matched, 'camera_source': r.camera_source,
+    } for r in rows])
 
 
 # -----------------------------

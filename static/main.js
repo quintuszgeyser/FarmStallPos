@@ -12,6 +12,7 @@ let STATE = {
   currentTx:        null,
   receiveProductId: null,   // stock item being received
   productsSubTab:   'active',  // 'active' | 'ingredients' | 'archived'
+  customers:        [],
 };
 
 // ═══════════════════════════════════════════════════════
@@ -181,6 +182,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     await loadTransactions();
     await loadSpecials();
     startKitchenBadgePoll();  // badge visible to all users
+    startCustomerVisitPoll(); // greet returning customers on teller screen
     if (STATE.user?.role === 'admin') {
       await loadSettings();
       await loadStats();
@@ -4767,3 +4769,167 @@ document.getElementById('btn-subs-confirm')?.addEventListener('click', () => {
   detectAndOfferSpecials();
   toast(`Added: ${p.name}${allLabels.length ? ` (${allLabels.join(', ')})` : ''}`, 'success', 1500);
 });
+
+// ═══════════════════════════════════════════════════════
+// CUSTOMER VISIT POLLING — greet returning customers
+// ═══════════════════════════════════════════════════════
+let _customerVisitPollTimer = null;
+const _acknowledgedVisits = new Set();
+
+function startCustomerVisitPoll() {
+  if (_customerVisitPollTimer) return;
+  _customerVisitPollTimer = setInterval(async () => {
+    try {
+      const visits = await api('/api/customers/pending_visits');
+      for (const v of visits) {
+        if (_acknowledgedVisits.has(v.id)) continue;
+        _acknowledgedVisits.add(v.id);
+        const ordinal = v.visit_count > 1 ? ` (visit #${v.visit_count})` : ' — first visit!';
+        toast(`Welcome back, ${v.customer_name}${ordinal}`, 'info', 8000);
+        api(`/api/customers/visits/${v.id}/acknowledge`, { method: 'POST' }).catch(() => {});
+      }
+    } catch {}
+  }, 5000);
+}
+
+// ═══════════════════════════════════════════════════════
+// CUSTOMERS TAB
+// ═══════════════════════════════════════════════════════
+async function loadCustomers() {
+  STATE.customers = await api('/api/customers');
+  renderCustomersList();
+}
+
+function renderCustomersList() {
+  const container = document.getElementById('customers-list');
+  if (!container) return;
+  if (!STATE.customers.length) {
+    container.innerHTML = '<div class="text-muted">No customers enrolled yet.</div>';
+    return;
+  }
+  container.innerHTML = STATE.customers.map(c => `
+    <div class="card mb-2 ${c.active ? '' : 'opacity-50'}">
+      <div class="card-body py-2 d-flex justify-content-between align-items-center">
+        <div>
+          <span class="fw-semibold">${c.name}</span>
+          ${c.phone ? `<span class="text-muted small ms-2">${c.phone}</span>` : ''}
+          <div class="small text-muted mt-1">
+            ${c.plates.length ? `<span class="badge bg-light text-dark border me-1">${c.plates.join(', ')}</span>` : ''}
+            ${c.has_face ? '<span class="badge bg-success me-1">Face ✓</span>' : '<span class="badge bg-secondary me-1">Face —</span>'}
+            ${c.has_gait ? '<span class="badge bg-success me-1">Body ✓</span>' : '<span class="badge bg-secondary me-1">Body —</span>'}
+            <span class="text-muted">${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}</span>
+            ${c.last_visit ? ` · last ${new Date(c.last_visit).toLocaleDateString()}` : ''}
+          </div>
+        </div>
+        <button class="btn btn-outline-secondary btn-sm" onclick="openCustomerEnroll(${c.id})">Edit</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openCustomerEnroll(customerId) {
+  const c = customerId ? STATE.customers.find(x => x.id === customerId) : null;
+  document.getElementById('customerEnrollTitle').textContent = c ? 'Edit Customer' : 'Enroll Customer';
+  document.getElementById('enroll-customer-id').value = c?.id || '';
+  document.getElementById('enroll-name').value   = c?.name  || '';
+  document.getElementById('enroll-phone').value  = c?.phone || '';
+  document.getElementById('enroll-email').value  = c?.email || '';
+  document.getElementById('enroll-notes').value  = c?.notes || '';
+
+  // Plates
+  const platesList = document.getElementById('enroll-plates-list');
+  platesList.innerHTML = '';
+  (c?.plates || []).forEach(plate => addPlateBadge(plate));
+
+  // Biometric status
+  document.getElementById('enroll-face-status').textContent  = c?.has_face ? 'Face: enrolled ✓' : 'Face: not enrolled';
+  document.getElementById('enroll-face-status').className    = `badge ${c?.has_face ? 'bg-success' : 'bg-secondary'}`;
+  document.getElementById('enroll-gait-status').textContent  = c?.has_gait ? 'Body: enrolled ✓' : 'Body: not enrolled';
+  document.getElementById('enroll-gait-status').className    = `badge ${c?.has_gait ? 'bg-success' : 'bg-secondary'}`;
+
+  const deactivateBtn = document.getElementById('btn-deactivate-customer');
+  c ? show(deactivateBtn) : hide(deactivateBtn);
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('customerEnrollModal')).show();
+}
+
+function addPlateBadge(plate) {
+  const platesList = document.getElementById('enroll-plates-list');
+  const badge = document.createElement('span');
+  badge.className = 'badge bg-light text-dark border d-flex align-items-center gap-1';
+  badge.innerHTML = `${plate} <button type="button" class="btn-close btn-close-sm" style="font-size:0.6rem" aria-label="Remove"></button>`;
+  badge.querySelector('.btn-close').addEventListener('click', () => badge.remove());
+  badge.dataset.plate = plate;
+  platesList.appendChild(badge);
+}
+
+document.getElementById('btn-add-customer')?.addEventListener('click', () => openCustomerEnroll(null));
+
+document.getElementById('btn-add-plate')?.addEventListener('click', () => {
+  const input = document.getElementById('enroll-plate-input');
+  const plate = input.value.trim().toUpperCase();
+  if (!plate) return;
+  addPlateBadge(plate);
+  input.value = '';
+});
+
+document.getElementById('enroll-plate-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); document.getElementById('btn-add-plate').click(); }
+});
+
+document.getElementById('btn-save-customer')?.addEventListener('click', async () => {
+  const cid   = document.getElementById('enroll-customer-id').value;
+  const name  = document.getElementById('enroll-name').value.trim();
+  if (!name) { toast('Name is required', 'danger'); return; }
+
+  const payload = {
+    name,
+    phone: document.getElementById('enroll-phone').value.trim() || null,
+    email: document.getElementById('enroll-email').value.trim() || null,
+    notes: document.getElementById('enroll-notes').value.trim() || null,
+  };
+
+  try {
+    let id = cid ? parseInt(cid) : null;
+    if (!id) {
+      const r = await api('/api/customers', { method: 'POST', body: JSON.stringify(payload) });
+      id = r.id;
+    } else {
+      await api(`/api/customers/${id}`, { method: 'POST', body: JSON.stringify(payload) });
+    }
+
+    // Sync plates
+    const existingC = STATE.customers.find(x => x.id === id);
+    const existingPlates = existingC?.plates || [];
+    const newPlates = [...document.getElementById('enroll-plates-list').querySelectorAll('[data-plate]')]
+      .map(b => b.dataset.plate);
+
+    for (const p of newPlates) {
+      if (!existingPlates.includes(p)) {
+        await api(`/api/customers/${id}/enroll/plate`, { method: 'POST', body: JSON.stringify({ plate_number: p }) });
+      }
+    }
+
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('customerEnrollModal')).hide();
+    toast(cid ? 'Customer updated' : 'Customer enrolled', 'success');
+    await loadCustomers();
+  } catch (e) {
+    toast(e.message, 'danger');
+  }
+});
+
+document.getElementById('btn-deactivate-customer')?.addEventListener('click', async () => {
+  const cid = document.getElementById('enroll-customer-id').value;
+  if (!cid || !confirm('Deactivate this customer?')) return;
+  try {
+    await api(`/api/customers/${cid}`, { method: 'DELETE' });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('customerEnrollModal')).hide();
+    toast('Customer deactivated', 'success');
+    await loadCustomers();
+  } catch (e) {
+    toast(e.message, 'danger');
+  }
+});
+
+// Load customers when tab is shown
+document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown.bs.tab', loadCustomers);

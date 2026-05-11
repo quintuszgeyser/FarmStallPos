@@ -1,0 +1,7 @@
+fast-plate-ocr
+insightface
+onnxruntime
+opencv-python
+mediapipe
+numpy
+requests
