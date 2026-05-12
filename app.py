@@ -321,16 +321,21 @@ class SpecialLine(db.Model):
 
 class Customer(db.Model):
     __tablename__ = 'customers'
-    id          = db.Column(db.Integer, primary_key=True)
-    name        = db.Column(db.String(120), nullable=False)
-    phone       = db.Column(db.String(50),  nullable=True)
-    email       = db.Column(db.String(120), nullable=True)
-    notes       = db.Column(db.Text,        nullable=True)
-    enrolled_at = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
-    enrolled_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    last_visit  = db.Column(db.DateTime,    nullable=True)
-    visit_count = db.Column(db.Integer,     nullable=False, default=0)
-    active      = db.Column(db.Boolean,     nullable=False, default=True)
+    id              = db.Column(db.Integer, primary_key=True)
+    name            = db.Column(db.String(120), nullable=True)  # Made nullable for auto-enrollment
+    phone           = db.Column(db.String(50),  nullable=True)
+    email           = db.Column(db.String(120), nullable=True)
+    notes           = db.Column(db.Text,        nullable=True)
+    enrolled_at     = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
+    enrolled_by     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    last_visit      = db.Column(db.DateTime,    nullable=True)
+    visit_count     = db.Column(db.Integer,     nullable=False, default=0)
+    active          = db.Column(db.Boolean,     nullable=False, default=True)
+    # Phase 1: Auto-enrollment fields
+    auto_enrolled   = db.Column(db.Boolean,     nullable=False, default=False)
+    customer_number = db.Column(db.String(20),  nullable=True, unique=True)
+    first_seen      = db.Column(db.DateTime,    nullable=True)
+    is_employee     = db.Column(db.Boolean,     nullable=False, default=False)
 
 
 class CustomerPlate(db.Model):
