@@ -97,11 +97,28 @@ def get_face_app():
                     # Ensure face crop is RGB (3 channels) - recognizer expects shape (N, H, W, 3)
                     if len(face_img.shape) == 2:
                         face_img = cv2.cvtColor(face_img, cv2.COLOR_GRAY2BGR)
-                    elif face_img.shape[2] == 4:
+                    elif len(face_img.shape) == 3 and face_img.shape[2] == 4:
                         face_img = cv2.cvtColor(face_img, cv2.COLOR_BGRA2BGR)
+                    elif len(face_img.shape) == 3 and face_img.shape[2] != 3:
+                        # Unexpected channel count - force to BGR
+                        if face_img.shape[2] == 1:
+                            face_img = cv2.cvtColor(face_img[:,:,0], cv2.COLOR_GRAY2BGR)
+                        else:
+                            raise ValueError(f'Unexpected face image shape: {face_img.shape}')
+
+                    # Verify shape before passing to recognizer
+                    logger.info(f'[DEBUG] face_img shape before recognizer: {face_img.shape}, dtype: {face_img.dtype}')
+
+                    if len(face_img.shape) != 3 or face_img.shape[2] != 3:
+                        raise ValueError(f'Face image must be (H,W,3), got {face_img.shape}')
 
                     # Get embedding - needs numpy array with shape (1, 112, 112, 3)
                     face_img_np = np.array([face_img])
+                    logger.info(f'[DEBUG] face_img_np shape: {face_img_np.shape}, dtype: {face_img_np.dtype}')
+
+                    if face_img_np.shape != (1, 112, 112, 3):
+                        raise ValueError(f'Face array must be (1,112,112,3), got {face_img_np.shape}')
+
                     emb = self.recognizer.get_feat(face_img_np)[0]
                     face = type('Face', (), {'embedding': emb})()
                     return [face]
