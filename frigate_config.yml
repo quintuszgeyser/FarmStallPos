@@ -1,0 +1,81 @@
+mqtt:
+  enabled: false
+
+notifications:
+  enabled: true
+  webhook:
+    url: http://127.0.0.1:8080
+    events:
+      - new
+      - update
+      - end
+    labels:
+      - person
+      - car
+
+cameras:
+  indoor:
+    ffmpeg:
+      inputs:
+        - path: rtsp://LadyColeen:Q231179e@10.0.0.102:554/stream2
+          roles:
+            - detect
+        - path: rtsp://LadyColeen:Q231179e@10.0.0.102:554/stream1
+          roles:
+            - record
+
+    detect:
+      enabled: true
+      width: 640
+      height: 360
+
+    record:
+      enabled: true
+      continuous:
+        days: 0
+      motion:
+        days: 7
+
+    snapshots:
+      enabled: true
+
+    objects:
+      track:
+        - person
+
+  outdoor:
+    ffmpeg:
+      inputs:
+        - path: rtsp://LadyColeen:Q231179e@10.0.0.104:554/stream2
+          roles:
+            - detect
+        - path: rtsp://LadyColeen:Q231179e@10.0.0.104:554/stream1
+          roles:
+            - record
+
+    detect:
+      enabled: true
+      width: 640
+      height: 360
+
+    record:
+      enabled: true
+      continuous:
+        days: 0
+      motion:
+        days: 7
+
+    snapshots:
+      enabled: true
+
+    objects:
+      track:
+        - person
+        - car
+
+detectors:
+  cpu1:
+    type: cpu
+    num_threads: 4
+
+version: 0.17-0

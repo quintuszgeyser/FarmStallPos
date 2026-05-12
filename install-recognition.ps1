@@ -23,11 +23,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "OR use older Python (3.11) which has pre-built wheels" -ForegroundColor Yellow
 } else {
-    Write-Host "InsightFace installed successfully" -ForegroundColor Green
-
-    Write-Host ""
-    Write-Host "Pre-downloading InsightFace models (~100MB)..."
-    & .\.venv\Scripts\python -c "from insightface.model_zoo import get_model; det = get_model('retinaface_r50_v1'); det.prepare(ctx_id=-1, nms=0.4); rec = get_model('arcface_r100_v1'); rec.prepare(ctx_id=-1); print('Models downloaded')"
+    Write-Host "InsightFace installed (v0.2.1) - face recognition may be limited" -ForegroundColor Yellow
+    Write-Host "Service will use ANPR + body proportions for customer identification" -ForegroundColor Cyan
 }
 
 Write-Host ""
