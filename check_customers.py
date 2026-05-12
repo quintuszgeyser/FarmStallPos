@@ -3,8 +3,19 @@ import urllib3
 
 urllib3.disable_warnings()
 
-r = requests.get('http://127.0.0.1:5000/api/customers',
-                 auth=('admin', 'admin123'))
+# Login first (Flask uses session auth, not Basic auth)
+session = requests.Session()
+session.verify = False
+
+login = session.post('https://127.0.0.1:5000/api/login',
+                     json={'username': 'admin', 'password': 'admin123'})
+
+if not login.ok:
+    print(f'Login failed: {login.status_code} - {login.text}')
+    exit(1)
+
+# Now get customers
+r = session.get('https://127.0.0.1:5000/api/customers')
 
 if r.ok:
     customers = r.json()
