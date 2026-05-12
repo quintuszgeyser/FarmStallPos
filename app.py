@@ -2444,9 +2444,9 @@ def api_customers_post():
     u = current_user()
     c = Customer(
         name=name,
-        phone=data.get('phone', '').strip() or None,
-        email=data.get('email', '').strip() or None,
-        notes=data.get('notes', '').strip() or None,
+        phone=(data.get('phone') or '').strip() or None,
+        email=(data.get('email') or '').strip() or None,
+        notes=(data.get('notes') or '').strip() or None,
         enrolled_by=u.id if u else None,
     )
     db.session.add(c)
