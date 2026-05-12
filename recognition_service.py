@@ -49,11 +49,22 @@ def get_anpr():
 def get_face_app():
     global _face_app
     if _face_app is None:
-        import insightface
-        # Version 0.2.1 API
-        _face_app = insightface.app.FaceAnalysis('antelope')
-        _face_app.prepare(ctx_id=-1, nms=0.4)
-        logger.info('InsightFace loaded')
+        try:
+            import insightface
+            from insightface.model_zoo import get_model
+            # Version 0.2.1 - use retinaface detector + arcface recognizer
+            _face_app = insightface.app.FaceAnalysis()
+            # Manually set up models
+            ctx_id = -1  # CPU
+            _face_app.models = {}
+            _face_app.models['detection'] = get_model('retinaface_r50_v1')
+            _face_app.models['detection'].prepare(ctx_id=ctx_id, nms=0.4)
+            _face_app.models['recognition'] = get_model('arcface_r100_v1')
+            _face_app.models['recognition'].prepare(ctx_id=ctx_id)
+            logger.info('InsightFace loaded (retinaface + arcface)')
+        except Exception as e:
+            logger.warning('InsightFace failed to load: %s. Face recognition disabled.', e)
+            _face_app = None
     return _face_app
 
 def get_pose():
@@ -159,11 +170,13 @@ def run_anpr(image_path):
 def run_face(image_path):
     """Returns embedding as bytes, or None."""
     try:
+        face_app = get_face_app()
+        if face_app is None:
+            return None
         import cv2
         img = cv2.imread(image_path)
         if img is None:
             return None
-        face_app = get_face_app()
         faces = face_app.get(img)
         if not faces:
             return None
