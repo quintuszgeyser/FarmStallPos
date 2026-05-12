@@ -83,8 +83,9 @@ def get_face_app():
                     import cv2
                     from skimage import transform as trans
                     # Align face using landmarks
-                    M, _ = trans.estimate_transform('similarity', kpss[0], [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
-                    face_img = cv2.warpAffine(img, M.params[0:2, :], (112, 112), borderValue=0.0)
+                    tform = trans.SimilarityTransform()
+                    tform.estimate(kpss[0], [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
+                    face_img = cv2.warpAffine(img, tform.params[0:2, :], (112, 112), borderValue=0.0)
                     # Get embedding
                     emb = self.recognizer.get_feat([face_img])[0]
                     face = type('Face', (), {'embedding': emb})()
