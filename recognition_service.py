@@ -611,6 +611,7 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
     if face_bytes:
         face_emb = np.frombuffer(face_bytes, dtype=np.float32)
         all_faces = pos_get('/api/customers/faces_raw')
+        logger.debug(f'Face matching: comparing against {len(all_faces)} stored faces')
 
         for row in all_faces:
             try:
@@ -623,8 +624,9 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
                     cid = row['customer_id']
                     customer_scores[cid]['total'] += score
                     customer_scores[cid]['features']['face'] = round(score, 2)
-            except Exception:
-                pass
+                    logger.debug(f'Face match: customer {cid}, similarity={sim:.3f}, score={score:.2f}')
+            except Exception as e:
+                logger.warning(f'Face matching error for customer {row.get("customer_id")}: {e}')
 
     # 3. GAIT MATCHING (weight: 2.0, scaled by distance)
     if gait_bytes:
@@ -843,6 +845,13 @@ def process_event(event):
             face_bytes = run_face(snapshot_path)
             gait_bytes = run_gait(snapshot_path)
             physical_attrs = extract_physical_attributes(snapshot_path)
+
+            # Debug: Log what signals were extracted
+            signals_extracted = []
+            if face_bytes: signals_extracted.append(f'face({len(face_bytes)} bytes)')
+            if gait_bytes: signals_extracted.append(f'gait({len(gait_bytes)} bytes)')
+            if physical_attrs: signals_extracted.append(f'physical({len(physical_attrs)} attrs)')
+            logger.info(f'Extracted signals: {", ".join(signals_extracted) if signals_extracted else "none"}')
 
         # Use weighted voting system
         if plate_str or face_bytes or gait_bytes:
