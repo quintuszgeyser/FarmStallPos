@@ -2439,9 +2439,17 @@ def api_customers_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     data = request.json or {}
-    name = data.get('name', '').strip()
-    if not name:
+
+    # Support auto-enrollment with nullable name
+    name = (data.get('name') or '').strip() or None
+    auto_enrolled = data.get('auto_enrolled', False)
+    customer_number = data.get('customer_number')
+    first_seen_str = data.get('first_seen')
+
+    # Manual customer creation requires name
+    if not auto_enrolled and not name:
         return jsonify({'error': 'name required'}), 400
+
     u = current_user()
     c = Customer(
         name=name,
@@ -2449,6 +2457,9 @@ def api_customers_post():
         email=(data.get('email') or '').strip() or None,
         notes=(data.get('notes') or '').strip() or None,
         enrolled_by=u.id if u else None,
+        auto_enrolled=auto_enrolled,
+        customer_number=customer_number,
+        first_seen=datetime.fromisoformat(first_seen_str) if first_seen_str else None,
     )
     db.session.add(c)
     db.session.commit()
