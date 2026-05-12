@@ -38,6 +38,25 @@ _face_app     = None
 _mp_pose      = None
 _mp_pose_inst = None
 
+# ─── Pending Customer Buffer ────────────────────────────────────────────────
+# Staging system: collect signals over time before enrolling permanently
+# Structure: track_id -> {first_seen, last_seen, face_signals: [(bytes, quality)], ...}
+_pending_customers = {}
+_pending_lock = threading.Lock()
+
+def generate_track_id(face_bytes, gait_bytes):
+    """Generate stable track ID from biometric signals"""
+    import hashlib
+    data = b''
+    if face_bytes:
+        data += face_bytes[:64]
+    if gait_bytes:
+        data += gait_bytes
+    if not data:
+        import uuid
+        return str(uuid.uuid4())
+    return hashlib.md5(data).hexdigest()[:12]
+
 def get_anpr():
     global _anpr_model
     if _anpr_model is None:
@@ -731,11 +750,11 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
     best_cid = max(customer_scores.keys(), key=lambda cid: customer_scores[cid]['total'])
     best_score = customer_scores[best_cid]['total']
 
-    # Threshold: 3.0 points required for identification
-    # Lowered from 5.0→4.0→3.0 to handle varying quality embeddings
-    # Single strong biometric (face 3.0 or gait 2.0 + partial match) should identify
-    # This significantly reduces false negatives (duplicate creation)
-    if best_score >= 3.0:
+    # Threshold: 2.5 points required for identification
+    # Aggressively lowered to prevent duplicate creation
+    # Even partial matches (face 2.5 or gait 1.5 + some physical) should identify
+    # Better to merge duplicates later than create many false customers
+    if best_score >= 2.5:
         return best_cid, best_score, customer_scores[best_cid]['features']
 
     return None, best_score, customer_scores[best_cid]['features']
@@ -928,8 +947,8 @@ def process_event(event):
                     # CRITICAL: Lock the entire enrollment process to prevent race conditions
                     with _enrollment_lock:
                         now = time.time()
-                        # Clean old entries (>30 seconds) - extended from 10s
-                        _recent_enrollments[:] = [(ts, fb, gb) for ts, fb, gb in _recent_enrollments if now - ts < 30]
+                        # Clean old entries (>60 seconds) - extended significantly
+                        _recent_enrollments[:] = [(ts, fb, gb) for ts, fb, gb in _recent_enrollments if now - ts < 60]
 
                         # Check if similar detection already enrolled recently
                         is_duplicate = False
@@ -940,8 +959,9 @@ def process_event(event):
                                         np.frombuffer(face_bytes, dtype=np.float32),
                                         np.frombuffer(recent_face, dtype=np.float32)
                                     )
-                                    # Lowered from 0.90 to 0.70 to catch more duplicates
-                                    if face_sim > 0.70:  # High similarity = likely same person
+                                    # Aggressively lowered from 0.90→0.70→0.50
+                                    # Catch even moderate similarity as duplicate
+                                    if face_sim > 0.50:
                                         is_duplicate = True
                                         logger.info(f'Skipping duplicate enrollment (face match: {face_sim:.2f})')
                                         break
@@ -950,8 +970,8 @@ def process_event(event):
                                         np.frombuffer(gait_bytes, dtype=np.float32),
                                         np.frombuffer(recent_gait, dtype=np.float32)
                                     )
-                                    # Lowered from 0.15 to 0.20 to catch more duplicates
-                                    if gait_dist < 0.20:  # Similar gait
+                                    # Aggressively relaxed from 0.15→0.20→0.30
+                                    if gait_dist < 0.30:
                                         is_duplicate = True
                                         logger.info(f'Skipping duplicate enrollment (gait match: {gait_dist:.2f})')
                                         break
