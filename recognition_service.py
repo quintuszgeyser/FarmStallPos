@@ -41,8 +41,8 @@ _mp_pose_inst = None
 def get_anpr():
     global _anpr_model
     if _anpr_model is None:
-        from fast_plate_ocr import ONNXPlateRecognizer
-        _anpr_model = ONNXPlateRecognizer('global-plates-mobile-vit-v2-model')
+        from fast_plate_ocr import LicensePlateRecognizer
+        _anpr_model = LicensePlateRecognizer('global-plates-mobile-vit-v2-model')
         logger.info('ANPR model loaded')
     return _anpr_model
 
