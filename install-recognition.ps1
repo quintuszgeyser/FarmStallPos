@@ -26,8 +26,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "InsightFace installed successfully" -ForegroundColor Green
 
     Write-Host ""
-    Write-Host "Pre-downloading InsightFace buffalo_sc model (~100MB)..."
-    & .\.venv\Scripts\python -c "from insightface.app import FaceAnalysis; app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider']); app.prepare(ctx_id=-1)"
+    Write-Host "Pre-downloading InsightFace model (~100MB)..."
+    & .\.venv\Scripts\python -c "import insightface; app = insightface.app.FaceAnalysis(); app.prepare(ctx_id=-1, nms=0.4)"
 }
 
 Write-Host ""
