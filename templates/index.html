@@ -146,6 +146,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#suppliers">Suppliers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
   </ul>
 
   <div id="tab-contents" class="tab-content hidden mt-3">
@@ -540,8 +541,72 @@
       </div>
     </div>
 
+    <!-- ═══════════════ CUSTOMERS ═══════════════ -->
+    <div class="tab-pane fade" id="customers">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Customers</h5>
+        <button class="btn btn-primary btn-sm" id="btn-add-customer">+ Enroll Customer</button>
+      </div>
+      <div id="customers-list"></div>
+    </div>
+
   </div><!-- /tab-contents -->
 </div><!-- /container -->
+
+<!-- ═══════════ CUSTOMER ENROLL MODAL ═══════════ -->
+<div class="modal fade" id="customerEnrollModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="customerEnrollTitle">Enroll Customer</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="enroll-customer-id">
+        <div class="mb-3">
+          <label class="form-label">Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="enroll-name" placeholder="Customer name">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Phone</label>
+          <input type="text" class="form-control" id="enroll-phone">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Email</label>
+          <input type="text" class="form-control" id="enroll-email">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Notes</label>
+          <textarea class="form-control" id="enroll-notes" rows="2"></textarea>
+        </div>
+        <hr>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Licence Plates</label>
+          <div class="input-group">
+            <input type="text" class="form-control text-uppercase" id="enroll-plate-input" placeholder="e.g. CA123456">
+            <button class="btn btn-outline-secondary" id="btn-add-plate">Add</button>
+          </div>
+          <div id="enroll-plates-list" class="mt-2 d-flex flex-wrap gap-2"></div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label fw-semibold">Biometrics</label>
+          <div class="d-flex gap-3">
+            <span id="enroll-face-status" class="badge bg-secondary">Face: not enrolled</span>
+            <span id="enroll-gait-status" class="badge bg-secondary">Body: not enrolled</span>
+          </div>
+          <div class="mt-2 text-muted small">Face and body features are enrolled via the recognition service camera capture — run <code>enroll_capture.py --customer &lt;id&gt;</code> after saving.</div>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between">
+        <button class="btn btn-danger btn-sm hidden" id="btn-deactivate-customer">Deactivate</button>
+        <div>
+          <button class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-customer">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ═══════════ WEIGHT ENTRY MODAL ═══════════ -->
 <div class="modal fade" id="weightModal" tabindex="-1" aria-hidden="true">
