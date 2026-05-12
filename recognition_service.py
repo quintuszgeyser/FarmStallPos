@@ -77,10 +77,16 @@ def get_face_app():
 
                 def get(self, img):
                     bboxes, kpss = self.detector.detect(img, input_size=(640, 640))
-                    if len(bboxes) == 0:
+                    if len(bboxes) == 0 or len(kpss) == 0:
                         return []
-                    # Get embedding for first face
-                    emb = self.recognizer.get_feat(kpss[0])
+                    # Get embedding for first face - ArcFaceONNX needs image + landmarks
+                    import cv2
+                    from skimage import transform as trans
+                    # Align face using landmarks
+                    M, _ = trans.estimate_transform('similarity', kpss[0], [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
+                    face_img = cv2.warpAffine(img, M.params[0:2, :], (112, 112), borderValue=0.0)
+                    # Get embedding
+                    emb = self.recognizer.get_feat([face_img])[0]
                     face = type('Face', (), {'embedding': emb})()
                     return [face]
 
@@ -98,12 +104,27 @@ def get_pose():
     if _mp_pose is None:
         try:
             import mediapipe as mp
+            import os
+            import urllib.request
+
+            # Download pose model if missing
+            model_dir = os.path.expanduser('~/.mediapipe/models')
+            os.makedirs(model_dir, exist_ok=True)
+            model_path = os.path.join(model_dir, 'pose_landmarker_lite.task')
+
+            if not os.path.exists(model_path):
+                logger.info('Downloading MediaPipe Pose model (~15MB)...')
+                urllib.request.urlretrieve(
+                    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+                    model_path
+                )
+
             # MediaPipe v0.10+ uses tasks API
             from mediapipe.tasks import python
             from mediapipe.tasks.python import vision
 
             # Create pose landmarker
-            base_options = python.BaseOptions(model_asset_path=None)
+            base_options = python.BaseOptions(model_asset_path=model_path)
             options = vision.PoseLandmarkerOptions(
                 base_options=base_options,
                 running_mode=vision.RunningMode.IMAGE)
@@ -232,15 +253,21 @@ def run_gait(image_path):
     """Extracts body proportion features from a single frame. Returns bytes or None."""
     try:
         import cv2
+        import mediapipe as mp
         img = cv2.imread(image_path)
         if img is None:
             return None
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        mp_pose, pose = get_pose()
-        result = pose.process(rgb)
-        if not result.pose_landmarks:
+        mp_pose, pose_landmarker = get_pose()
+        if pose_landmarker is None:
             return None
-        lm = result.pose_landmarks.landmark
+
+        # Convert to MediaPipe Image
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+        result = pose_landmarker.detect(mp_image)
+        if not result.pose_landmarks or len(result.pose_landmarks) == 0:
+            return None
+        lm = result.pose_landmarks[0]  # v0.10+ returns list
         # Extract 6 body proportion features from keypoints
         def pt(idx):
             return np.array([lm[idx].x, lm[idx].y])
