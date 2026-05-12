@@ -2,14 +2,13 @@
 # Run from the farm_pos_web folder on the Mini PC
 
 $pip = ".\.venv\Scripts\pip"
-$flags = "--trusted-host pypi.org --trusted-host files.pythonhosted.org"
 
 Write-Host "Installing recognition service dependencies..."
-& $pip install fast-plate-ocr $flags
-& $pip install insightface $flags
-& $pip install onnxruntime $flags
-& $pip install opencv-python $flags
-& $pip install mediapipe $flags
+& $pip install fast-plate-ocr --trusted-host pypi.org --trusted-host files.pythonhosted.org
+& $pip install insightface --trusted-host pypi.org --trusted-host files.pythonhosted.org
+& $pip install onnxruntime --trusted-host pypi.org --trusted-host files.pythonhosted.org
+& $pip install opencv-python --trusted-host pypi.org --trusted-host files.pythonhosted.org
+& $pip install mediapipe --trusted-host pypi.org --trusted-host files.pythonhosted.org
 
 Write-Host ""
 Write-Host "Pre-downloading InsightFace buffalo_sc model (~100MB)..."
