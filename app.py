@@ -293,6 +293,7 @@ class Sale(db.Model):
     qty         = db.Column(Numeric(10, 4), nullable=False)   # Numeric for variable weight support
     unit_price  = db.Column(Numeric(10, 2), nullable=False)
     user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)  # Link sale to detected customer
     voided      = db.Column(db.Boolean, nullable=False, default=False)
     voided_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     voided_at   = db.Column(db.DateTime, nullable=True)
@@ -3557,6 +3558,7 @@ def api_transactions_post():
     sale_uuid = str(uuid.uuid4())
     now       = datetime.utcnow()
     u         = current_user()
+    customer_id = data.get('customer_id')  # From till badge (if customer detected)
 
     import json as _json
 
@@ -3576,6 +3578,7 @@ def api_transactions_post():
             sale_id=sale_uuid, date_time=now,
             product_id=pid, qty=qty, unit_price=unit_price,
             user_id=u.id if u else None,
+            customer_id=customer_id,  # Link sale to detected customer
             sub_log=sub_log_val,
         ))
 
