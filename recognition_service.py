@@ -86,8 +86,9 @@ def get_face_app():
                     tform = trans.SimilarityTransform()
                     tform.estimate(kpss[0], [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
                     face_img = cv2.warpAffine(img, tform.params[0:2, :], (112, 112), borderValue=0.0)
-                    # Get embedding
-                    emb = self.recognizer.get_feat([face_img])[0]
+                    # Get embedding - needs numpy array
+                    face_img_np = np.array([face_img])
+                    emb = self.recognizer.get_feat(face_img_np)[0]
                     face = type('Face', (), {'embedding': emb})()
                     return [face]
 
