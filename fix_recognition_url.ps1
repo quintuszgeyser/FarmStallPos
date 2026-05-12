@@ -1,4 +1,4 @@
-# Fix Recognition Service to use HTTP for QA (QA is HTTP, Production is HTTPS on 5443)
+# Fix Recognition Service to use HTTPS for QA (QA uses HTTPS on port 5000 via watch-deploy.ps1)
 # Run on Mini PC
 
 Write-Host "Fixing Recognition Service URL configuration..." -ForegroundColor Yellow
@@ -13,13 +13,13 @@ if (-not (Test-Path $xmlPath)) {
 # Read the XML
 $content = Get-Content $xmlPath -Raw
 
-# Replace HTTPS with HTTP for QA (port 5000 is HTTP, 5443 is HTTPS)
-$newContent = $content -replace 'https://127.0.0.1:5000', 'http://127.0.0.1:5000'
+# Replace HTTP with HTTPS for QA (watch-deploy.ps1 configures Flask with SSL on port 5000)
+$newContent = $content -replace 'http://127.0.0.1:5000', 'https://127.0.0.1:5000'
 
 # Write back
 Set-Content $xmlPath -Value $newContent
 
-Write-Host "Updated POS_URL to: http://127.0.0.1:5000 (QA is HTTP)" -ForegroundColor Green
+Write-Host "Updated POS_URL to: https://127.0.0.1:5000 (QA uses HTTPS)" -ForegroundColor Green
 
 # Show the change
 Write-Host "`nRelevant lines:" -ForegroundColor Cyan
