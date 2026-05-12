@@ -891,6 +891,114 @@ def strong_migrate():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_dt  ON plate_detections (detected_at)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_cid ON plate_detections (customer_id)")
 
+            # ---- Phase 1: Auto-Enrollment System (SQLite - 2026-05-12) ----
+            existing_customers = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(customers)").fetchall()]
+            for col, defn in [
+                ('auto_enrolled',   'INTEGER DEFAULT 0'),
+                ('customer_number', 'TEXT'),  # SQLite: can't add UNIQUE on ALTER, add later as index
+                ('first_seen',      'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+                ('is_employee',     'INTEGER DEFAULT 0'),
+            ]:
+                if col not in existing_customers:
+                    conn.exec_driver_sql(f"ALTER TABLE customers ADD COLUMN {col} {defn}")
+
+            # Add unique index for customer_number (SQLite workaround)
+            conn.exec_driver_sql("CREATE UNIQUE INDEX IF NOT EXISTS idx_customers_number ON customers(customer_number) WHERE customer_number IS NOT NULL")
+
+            existing_sales = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(sales)").fetchall()]
+            if 'customer_id' not in existing_sales:
+                conn.exec_driver_sql("ALTER TABLE sales ADD COLUMN customer_id INTEGER")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id)")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_physical_attributes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL,
+                height_cm INTEGER,
+                hair_color TEXT,
+                skin_tone TEXT,
+                build TEXT,
+                eye_color TEXT,
+                age_range TEXT,
+                gender TEXT,
+                wearing_glasses INTEGER,
+                facial_hair TEXT,
+                detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                camera_source TEXT,
+                confidence REAL
+            )""")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS visit_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL,
+                session_start TIMESTAMP NOT NULL,
+                session_end TIMESTAMP,
+                entry_camera TEXT,
+                checkout_camera TEXT,
+                dwell_seconds INTEGER,
+                purchase_made INTEGER DEFAULT 0,
+                sale_ids TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS detection_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_id TEXT UNIQUE,
+                camera_source TEXT NOT NULL,
+                camera_zone TEXT,
+                object_type TEXT,
+                detected_at TIMESTAMP NOT NULL,
+                processed INTEGER DEFAULT 0,
+                plate_number TEXT,
+                face_embedding BLOB,
+                gait_features BLOB,
+                physical_attributes TEXT,
+                tracked_person_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS person_tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                track_uuid TEXT UNIQUE,
+                customer_id INTEGER,
+                first_seen TIMESTAMP NOT NULL,
+                entry_camera TEXT,
+                associated_plate TEXT,
+                last_seen TIMESTAMP,
+                last_camera TEXT,
+                height_cm_avg INTEGER,
+                hair_color_consensus TEXT,
+                gender_consensus TEXT,
+                best_face_embedding BLOB,
+                best_gait_features BLOB,
+                enrolled_as_customer INTEGER DEFAULT 0,
+                session_active INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS till_detections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id INTEGER NOT NULL,
+                detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                camera_source TEXT
+            )""")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_conflicts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                customer_id_a INTEGER NOT NULL,
+                customer_id_b INTEGER NOT NULL,
+                score_a REAL,
+                score_b REAL,
+                detected_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                resolved INTEGER DEFAULT 0,
+                merged_into INTEGER
+            )""")
+
         else:
             # ---- PostgreSQL ----
             def pg_try(sql):
@@ -1171,6 +1279,165 @@ def strong_migrate():
             )""")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_dt  ON plate_detections (detected_at)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_cid ON plate_detections (customer_id)")
+
+            # ---- Phase 1: Auto-Enrollment System (2026-05-12) ----
+
+            # Make customers.name nullable for anonymous customers
+            pg_try("ALTER TABLE customers ALTER COLUMN name DROP NOT NULL")
+
+            # Add auto-enrollment fields to customers
+            pg_try("ALTER TABLE customers ADD COLUMN auto_enrolled BOOLEAN DEFAULT FALSE")
+            pg_try("ALTER TABLE customers ADD COLUMN customer_number VARCHAR(20) UNIQUE")
+            pg_try("ALTER TABLE customers ADD COLUMN first_seen TIMESTAMP DEFAULT NOW()")
+            pg_try("ALTER TABLE customers ADD COLUMN is_employee BOOLEAN DEFAULT FALSE")
+
+            # Link sales to customers
+            pg_try("ALTER TABLE sales ADD COLUMN customer_id INTEGER REFERENCES customers(id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_sales_customer ON sales(customer_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_sales_datetime_customer ON sales(date_time, customer_id)")
+
+            # Physical attributes tracking
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_physical_attributes (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+                height_cm INTEGER,
+                hair_color VARCHAR(20),
+                skin_tone VARCHAR(20),
+                build VARCHAR(20),
+                eye_color VARCHAR(20),
+                age_range VARCHAR(20),
+                gender VARCHAR(10),
+                wearing_glasses BOOLEAN,
+                facial_hair VARCHAR(20),
+                detected_at TIMESTAMP DEFAULT NOW(),
+                camera_source VARCHAR(50),
+                confidence NUMERIC(3,2)
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_customer ON customer_physical_attributes(customer_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_height ON customer_physical_attributes(height_cm)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_hair ON customer_physical_attributes(hair_color)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_build ON customer_physical_attributes(build)")
+
+            # Visit sessions (dwell time tracking)
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS visit_sessions (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL REFERENCES customers(id),
+                session_start TIMESTAMP NOT NULL,
+                session_end TIMESTAMP,
+                entry_camera VARCHAR(50),
+                checkout_camera VARCHAR(50),
+                dwell_seconds INTEGER,
+                purchase_made BOOLEAN DEFAULT FALSE,
+                sale_ids TEXT,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_visit_sessions_customer ON visit_sessions(customer_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_visit_sessions_start ON visit_sessions(session_start)")
+
+            # Signal confidence history
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_signal_history (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL REFERENCES customers(id),
+                signal_type VARCHAR(20) NOT NULL,
+                confidence NUMERIC(5,3),
+                camera_source VARCHAR(50),
+                detected_at TIMESTAMP DEFAULT NOW()
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_signal_history_customer ON customer_signal_history(customer_id, signal_type)")
+
+            # Detection events stream
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS detection_events (
+                id SERIAL PRIMARY KEY,
+                event_id VARCHAR(50) UNIQUE,
+                camera_source VARCHAR(50) NOT NULL,
+                camera_zone VARCHAR(20),
+                object_type VARCHAR(20),
+                detected_at TIMESTAMP NOT NULL,
+                snapshot_path TEXT,
+                processed BOOLEAN DEFAULT FALSE,
+                plate_number VARCHAR(20),
+                plate_confidence NUMERIC(3,2),
+                person_bbox JSON,
+                face_embedding BYTEA,
+                gait_features BYTEA,
+                physical_attributes JSON,
+                tracked_person_id INTEGER,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_time ON detection_events(detected_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_camera_zone ON detection_events(camera_zone, detected_at)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_person ON detection_events(tracked_person_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_unprocessed ON detection_events(processed) WHERE processed = FALSE")
+
+            # Person tracking across cameras
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS person_tracks (
+                id SERIAL PRIMARY KEY,
+                track_uuid VARCHAR(36) UNIQUE,
+                customer_id INTEGER REFERENCES customers(id),
+                first_seen TIMESTAMP NOT NULL,
+                entry_camera VARCHAR(50),
+                entry_zone VARCHAR(20),
+                associated_plate VARCHAR(20),
+                last_seen TIMESTAMP,
+                last_camera VARCHAR(50),
+                last_zone VARCHAR(20),
+                height_cm_avg INTEGER,
+                hair_color_consensus VARCHAR(20),
+                skin_tone_consensus VARCHAR(20),
+                build_consensus VARCHAR(20),
+                gender_consensus VARCHAR(10),
+                best_face_embedding BYTEA,
+                best_gait_features BYTEA,
+                enrolled_as_customer BOOLEAN DEFAULT FALSE,
+                session_active BOOLEAN DEFAULT TRUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_person_tracks_active ON person_tracks(session_active, last_seen)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_person_tracks_plate ON person_tracks(associated_plate)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_person_tracks_customer ON person_tracks(customer_id)")
+
+            # Till detections for purchase linking
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS till_detections (
+                id SERIAL PRIMARY KEY,
+                customer_id INTEGER NOT NULL REFERENCES customers(id),
+                detected_at TIMESTAMP DEFAULT NOW(),
+                camera_source VARCHAR(50)
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_till_detections_time ON till_detections(detected_at DESC)")
+
+            # Customer conflicts for reconciliation
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_conflicts (
+                id SERIAL PRIMARY KEY,
+                customer_id_a INTEGER NOT NULL REFERENCES customers(id),
+                customer_id_b INTEGER NOT NULL REFERENCES customers(id),
+                score_a NUMERIC(5,2),
+                score_b NUMERIC(5,2),
+                detected_at TIMESTAMP DEFAULT NOW(),
+                resolved BOOLEAN DEFAULT FALSE,
+                merged_into INTEGER REFERENCES customers(id)
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_conflicts_unresolved ON customer_conflicts(resolved) WHERE resolved = FALSE")
+            pg_try("""CREATE UNIQUE INDEX idx_conflicts_pair ON customer_conflicts(
+                LEAST(customer_id_a, customer_id_b),
+                GREATEST(customer_id_a, customer_id_b)
+            ) WHERE resolved = FALSE""")
+
+            # Customer exclusions (for identical twins, etc.)
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_exclusions (
+                id SERIAL PRIMARY KEY,
+                customer_id_a INTEGER NOT NULL REFERENCES customers(id),
+                customer_id_b INTEGER NOT NULL REFERENCES customers(id),
+                reason VARCHAR(200),
+                created_at TIMESTAMP DEFAULT NOW()
+            )""")
 
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
@@ -2381,6 +2648,140 @@ def api_customers_plate_log():
         'detected_at': r.detected_at.isoformat(), 'customer_id': r.customer_id,
         'matched': r.matched, 'camera_source': r.camera_source,
     } for r in rows])
+
+@app.route('/api/customers/max_number', methods=['GET'])
+def api_customers_max_number():
+    """Returns the highest customer number for auto-enrollment."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    # Get highest customer_number (format: CUST-0001)
+    max_customer = db.session.query(Customer).filter(
+        Customer.customer_number.isnot(None)
+    ).order_by(Customer.customer_number.desc()).first()
+
+    if max_customer and max_customer.customer_number:
+        try:
+            # Extract number from "CUST-0001" format
+            num = int(max_customer.customer_number.split('-')[1])
+            return jsonify({'max_number': num})
+        except (IndexError, ValueError):
+            pass
+
+    return jsonify({'max_number': 0})
+
+@app.route('/api/customers/<int:cid>/attributes', methods=['GET', 'POST'])
+def api_customer_attributes(cid):
+    """Get or store physical attributes for a customer."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    customer = db.session.get(Customer, cid)
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    if request.method == 'GET':
+        # Get most recent attributes
+        from sqlalchemy import text
+        result = db.session.execute(
+            text("""SELECT height_cm, hair_color, skin_tone, build, eye_color,
+                           age_range, gender, wearing_glasses, facial_hair,
+                           detected_at, camera_source, confidence
+                    FROM customer_physical_attributes
+                    WHERE customer_id = :cid
+                    ORDER BY detected_at DESC LIMIT 1"""),
+            {'cid': cid}
+        ).fetchone()
+
+        if result:
+            return jsonify({
+                'height_cm': result[0],
+                'hair_color': result[1],
+                'skin_tone': result[2],
+                'build': result[3],
+                'eye_color': result[4],
+                'age_range': result[5],
+                'gender': result[6],
+                'wearing_glasses': result[7],
+                'facial_hair': result[8],
+                'detected_at': result[9].isoformat() if result[9] else None,
+                'camera_source': result[10],
+                'confidence': float(result[11]) if result[11] else None
+            })
+        return jsonify(None)
+
+    else:  # POST
+        data = request.get_json()
+        from sqlalchemy import text
+        db.session.execute(
+            text("""INSERT INTO customer_physical_attributes
+                    (customer_id, height_cm, hair_color, skin_tone, build, eye_color,
+                     age_range, gender, wearing_glasses, facial_hair, camera_source, confidence)
+                    VALUES (:cid, :height, :hair, :skin, :build, :eye, :age, :gender,
+                            :glasses, :facial, :camera, :conf)"""),
+            {
+                'cid': cid,
+                'height': data.get('height_cm'),
+                'hair': data.get('hair_color'),
+                'skin': data.get('skin_tone'),
+                'build': data.get('build'),
+                'eye': data.get('eye_color'),
+                'age': data.get('age_range'),
+                'gender': data.get('gender'),
+                'glasses': data.get('wearing_glasses'),
+                'facial': data.get('facial_hair'),
+                'camera': data.get('camera_source'),
+                'conf': data.get('confidence')
+            }
+        )
+        db.session.commit()
+        return jsonify({'ok': True})
+
+@app.route('/api/till/active_customer', methods=['GET'])
+def api_till_active_customer():
+    """Returns customer detected at till in last 30 seconds (only if they have a name)."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    from sqlalchemy import text
+    cutoff = datetime.utcnow() - timedelta(seconds=30)
+
+    # Only return customers with names (exclude anonymous auto-enrolled)
+    result = db.session.execute(
+        text("""SELECT td.customer_id, td.detected_at, c.name, c.customer_number
+                FROM till_detections td
+                JOIN customers c ON c.id = td.customer_id
+                WHERE td.detected_at >= :cutoff
+                  AND c.name IS NOT NULL
+                ORDER BY td.detected_at DESC LIMIT 1"""),
+        {'cutoff': cutoff}
+    ).fetchone()
+
+    if not result:
+        return jsonify({'customer_id': None})
+
+    return jsonify({
+        'customer_id': result[0],
+        'name': result[2],
+        'customer_number': result[3],
+        'detected_at': result[1].isoformat() if result[1] else None
+    })
+
+@app.route('/api/till/detect', methods=['POST'])
+def api_till_detect():
+    """Log customer detection at till."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json()
+    from sqlalchemy import text
+    db.session.execute(
+        text("""INSERT INTO till_detections (customer_id, camera_source)
+                VALUES (:cid, :camera)"""),
+        {'cid': data['customer_id'], 'camera': data.get('camera_source')}
+    )
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 # -----------------------------

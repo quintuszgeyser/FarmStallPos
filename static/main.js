@@ -13,6 +13,8 @@ let STATE = {
   receiveProductId: null,   // stock item being received
   productsSubTab:   'active',  // 'active' | 'ingredients' | 'archived'
   customers:        [],
+  activeCustomer:   null,   // customer detected at till
+  customerPollInterval: null,  // interval ID for till customer polling
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2626,8 +2628,15 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     ...(item.subs   ? { subs:   item.subs   } : {}),
     ...(item.extras ? { extras: item.extras } : {}),
   }));
+
+  // Include customer_id if detected at till
+  const requestBody = {
+    cart: payload,
+    ...(STATE.activeCustomer?.customer_id ? { customer_id: STATE.activeCustomer.customer_id } : {})
+  };
+
   try {
-    const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify({ cart: payload }) });
+    const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(requestBody) });
     STATE.cart = {}; STATE.scanHistory = []; renderCart();
     await loadTransactions();
     await loadProducts();
@@ -4933,3 +4942,67 @@ document.getElementById('btn-deactivate-customer')?.addEventListener('click', as
 
 // Load customers when tab is shown
 document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown.bs.tab', loadCustomers);
+
+// ═══════════════════════════════════════════════════════
+// TILL CUSTOMER DETECTION (Phase 1: Purchase Linking)
+// ═══════════════════════════════════════════════════════
+
+async function pollActiveCustomer() {
+  try {
+    const resp = await api('/api/till/active_customer');
+
+    if (resp.customer_id) {
+      // Customer detected with name
+      if (!STATE.activeCustomer || STATE.activeCustomer.customer_id !== resp.customer_id) {
+        STATE.activeCustomer = resp;
+        showCustomerBadge(resp.name, resp.customer_number);
+      }
+    } else {
+      // No customer or customer left
+      if (STATE.activeCustomer) {
+        clearActiveCustomer();
+      }
+    }
+  } catch (e) {
+    console.warn('Customer polling error:', e);
+  }
+}
+
+function showCustomerBadge(name, customer_number) {
+  const container = document.getElementById('customer-badge-container');
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="alert alert-info d-inline-flex align-items-center mb-0 py-2 px-3">
+      <i class="bi bi-person-check me-2"></i>
+      <span class="me-3"><strong>${name}</strong></span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="clearActiveCustomer()">
+        <i class="bi bi-x"></i> Clear
+      </button>
+    </div>
+  `;
+}
+
+function clearActiveCustomer() {
+  STATE.activeCustomer = null;
+  const container = document.getElementById('customer-badge-container');
+  if (container) container.innerHTML = '';
+}
+
+function startCustomerPolling() {
+  if (STATE.customerPollInterval) return; // Already running
+  STATE.customerPollInterval = setInterval(pollActiveCustomer, 5000);
+  pollActiveCustomer(); // Poll immediately
+}
+
+function stopCustomerPolling() {
+  if (STATE.customerPollInterval) {
+    clearInterval(STATE.customerPollInterval);
+    STATE.customerPollInterval = null;
+  }
+  clearActiveCustomer();
+}
+
+// Start/stop polling when teller tab shown/hidden
+document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', startCustomerPolling);
+document.querySelector('[data-bs-target="#teller"]')?.addEventListener('hidden.bs.tab', stopCustomerPolling);
