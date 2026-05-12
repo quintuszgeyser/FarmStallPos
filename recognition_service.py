@@ -186,14 +186,22 @@ def pos_get(path):
 
 # ─── Load enrolled customers from POS ──────────────────────────────────────
 _customers_cache = []
+_attributes_cache = {}  # customer_id -> attributes dict
 _cache_lock = threading.Lock()
 
 def refresh_customers():
     customers = pos_get('/api/customers')
+
+    # Fetch all attributes in bulk (one API call)
+    all_attributes = pos_get('/api/customers/attributes_bulk') or {}
+
     with _cache_lock:
         _customers_cache.clear()
         _customers_cache.extend(customers)
-    logger.info('Customer cache refreshed: %d customers', len(customers))
+        _attributes_cache.clear()
+        _attributes_cache.update(all_attributes)
+    logger.info('Customer cache refreshed: %d customers, %d with attributes',
+                len(customers), len(all_attributes))
 
 def _cache_refresh_loop():
     while True:
@@ -503,7 +511,7 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
             if plate in c.get('plates', []):
                 customer_scores[c['id']]['total'] += 3.0
                 customer_scores[c['id']]['features']['plate'] = 3.0
-                break
+                break  # Plate should only match one customer
 
     # 2. FACE MATCHING (weight: 3.0, scaled by similarity)
     if face_bytes:
@@ -545,9 +553,12 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
 
     # 4. PHYSICAL ATTRIBUTE MATCHING (weights: 0.3 - 1.0)
     if physical_attrs:
+        with _cache_lock:
+            cached_attributes = dict(_attributes_cache)
+
         for c in customers:
             cid = c['id']
-            stored_attrs = pos_get(f'/api/customers/{cid}/attributes')
+            stored_attrs = cached_attributes.get(cid)
 
             if not stored_attrs:
                 continue

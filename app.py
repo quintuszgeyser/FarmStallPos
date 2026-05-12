@@ -2743,6 +2743,42 @@ def api_customer_attributes(cid):
         db.session.commit()
         return jsonify({'ok': True})
 
+@app.route('/api/customers/attributes_bulk', methods=['GET'])
+def api_customers_attributes_bulk():
+    """Get all customers' physical attributes in bulk (for caching)."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    from sqlalchemy import text
+    # Get most recent attributes for each customer
+    result = db.session.execute(
+        text("""SELECT DISTINCT ON (customer_id)
+                       customer_id, height_cm, hair_color, skin_tone, build,
+                       eye_color, age_range, gender, wearing_glasses, facial_hair,
+                       detected_at, camera_source, confidence
+                FROM customer_physical_attributes
+                ORDER BY customer_id, detected_at DESC""")
+    ).fetchall()
+
+    attributes_by_customer = {}
+    for row in result:
+        attributes_by_customer[row[0]] = {
+            'height_cm': row[1],
+            'hair_color': row[2],
+            'skin_tone': row[3],
+            'build': row[4],
+            'eye_color': row[5],
+            'age_range': row[6],
+            'gender': row[7],
+            'wearing_glasses': row[8],
+            'facial_hair': row[9],
+            'detected_at': row[10].isoformat() if row[10] else None,
+            'camera_source': row[11],
+            'confidence': float(row[12]) if row[12] else None
+        }
+
+    return jsonify(attributes_by_customer)
+
 @app.route('/api/till/active_customer', methods=['GET'])
 def api_till_active_customer():
     """Returns customer detected at till in last 30 seconds (only if they have a name)."""
