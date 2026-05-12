@@ -50,20 +50,46 @@ def get_face_app():
     global _face_app
     if _face_app is None:
         try:
-            import insightface
-            from insightface.model_zoo import get_model
-            # Version 0.2.1 - use retinaface detector + arcface recognizer
-            _face_app = insightface.app.FaceAnalysis()
-            # Manually set up models
-            ctx_id = -1  # CPU
-            _face_app.models = {}
-            _face_app.models['detection'] = get_model('retinaface_r50_v1')
-            _face_app.models['detection'].prepare(ctx_id=ctx_id, nms=0.4)
-            _face_app.models['recognition'] = get_model('arcface_r100_v1')
-            _face_app.models['recognition'].prepare(ctx_id=ctx_id)
-            logger.info('InsightFace loaded (retinaface + arcface)')
+            import os
+            from insightface.model_zoo import SCRFD, ArcFaceONNX
+
+            model_dir = os.path.expanduser('~/.insightface/models')
+            det_model = os.path.join(model_dir, 'det_10g.onnx')
+            rec_model = os.path.join(model_dir, 'w600k_r50.onnx')
+
+            if not os.path.exists(det_model) or not os.path.exists(rec_model):
+                logger.error('Face models not found. Run: python download_face_models.py')
+                _face_app = None
+                return None
+
+            # Initialize detector and recognizer
+            detector = SCRFD(model_file=det_model)
+            detector.prepare(ctx_id=-1, input_size=(640, 640), det_thresh=0.5)
+
+            recognizer = ArcFaceONNX(model_file=rec_model)
+            recognizer.prepare(ctx_id=-1)
+
+            # Wrapper to match expected API
+            class FaceApp:
+                def __init__(self, det, rec):
+                    self.detector = det
+                    self.recognizer = rec
+
+                def get(self, img):
+                    bboxes, kpss = self.detector.detect(img, input_size=(640, 640))
+                    if len(bboxes) == 0:
+                        return []
+                    # Get embedding for first face
+                    emb = self.recognizer.get(img, kpss[0])
+                    face = type('Face', (), {'embedding': emb})()
+                    return [face]
+
+            _face_app = FaceApp(detector, recognizer)
+            logger.info('InsightFace loaded (SCRFD + ArcFace)')
         except Exception as e:
-            logger.warning('InsightFace failed to load: %s. Face recognition disabled.', e)
+            logger.warning('Face recognition unavailable: %s', e)
+            import traceback
+            traceback.print_exc()
             _face_app = None
     return _face_app
 
