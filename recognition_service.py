@@ -82,11 +82,25 @@ def get_face_app():
                     # Get embedding for first face - ArcFaceONNX needs image + landmarks
                     import cv2
                     from skimage import transform as trans
+
+                    # Ensure input image is BGR (3 channels)
+                    if len(img.shape) == 2:  # Grayscale
+                        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+                    elif img.shape[2] == 4:  # RGBA
+                        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+
                     # Align face using landmarks
                     tform = trans.SimilarityTransform()
                     tform.estimate(kpss[0], [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
                     face_img = cv2.warpAffine(img, tform.params[0:2, :], (112, 112), borderValue=0.0)
-                    # Get embedding - needs numpy array
+
+                    # Ensure face crop is RGB (3 channels) - recognizer expects shape (N, H, W, 3)
+                    if len(face_img.shape) == 2:
+                        face_img = cv2.cvtColor(face_img, cv2.COLOR_GRAY2BGR)
+                    elif face_img.shape[2] == 4:
+                        face_img = cv2.cvtColor(face_img, cv2.COLOR_BGRA2BGR)
+
+                    # Get embedding - needs numpy array with shape (1, 112, 112, 3)
                     face_img_np = np.array([face_img])
                     emb = self.recognizer.get_feat(face_img_np)[0]
                     face = type('Face', (), {'embedding': emb})()
