@@ -117,9 +117,11 @@ def test_face_extraction(clip_path):
 
     logger.info(f'[DEBUG] Final face_img shape before recognizer: {face_img.shape}, dtype={face_img.dtype}')
 
-    # Prepare for recognizer
-    face_img_np = np.array([face_img])
-    logger.info(f'[DEBUG] face_img_np shape: {face_img_np.shape}, dtype={face_img_np.dtype}')
+    # Prepare for recognizer - ArcFace expects channels-first format (N, C, H, W) not (N, H, W, C)
+    # Transpose from (H, W, C) to (C, H, W), then add batch dimension
+    face_img_transposed = np.transpose(face_img, (2, 0, 1))  # (3, 112, 112)
+    face_img_np = np.array([face_img_transposed])  # (1, 3, 112, 112)
+    logger.info(f'[DEBUG] face_img_np shape after transpose: {face_img_np.shape}, dtype={face_img_np.dtype}')
 
     # Extract embedding
     logger.info('Extracting face embedding...')
