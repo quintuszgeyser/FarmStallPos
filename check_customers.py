@@ -3,9 +3,8 @@ import urllib3
 
 urllib3.disable_warnings()
 
-r = requests.get('https://127.0.0.1:5000/api/customers',
-                 auth=('admin', 'admin123'),
-                 verify=False)
+r = requests.get('http://127.0.0.1:5000/api/customers',
+                 auth=('admin', 'admin123'))
 
 if r.ok:
     customers = r.json()
