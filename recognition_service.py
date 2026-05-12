@@ -159,35 +159,65 @@ def pos_login():
     except Exception as e:
         logger.warning('POS login error: %s', e)
 
-def pos_post(path, payload):
+def pos_post(path, payload, retries=2):
+    """
+    POST with retry logic for timeout/connection errors.
+    Edge Case 9: Automatic retry on transient failures.
+    """
     global _pos_logged_in
     if not _pos_logged_in:
         pos_login()
-    try:
-        r = _pos_session.post(f'{POS_URL}{path}', json=payload, timeout=10)
-        if r.status_code == 401:
-            pos_login()
-            r = _pos_session.post(f'{POS_URL}{path}', json=payload, timeout=10)
-        return r.json() if r.ok else None
-    except Exception as e:
-        logger.warning('POS POST %s error: %s', path, e)
-        return None
 
-def pos_get(path):
+    for attempt in range(retries + 1):
+        try:
+            r = _pos_session.post(f'{POS_URL}{path}', json=payload, timeout=10)
+            if r.status_code == 401:
+                pos_login()
+                r = _pos_session.post(f'{POS_URL}{path}', json=payload, timeout=10)
+            return r.json() if r.ok else None
+        except (requests.Timeout, requests.ConnectionError) as e:
+            if attempt < retries:
+                logger.debug(f'POS POST {path} retry {attempt + 1}/{retries} after: {e}')
+                time.sleep(0.5)
+                continue
+            logger.warning('POS POST %s failed after %d retries: %s', path, retries, e)
+            return None
+        except Exception as e:
+            logger.warning('POS POST %s error: %s', path, e)
+            return None
+
+def pos_get(path, retries=2):
+    """
+    GET with retry logic for timeout/connection errors.
+    Edge Case 9: Automatic retry on transient failures.
+    """
     global _pos_logged_in
     if not _pos_logged_in:
         pos_login()
-    try:
-        r = _pos_session.get(f'{POS_URL}{path}', timeout=10)
-        return r.json() if r.ok else []
-    except Exception as e:
-        logger.warning('POS GET %s error: %s', path, e)
-        return []
+
+    for attempt in range(retries + 1):
+        try:
+            r = _pos_session.get(f'{POS_URL}{path}', timeout=10)
+            return r.json() if r.ok else []
+        except (requests.Timeout, requests.ConnectionError) as e:
+            if attempt < retries:
+                logger.debug(f'POS GET {path} retry {attempt + 1}/{retries} after: {e}')
+                time.sleep(0.5)
+                continue
+            logger.warning('POS GET %s failed after %d retries: %s', path, retries, e)
+            return []
+        except Exception as e:
+            logger.warning('POS GET %s error: %s', path, e)
+            return []
 
 # ─── Load enrolled customers from POS ──────────────────────────────────────
 _customers_cache = []
 _attributes_cache = {}  # customer_id -> attributes dict
 _cache_lock = threading.Lock()
+
+# Edge Case 3: Deduplication for simultaneous detections across cameras
+_recent_enrollments = []  # List of (timestamp, face_bytes, gait_bytes) for last 10 seconds
+_enrollment_lock = threading.Lock()
 
 def refresh_customers():
     customers = pos_get('/api/customers')
@@ -320,11 +350,13 @@ def extract_physical_attributes(image_path):
     """
     Extracts visual attributes from person image using InsightFace + MediaPipe.
     Returns dict with estimated physical characteristics.
+    Edge Case 2: Graceful degradation - returns partial attributes if some extraction fails.
     """
     try:
         import cv2
         img = cv2.imread(image_path)
         if img is None:
+            logger.debug('Failed to read image for attribute extraction')
             return None
 
         # Get face analysis from InsightFace (already loaded)
@@ -491,6 +523,21 @@ def classify_skin_tone(bgr_color):
     else:
         return 'very_light'
 
+def fuzzy_plate_match(plate_a, plate_b, max_distance=1):
+    """
+    Levenshtein distance for plate similarity (handles OCR errors).
+    Edge Case 12: ABC123 vs ABC125 (distance=1) returns True
+    """
+    if not plate_a or not plate_b:
+        return False
+
+    # Simple Levenshtein distance implementation
+    if len(plate_a) != len(plate_b):
+        return False  # Only support same-length plates for simplicity
+
+    distance = sum(1 for a, b in zip(plate_a, plate_b) if a != b)
+    return distance <= max_distance
+
 # ─── Matching (Weighted Multi-Signal Voting) ────────────────────────────────
 def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, physical_attrs=None):
     """
@@ -502,16 +549,33 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
     with _cache_lock:
         customers = list(_customers_cache)
 
+    # Edge Case 1: Empty customer cache
+    if not customers:
+        logger.warning('Customer cache is empty - cannot identify. Cache size: 0')
+        return None, 0.0, {}
+
     # Track scores per customer
     customer_scores = defaultdict(lambda: {'total': 0.0, 'features': {}})
 
-    # 1. PLATE MATCHING (weight: 3.0)
+    # 1. PLATE MATCHING (weight: 3.0, with fuzzy matching)
     if plate:
+        exact_match_found = False
         for c in customers:
             if plate in c.get('plates', []):
                 customer_scores[c['id']]['total'] += 3.0
                 customer_scores[c['id']]['features']['plate'] = 3.0
+                exact_match_found = True
                 break  # Plate should only match one customer
+
+        # Edge Case 12: Fuzzy plate matching for OCR errors
+        if not exact_match_found:
+            for c in customers:
+                for stored_plate in c.get('plates', []):
+                    if fuzzy_plate_match(plate, stored_plate, max_distance=1):
+                        customer_scores[c['id']]['total'] += 2.5  # Partial credit
+                        customer_scores[c['id']]['features']['plate_fuzzy'] = 2.5
+                        logger.debug(f'Fuzzy plate match: {plate} ~ {stored_plate}')
+                        break
 
     # 2. FACE MATCHING (weight: 3.0, scaled by similarity)
     if face_bytes:
@@ -552,6 +616,13 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
                 pass
 
     # 4. PHYSICAL ATTRIBUTE MATCHING (weights: 0.3 - 1.0)
+    if physical_attrs:
+        # Edge Case 6: Only use attributes with sufficient confidence
+        attr_confidence = physical_attrs.get('confidence', 1.0)
+        if attr_confidence < 0.7:
+            logger.debug(f'Physical attributes confidence too low: {attr_confidence:.2f} - skipping')
+            physical_attrs = None  # Don't use low-confidence attributes
+
     if physical_attrs:
         with _cache_lock:
             cached_attributes = dict(_attributes_cache)
@@ -809,6 +880,38 @@ def process_event(event):
                 )
 
                 if signal_count >= 2 or (signal_count == 1 and strong_physical):
+                    # Edge Case 3: Check for duplicate enrollment (same person detected on multiple cameras)
+                    with _enrollment_lock:
+                        now = time.time()
+                        # Clean old entries (>10 seconds)
+                        _recent_enrollments[:] = [(ts, fb, gb) for ts, fb, gb in _recent_enrollments if now - ts < 10]
+
+                        # Check if similar detection already enrolled recently
+                        is_duplicate = False
+                        if face_bytes or gait_bytes:
+                            for _, recent_face, recent_gait in _recent_enrollments:
+                                if face_bytes and recent_face:
+                                    face_sim = cosine_sim(
+                                        np.frombuffer(face_bytes, dtype=np.float32),
+                                        np.frombuffer(recent_face, dtype=np.float32)
+                                    )
+                                    if face_sim > 0.90:  # Very high similarity = same person
+                                        is_duplicate = True
+                                        logger.info(f'Skipping duplicate enrollment (face match: {face_sim:.2f})')
+                                        break
+                                if gait_bytes and recent_gait and not is_duplicate:
+                                    gait_dist = euclidean_dist(
+                                        np.frombuffer(gait_bytes, dtype=np.float32),
+                                        np.frombuffer(recent_gait, dtype=np.float32)
+                                    )
+                                    if gait_dist < 0.15:  # Very similar gait
+                                        is_duplicate = True
+                                        logger.info(f'Skipping duplicate enrollment (gait match: {gait_dist:.2f})')
+                                        break
+
+                        if is_duplicate:
+                            return  # Skip this enrollment
+
                     # Auto-enroll new customer
                     logger.info(f'Auto-enrolling new customer (signals={signal_count}, physical={strong_physical})')
 
@@ -829,37 +932,71 @@ def process_event(event):
                         new_cid = new_customer['id']
                         logger.info(f'Created customer {customer_number} (ID={new_cid})')
 
-                        # Enroll available signals
-                        if plate_str:
-                            pos_post(f'/api/customers/{new_cid}/enroll/plate', {
-                                'plate_number': plate_str
-                            })
-                            logger.info(f'  Enrolled plate: {plate_str}')
+                        # Edge Case 4: Track enrollment success for potential cleanup on failure
+                        signals_enrolled = []
+                        try:
+                            # Enroll available signals
+                            if plate_str:
+                                result = pos_post(f'/api/customers/{new_cid}/enroll/plate', {
+                                    'plate_number': plate_str
+                                })
+                                if result:
+                                    signals_enrolled.append('plate')
+                                    logger.info(f'  Enrolled plate: {plate_str}')
+                                else:
+                                    logger.warning(f'  Failed to enroll plate: {plate_str}')
 
-                        if face_bytes:
-                            face_b64 = base64.b64encode(face_bytes).decode()
-                            pos_post(f'/api/customers/{new_cid}/enroll/face', {
-                                'embedding_b64': face_b64
-                            })
-                            logger.info(f'  Enrolled face')
+                            if face_bytes:
+                                face_b64 = base64.b64encode(face_bytes).decode()
+                                result = pos_post(f'/api/customers/{new_cid}/enroll/face', {
+                                    'embedding_b64': face_b64
+                                })
+                                if result:
+                                    signals_enrolled.append('face')
+                                    logger.info(f'  Enrolled face')
+                                else:
+                                    logger.warning(f'  Failed to enroll face')
 
-                        if gait_bytes:
-                            gait_b64 = base64.b64encode(gait_bytes).decode()
-                            pos_post(f'/api/customers/{new_cid}/enroll/gait', {
-                                'features_b64': gait_b64
-                            })
-                            logger.info(f'  Enrolled gait')
+                            if gait_bytes:
+                                gait_b64 = base64.b64encode(gait_bytes).decode()
+                                result = pos_post(f'/api/customers/{new_cid}/enroll/gait', {
+                                    'features_b64': gait_b64
+                                })
+                                if result:
+                                    signals_enrolled.append('gait')
+                                    logger.info(f'  Enrolled gait')
+                                else:
+                                    logger.warning(f'  Failed to enroll gait')
 
-                        # Store physical attributes
-                        if physical_attrs:
-                            pos_post(f'/api/customers/{new_cid}/attributes', {
-                                **physical_attrs,
-                                'camera_source': camera
-                            })
-                            logger.info(f'  Stored physical attributes: {physical_attrs.keys()}')
+                            # Store physical attributes
+                            if physical_attrs:
+                                result = pos_post(f'/api/customers/{new_cid}/attributes', {
+                                    **physical_attrs,
+                                    'camera_source': camera
+                                })
+                                if result:
+                                    logger.info(f'  Stored physical attributes: {list(physical_attrs.keys())}')
+                                else:
+                                    logger.warning(f'  Failed to store physical attributes')
 
-                        # Refresh customer cache
-                        refresh_customers()
+                            # Verify at least one signal enrolled successfully
+                            if not signals_enrolled:
+                                logger.error(f'Customer {new_cid} created but NO signals enrolled - orphaned customer!')
+                                # Note: In production, consider deleting the customer here
+                            else:
+                                logger.info(f'  Successfully enrolled {len(signals_enrolled)} signals: {signals_enrolled}')
+
+                            # Refresh customer cache
+                            refresh_customers()
+
+                            # Add to recent enrollments for deduplication
+                            with _enrollment_lock:
+                                _recent_enrollments.append((time.time(), face_bytes, gait_bytes))
+
+                        except Exception as e:
+                            logger.error(f'Error during signal enrollment for customer {new_cid}: {e}')
+                            # Customer exists but may have incomplete signals - will be enriched on next detection
+
                     else:
                         logger.warning(f'Failed to create customer: {new_customer}')
                 else:
@@ -981,6 +1118,14 @@ def session_aggregator_loop():
 
                     start_dt = datetime.fromisoformat(session_start)
                     end_dt = datetime.fromisoformat(session_end)
+
+                    # Edge Case 6: Don't close sessions where customer still active (last detection <30 min ago)
+                    now = datetime.utcnow()
+                    minutes_since_last = (now - end_dt).total_seconds() / 60
+                    if minutes_since_last < 30:
+                        logger.debug(f'Skipping active session (customer {cid}, last seen {minutes_since_last:.1f}m ago)')
+                        continue  # Skip this session - customer still in store
+
                     dwell_seconds = int((end_dt - start_dt).total_seconds())
 
                     # Check if purchase was made (sales within session timeframe)

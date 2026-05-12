@@ -2481,6 +2481,135 @@ def api_customers_delete(cid):
     db.session.commit()
     return jsonify({'ok': True})
 
+@app.route('/api/customers/<int:cid>/profile', methods=['GET'])
+def api_customer_profile(cid):
+    """Comprehensive customer analytics profile."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    customer = db.session.get(Customer, cid)
+    if not customer:
+        return jsonify({'error': 'Customer not found'}), 404
+
+    # Purchase history
+    sales = Sale.query.filter(
+        Sale.customer_id == cid,
+        Sale.voided == False
+    ).order_by(Sale.date_time.desc()).all()
+
+    # Group by sale_id (receipts)
+    receipts = {}
+    product_counts = {}
+    total_spent = Decimal('0')
+
+    for sale in sales:
+        # Track receipts
+        if sale.sale_id not in receipts:
+            receipts[sale.sale_id] = {
+                'sale_id': sale.sale_id,
+                'date_time': sale.date_time.isoformat(),
+                'total': Decimal('0'),
+                'items': []
+            }
+
+        item_total = sale.qty * sale.unit_price
+        receipts[sale.sale_id]['total'] += item_total
+        total_spent += item_total
+
+        receipts[sale.sale_id]['items'].append({
+            'product_id': sale.product_id,
+            'product_name': sale.product.name if sale.product else 'Unknown',
+            'qty': float(sale.qty),
+            'unit_price': float(sale.unit_price)
+        })
+
+        # Track product preferences
+        pid = sale.product_id
+        if pid not in product_counts:
+            product_counts[pid] = {
+                'product_id': pid,
+                'name': sale.product.name if sale.product else 'Unknown',
+                'count': 0,
+                'total_spent': Decimal('0')
+            }
+        product_counts[pid]['count'] += 1
+        product_counts[pid]['total_spent'] += item_total
+
+    # Top products by purchase count
+    top_products = sorted(
+        product_counts.values(),
+        key=lambda x: x['count'],
+        reverse=True
+    )[:10]
+
+    # Convert Decimal to float for JSON
+    for p in top_products:
+        p['total_spent'] = float(p['total_spent'])
+
+    # Visit sessions (dwell time)
+    from sqlalchemy import text
+    sessions_result = db.session.execute(
+        text("""SELECT session_start, session_end, dwell_seconds,
+                       purchase_made, sale_ids
+                FROM visit_sessions
+                WHERE customer_id = :cid
+                ORDER BY session_start DESC
+                LIMIT 20"""),
+        {'cid': cid}
+    ).fetchall()
+
+    sessions = []
+    total_dwell = 0
+    for row in sessions_result:
+        sessions.append({
+            'session_start': row[0].isoformat() if row[0] else None,
+            'session_end': row[1].isoformat() if row[1] else None,
+            'dwell_seconds': row[2],
+            'purchase_made': row[3],
+            'sale_ids': row[4]
+        })
+        if row[2]:
+            total_dwell += row[2]
+
+    avg_dwell = total_dwell / len(sessions) if sessions else 0
+
+    # CLV calculation
+    avg_basket = float(total_spent) / len(receipts) if receipts else 0
+
+    # Signals
+    plates = [p.plate_number for p in customer.plates if p.active]
+    face_enrolled = any(f.active for f in customer.faces)
+    gait_enrolled = any(g.active for g in customer.gaits)
+
+    return jsonify({
+        'customer_id': cid,
+        'customer_number': customer.customer_number,
+        'name': customer.name,
+        'phone': customer.phone,
+        'email': customer.email,
+        'auto_enrolled': customer.auto_enrolled,
+        'first_seen': customer.first_seen.isoformat() if customer.first_seen else None,
+        'last_visit': customer.last_visit.isoformat() if customer.last_visit else None,
+        'visit_count': customer.visit_count,
+        'total_spent': float(total_spent),
+        'avg_basket': avg_basket,
+        'avg_dwell_seconds': avg_dwell,
+        'receipts': [
+            {
+                **r,
+                'total': float(r['total'])
+            }
+            for r in receipts.values()
+        ],
+        'top_products': top_products,
+        'recent_sessions': sessions,
+        'signals': {
+            'plates': plates,
+            'face_enrolled': face_enrolled,
+            'gait_enrolled': gait_enrolled
+        }
+    })
+
 @app.route('/api/customers/<int:cid>/enroll/plate', methods=['POST'])
 def api_customers_enroll_plate(cid):
     if not require_role('admin'):
