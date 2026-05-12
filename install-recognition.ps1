@@ -26,8 +26,8 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "InsightFace installed successfully" -ForegroundColor Green
 
     Write-Host ""
-    Write-Host "Pre-downloading InsightFace model (~100MB)..."
-    & .\.venv\Scripts\python -c "import insightface; app = insightface.app.FaceAnalysis('antelope'); app.prepare(ctx_id=-1, nms=0.4)"
+    Write-Host "Pre-downloading InsightFace models (~100MB)..."
+    & .\.venv\Scripts\python -c "from insightface.model_zoo import get_model; det = get_model('retinaface_r50_v1'); det.prepare(ctx_id=-1, nms=0.4); rec = get_model('arcface_r100_v1'); rec.prepare(ctx_id=-1); print('Models downloaded')"
 }
 
 Write-Host ""
