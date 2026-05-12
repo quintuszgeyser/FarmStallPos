@@ -491,7 +491,7 @@ def extract_physical_attributes(image_path):
 
             if eye_region.size > 0:
                 eye_brightness = np.mean(cv2.cvtColor(eye_region, cv2.COLOR_BGR2GRAY))
-                attributes['wearing_glasses'] = eye_brightness > 150
+                attributes['wearing_glasses'] = bool(eye_brightness > 150)  # Convert numpy.bool_ to Python bool
 
         # 8. Facial hair
         chin_region = face_region[int(face_height * 0.7):, :]
