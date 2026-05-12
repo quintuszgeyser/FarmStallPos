@@ -619,9 +619,11 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
     if physical_attrs:
         # Edge Case 6: Only use attributes with sufficient confidence
         attr_confidence = physical_attrs.get('confidence', 1.0)
-        if attr_confidence < 0.7:
-            logger.debug(f'Physical attributes confidence too low: {attr_confidence:.2f} - skipping')
+        if attr_confidence < 0.5:  # Lowered from 0.7 to 0.5 for better matching
+            logger.info(f'Physical attributes confidence too low: {attr_confidence:.2f} - skipping')
             physical_attrs = None  # Don't use low-confidence attributes
+        else:
+            logger.debug(f'Using physical attributes (confidence: {attr_confidence:.2f})')
 
     if physical_attrs:
         with _cache_lock:
