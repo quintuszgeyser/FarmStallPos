@@ -731,8 +731,10 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
     best_cid = max(customer_scores.keys(), key=lambda cid: customer_scores[cid]['total'])
     best_score = customer_scores[best_cid]['total']
 
-    # Threshold: 5.0 points required for identification
-    if best_score >= 5.0:
+    # Threshold: 4.0 points required for identification
+    # Lowered from 5.0 to allow slight variations (e.g., face 2.8 + gait 1.8 = 4.6)
+    # This reduces false negatives (creating duplicates when should match)
+    if best_score >= 4.0:
         return best_cid, best_score, customer_scores[best_cid]['features']
 
     return None, best_score, customer_scores[best_cid]['features']
@@ -922,6 +924,7 @@ def process_event(event):
 
                 if signal_count >= 2 or (signal_count == 1 and strong_physical):
                     # Edge Case 3: Check for duplicate enrollment (same person detected on multiple cameras)
+                    # CRITICAL: Lock the entire enrollment process to prevent race conditions
                     with _enrollment_lock:
                         now = time.time()
                         # Clean old entries (>10 seconds)
@@ -953,95 +956,95 @@ def process_event(event):
                         if is_duplicate:
                             return  # Skip this enrollment
 
-                    # Auto-enroll new customer
-                    logger.info(f'Auto-enrolling new customer (signals={signal_count}, physical={strong_physical})')
+                        # Auto-enroll new customer
+                        logger.info(f'Auto-enrolling new customer (signals={signal_count}, physical={strong_physical})')
 
-                    # Get next customer number
-                    max_num_response = pos_get('/api/customers/max_number')
-                    max_num = max_num_response.get('max_number', 0) if max_num_response else 0
-                    customer_number = f"CUST-{(max_num + 1):04d}"
-                    logger.info(f'Next customer number: {customer_number} (max_num={max_num})')
+                        # Get next customer number (inside lock to prevent race condition)
+                        max_num_response = pos_get('/api/customers/max_number')
+                        max_num = max_num_response.get('max_number', 0) if max_num_response else 0
+                        customer_number = f"CUST-{(max_num + 1):04d}"
+                        logger.info(f'Next customer number: {customer_number} (max_num={max_num})')
 
-                    # Create customer
-                    customer_data = {
-                        'name': None,
-                        'auto_enrolled': True,
-                        'customer_number': customer_number,
-                        'first_seen': datetime.utcnow().isoformat()
-                    }
+                        # Create customer
+                        customer_data = {
+                            'name': None,
+                            'auto_enrolled': True,
+                            'customer_number': customer_number,
+                            'first_seen': datetime.utcnow().isoformat()
+                        }
 
-                    new_customer = pos_post('/api/customers', customer_data)
-                    if new_customer and new_customer.get('id'):
-                        new_cid = new_customer['id']
-                        logger.info(f'Created customer {customer_number} (ID={new_cid})')
+                        new_customer = pos_post('/api/customers', customer_data)
 
-                        # Edge Case 4: Track enrollment success for potential cleanup on failure
-                        signals_enrolled = []
-                        try:
-                            # Enroll available signals
-                            if plate_str:
-                                result = pos_post(f'/api/customers/{new_cid}/enroll/plate', {
-                                    'plate_number': plate_str
-                                })
-                                if result:
-                                    signals_enrolled.append('plate')
-                                    logger.info(f'  Enrolled plate: {plate_str}')
+                        if new_customer and new_customer.get('id'):
+                            new_cid = new_customer['id']
+                            logger.info(f'Created customer {customer_number} (ID={new_cid})')
+
+                            # Edge Case 4: Track enrollment success for potential cleanup on failure
+                            signals_enrolled = []
+                            try:
+                                # Enroll available signals
+                                if plate_str:
+                                    result = pos_post(f'/api/customers/{new_cid}/enroll/plate', {
+                                        'plate_number': plate_str
+                                    })
+                                    if result:
+                                        signals_enrolled.append('plate')
+                                        logger.info(f'  Enrolled plate: {plate_str}')
+                                    else:
+                                        logger.warning(f'  Failed to enroll plate: {plate_str}')
+
+                                if face_bytes:
+                                    face_b64 = base64.b64encode(face_bytes).decode()
+                                    result = pos_post(f'/api/customers/{new_cid}/enroll/face', {
+                                        'embedding_b64': face_b64
+                                    })
+                                    if result:
+                                        signals_enrolled.append('face')
+                                        logger.info(f'  Enrolled face')
+                                    else:
+                                        logger.warning(f'  Failed to enroll face')
+
+                                if gait_bytes:
+                                    gait_b64 = base64.b64encode(gait_bytes).decode()
+                                    result = pos_post(f'/api/customers/{new_cid}/enroll/gait', {
+                                        'features_b64': gait_b64
+                                    })
+                                    if result:
+                                        signals_enrolled.append('gait')
+                                        logger.info(f'  Enrolled gait')
+                                    else:
+                                        logger.warning(f'  Failed to enroll gait')
+
+                                # Store physical attributes
+                                if physical_attrs:
+                                    result = pos_post(f'/api/customers/{new_cid}/attributes', {
+                                        **physical_attrs,
+                                        'camera_source': camera
+                                    })
+                                    if result:
+                                        logger.info(f'  Stored physical attributes: {list(physical_attrs.keys())}')
+                                    else:
+                                        logger.warning(f'  Failed to store physical attributes')
+
+                                # Verify at least one signal enrolled successfully
+                                if not signals_enrolled:
+                                    logger.error(f'Customer {new_cid} created but NO signals enrolled - orphaned customer!')
+                                    # Note: In production, consider deleting the customer here
                                 else:
-                                    logger.warning(f'  Failed to enroll plate: {plate_str}')
+                                    logger.info(f'  Successfully enrolled {len(signals_enrolled)} signals: {signals_enrolled}')
 
-                            if face_bytes:
-                                face_b64 = base64.b64encode(face_bytes).decode()
-                                result = pos_post(f'/api/customers/{new_cid}/enroll/face', {
-                                    'embedding_b64': face_b64
-                                })
-                                if result:
-                                    signals_enrolled.append('face')
-                                    logger.info(f'  Enrolled face')
-                                else:
-                                    logger.warning(f'  Failed to enroll face')
+                                # Refresh customer cache
+                                refresh_customers()
 
-                            if gait_bytes:
-                                gait_b64 = base64.b64encode(gait_bytes).decode()
-                                result = pos_post(f'/api/customers/{new_cid}/enroll/gait', {
-                                    'features_b64': gait_b64
-                                })
-                                if result:
-                                    signals_enrolled.append('gait')
-                                    logger.info(f'  Enrolled gait')
-                                else:
-                                    logger.warning(f'  Failed to enroll gait')
-
-                            # Store physical attributes
-                            if physical_attrs:
-                                result = pos_post(f'/api/customers/{new_cid}/attributes', {
-                                    **physical_attrs,
-                                    'camera_source': camera
-                                })
-                                if result:
-                                    logger.info(f'  Stored physical attributes: {list(physical_attrs.keys())}')
-                                else:
-                                    logger.warning(f'  Failed to store physical attributes')
-
-                            # Verify at least one signal enrolled successfully
-                            if not signals_enrolled:
-                                logger.error(f'Customer {new_cid} created but NO signals enrolled - orphaned customer!')
-                                # Note: In production, consider deleting the customer here
-                            else:
-                                logger.info(f'  Successfully enrolled {len(signals_enrolled)} signals: {signals_enrolled}')
-
-                            # Refresh customer cache
-                            refresh_customers()
-
-                            # Add to recent enrollments for deduplication
-                            with _enrollment_lock:
+                                # Add to recent enrollments for deduplication (already inside _enrollment_lock)
                                 _recent_enrollments.append((time.time(), face_bytes, gait_bytes))
 
-                        except Exception as e:
-                            logger.error(f'Error during signal enrollment for customer {new_cid}: {e}')
-                            # Customer exists but may have incomplete signals - will be enriched on next detection
+                            except Exception as e:
+                                logger.error(f'Error during signal enrollment for customer {new_cid}: {e}')
+                                # Customer exists but may have incomplete signals - will be enriched on next detection
 
-                    else:
-                        logger.warning(f'Failed to create customer: {new_customer}')
+                        else:
+                            logger.warning(f'Failed to create customer: {new_customer}')
                 else:
                     logger.info(f'Insufficient signals for auto-enrollment (signals={signal_count}, physical={strong_physical})')
 
