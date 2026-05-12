@@ -80,7 +80,7 @@ def get_face_app():
                     if len(bboxes) == 0:
                         return []
                     # Get embedding for first face
-                    emb = self.recognizer.get(img, kpss[0])
+                    emb = self.recognizer.get_feat(kpss[0])
                     face = type('Face', (), {'embedding': emb})()
                     return [face]
 
@@ -96,10 +96,23 @@ def get_face_app():
 def get_pose():
     global _mp_pose, _mp_pose_inst
     if _mp_pose is None:
-        import mediapipe as mp
-        _mp_pose = mp.solutions.pose
-        _mp_pose_inst = _mp_pose.Pose(static_image_mode=True, model_complexity=0, enable_segmentation=False)
-        logger.info('MediaPipe Pose loaded')
+        try:
+            import mediapipe as mp
+            # MediaPipe v0.10+ uses tasks API
+            from mediapipe.tasks import python
+            from mediapipe.tasks.python import vision
+
+            # Create pose landmarker
+            base_options = python.BaseOptions(model_asset_path=None)
+            options = vision.PoseLandmarkerOptions(
+                base_options=base_options,
+                running_mode=vision.RunningMode.IMAGE)
+            _mp_pose_inst = vision.PoseLandmarker.create_from_options(options)
+            _mp_pose = type('Pose', (), {})()  # Dummy
+            logger.info('MediaPipe Pose loaded')
+        except Exception as e:
+            logger.warning('MediaPipe Pose unavailable: %s. Body recognition disabled.', e)
+            _mp_pose_inst = None
     return _mp_pose, _mp_pose_inst
 
 # ─── POS API session ────────────────────────────────────────────────────────
@@ -187,7 +200,10 @@ def run_anpr(image_path):
         model = get_anpr()
         results = model.run(image_path)
         if results:
-            plate, conf = results[0][0], results[0][1] if len(results[0]) > 1 else 1.0
+            # fast-plate-ocr now returns PlatePrediction objects
+            pred = results[0]
+            plate = pred.plate if hasattr(pred, 'plate') else str(pred)
+            conf = pred.confidence if hasattr(pred, 'confidence') else 1.0
             return plate.upper().replace(' ', ''), float(conf)
     except Exception as e:
         logger.warning('ANPR error: %s', e)
