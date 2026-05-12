@@ -14,28 +14,46 @@ logger = logging.getLogger(__name__)
 def test_face_extraction(clip_path):
     logger.info(f'Testing face extraction on: {clip_path}')
 
+    # Frigate clips often have no extension - try adding .mp4
+    import os
+    if not os.path.exists(clip_path):
+        logger.error(f'File not found: {clip_path}')
+        return
+
     # Try to open as video first
     cap = cv2.VideoCapture(clip_path)
     if not cap.isOpened():
-        logger.error(f'Failed to open clip: {clip_path}')
-        return
+        # Try with .mp4 extension
+        clip_with_ext = clip_path + '.mp4'
+        logger.info(f'Trying with .mp4 extension: {clip_with_ext}')
+        cap = cv2.VideoCapture(clip_with_ext)
 
-    # Get middle frame
-    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    if frame_count == 0:
-        logger.error('No frames in video')
-        return
+    if not cap.isOpened():
+        # Try to read as image instead
+        logger.info('Not a video, trying to read as image...')
+        img = cv2.imread(clip_path)
+        if img is None:
+            logger.error(f'Failed to open as video or image: {clip_path}')
+            return
+        logger.info(f'Image loaded: shape={img.shape}, dtype={img.dtype}')
+    else:
+        # Get middle frame from video
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if frame_count == 0:
+            logger.error('No frames in video')
+            cap.release()
+            return
 
-    mid_frame = frame_count // 2
-    cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame)
-    ret, img = cap.read()
-    cap.release()
+        mid_frame = frame_count // 2
+        cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame)
+        ret, img = cap.read()
+        cap.release()
 
-    if not ret or img is None:
-        logger.error('Failed to read frame')
-        return
+        if not ret or img is None:
+            logger.error('Failed to read frame')
+            return
 
-    logger.info(f'Frame loaded: shape={img.shape}, dtype={img.dtype}')
+        logger.info(f'Frame loaded: shape={img.shape}, dtype={img.dtype}')
 
     # Initialize face detector
     logger.info('Loading face detector (SCRFD)...')
