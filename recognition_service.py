@@ -107,21 +107,12 @@ def get_face_app():
                             raise ValueError(f'Unexpected face image shape: {face_img.shape}')
 
                     # Verify shape before passing to recognizer
-                    logger.info(f'[DEBUG] face_img shape before recognizer: {face_img.shape}, dtype: {face_img.dtype}')
-
                     if len(face_img.shape) != 3 or face_img.shape[2] != 3:
                         raise ValueError(f'Face image must be (H,W,3), got {face_img.shape}')
 
-                    # Get embedding - ArcFace expects channels-first format (N, C, H, W) not (N, H, W, C)
-                    # Transpose from (H, W, C) to (C, H, W), then add batch dimension
-                    face_img_transposed = np.transpose(face_img, (2, 0, 1))  # (3, 112, 112)
-                    face_img_np = np.array([face_img_transposed])  # (1, 3, 112, 112)
-                    logger.info(f'[DEBUG] face_img_np shape after transpose: {face_img_np.shape}, dtype: {face_img_np.dtype}')
-
-                    if face_img_np.shape != (1, 3, 112, 112):
-                        raise ValueError(f'Face array must be (1,3,112,112), got {face_img_np.shape}')
-
-                    emb = self.recognizer.get_feat(face_img_np)[0]
+                    # Get embedding - pass face_img directly as (112, 112, 3)
+                    # ArcFaceONNX.get_feat() expects a single face image, NOT batched
+                    emb = self.recognizer.get_feat(face_img)[0]
                     face = type('Face', (), {'embedding': emb})()
                     return [face]
 
