@@ -50,8 +50,8 @@ def get_face_app():
     global _face_app
     if _face_app is None:
         import insightface
-        # Version 0.2.1 uses different API
-        _face_app = insightface.app.FaceAnalysis()
+        # Version 0.2.1 API
+        _face_app = insightface.app.FaceAnalysis('antelope')
         _face_app.prepare(ctx_id=-1, nms=0.4)
         logger.info('InsightFace loaded')
     return _face_app

@@ -27,7 +27,7 @@ if ($LASTEXITCODE -ne 0) {
 
     Write-Host ""
     Write-Host "Pre-downloading InsightFace model (~100MB)..."
-    & .\.venv\Scripts\python -c "import insightface; app = insightface.app.FaceAnalysis(); app.prepare(ctx_id=-1, nms=0.4)"
+    & .\.venv\Scripts\python -c "import insightface; app = insightface.app.FaceAnalysis('antelope'); app.prepare(ctx_id=-1, nms=0.4)"
 }
 
 Write-Host ""
