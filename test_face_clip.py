@@ -117,14 +117,36 @@ def test_face_extraction(clip_path):
 
     logger.info(f'[DEBUG] Final face_img shape before recognizer: {face_img.shape}, dtype={face_img.dtype}')
 
-    # Prepare for recognizer - ArcFace expects channels-first format (N, C, H, W) not (N, H, W, C)
-    # Transpose from (H, W, C) to (C, H, W), then add batch dimension
+    # Try different input formats to find what works
+    logger.info('Extracting face embedding...')
+
+    # Try 1: Pass face_img directly (H, W, C)
+    logger.info(f'[ATTEMPT 1] Passing face_img directly: {face_img.shape}')
+    try:
+        emb = recognizer.get_feat(face_img)[0]
+        logger.info(f'SUCCESS with direct face_img!')
+        logger.info(f'Embedding shape: {emb.shape}')
+        logger.info(f'Embedding sample: {emb[:10]}')
+        return emb
+    except Exception as e:
+        logger.warning(f'Attempt 1 failed: {e}')
+
+    # Try 2: Add batch dimension (N, H, W, C)
+    face_img_batch = np.array([face_img])  # (1, 112, 112, 3)
+    logger.info(f'[ATTEMPT 2] With batch dimension: {face_img_batch.shape}')
+    try:
+        emb = recognizer.get_feat(face_img_batch)[0]
+        logger.info(f'SUCCESS with batch dimension!')
+        logger.info(f'Embedding shape: {emb.shape}')
+        logger.info(f'Embedding sample: {emb[:10]}')
+        return emb
+    except Exception as e:
+        logger.warning(f'Attempt 2 failed: {e}')
+
+    # Try 3: Transpose to channels-first (N, C, H, W)
     face_img_transposed = np.transpose(face_img, (2, 0, 1))  # (3, 112, 112)
     face_img_np = np.array([face_img_transposed])  # (1, 3, 112, 112)
-    logger.info(f'[DEBUG] face_img_np shape after transpose: {face_img_np.shape}, dtype={face_img_np.dtype}')
-
-    # Extract embedding
-    logger.info('Extracting face embedding...')
+    logger.info(f'[ATTEMPT 3] Channels-first: {face_img_np.shape}')
     try:
         emb = recognizer.get_feat(face_img_np)[0]
         logger.info(f'SUCCESS! Embedding shape: {emb.shape}')
