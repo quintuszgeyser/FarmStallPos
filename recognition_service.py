@@ -780,8 +780,79 @@ def process_event(event):
 
                 refresh_customers()
             else:
-                # Not identified - log for debugging
+                # Not identified - check if we should auto-enroll
                 logger.info(f'No identification (score={score:.2f}, features={features})')
+
+                # Auto-enrollment logic: need 2+ biometric signals OR 1 signal + strong physical profile
+                signal_count = sum([
+                    1 if plate_str else 0,
+                    1 if face_bytes else 0,
+                    1 if gait_bytes else 0
+                ])
+
+                strong_physical = (
+                    physical_attrs and
+                    physical_attrs.get('gender') and
+                    physical_attrs.get('height_cm') and
+                    physical_attrs.get('hair_color')
+                )
+
+                if signal_count >= 2 or (signal_count == 1 and strong_physical):
+                    # Auto-enroll new customer
+                    logger.info(f'Auto-enrolling new customer (signals={signal_count}, physical={strong_physical})')
+
+                    # Get next customer number
+                    max_num = pos_get('/api/customers/max_number')
+                    customer_number = f"CUST-{(max_num + 1):04d}"
+
+                    # Create customer
+                    customer_data = {
+                        'name': None,
+                        'auto_enrolled': True,
+                        'customer_number': customer_number,
+                        'first_seen': datetime.utcnow().isoformat()
+                    }
+
+                    new_customer = pos_post('/api/customers', customer_data)
+                    if new_customer and new_customer.get('id'):
+                        new_cid = new_customer['id']
+                        logger.info(f'Created customer {customer_number} (ID={new_cid})')
+
+                        # Enroll available signals
+                        if plate_str:
+                            pos_post(f'/api/customers/{new_cid}/enroll/plate', {
+                                'plate_number': plate_str
+                            })
+                            logger.info(f'  Enrolled plate: {plate_str}')
+
+                        if face_bytes:
+                            face_b64 = base64.b64encode(face_bytes).decode()
+                            pos_post(f'/api/customers/{new_cid}/enroll/face', {
+                                'embedding_b64': face_b64
+                            })
+                            logger.info(f'  Enrolled face')
+
+                        if gait_bytes:
+                            gait_b64 = base64.b64encode(gait_bytes).decode()
+                            pos_post(f'/api/customers/{new_cid}/enroll/gait', {
+                                'features_b64': gait_b64
+                            })
+                            logger.info(f'  Enrolled gait')
+
+                        # Store physical attributes
+                        if physical_attrs:
+                            pos_post(f'/api/customers/{new_cid}/attributes', {
+                                **physical_attrs,
+                                'camera_source': camera
+                            })
+                            logger.info(f'  Stored physical attributes: {physical_attrs.keys()}')
+
+                        # Refresh customer cache
+                        refresh_customers()
+                    else:
+                        logger.warning(f'Failed to create customer: {new_customer}')
+                else:
+                    logger.info(f'Insufficient signals for auto-enrollment (signals={signal_count}, physical={strong_physical})')
 
     finally:
         try:
