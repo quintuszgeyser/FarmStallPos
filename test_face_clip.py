@@ -1,0 +1,129 @@
+"""
+Test face extraction with a Frigate clip (video or image).
+Usage: python test_face_clip.py <clip_path>
+"""
+import sys
+import cv2
+import numpy as np
+from insightface.model_zoo import get_model
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger(__name__)
+
+def test_face_extraction(clip_path):
+    logger.info(f'Testing face extraction on: {clip_path}')
+
+    # Try to open as video first
+    cap = cv2.VideoCapture(clip_path)
+    if not cap.isOpened():
+        logger.error(f'Failed to open clip: {clip_path}')
+        return
+
+    # Get middle frame
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if frame_count == 0:
+        logger.error('No frames in video')
+        return
+
+    mid_frame = frame_count // 2
+    cap.set(cv2.CAP_PROP_POS_FRAMES, mid_frame)
+    ret, img = cap.read()
+    cap.release()
+
+    if not ret or img is None:
+        logger.error('Failed to read frame')
+        return
+
+    logger.info(f'Frame loaded: shape={img.shape}, dtype={img.dtype}')
+
+    # Initialize face detector
+    logger.info('Loading face detector (SCRFD)...')
+    detector = get_model('C:/Users/Quintusz/.insightface/models/det_10g.onnx')
+    detector.prepare(ctx_id=0, input_size=(640, 640))
+
+    # Initialize face recognizer
+    logger.info('Loading face recognizer (ArcFace)...')
+    recognizer = get_model('C:/Users/Quintusz/.insightface/models/w600k_r50.onnx')
+    recognizer.prepare(ctx_id=0)
+
+    # Detect faces
+    logger.info('Detecting faces...')
+    bboxes, kpss = detector.detect(img, input_size=(640, 640))
+
+    if len(bboxes) == 0:
+        logger.warning('No faces detected')
+        return
+
+    logger.info(f'Detected {len(bboxes)} face(s)')
+
+    # Extract embedding for first face
+    from skimage import transform as trans
+
+    # Ensure input image is BGR (3 channels)
+    logger.info(f'[DEBUG] Input img shape: {img.shape}, dtype: {img.dtype}')
+    if len(img.shape) == 2:  # Grayscale
+        logger.warning('Input is grayscale, converting to BGR...')
+        img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        logger.info(f'[DEBUG] After GRAY2BGR: {img.shape}')
+    elif img.shape[2] == 4:  # RGBA
+        logger.warning('Input is RGBA, converting to BGR...')
+        img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        logger.info(f'[DEBUG] After BGRA2BGR: {img.shape}')
+
+    logger.info('Aligning face...')
+    tform = trans.SimilarityTransform()
+    tform.estimate(kpss[0], [[38.2946, 51.6963], [73.5318, 51.5014], [56.0252, 71.7366], [41.5493, 92.3655], [70.7299, 92.2041]])
+
+    face_img = cv2.warpAffine(img, tform.params[0:2, :], (112, 112), borderValue=0.0)
+    logger.info(f'[DEBUG] After warpAffine: shape={face_img.shape}, dtype={face_img.dtype}')
+
+    # Check channels
+    if len(face_img.shape) == 2:
+        logger.warning('Face image is grayscale after warpAffine, converting to BGR...')
+        face_img = cv2.cvtColor(face_img, cv2.COLOR_GRAY2BGR)
+        logger.info(f'[DEBUG] After GRAY2BGR: shape={face_img.shape}, dtype={face_img.dtype}')
+    elif len(face_img.shape) == 3 and face_img.shape[2] == 4:
+        logger.warning('Face image is RGBA after warpAffine, converting to BGR...')
+        face_img = cv2.cvtColor(face_img, cv2.COLOR_BGRA2BGR)
+        logger.info(f'[DEBUG] After BGRA2BGR: shape={face_img.shape}, dtype={face_img.dtype}')
+    elif len(face_img.shape) == 3 and face_img.shape[2] != 3:
+        logger.error(f'Unexpected channel count: {face_img.shape[2]}')
+        if face_img.shape[2] == 1:
+            logger.warning('Trying to squeeze and convert single channel...')
+            face_img = cv2.cvtColor(face_img[:,:,0], cv2.COLOR_GRAY2BGR)
+            logger.info(f'[DEBUG] After squeeze+GRAY2BGR: shape={face_img.shape}')
+        else:
+            logger.error(f'Cannot handle {face_img.shape[2]} channels')
+            return
+
+    logger.info(f'[DEBUG] Final face_img shape before recognizer: {face_img.shape}, dtype={face_img.dtype}')
+
+    # Prepare for recognizer
+    face_img_np = np.array([face_img])
+    logger.info(f'[DEBUG] face_img_np shape: {face_img_np.shape}, dtype={face_img_np.dtype}')
+
+    # Extract embedding
+    logger.info('Extracting face embedding...')
+    try:
+        emb = recognizer.get_feat(face_img_np)[0]
+        logger.info(f'SUCCESS! Embedding shape: {emb.shape}')
+        logger.info(f'Embedding sample: {emb[:10]}')
+        return emb
+    except AssertionError as e:
+        logger.error(f'FAILED with AssertionError: {e}')
+        logger.error(f'Final shapes - face_img: {face_img.shape}, face_img_np: {face_img_np.shape}')
+        import traceback
+        traceback.print_exc()
+    except Exception as e:
+        logger.error(f'FAILED: {e}')
+        import traceback
+        traceback.print_exc()
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print('Usage: python test_face_clip.py <clip_path>')
+        print('Example: python test_face_clip.py D:/frigate/storage/clips/indoor-1778606425.54264-lh5hd0')
+        sys.exit(1)
+
+    test_face_extraction(sys.argv[1])
