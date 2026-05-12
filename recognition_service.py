@@ -280,18 +280,24 @@ def run_face(image_path):
     try:
         face_app = get_face_app()
         if face_app is None:
+            logger.warning('Face extraction skipped: face_app not initialized')
             return None
         import cv2
         img = cv2.imread(image_path)
         if img is None:
+            logger.warning(f'Face extraction skipped: could not read image {image_path}')
             return None
         faces = face_app.get(img)
         if not faces:
+            logger.debug('Face extraction: no faces detected in image')
             return None
         emb = faces[0].embedding.astype(np.float32)
+        logger.debug(f'Face extracted successfully: {len(emb)} dimensions')
         return emb.tobytes()
     except Exception as e:
-        logger.warning('Face error: %s', e)
+        import traceback
+        logger.error(f'Face extraction error: {type(e).__name__}: {e}')
+        logger.error(f'Traceback: {traceback.format_exc()}')
     return None
 
 def run_gait(image_path):
