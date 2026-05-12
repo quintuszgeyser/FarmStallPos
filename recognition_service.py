@@ -731,10 +731,11 @@ def identify_customer_weighted(plate=None, face_bytes=None, gait_bytes=None, phy
     best_cid = max(customer_scores.keys(), key=lambda cid: customer_scores[cid]['total'])
     best_score = customer_scores[best_cid]['total']
 
-    # Threshold: 4.0 points required for identification
-    # Lowered from 5.0 to allow slight variations (e.g., face 2.8 + gait 1.8 = 4.6)
-    # This reduces false negatives (creating duplicates when should match)
-    if best_score >= 4.0:
+    # Threshold: 3.0 points required for identification
+    # Lowered from 5.0→4.0→3.0 to handle varying quality embeddings
+    # Single strong biometric (face 3.0 or gait 2.0 + partial match) should identify
+    # This significantly reduces false negatives (duplicate creation)
+    if best_score >= 3.0:
         return best_cid, best_score, customer_scores[best_cid]['features']
 
     return None, best_score, customer_scores[best_cid]['features']
@@ -927,8 +928,8 @@ def process_event(event):
                     # CRITICAL: Lock the entire enrollment process to prevent race conditions
                     with _enrollment_lock:
                         now = time.time()
-                        # Clean old entries (>10 seconds)
-                        _recent_enrollments[:] = [(ts, fb, gb) for ts, fb, gb in _recent_enrollments if now - ts < 10]
+                        # Clean old entries (>30 seconds) - extended from 10s
+                        _recent_enrollments[:] = [(ts, fb, gb) for ts, fb, gb in _recent_enrollments if now - ts < 30]
 
                         # Check if similar detection already enrolled recently
                         is_duplicate = False
@@ -939,7 +940,8 @@ def process_event(event):
                                         np.frombuffer(face_bytes, dtype=np.float32),
                                         np.frombuffer(recent_face, dtype=np.float32)
                                     )
-                                    if face_sim > 0.90:  # Very high similarity = same person
+                                    # Lowered from 0.90 to 0.70 to catch more duplicates
+                                    if face_sim > 0.70:  # High similarity = likely same person
                                         is_duplicate = True
                                         logger.info(f'Skipping duplicate enrollment (face match: {face_sim:.2f})')
                                         break
@@ -948,7 +950,8 @@ def process_event(event):
                                         np.frombuffer(gait_bytes, dtype=np.float32),
                                         np.frombuffer(recent_gait, dtype=np.float32)
                                     )
-                                    if gait_dist < 0.15:  # Very similar gait
+                                    # Lowered from 0.15 to 0.20 to catch more duplicates
+                                    if gait_dist < 0.20:  # Similar gait
                                         is_duplicate = True
                                         logger.info(f'Skipping duplicate enrollment (gait match: {gait_dist:.2f})')
                                         break
