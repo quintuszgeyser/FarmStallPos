@@ -916,8 +916,10 @@ def process_event(event):
                     logger.info(f'Auto-enrolling new customer (signals={signal_count}, physical={strong_physical})')
 
                     # Get next customer number
-                    max_num = pos_get('/api/customers/max_number')
+                    max_num_response = pos_get('/api/customers/max_number')
+                    max_num = max_num_response.get('max_number', 0) if max_num_response else 0
                     customer_number = f"CUST-{(max_num + 1):04d}"
+                    logger.info(f'Next customer number: {customer_number} (max_num={max_num})')
 
                     # Create customer
                     customer_data = {
