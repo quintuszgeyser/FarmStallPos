@@ -24,7 +24,7 @@ logging.basicConfig(
 logger = logging.getLogger('recognition')
 
 # ─── Config ────────────────────────────────────────────────────────────────
-POS_URL         = os.environ.get('POS_URL',     'http://127.0.0.1:5000')
+POS_URL         = os.environ.get('POS_URL',     'https://127.0.0.1:5000')
 POS_USER        = os.environ.get('POS_USER',    'admin')
 POS_PASS        = os.environ.get('POS_PASS',    'admin123')
 FRIGATE_URL     = os.environ.get('FRIGATE_URL', 'http://127.0.0.1:8971')
@@ -140,7 +140,12 @@ def get_pose():
 
 # ─── POS API session ────────────────────────────────────────────────────────
 _pos_session = requests.Session()
+_pos_session.verify = False  # Disable SSL verification for localhost HTTPS
 _pos_logged_in = False
+
+# Suppress InsecureRequestWarning
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def pos_login():
     global _pos_logged_in
