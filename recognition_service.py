@@ -50,9 +50,9 @@ def get_face_app():
     global _face_app
     if _face_app is None:
         import insightface
-        from insightface.app import FaceAnalysis
-        _face_app = FaceAnalysis(name='buffalo_sc', providers=['CPUExecutionProvider'])
-        _face_app.prepare(ctx_id=-1, det_size=(320, 320))
+        # Version 0.2.1 uses different API
+        _face_app = insightface.app.FaceAnalysis()
+        _face_app.prepare(ctx_id=-1, nms=0.4)
         logger.info('InsightFace loaded')
     return _face_app
 
