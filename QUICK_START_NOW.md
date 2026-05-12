@@ -38,4 +38,4 @@ Everything else happens automatically:
 **Having issues?** 
 1. Check `dir "C:\Users\Quintusz\.insightface\models\buffalo_l"` has files
 2. Check Recognition service logs for errors
-3. Verify Flask is running on https://127.0.0.1:5000
+3. Verify Flask QA is running on http://127.0.0.1:5000 (Prod uses HTTPS on 5443)
