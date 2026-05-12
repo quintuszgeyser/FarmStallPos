@@ -2825,6 +2825,108 @@ def api_till_detect():
     db.session.commit()
     return jsonify({'ok': True})
 
+@app.route('/api/customers/visits/recent', methods=['GET'])
+def api_customers_visits_recent():
+    """Get recent customer visit detections for session aggregation."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    hours = int(request.args.get('hours', 2))
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    from sqlalchemy import text
+    result = db.session.execute(
+        text("""SELECT cv.customer_id, cv.detected_at, cv.camera_source
+                FROM customer_visits cv
+                WHERE cv.detected_at >= :cutoff
+                ORDER BY cv.customer_id, cv.detected_at"""),
+        {'cutoff': cutoff}
+    ).fetchall()
+
+    visits = []
+    for row in result:
+        visits.append({
+            'customer_id': row[0],
+            'detected_at': row[1].isoformat() if row[1] else None,
+            'camera_source': row[2]
+        })
+
+    return jsonify(visits)
+
+@app.route('/api/customers/<int:cid>/sales', methods=['GET'])
+def api_customer_sales(cid):
+    """Get customer's sales within a date range."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    start = request.args.get('start')
+    end = request.args.get('end')
+
+    query = Sale.query.filter(
+        Sale.customer_id == cid,
+        Sale.voided == False
+    )
+
+    if start:
+        query = query.filter(Sale.date_time >= datetime.fromisoformat(start))
+    if end:
+        query = query.filter(Sale.date_time <= datetime.fromisoformat(end))
+
+    sales = query.all()
+
+    return jsonify([{
+        'sale_id': s.sale_id,
+        'date_time': s.date_time.isoformat(),
+        'product_id': s.product_id,
+        'qty': float(s.qty),
+        'unit_price': float(s.unit_price)
+    } for s in sales])
+
+@app.route('/api/customers/sessions', methods=['POST'])
+def api_customers_sessions():
+    """Create a visit session record."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    data = request.get_json()
+    from sqlalchemy import text
+
+    # Check if session already exists (avoid duplicates)
+    existing = db.session.execute(
+        text("""SELECT id FROM visit_sessions
+                WHERE customer_id = :cid
+                AND session_start = :start
+                LIMIT 1"""),
+        {
+            'cid': data['customer_id'],
+            'start': datetime.fromisoformat(data['session_start'])
+        }
+    ).fetchone()
+
+    if existing:
+        return jsonify({'ok': True, 'id': existing[0], 'already_exists': True})
+
+    # Create new session
+    db.session.execute(
+        text("""INSERT INTO visit_sessions
+                (customer_id, session_start, session_end, entry_camera,
+                 checkout_camera, dwell_seconds, purchase_made, sale_ids)
+                VALUES (:cid, :start, :end, :entry, :checkout, :dwell, :purchase, :sales)"""),
+        {
+            'cid': data['customer_id'],
+            'start': datetime.fromisoformat(data['session_start']),
+            'end': datetime.fromisoformat(data['session_end']),
+            'entry': data.get('entry_camera'),
+            'checkout': data.get('checkout_camera'),
+            'dwell': data.get('dwell_seconds', 0),
+            'purchase': data.get('purchase_made', False),
+            'sales': data.get('sale_ids')
+        }
+    )
+    db.session.commit()
+
+    return jsonify({'ok': True})
+
 
 # -----------------------------
 # Stock — FIFO batch management

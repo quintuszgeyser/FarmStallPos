@@ -924,6 +924,85 @@ def run_webhook_server():
     server.serve_forever()
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
+def session_aggregator_loop():
+    """
+    Background task to aggregate customer visits into sessions.
+    Runs every 5 minutes, groups detections within 30min window.
+    """
+    while True:
+        try:
+            time.sleep(300)  # Run every 5 minutes
+
+            # Get recent visits (last 2 hours)
+            visits = pos_get('/api/customers/visits/recent?hours=2')
+            if not visits:
+                continue
+
+            # Group by customer_id
+            by_customer = {}
+            for v in visits:
+                cid = v.get('customer_id')
+                if not cid:
+                    continue
+                if cid not in by_customer:
+                    by_customer[cid] = []
+                by_customer[cid].append(v)
+
+            # Process each customer's visits
+            for cid, customer_visits in by_customer.items():
+                # Sort by detected_at
+                customer_visits.sort(key=lambda x: x.get('detected_at', ''))
+
+                # Group into sessions (>30 min gap = new session)
+                sessions = []
+                current_session = [customer_visits[0]]
+
+                for i in range(1, len(customer_visits)):
+                    prev_time = datetime.fromisoformat(current_session[-1]['detected_at'])
+                    curr_time = datetime.fromisoformat(customer_visits[i]['detected_at'])
+                    gap_minutes = (curr_time - prev_time).total_seconds() / 60
+
+                    if gap_minutes > 30:
+                        # New session
+                        sessions.append(current_session)
+                        current_session = [customer_visits[i]]
+                    else:
+                        current_session.append(customer_visits[i])
+
+                sessions.append(current_session)
+
+                # Create/update visit_session records
+                for session_visits in sessions:
+                    first_visit = session_visits[0]
+                    last_visit = session_visits[-1]
+
+                    session_start = first_visit['detected_at']
+                    session_end = last_visit['detected_at']
+
+                    start_dt = datetime.fromisoformat(session_start)
+                    end_dt = datetime.fromisoformat(session_end)
+                    dwell_seconds = int((end_dt - start_dt).total_seconds())
+
+                    # Check if purchase was made (sales within session timeframe)
+                    sales = pos_get(f'/api/customers/{cid}/sales?start={session_start}&end={session_end}')
+
+                    # Create session record
+                    pos_post('/api/customers/sessions', {
+                        'customer_id': cid,
+                        'session_start': session_start,
+                        'session_end': session_end,
+                        'entry_camera': first_visit.get('camera_source'),
+                        'checkout_camera': last_visit.get('camera_source'),
+                        'dwell_seconds': dwell_seconds,
+                        'purchase_made': len(sales) > 0 if sales else False,
+                        'sale_ids': ','.join([s.get('sale_id', '') for s in sales]) if sales else None
+                    })
+
+                    logger.info(f'Session created: customer {cid}, dwell {dwell_seconds}s, purchase={len(sales) > 0 if sales else False}')
+
+        except Exception as e:
+            logger.warning(f'Session aggregation error: {e}')
+
 if __name__ == '__main__':
     logger.info('Recognition service starting')
     pos_login()
@@ -934,6 +1013,9 @@ if __name__ == '__main__':
 
     # Background Frigate poller (fallback for missed webhooks)
     threading.Thread(target=poll_frigate_events, daemon=True).start()
+
+    # Background session aggregator (every 5 minutes)
+    threading.Thread(target=session_aggregator_loop, daemon=True).start()
 
     # Webhook server (blocking)
     run_webhook_server()
