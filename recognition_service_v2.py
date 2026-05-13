@@ -1119,6 +1119,7 @@ _seen_events = set()
 
 def poll_frigate_events():
     """Background poller for Frigate events"""
+    import time as time_module
     while True:
         try:
             r = requests.get(f'{FRIGATE_URL}/api/events?limit=20&has_snapshot=1', timeout=10)
@@ -1126,7 +1127,7 @@ def poll_frigate_events():
                 events = r.json()
                 new_count = 0
                 recent_count = 0
-                now = time.time()
+                now = time_module.time()
 
                 for ev in events:
                     eid = ev.get('id')
@@ -1148,8 +1149,8 @@ def poll_frigate_events():
                 if recent_count > 0:
                     logger.debug(f'Frigate poll: {recent_count} recent events, {new_count} new')
         except Exception as e:
-            logger.warning(f'Frigate poll error: {e}')
-        time.sleep(30)
+            logger.warning(f'Frigate poll error: %s', e)
+        time_module.sleep(30)
 
 # ─── Webhook Server ─────────────────────────────────────────────────────────
 
