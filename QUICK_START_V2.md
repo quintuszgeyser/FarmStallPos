@@ -1,5 +1,10 @@
 # Recognition v2.0 - Quick Start
 
+**⚠️ CURRENT STATUS: NOT WORKING - Frigate poller thread not starting**
+**See CURRENT_STATUS.md for troubleshooting details**
+
+---
+
 ## What Changed?
 
 **Old system (v1):**
@@ -179,6 +184,43 @@ Restart service to pick up new thresholds.
 ---
 
 ## Troubleshooting
+
+### ⚠️ Service Not Processing Events (Current Issue)
+
+**Symptom:** Recognition service starts but no "Processing new event" log messages appear when people walk in front of camera.
+
+**Check 1: Is service running?**
+```powershell
+ssh Quintusz@10.0.0.101 'powershell -Command "Get-Process python | Measure-Object | Select-Object -ExpandProperty Count"'
+```
+Should show `2` (main + poller threads).
+
+**Check 2: Is Frigate detecting?**
+```bash
+ssh Quintusz@10.0.0.101 'curl -s "http://127.0.0.1:8971/api/events?limit=3&has_snapshot=1"'
+```
+Should show recent person detections.
+
+**Check 3: Is poller thread starting?**
+```bash
+ssh Quintusz@10.0.0.101 'powershell -Command "Get-Content C:/Users/Quintusz/farm_pos_web/logs/recognition_service_v2.log | Select-String -Pattern \"Frigate poller\""'
+```
+Should show "Frigate poller thread started" message. If missing → thread not starting.
+
+**Check 4: View full logs**
+```bash
+ssh Quintusz@10.0.0.101 'powershell -Command "Get-Content C:/Users/Quintusz/farm_pos_web/logs/recognition_service_v2.log -Tail 50"'
+```
+
+**Possible fixes:**
+1. Restart service (stop all Python processes, start fresh)
+2. Check for Python exceptions during thread creation
+3. Run service in foreground to see stderr: `python recognition_service_v2.py`
+4. Check if DEBUG logging is enabled (should see poll attempts)
+
+**See CURRENT_STATUS.md for detailed troubleshooting session history.**
+
+---
 
 ### Still seeing duplicates?
 

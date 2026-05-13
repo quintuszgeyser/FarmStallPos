@@ -1,5 +1,7 @@
 # Recognition Service v2.0 - Production Implementation
 
+**⚠️ CURRENT STATUS: DEPLOYMENT BLOCKED - See CURRENT_STATUS.md for details**
+
 ## Overview
 
 Complete rewrite of the customer recognition system with production-grade multi-biometric identification.
@@ -12,6 +14,11 @@ Complete rewrite of the customer recognition system with production-grade multi-
 - ✅ ROC-calibrated thresholds (empirical, not guessed)
 - ✅ Full decision audit trail (explainable AI)
 - ✅ Multi-embedding storage (3-5 poses per customer)
+
+**Current Issue (2026-05-13):**
+- Service starts successfully but Frigate poller thread does not process events
+- No face/gait extraction happening despite Frigate detecting people
+- See `CURRENT_STATUS.md` for full troubleshooting details
 
 ## Architecture
 
