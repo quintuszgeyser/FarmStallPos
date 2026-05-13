@@ -19,7 +19,7 @@ LOG_PATH = os.path.join(os.path.dirname(__file__), 'logs', 'recognition_service_
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.FileHandler(LOG_PATH, encoding='utf-8'),
@@ -1120,8 +1120,10 @@ _seen_events = set()
 def poll_frigate_events():
     """Background poller for Frigate events"""
     import time as time_module
+    logger.info('Frigate poller thread started')
     while True:
         try:
+            logger.debug('Polling Frigate for events...')
             r = requests.get(f'{FRIGATE_URL}/api/events?limit=20&has_snapshot=1', timeout=10)
             if r.ok:
                 events = r.json()
@@ -1146,8 +1148,7 @@ def poll_frigate_events():
                             logger.info(f'Processing new event {eid[:20]} (label={ev.get("label")}, camera={ev.get("camera")})')
                             threading.Thread(target=process_event, args=(ev,), daemon=True).start()
 
-                if recent_count > 0:
-                    logger.debug(f'Frigate poll: {recent_count} recent events, {new_count} new')
+                logger.debug(f'Frigate poll complete: {len(events)} total, {recent_count} recent (<60s), {new_count} new')
         except Exception as e:
             logger.warning(f'Frigate poll error: %s', e)
         time_module.sleep(30)
