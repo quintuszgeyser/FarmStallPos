@@ -1123,15 +1123,30 @@ def poll_frigate_events():
         try:
             r = requests.get(f'{FRIGATE_URL}/api/events?limit=20&has_snapshot=1', timeout=10)
             if r.ok:
-                for ev in r.json():
+                events = r.json()
+                new_count = 0
+                recent_count = 0
+                now = time.time()
+
+                for ev in events:
                     eid = ev.get('id')
-                    if eid and eid not in _seen_events:
-                        _seen_events.add(eid)
-                        if len(_seen_events) > 500:
-                            oldest = list(_seen_events)[:100]
-                            for o in oldest:
-                                _seen_events.discard(o)
-                        threading.Thread(target=process_event, args=(ev,), daemon=True).start()
+                    end_time = ev.get('end_time')
+
+                    # Only process events that ended in the last 60 seconds
+                    if end_time and (now - end_time) <= 60:
+                        recent_count += 1
+                        if eid and eid not in _seen_events:
+                            new_count += 1
+                            _seen_events.add(eid)
+                            if len(_seen_events) > 500:
+                                oldest = list(_seen_events)[:100]
+                                for o in oldest:
+                                    _seen_events.discard(o)
+                            logger.info(f'Processing new event {eid[:20]} (label={ev.get("label")}, camera={ev.get("camera")})')
+                            threading.Thread(target=process_event, args=(ev,), daemon=True).start()
+
+                if recent_count > 0:
+                    logger.debug(f'Frigate poll: {recent_count} recent events, {new_count} new')
         except Exception as e:
             logger.warning(f'Frigate poll error: {e}')
         time.sleep(30)
