@@ -93,9 +93,9 @@ def get_face_app():
             import cv2
             from skimage import transform as trans
 
-            model_dir = os.path.expanduser('~/.insightface/models')
-            det_model = os.path.join(model_dir, 'det_10g.onnx')
-            rec_model = os.path.join(model_dir, 'w600k_r50.onnx')
+            model_dir = os.environ.get('INSIGHTFACE_HOME', os.path.expanduser('~/.insightface/models'))
+            det_model = os.path.join(model_dir, 'buffalo_l', 'det_10g.onnx')
+            rec_model = os.path.join(model_dir, 'buffalo_l', 'w600k_r50.onnx')
 
             if not os.path.exists(det_model) or not os.path.exists(rec_model):
                 logger.error('Face models not found. Run: python download_face_models.py')
@@ -1102,8 +1102,69 @@ def process_event(event):
             if track.confidence < pending_threshold:
                 logger.info(f'Track {track_id[:8]} ready for enrollment (age={track.age():.1f}s, quality=ok)')
 
-                # TODO: Auto-enroll logic
-                # For now, just log
+                # Auto-enroll new customer
+                try:
+                    # Get next customer number
+                    r = pos_get('/api/customers/max_number')
+                    if r and r.get('max_number') is not None:
+                        next_number = r['max_number'] + 1
+                    else:
+                        next_number = 1
+
+                    # Create customer with auto_enrolled flag
+                    new_customer = pos_post('/api/customers', {
+                        'name': None,  # No name yet
+                        'auto_enrolled': True,
+                        'customer_number': next_number,
+                        'first_seen': datetime.now().isoformat()
+                    })
+
+                    if new_customer and new_customer.get('id'):
+                        customer_id = new_customer['id']
+                        logger.info(f'✅ Auto-enrolled customer #{next_number} (id={customer_id})')
+
+                        # Enroll face if available
+                        best_face = track.get_best_signal('face')
+                        if best_face and best_face.get('embedding'):
+                            pos_post(f'/api/customers/{customer_id}/enroll/face', {
+                                'embedding_b64': base64.b64encode(best_face['embedding']).decode(),
+                                'quality': best_face.get('quality', 0.0)
+                            })
+                            logger.info(f'   Face enrolled for customer #{next_number}')
+
+                        # Enroll gait if available
+                        best_gait = track.get_best_signal('gait')
+                        if best_gait and best_gait.get('features'):
+                            pos_post(f'/api/customers/{customer_id}/enroll/gait', {
+                                'features_b64': base64.b64encode(best_gait['features']).decode(),
+                                'quality': best_gait.get('quality', 0.0)
+                            })
+                            logger.info(f'   Gait enrolled for customer #{next_number}')
+
+                        # Enroll physical attributes if extracted
+                        if signals.get('attributes'):
+                            pos_post(f'/api/customers/{customer_id}/attributes', signals['attributes'])
+                            logger.info(f'   Attributes enrolled for customer #{next_number}')
+
+                        # Link track to new customer
+                        track.customer_id = customer_id
+                        track.confidence = 1.0
+
+                        # Refresh customer cache to include new customer
+                        refresh_customer_cache()
+
+                        # Log visit
+                        pos_post('/api/customers/identify', {
+                            'customer_id': customer_id,
+                            'matched_signals': 'auto_enrollment',
+                            'confidence_scores': {'auto_enroll': 1.0},
+                            'camera_source': signals.get('camera'),
+                        })
+
+                except Exception as e:
+                    logger.error(f'Auto-enrollment failed: {e}')
+                    import traceback
+                    traceback.print_exc()
 
         else:
             logger.debug(f'Track {track_id[:8]} pending (age={track.age():.1f}s, confidence={track.confidence:.3f})')
