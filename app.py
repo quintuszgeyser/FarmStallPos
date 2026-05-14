@@ -1476,7 +1476,7 @@ with app.app_context():
                 UPDATE user_sessions
                 SET logged_out = COALESCE(last_active, logged_in)
                 WHERE logged_out IS NULL
-                  AND (last_active IS NULL OR last_active < %(cutoff)s)
+                  AND (last_active IS NULL OR last_active < :cutoff)
             """, {'cutoff': _stale_cutoff})
     except Exception as _e:
         logger.warning('Stale session cleanup skipped: %s', _e)
