@@ -1470,14 +1470,15 @@ with app.app_context():
     # Close stale open sessions using raw SQL so it works even on fresh DBs
     # where last_active was just added by strong_migrate() above.
     try:
+        from sqlalchemy import text
         _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
         with db.engine.begin() as _conn:
-            _conn.exec_driver_sql("""
+            _conn.execute(text("""
                 UPDATE user_sessions
                 SET logged_out = COALESCE(last_active, logged_in)
                 WHERE logged_out IS NULL
                   AND (last_active IS NULL OR last_active < :cutoff)
-            """, {'cutoff': _stale_cutoff})
+            """), {'cutoff': _stale_cutoff})
     except Exception as _e:
         logger.warning('Stale session cleanup skipped: %s', _e)
 
