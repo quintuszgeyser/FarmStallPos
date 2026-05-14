@@ -5021,7 +5021,21 @@ def version():
     return jsonify({'version': APP_VERSION})
 
 if __name__ == '__main__':
-    _cert = os.path.join(os.path.dirname(__file__), 'cert.pem')
-    _key  = os.path.join(os.path.dirname(__file__), 'cert.key')
+    # Look for certificates in config directory (production) or same directory (dev)
+    _config_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'config')
+    _cert = os.path.join(_config_dir, 'cert.pem')
+    _key  = os.path.join(_config_dir, 'key.pem')
+
+    # Fallback to dev location
+    if not (os.path.exists(_cert) and os.path.exists(_key)):
+        _cert = os.path.join(os.path.dirname(__file__), 'cert.pem')
+        _key  = os.path.join(os.path.dirname(__file__), 'key.pem')
+
     _ssl  = (_cert, _key) if os.path.exists(_cert) and os.path.exists(_key) else None
+
+    if _ssl:
+        logger.info(f'Starting with HTTPS on port {os.getenv("PORT", "5443")}')
+    else:
+        logger.warning('SSL certificates not found - running on HTTP')
+
     app.run(host='0.0.0.0', port=int(os.getenv('PORT', '5443' if _ssl else '5000')), ssl_context=_ssl)
