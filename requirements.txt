@@ -3,3 +3,6 @@ Flask-SQLAlchemy==3.1.1
 SQLAlchemy==2.0.45
 gunicorn==21.2.0
 psycopg[binary]==3.3.2
+requests==2.31.0
+jsonschema==4.20.0
+PyNaCl==1.5.0
