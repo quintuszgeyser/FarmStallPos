@@ -9,7 +9,7 @@ Farm Stall POS — v1.5.0
 - Backward compatible: existing simple products unchanged
 """
 
-import os, uuid, logging, traceback
+import os, uuid, logging, traceback, json
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 from io import StringIO, BytesIO
@@ -4363,6 +4363,110 @@ def api_settings():
 
 
 # -----------------------------
+# System Updates (admin)
+# -----------------------------
+@app.route('/api/system/update-status', methods=['GET'])
+def api_system_update_status():
+    """Get current update status from updater service."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    # Read state from updater service state file
+    state_file = os.path.join('C:', 'ProgramData', 'FarmPOS', 'Updater', 'state.json')
+
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, 'r') as f:
+                state_data = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to read update state: {e}")
+            state_data = {}
+    else:
+        state_data = {}
+
+    # Get update settings from database
+    auto_update_enabled = get_setting('auto_update_enabled', False)
+    auto_update_minor = get_setting('auto_update_minor', False)
+
+    return jsonify({
+        'current_version': APP_VERSION,
+        'state': state_data.get('state', 'idle'),
+        'available_version': state_data.get('available_version'),
+        'available_type': state_data.get('available_type'),
+        'safe_auto_update': state_data.get('safe_auto_update', False),
+        'progress_pct': state_data.get('progress_pct', 0),
+        'current_action': state_data.get('current_action', ''),
+        'last_check': state_data.get('last_check'),
+        'last_error': state_data.get('last_error'),
+        'auto_update_enabled': bool(auto_update_enabled),
+        'auto_update_minor': bool(auto_update_minor)
+    })
+
+@app.route('/api/system/update-check', methods=['POST'])
+def api_system_update_check():
+    """Trigger manual update check."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    # Signal updater service to check now
+    set_setting('update_check_requested', True)
+    db.session.commit()
+
+    logger.info(f"Manual update check requested by user {session.get('user_id')}")
+
+    return jsonify({'ok': True, 'message': 'Update check triggered'})
+
+@app.route('/api/system/update-install', methods=['POST'])
+def api_system_update_install():
+    """Trigger manual update installation."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    # Read current state
+    state_file = os.path.join('C:', 'ProgramData', 'FarmPOS', 'Updater', 'state.json')
+
+    if os.path.exists(state_file):
+        try:
+            with open(state_file, 'r') as f:
+                state_data = json.load(f)
+        except Exception as e:
+            return jsonify({'error': f'Failed to read update state: {e}'}), 500
+    else:
+        return jsonify({'error': 'Update state not available'}), 400
+
+    # Verify update is ready
+    if state_data.get('state') != 'ready':
+        return jsonify({'error': 'No update ready to install'}), 400
+
+    # Signal updater service to install
+    set_setting('update_install_requested', True)
+    db.session.commit()
+
+    logger.info(f"Manual update install requested by user {session.get('user_id')}")
+
+    return jsonify({'ok': True, 'message': 'Update installation triggered'})
+
+@app.route('/api/system/update-settings', methods=['POST'])
+def api_system_update_settings():
+    """Update auto-update configuration."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.json or {}
+
+    if 'auto_update_enabled' in data:
+        set_setting('auto_update_enabled', bool(data['auto_update_enabled']))
+        logger.info(f"Auto-update enabled set to {data['auto_update_enabled']} by user {session.get('user_id')}")
+
+    if 'auto_update_minor' in data:
+        set_setting('auto_update_minor', bool(data['auto_update_minor']))
+        logger.info(f"Auto-update minor set to {data['auto_update_minor']} by user {session.get('user_id')}")
+
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# -----------------------------
 # Stats (admin)
 # -----------------------------
 @app.route('/api/stats/today')
@@ -4989,6 +5093,15 @@ def api_stats_drilldown_profit():
 @app.route('/')
 def index():
     return render_template('index.html', app_env=os.getenv('APP_ENV', 'qa'))
+
+@app.route('/health')
+def health_check():
+    """Lightweight health check for updater service (localhost only)."""
+    return jsonify({
+        'status': 'healthy',
+        'version': APP_VERSION,
+        'timestamp': datetime.utcnow().isoformat()
+    })
 
 @app.route('/guide')
 def user_guide():
