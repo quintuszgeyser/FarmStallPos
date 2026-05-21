@@ -2160,11 +2160,11 @@ def api_fifo_price(pid):
             'warning':         'No stock found — receive stock first',
         })
 
-    suggested = avg_cost / (1 - markup / 100) if markup < 100 else avg_cost * 2
+    suggested = avg_cost * (1 + markup / 100)
 
     suggestions = {}
-    for pct in [20, 30, 40, 50, 60, 70]:
-        suggestions[f'{pct}%'] = round(float(avg_cost) / (1 - pct / 100), 2)
+    for pct in [20, 30, 40, 50, 60, 70, 100, 150, 200]:
+        suggestions[f'{pct}%'] = round(float(avg_cost * (1 + Decimal(pct) / 100)), 2)
 
     return jsonify({
         'product_id':      pid,

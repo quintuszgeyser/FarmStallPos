@@ -310,7 +310,7 @@ function renderProductsCards() {
     card.className = hasStock ? 'stock-card' : 'product-thin-card';
 
     const typeLabel   = { simple: '', stock_item: '📦', recipe: '🍳' }[p.product_type] || '';
-    const marginLabel = p.margin_pct != null ? ` • ${p.margin_pct}% margin` : '';
+    const marginLabel = p.margin_pct != null ? ` • ${p.margin_pct}% markup` : '';
 
     let stockBadge = '';
     if (isStockItem) {
@@ -1184,10 +1184,10 @@ document.getElementById('btn-calc-price')?.addEventListener('click', async () =>
       breakdown.push({ label: ingr?.name || `#${ln.ingredient_id}`, line_cost: cost });
     });
     if (totalCost === 0) return toast('No stock prices found — receive stock for ingredients first', 'warning');
-    const suggestedPrice = totalCost / (1 - markup / 100);
+    const suggestedPrice = totalCost * (1 + markup / 100);
     show(resultEl);
     avgCostEl.textContent   = `R${totalCost.toFixed(4)}`;
-    suggestedEl.textContent = `→ R${fmt(suggestedPrice)} at ${markup}% margin`;
+    suggestedEl.textContent = `→ R${fmt(suggestedPrice)} at ${markup}% markup`;
     document.getElementById('btn-calc-apply').dataset.price = suggestedPrice.toFixed(2);
     breakdownEl.innerHTML = '';
     breakdown.forEach(l => {
@@ -1196,8 +1196,8 @@ document.getElementById('btn-calc-price')?.addEventListener('click', async () =>
       breakdownEl.appendChild(tr);
     });
     const sEl = document.getElementById('calc-suggestions-row');
-    if (sEl) sEl.innerHTML = [20,30,40,50,60,70].map(pct => {
-      const p = totalCost / (1 - pct/100);
+    if (sEl) sEl.innerHTML = [20,30,40,50,60,70,100,150,200].map(pct => {
+      const p = totalCost * (1 + pct/100);
       return `<button class="btn btn-outline-secondary btn-sm me-1 mb-1" data-apply-price="${p.toFixed(2)}">${pct}% → R${fmt(p)}</button>`;
     }).join('');
     sEl?.querySelectorAll('[data-apply-price]').forEach(btn => {
@@ -1213,7 +1213,7 @@ document.getElementById('btn-calc-price')?.addEventListener('click', async () =>
 
     show(resultEl);
     avgCostEl.textContent   = `R${j.avg_cost.toFixed(4)}`;
-    suggestedEl.textContent = `→ R${fmt(j.suggested_price)} at ${markup}% margin`;
+    suggestedEl.textContent = `→ R${fmt(j.suggested_price)} at ${markup}% markup`;
     document.getElementById('btn-calc-apply').dataset.price = j.suggested_price;
 
     // Breakdown table
@@ -4674,9 +4674,8 @@ function updateSubsPriceDelta() {
     el.className = 'text-muted';
     el._priceAdj = 0;
   } else {
-    const margin   = parseFloat(document.getElementById('calc-markup')?.value || '50') / 100;
-    const safeMargin = Math.min(margin, 0.99);
-    const priceAdj = delta / (1 - (safeMargin > 0 ? safeMargin : 0.5));
+    const markup   = parseFloat(document.getElementById('calc-markup')?.value || '50') / 100;
+    const priceAdj = delta * (1 + (markup > 0 ? markup : 0.5));
     el.textContent = `+R${fmt(priceAdj)}`;
     el.className = 'text-danger fw-bold';
     el._priceAdj = priceAdj;
