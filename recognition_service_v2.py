@@ -984,6 +984,24 @@ class TrackIdentity:
     def idle_time(self):
         return time.time() - self.last_seen
 
+    def get_best_signal(self, signal_type):
+        """Return the highest-quality observation for a given signal type."""
+        best = None
+        best_quality = -1.0
+        for obs in self.frame_observations:
+            signals = obs.get('signals', {})
+            if signal_type == 'face' and signals.get('face_embedding'):
+                q = signals.get('face_quality', 0.0)
+                if q > best_quality:
+                    best_quality = q
+                    best = {'embedding': signals['face_embedding'], 'quality': q}
+            elif signal_type == 'gait' and signals.get('gait_features'):
+                q = signals.get('gait_quality', 0.0)
+                if q > best_quality:
+                    best_quality = q
+                    best = {'features': signals['gait_features'], 'quality': q}
+        return best
+
     def get_evidence_summary(self):
         """Get summary for audit"""
         return {
@@ -1151,7 +1169,7 @@ def process_event(event):
                         track.confidence = 1.0
 
                         # Refresh customer cache to include new customer
-                        refresh_customer_cache()
+                        refresh_customers()
 
                         # Log visit
                         pos_post('/api/customers/identify', {
@@ -1195,9 +1213,20 @@ def poll_frigate_events():
                 for ev in events:
                     eid = ev.get('id')
                     end_time = ev.get('end_time')
+                    label = ev.get('label')
 
-                    # Only process events that ended in the last 60 seconds
-                    if end_time and (now - end_time) <= 60:
+                    if label != 'person':
+                        continue
+
+                    # Active event (no end_time yet) — process every poll to build up track
+                    if not end_time:
+                        recent_count += 1
+                        new_count += 1
+                        logger.info(f'Processing active event {eid[:20]} (camera={ev.get("camera")})')
+                        threading.Thread(target=process_event, args=(ev,), daemon=True).start()
+
+                    # Ended event within last 60 seconds — process once
+                    elif (now - end_time) <= 60:
                         recent_count += 1
                         if eid and eid not in _seen_events:
                             new_count += 1
@@ -1206,10 +1235,10 @@ def poll_frigate_events():
                                 oldest = list(_seen_events)[:100]
                                 for o in oldest:
                                     _seen_events.discard(o)
-                            logger.info(f'Processing new event {eid[:20]} (label={ev.get("label")}, camera={ev.get("camera")})')
+                            logger.info(f'Processing ended event {eid[:20]} (camera={ev.get("camera")})')
                             threading.Thread(target=process_event, args=(ev,), daemon=True).start()
 
-                logger.debug(f'Frigate poll complete: {len(events)} total, {recent_count} recent (<60s), {new_count} new')
+                logger.debug(f'Frigate poll complete: {len(events)} total, {recent_count} recent, {new_count} new')
         except Exception as e:
             logger.warning(f'Frigate poll error: %s', e)
         time_module.sleep(30)
@@ -1238,7 +1267,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
             event_type = payload.get('type')
             after = payload.get('after') or payload.get('before') or {}
 
-            if event_type == 'end':
+            # Process both updates (track building) and end events (final snapshot)
+            if event_type in ('update', 'end') and after.get('label') == 'person':
                 threading.Thread(target=process_event, args=(after,), daemon=True).start()
         except Exception as e:
             logger.warning(f'Webhook parse error: {e}')
