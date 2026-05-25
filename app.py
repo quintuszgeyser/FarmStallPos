@@ -866,11 +866,9 @@ def strong_migrate():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_customer_faces_cid ON customer_faces (customer_id)")
 
             # ---- customer_faces new columns ----
-            existing_cf = [r[0] for r in conn.exec_driver_sql(
-                "SELECT column_name FROM information_schema.columns WHERE table_name='customer_faces'"
-            ).fetchall()]
-            if 'photo' not in existing_cf:
-                conn.exec_driver_sql("ALTER TABLE customer_faces ADD COLUMN photo BYTEA")
+            conn.exec_driver_sql(
+                "ALTER TABLE customer_faces ADD COLUMN IF NOT EXISTS photo BYTEA"
+            )
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS customer_gaits (
