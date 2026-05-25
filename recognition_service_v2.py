@@ -1065,6 +1065,79 @@ _threshold_manager = ThresholdManager()
 def get_current_threshold(threshold_type, context=None):
     return _threshold_manager.get_threshold(threshold_type, context)
 
+# ─── Profile Improvement ────────────────────────────────────────────────────
+
+# Quality thresholds for deciding whether to upgrade a stored signal
+FACE_UPGRADE_MIN   = 0.65   # only upgrade face if new quality is at least this
+GAIT_UPGRADE_MIN   = 0.65
+
+def _improve_customer_profile(customer_id, signals):
+    """
+    Called every time a known customer is seen.
+    Fills in missing biometric data and upgrades to higher-quality observations.
+    """
+    try:
+        # --- Face: upgrade if we have a better observation or none stored ---
+        new_face_quality = signals.get('face_quality', 0.0)
+        if signals.get('face_embedding') and new_face_quality >= FACE_UPGRADE_MIN:
+            existing_faces = pos_get(f'/api/customers/{customer_id}/faces_raw') or []
+            # Check stored quality (we store quality as part of the enroll call response isn't available,
+            # so we upgrade if no face stored yet, or if new quality is meaningfully better)
+            if not existing_faces:
+                logger.info(f'Profile [{customer_id}]: adding face (quality={new_face_quality:.2f})')
+                payload = {
+                    'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
+                    'quality': new_face_quality,
+                }
+                if signals.get('face_photo'):
+                    payload['photo_b64'] = base64.b64encode(signals['face_photo']).decode()
+                pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+            elif signals.get('face_photo'):
+                # We have a face stored — upgrade photo if this is high quality
+                if new_face_quality >= 0.80:
+                    logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
+                    payload = {
+                        'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
+                        'quality': new_face_quality,
+                        'photo_b64': base64.b64encode(signals['face_photo']).decode(),
+                    }
+                    pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+
+        # --- Gait: add if missing ---
+        new_gait_quality = signals.get('gait_quality', 0.0)
+        if signals.get('gait_features') and new_gait_quality >= GAIT_UPGRADE_MIN:
+            existing_gaits = pos_get(f'/api/customers/{customer_id}/gaits_raw') or []
+            if not existing_gaits:
+                logger.info(f'Profile [{customer_id}]: adding gait (quality={new_gait_quality:.2f})')
+                pos_post(f'/api/customers/{customer_id}/enroll/gait', {
+                    'features_b64': base64.b64encode(signals['gait_features']).decode(),
+                    'quality': new_gait_quality,
+                })
+
+        # --- Physical attributes: always update when detected ---
+        if signals.get('physical_attrs'):
+            attrs = signals['physical_attrs']
+            existing = pos_get(f'/api/customers/{customer_id}/attributes')
+            # Fill in fields that are missing or update all if confidence is high
+            should_update = (
+                existing is None or
+                not existing.get('hair_color') or
+                attrs.get('confidence', 0) > (existing.get('confidence') or 0)
+            )
+            if should_update:
+                logger.info(f'Profile [{customer_id}]: updating physical attributes')
+                pos_post(f'/api/customers/{customer_id}/attributes', {
+                    'hair_color':   attrs.get('hair_color'),
+                    'build':        attrs.get('build'),
+                    'facial_hair':  attrs.get('facial_hair'),
+                    'height_category': attrs.get('height_category'),
+                    'confidence':   attrs.get('confidence', 0.0),
+                    'camera_source': signals.get('camera'),
+                })
+
+    except Exception as e:
+        logger.warning(f'Profile improvement error for customer {customer_id}: {e}')
+
 # ─── Event Processing ───────────────────────────────────────────────────────
 
 def process_event(event):
@@ -1122,6 +1195,9 @@ def process_event(event):
                 'confidence_scores': {'track_confidence': track.confidence},
                 'camera_source': signals.get('camera'),
             })
+
+            # Continuous profile improvement — fill in missing or upgrade quality
+            _improve_customer_profile(track.customer_id, signals)
 
         elif track.age() >= 60 and track.has_enrollment_quality():
             if track.confidence < pending_threshold:

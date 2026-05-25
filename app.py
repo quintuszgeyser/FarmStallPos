@@ -1339,6 +1339,7 @@ def strong_migrate():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_height ON customer_physical_attributes(height_cm)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_hair ON customer_physical_attributes(hair_color)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_build ON customer_physical_attributes(build)")
+            conn.exec_driver_sql("ALTER TABLE customer_physical_attributes ADD COLUMN IF NOT EXISTS height_category VARCHAR(10)")
 
             # Visit sessions (dwell time tracking)
             conn.exec_driver_sql("""
@@ -2881,7 +2882,7 @@ def api_customer_attributes(cid):
         result = db.session.execute(
             text("""SELECT height_cm, hair_color, skin_tone, build, eye_color,
                            age_range, gender, wearing_glasses, facial_hair,
-                           detected_at, camera_source, confidence
+                           detected_at, camera_source, confidence, height_category
                     FROM customer_physical_attributes
                     WHERE customer_id = :cid
                     ORDER BY detected_at DESC LIMIT 1"""),
@@ -2890,18 +2891,19 @@ def api_customer_attributes(cid):
 
         if result:
             return jsonify({
-                'height_cm': result[0],
-                'hair_color': result[1],
-                'skin_tone': result[2],
-                'build': result[3],
-                'eye_color': result[4],
-                'age_range': result[5],
-                'gender': result[6],
-                'wearing_glasses': result[7],
-                'facial_hair': result[8],
-                'detected_at': result[9].isoformat() if result[9] else None,
-                'camera_source': result[10],
-                'confidence': float(result[11]) if result[11] else None
+                'height_cm':        result[0],
+                'hair_color':       result[1],
+                'skin_tone':        result[2],
+                'build':            result[3],
+                'eye_color':        result[4],
+                'age_range':        result[5],
+                'gender':           result[6],
+                'wearing_glasses':  result[7],
+                'facial_hair':      result[8],
+                'detected_at':      result[9].isoformat() if result[9] else None,
+                'camera_source':    result[10],
+                'confidence':       float(result[11]) if result[11] else None,
+                'height_category':  result[12],
             })
         return jsonify(None)
 
@@ -2911,9 +2913,10 @@ def api_customer_attributes(cid):
         db.session.execute(
             text("""INSERT INTO customer_physical_attributes
                     (customer_id, height_cm, hair_color, skin_tone, build, eye_color,
-                     age_range, gender, wearing_glasses, facial_hair, camera_source, confidence)
+                     age_range, gender, wearing_glasses, facial_hair, camera_source, confidence,
+                     height_category)
                     VALUES (:cid, :height, :hair, :skin, :build, :eye, :age, :gender,
-                            :glasses, :facial, :camera, :conf)"""),
+                            :glasses, :facial, :camera, :conf, :height_cat)"""),
             {
                 'cid': cid,
                 'height': data.get('height_cm'),
@@ -2926,7 +2929,8 @@ def api_customer_attributes(cid):
                 'glasses': data.get('wearing_glasses'),
                 'facial': data.get('facial_hair'),
                 'camera': data.get('camera_source'),
-                'conf': data.get('confidence')
+                'conf': data.get('confidence'),
+                'height_cat': data.get('height_category'),
             }
         )
         db.session.commit()
