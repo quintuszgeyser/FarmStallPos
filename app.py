@@ -310,6 +310,9 @@ class Special(db.Model):
     name          = db.Column(db.String(120), nullable=False)
     special_price = db.Column(Numeric(10, 2), nullable=False)
     active        = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    # JSON array of schedule windows: [{"days":[0,1,2,3,4,5,6], "all_day":true, "start":"09:00", "end":"17:00"}]
+    # days: 0=Mon … 6=Sun. Empty array = always active.
+    schedule      = db.Column(db.Text, nullable=True)
 
 
 class SpecialLine(db.Model):
@@ -1211,6 +1214,7 @@ def strong_migrate():
               qty        INTEGER NOT NULL DEFAULT 1
             )""")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_special_lines_special ON special_lines (special_id)")
+            pg_try("ALTER TABLE specials ADD COLUMN schedule TEXT")
 
             # ---- customer identification tables (PostgreSQL) ----
             conn.exec_driver_sql("""
@@ -3560,12 +3564,18 @@ def api_purchases_post():
 # Specials
 # -----------------------------
 def _serialize_special(s):
+    import json as _json
     lines = SpecialLine.query.filter_by(special_id=s.id).all()
+    try:
+        schedule = _json.loads(s.schedule) if s.schedule else []
+    except Exception:
+        schedule = []
     return {
         'id':            s.id,
         'name':          s.name,
         'special_price': float(s.special_price),
         'active':        s.active,
+        'schedule':      schedule,
         'lines': [
             {
                 'product_id':   l.product_id,
@@ -3595,7 +3605,10 @@ def api_specials_post():
         return jsonify({'error': 'Name required'}), 400
     if price is None:
         return jsonify({'error': 'special_price required'}), 400
-    s = Special(name=name, special_price=Decimal(str(price)), active=data.get('active', True))
+    import json as _json
+    schedule = data.get('schedule', [])
+    s = Special(name=name, special_price=Decimal(str(price)), active=data.get('active', True),
+                schedule=_json.dumps(schedule) if schedule else None)
     db.session.add(s)
     db.session.flush()
     for l in lines:
@@ -3611,9 +3624,11 @@ def api_specials_update(sid):
     if not s:
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
+    import json as _json
     if 'name'          in data: s.name          = data['name'].strip()
     if 'special_price' in data: s.special_price = Decimal(str(data['special_price']))
     if 'active'        in data: s.active        = bool(data['active'])
+    if 'schedule'      in data: s.schedule      = _json.dumps(data['schedule']) if data['schedule'] else None
     if 'lines' in data:
         SpecialLine.query.filter_by(special_id=sid).delete()
         for l in data['lines']:

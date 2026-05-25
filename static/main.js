@@ -4233,10 +4233,23 @@ function renderSpecialsList() {
     const card = document.createElement('div');
     card.className = 'product-thin-card mb-2';
     const lineNames = s.lines.map(l => `${l.qty}× ${l.product_name}`).join(', ');
+    const scheduledNow = specialIsScheduledNow(s);
+    let scheduleText = '';
+    if ((s.schedule || []).length > 0) {
+      scheduleText = s.schedule.map(row => {
+        const dayStr = (row.days || []).map(d => DAY_NAMES[d]).join('/');
+        const timeStr = row.all_day !== false ? 'all day' : `${row.start || '?'}–${row.end || '?'}`;
+        return `${dayStr} ${timeStr}`;
+      }).join(' · ');
+    }
+    const activeBadge = !s.active
+      ? '<span class="badge bg-secondary ms-1">Inactive</span>'
+      : (s.schedule?.length > 0 && !scheduledNow ? '<span class="badge bg-warning text-dark ms-1">Outside schedule</span>' : '');
     card.innerHTML = `
       <div class="product-thin-main">
-        <div class="product-title">${s.name} ${s.active ? '' : '<span class="badge bg-secondary">Inactive</span>'}</div>
+        <div class="product-title">${s.name}${activeBadge}</div>
         <div class="product-sub">R${fmt(s.special_price)} — ${lineNames || 'No products set'}</div>
+        ${scheduleText ? `<div class="small text-muted">🕐 ${scheduleText}</div>` : ''}
       </div>
       <div class="product-actions">
         <button class="btn btn-outline-primary btn-sm">Edit</button>
@@ -4248,10 +4261,14 @@ function renderSpecialsList() {
 
 document.getElementById('btn-new-special')?.addEventListener('click', () => openSpecialEditor(null));
 
-let _specialLines = [];
+let _specialLines    = [];
+let _scheduleRows    = [];   // [{days:[0..6], all_day:true, start:'', end:''}]
+
+const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
 function openSpecialEditor(s) {
-  _specialLines = (s?.lines || []).map(l => ({ ...l }));
+  _specialLines = (s?.lines    || []).map(l => ({ ...l }));
+  _scheduleRows = (s?.schedule || []).map(r => ({ ...r }));
   document.getElementById('special-id').value    = s?.id ?? '';
   document.getElementById('special-name').value  = s?.name ?? '';
   document.getElementById('special-price').value = s?.special_price ?? '';
@@ -4259,8 +4276,100 @@ function openSpecialEditor(s) {
   document.getElementById('special-editor-title').textContent = s ? `Edit — ${s.name}` : 'New Special';
   const delBtn = document.getElementById('btn-delete-special');
   s ? show(delBtn) : hide(delBtn);
+  renderScheduleRows();
   renderSpecialLines();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('specialEditorModal')).show();
+}
+
+function renderScheduleRows() {
+  const host = document.getElementById('schedule-rows');
+  if (!host) return;
+  host.innerHTML = '';
+  if (_scheduleRows.length === 0) {
+    host.innerHTML = '<p class="small text-success mb-0">Always active — no time restrictions.</p>';
+    return;
+  }
+  _scheduleRows.forEach((row, idx) => {
+    const div = document.createElement('div');
+    div.className = 'd-flex align-items-center gap-2 mb-2 flex-wrap';
+
+    // Day toggles
+    const daysDiv = document.createElement('div');
+    daysDiv.className = 'd-flex gap-1';
+    DAY_NAMES.forEach((name, d) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'btn btn-sm ' + ((row.days || []).includes(d) ? 'btn-primary' : 'btn-outline-secondary');
+      btn.textContent = name;
+      btn.onclick = () => {
+        const days = row.days || [];
+        if (days.includes(d)) row.days = days.filter(x => x !== d);
+        else row.days = [...days, d].sort();
+        renderScheduleRows();
+      };
+      daysDiv.appendChild(btn);
+    });
+    div.appendChild(daysDiv);
+
+    // All day checkbox
+    const allDayLabel = document.createElement('label');
+    allDayLabel.className = 'd-flex align-items-center gap-1 small text-nowrap ms-1';
+    const allDayCb = document.createElement('input');
+    allDayCb.type = 'checkbox';
+    allDayCb.className = 'form-check-input mt-0';
+    allDayCb.checked = row.all_day !== false;
+    allDayCb.onchange = () => { row.all_day = allDayCb.checked; renderScheduleRows(); };
+    allDayLabel.appendChild(allDayCb);
+    allDayLabel.appendChild(document.createTextNode('All day'));
+    div.appendChild(allDayLabel);
+
+    // Time fields (hidden when all_day)
+    if (!row.all_day) {
+      const timeWrap = document.createElement('div');
+      timeWrap.className = 'd-flex align-items-center gap-1 small';
+      timeWrap.innerHTML = `
+        <span>from</span>
+        <input type="time" class="form-control form-control-sm" style="width:110px" value="${row.start || ''}">
+        <span>to</span>
+        <input type="time" class="form-control form-control-sm" style="width:110px" value="${row.end || ''}">`;
+      const [, startEl, , endEl] = timeWrap.children;
+      startEl.onchange = () => { row.start = startEl.value; };
+      endEl.onchange   = () => { row.end   = endEl.value; };
+      div.appendChild(timeWrap);
+    }
+
+    // Remove button
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'btn btn-outline-danger btn-sm ms-auto';
+    removeBtn.textContent = '✕';
+    removeBtn.onclick = () => { _scheduleRows.splice(idx, 1); renderScheduleRows(); };
+    div.appendChild(removeBtn);
+
+    host.appendChild(div);
+  });
+}
+
+document.getElementById('btn-add-schedule-row')?.addEventListener('click', () => {
+  _scheduleRows.push({ days: [0,1,2,3,4,5,6], all_day: true, start: '', end: '' });
+  renderScheduleRows();
+});
+
+// Returns true if a special is currently within one of its scheduled windows.
+// Empty schedule = always active.
+function specialIsScheduledNow(special) {
+  const schedule = special.schedule || [];
+  if (schedule.length === 0) return true;
+  const now  = new Date();
+  const day  = (now.getDay() + 6) % 7;   // JS: 0=Sun → convert to 0=Mon
+  const hhmm = now.getHours() * 60 + now.getMinutes();
+  return schedule.some(row => {
+    if (!(row.days || []).includes(day)) return false;
+    if (row.all_day !== false) return true;
+    const start = row.start ? parseInt(row.start.split(':')[0]) * 60 + parseInt(row.start.split(':')[1]) : 0;
+    const end   = row.end   ? parseInt(row.end.split(':')[0])   * 60 + parseInt(row.end.split(':')[1])   : 1440;
+    return hhmm >= start && hhmm < end;
+  });
 }
 
 function renderSpecialLines() {
@@ -4312,7 +4421,7 @@ document.getElementById('btn-save-special')?.addEventListener('click', async () 
   if (!name)       return toast('Special name required', 'warning');
   if (isNaN(price)) return toast('Special price required', 'warning');
   if (!lines.length) return toast('Add at least one product', 'warning');
-  const payload = { name, special_price: price, active, lines };
+  const payload = { name, special_price: price, active, schedule: _scheduleRows, lines };
   try {
     if (id) {
       await api(`/api/specials/${id}`, { method: 'POST', body: JSON.stringify(payload) });
@@ -4366,7 +4475,7 @@ function reapplySpecials() {
 // at most one special.  For a typical farm-stall scenario (< 15 specials, small qty)
 // this runs in well under a millisecond.
 function _computeOptimalSpecials(cartQtyMap) {
-  const active = (STATE.specials || []).filter(s => s.active && s.lines.length > 0);
+  const active = (STATE.specials || []).filter(s => s.active && s.lines.length > 0 && specialIsScheduledNow(s));
   if (!active.length) return [];
 
   function productBase(pid) {
