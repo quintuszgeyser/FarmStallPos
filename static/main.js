@@ -3907,6 +3907,7 @@ async function loadStats() {
   const start     = document.getElementById('stats-start')?.value || todayISO();
   const end       = document.getElementById('stats-end')?.value   || todayISO();
   const productId = document.getElementById('stats-product-filter')?.value || '';
+  const userId    = document.getElementById('stats-user-filter')?.value    || '';
   const label     = document.getElementById('stats-period-label');
 
   const dateLabel    = start === end ? start : `${start} → ${end}`;
@@ -3916,24 +3917,56 @@ async function loadStats() {
   if (label) label.textContent = dateLabel + productLabel;
   _updateExportFilterLabel();
 
-  // Show/hide sections that don't apply to a single-product view
-  const kitchenRow  = document.getElementById('stats-row-kitchen');
-  const empSection  = document.getElementById('stats-section-employees');
+  // Show/hide sections that don't apply to a single-product or single-employee view
+  const kitchenRow   = document.getElementById('stats-row-kitchen');
+  const empSection   = document.getElementById('stats-section-employees');
   const suppChartBtn = document.querySelector('[data-chart-tab="suppliers"]');
-  if (productId) {
+  const isFiltered   = !!(productId || userId);
+  if (isFiltered) {
     if (kitchenRow)   kitchenRow.style.display  = 'none';
-    if (empSection)   empSection.style.display   = 'none';
-    if (suppChartBtn) suppChartBtn.style.display  = 'none';
-    // Switch away from suppliers chart if currently on it
+    if (suppChartBtn) suppChartBtn.style.display = 'none';
     if (_statsChartTab === 'suppliers') _statsChartTab = 'daily';
   } else {
     if (kitchenRow)   kitchenRow.style.display  = '';
-    if (empSection)   empSection.style.display   = '';
-    if (suppChartBtn) suppChartBtn.style.display  = '';
+    if (suppChartBtn) suppChartBtn.style.display = '';
+  }
+  // Employee table hidden when filtered by employee (redundant), shown otherwise
+  if (empSection) empSection.style.display = userId ? 'none' : '';
+
+  // Active filter chips
+  const chipArea = document.getElementById('stats-active-filters');
+  if (chipArea) {
+    chipArea.innerHTML = '';
+    const addChip = (text, onClear) => {
+      const chip = document.createElement('span');
+      chip.className = 'badge bg-primary d-flex align-items-center gap-1';
+      chip.style.fontSize = '13px';
+      chip.innerHTML = `${text} <span style="cursor:pointer;font-size:15px;line-height:1" title="Clear filter">×</span>`;
+      chip.querySelector('span').onclick = onClear;
+      chipArea.appendChild(chip);
+    };
+    if (userId) {
+      const uname = `Employee: ${_statsData?.filtered_user_name || 'Loading…'}`;
+      addChip(uname, () => {
+        const el = document.getElementById('stats-user-filter');
+        if (el) el.value = '';
+        loadStats();
+      });
+    }
+    if (productId) {
+      const pname = `Product: ${STATE.products.find(p => String(p.id) === productId)?.name || productId}`;
+      addChip(pname, () => {
+        const el = document.getElementById('stats-product-filter');
+        if (el) el.value = '';
+        loadStats();
+      });
+    }
+    chipArea.style.display = (userId || productId) ? '' : 'none';
   }
 
   const params = new URLSearchParams({ start, end });
   if (productId) params.set('product_id', productId);
+  if (userId)    params.set('user_id',    userId);
 
   try {
     const j = await api(`/api/stats?${params}`);
@@ -4106,10 +4139,19 @@ async function loadStats() {
 
         empWrap.querySelectorAll('.emp-summary-row').forEach(row => {
           row.addEventListener('click', () => {
-            const detail = empWrap.querySelector(`[data-detail-for="${row.dataset.empId}"]`);
-            const toggle = row.querySelector('.emp-toggle');
-            const open   = detail.classList.toggle('d-none');
-            toggle.textContent = open ? '▶' : '▼';
+            // If already filtered by this employee, toggle the session detail row
+            const currentFilter = document.getElementById('stats-user-filter')?.value;
+            if (currentFilter && currentFilter === row.dataset.empId) {
+              const detail = empWrap.querySelector(`[data-detail-for="${row.dataset.empId}"]`);
+              const toggle = row.querySelector('.emp-toggle');
+              const open   = detail.classList.toggle('d-none');
+              toggle.textContent = open ? '▶' : '▼';
+              return;
+            }
+            // Filter all stats by this employee
+            const userFilter = document.getElementById('stats-user-filter');
+            if (userFilter) userFilter.value = row.dataset.empId;
+            loadStats();
           });
         });
       }
@@ -4128,8 +4170,10 @@ function _exportParams() {
   const s         = document.getElementById('stats-start')?.value || todayISO();
   const e         = document.getElementById('stats-end')?.value   || todayISO();
   const productId = document.getElementById('stats-product-filter')?.value || '';
+  const userId    = document.getElementById('stats-user-filter')?.value    || '';
   const p = new URLSearchParams({ start: s, end: e });
   if (productId) p.set('product_id', productId);
+  if (userId)    p.set('user_id',    userId);
   return p;
 }
 
@@ -4139,11 +4183,15 @@ function _updateExportFilterLabel() {
   const s         = document.getElementById('stats-start')?.value || todayISO();
   const e         = document.getElementById('stats-end')?.value   || todayISO();
   const productId = document.getElementById('stats-product-filter')?.value || '';
+  const userId    = document.getElementById('stats-user-filter')?.value    || '';
   const dateStr   = s === e ? s : `${s} → ${e}`;
   const prodStr   = productId
     ? ` · ${STATE.products.find(p => String(p.id) === productId)?.name || 'Product'}`
     : '';
-  label.textContent = `(${dateStr}${prodStr})`;
+  const userStr   = userId && _statsData?.filtered_user_name
+    ? ` · ${_statsData.filtered_user_name}`
+    : '';
+  label.textContent = `(${dateStr}${prodStr}${userStr})`;
 }
 
 document.getElementById('btn-export-csv')?.addEventListener('click', () => {

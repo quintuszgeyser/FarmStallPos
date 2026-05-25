@@ -4686,13 +4686,29 @@ def export_staff_csv():
     start_dt = _parse_dt(request.args.get('start')) or datetime(today.year, today.month, today.day)
     end_dt   = _parse_dt(request.args.get('end'), is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
 
-    rows = db.session.query(Sale).filter(
-        Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False
-    ).all()
+    uid_str = request.args.get('user_id')
+    try:    uid_filter = int(uid_str) if uid_str else None
+    except: uid_filter = None
 
-    sessions = UserSession.query.filter(
+    sale_q = db.session.query(Sale).filter(
+        Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False
+    )
+    if uid_filter:
+        sale_ids_by_user = {
+            r.sale_id for r in db.session.query(Sale.sale_id)
+            .filter(Sale.user_id == uid_filter,
+                    Sale.date_time >= start_dt, Sale.date_time <= end_dt,
+                    Sale.voided == False).all()
+        }
+        sale_q = sale_q.filter(Sale.sale_id.in_(sale_ids_by_user))
+    rows = sale_q.all()
+
+    sess_q = UserSession.query.filter(
         UserSession.logged_in >= start_dt, UserSession.logged_in <= end_dt
-    ).all()
+    )
+    if uid_filter:
+        sess_q = sess_q.filter(UserSession.user_id == uid_filter)
+    sessions = sess_q.all()
 
     all_uids = {r.user_id for r in rows if r.user_id} | {s.user_id for s in sessions}
     user_map = {u.id: u for u in User.query.filter(User.id.in_(all_uids)).all()} if all_uids else {}
@@ -4767,7 +4783,11 @@ def export_staff_csv():
         )
 
     buf   = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
-    fname = f"staff_stats_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
+    emp_slug = ''
+    if uid_filter:
+        fu = db.session.get(User, uid_filter)
+        if fu: emp_slug = f"_{fu.username.replace(' ','_')}"
+    fname = f"staff_stats{emp_slug}_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
     return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
 
 
@@ -4928,11 +4948,16 @@ def api_stats():
     except (ValueError, TypeError):
         product_id_filter = None
 
+    user_id_filter = request.args.get('user_id')
+    try:
+        user_id_filter = int(user_id_filter) if user_id_filter else None
+    except (ValueError, TypeError):
+        user_id_filter = None
+
     sale_q = db.session.query(Sale).filter(
         Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False
     )
     if product_id_filter:
-        # Filter to sale_ids that contain this product, then show only those lines for the product
         sale_ids_with_product = {
             r.sale_id for r in db.session.query(Sale.sale_id)
             .filter(Sale.product_id == product_id_filter,
@@ -4941,6 +4966,15 @@ def api_stats():
         }
         sale_q = sale_q.filter(Sale.product_id == product_id_filter,
                                Sale.sale_id.in_(sale_ids_with_product))
+    if user_id_filter:
+        # Filter to sale_ids made by this user, show all lines in those sales
+        sale_ids_by_user = {
+            r.sale_id for r in db.session.query(Sale.sale_id)
+            .filter(Sale.user_id == user_id_filter,
+                    Sale.date_time >= start_dt, Sale.date_time <= end_dt,
+                    Sale.voided == False).all()
+        }
+        sale_q = sale_q.filter(Sale.sale_id.in_(sale_ids_by_user))
     rows = sale_q.all()
 
     # ── Core totals ──
@@ -5172,9 +5206,16 @@ def api_stats():
         fp = db.session.get(Product, product_id_filter)
         filtered_product_name = fp.name if fp else None
 
+    filtered_user_name = None
+    if user_id_filter:
+        fu = db.session.get(User, user_id_filter)
+        filtered_user_name = fu.username if fu else None
+
     return jsonify({
         'filtered_product_id':   product_id_filter,
         'filtered_product_name': filtered_product_name,
+        'filtered_user_id':      user_id_filter,
+        'filtered_user_name':    filtered_user_name,
         'transactions_count':    transactions_count,
         'total_sales_value':     round(total_sales_value, 2),
         'total_items_sold':      round(total_items_sold, 2),
