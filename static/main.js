@@ -313,7 +313,7 @@ function renderProductsCards() {
 
     const typeLabel   = { simple: '', stock_item: '📦', recipe: '🍳' }[p.product_type] || '';
     const margins     = calcProductMargins(p);
-    const marginLabel = margins ? ` • ${margins.markup}% markup / ${margins.margin}% margin` : '';
+    const marginLabel = margins ? ` • COGS ${margins.costLabel} • ${margins.markup}% markup / ${margins.margin}% margin` : '';
 
     let stockBadge = '';
     if (isStockItem) {
@@ -1031,7 +1031,18 @@ function calcProductMargins(p) {
 
   const markup = ((price - cost) / cost * 100).toFixed(1);
   const margin = ((price - cost) / price * 100).toFixed(1);
-  return { markup, margin };
+
+  // Format cost label — for by-weight products show per kg/L, for fixed products show per unit
+  let costLabel;
+  if (p.product_type === 'stock_item' && p.sold_by_weight) {
+    const bigUnit = p.unit_type === 'volume' ? 'L' : 'kg';
+    const conv    = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
+    costLabel = `R${fmt(cost * conv)}/${bigUnit}`;
+  } else {
+    costLabel = `R${fmt(cost)}`;
+  }
+
+  return { markup, margin, costLabel };
 }
 
 function renderRecipeLines() {
