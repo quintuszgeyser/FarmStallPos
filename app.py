@@ -4397,31 +4397,61 @@ def export_products_csv():
 def export_transactions_csv():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    start_param = request.args.get('start')
-    end_param   = request.args.get('end')
-    today       = date.today()
-    start_dt    = _parse_dt(start_param) or datetime(today.year, today.month, today.day)
-    end_dt      = _parse_dt(end_param, is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
+    start_param    = request.args.get('start')
+    end_param      = request.args.get('end')
+    product_id_str = request.args.get('product_id')
+    today          = date.today()
+    start_dt       = _parse_dt(start_param) or datetime(today.year, today.month, today.day)
+    end_dt         = _parse_dt(end_param, is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
     if end_dt < start_dt:
         start_dt, end_dt = end_dt, start_dt
 
-    q = (db.session.query(
-            Sale.sale_id,
-            func.min(Sale.date_time).label('dt'),
-            func.sum(Sale.qty * Sale.unit_price).label('total'))
-         .filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
-         .group_by(Sale.sale_id)
-         .order_by(func.max(Sale.id).desc()))
+    try:
+        product_id_filter = int(product_id_str) if product_id_str else None
+    except (ValueError, TypeError):
+        product_id_filter = None
+
+    # Load rows — always line-level for detailed CSV
+    q = (db.session.query(Sale)
+         .filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False))
+    if product_id_filter:
+        q = q.filter(Sale.product_id == product_id_filter)
+    rows = q.order_by(Sale.date_time.asc(), Sale.sale_id, Sale.id).all()
+
+    # Pre-load product and user names
+    pids  = {r.product_id for r in rows}
+    uids  = {r.user_id for r in rows if r.user_id}
+    pname = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
+    uname = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
 
     sio = StringIO()
-    sio.write('id,date_time,total\n')
-    for row in q.all():
-        iso   = row.dt.isoformat() if row.dt else ''
-        total = round(float(row.total or 0), 2)
-        sio.write(f"{row.sale_id},{iso},{total}\n")
+    sio.write('sale_id,date_time,product,qty,unit_price,subtotal,teller,discount\n')
+    for r in rows:
+        subtotal = round(float(r.qty * r.unit_price), 2)
+        disc     = ''
+        if r.discount_json:
+            try:
+                import json as _json
+                d = _json.loads(r.discount_json)
+                parts = []
+                if d.get('special'): parts.append(f"Special:{d['special']}")
+                if d.get('item'):    parts.append(f"Item:{d['item'].get('value')}{d['item'].get('type','')}")
+                if d.get('cart'):    parts.append(f"Cart:{d['cart'].get('value')}{d['cart'].get('type','')}")
+                disc = ' | '.join(parts)
+            except Exception:
+                pass
+        product_name = pname.get(r.product_id, str(r.product_id)).replace(',', ';')
+        teller       = uname.get(r.user_id, '').replace(',', ';')
+        sio.write(f"{r.sale_id},{r.date_time.isoformat()},{product_name},{float(r.qty):.4f},{float(r.unit_price):.2f},{subtotal},{teller},{disc}\n")
+
+    product_name_slug = ''
+    if product_id_filter:
+        fp = db.session.get(Product, product_id_filter)
+        if fp:
+            product_name_slug = '_' + fp.name.replace(' ', '_')[:20]
 
     buf   = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
-    fname = f"sales_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
+    fname = f"sales{product_name_slug}_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
     return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
 
 

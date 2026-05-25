@@ -4133,10 +4133,14 @@ _initStatsPresets();
   const e = document.getElementById('export-end');   if (e && !e.value) e.value = t;
 })();
 document.getElementById('btn-export-csv')?.addEventListener('click', () => {
-  const s = document.getElementById('export-start')?.value;
-  const e = document.getElementById('export-end')?.value;
+  // Always use the stats date range and product filter — export dates sync from stats on every load
+  const s         = document.getElementById('stats-start')?.value  || document.getElementById('export-start')?.value;
+  const e         = document.getElementById('stats-end')?.value    || document.getElementById('export-end')?.value;
+  const productId = document.getElementById('stats-product-filter')?.value || '';
   const p = new URLSearchParams();
-  if (s) p.set('start', s); if (e) p.set('end', e);
+  if (s)         p.set('start',      s);
+  if (e)         p.set('end',        e);
+  if (productId) p.set('product_id', productId);
   window.open(`/admin/export/transactions?${p.toString()}`, '_blank', 'noopener');
 });
 
