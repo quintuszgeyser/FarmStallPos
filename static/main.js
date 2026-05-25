@@ -310,7 +310,8 @@ function renderProductsCards() {
     card.className = hasStock ? 'stock-card' : 'product-thin-card';
 
     const typeLabel   = { simple: '', stock_item: '📦', recipe: '🍳' }[p.product_type] || '';
-    const marginLabel = p.margin_pct != null ? ` • ${p.margin_pct}% markup` : '';
+    const margins     = calcProductMargins(p);
+    const marginLabel = margins ? ` • ${margins.markup}% markup / ${margins.margin}% margin` : '';
 
     let stockBadge = '';
     if (isStockItem) {
@@ -996,6 +997,39 @@ function getIngredientCost(productId, qty, _depth = 0) {
     }, 0);
   }
   return 0;
+}
+
+// Returns { markup, margin } as rounded % strings, or null if cost/price unavailable
+function calcProductMargins(p) {
+  let cost = null;
+  let price = null;
+
+  if (p.product_type === 'stock_item') {
+    const costPerBase = STATE._stockCostMap?.[p.id];
+    if (costPerBase == null) return null;
+    if (p.sold_by_weight) {
+      // Both cost and price are per base unit
+      cost  = costPerBase;
+      price = parseFloat(p.price_per_unit);
+    } else {
+      // Sold per package — cost is costPerBase × package_size (stored in base units)
+      const pkgBase = parseFloat(p.package_size);
+      if (!pkgBase) return null;
+      cost  = costPerBase * pkgBase;
+      price = parseFloat(p.price);
+    }
+  } else if (p.product_type === 'recipe') {
+    cost  = getIngredientCost(p.id, 1);
+    price = parseFloat(p.price);
+  } else {
+    return null; // simple products have no COGS
+  }
+
+  if (!cost || !price || isNaN(cost) || isNaN(price) || cost <= 0 || price <= 0) return null;
+
+  const markup = ((price - cost) / cost * 100).toFixed(1);
+  const margin = ((price - cost) / price * 100).toFixed(1);
+  return { markup, margin };
 }
 
 function renderRecipeLines() {
@@ -2626,7 +2660,12 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   const payload = cart.map(item => ({
     product_id: item.product_id,
     qty:        item.qty,
-    unit_price: item.unit_price,
+    // unit_price in STATE is stored as running total (price × qty) for fixed items,
+    // but the backend expects per-unit price and multiplies by qty itself.
+    // Weight items and customised items already store the true per-unit price.
+    unit_price: (item.is_weight || item.subs || item.extras?.length)
+      ? item.unit_price
+      : item.unit_price / item.qty,
     ...(item.subs   ? { subs:   item.subs   } : {}),
     ...(item.extras ? { extras: item.extras } : {}),
   }));
