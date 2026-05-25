@@ -2797,6 +2797,20 @@ def api_customers_gaits_raw():
     rows = CustomerGait.query.filter_by(active=True).all()
     return jsonify([{'customer_id': r.customer_id, 'features_b64': base64.b64encode(r.gait_features).decode()} for r in rows])
 
+@app.route('/api/customers/<int:cid>/faces_raw', methods=['GET'])
+def api_customer_faces_raw(cid):
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    rows = CustomerFace.query.filter_by(customer_id=cid, active=True).all()
+    return jsonify([{'embedding_b64': base64.b64encode(r.embedding).decode()} for r in rows])
+
+@app.route('/api/customers/<int:cid>/gaits_raw', methods=['GET'])
+def api_customer_gaits_raw(cid):
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    rows = CustomerGait.query.filter_by(customer_id=cid, active=True).all()
+    return jsonify([{'features_b64': base64.b64encode(r.gait_features).decode()} for r in rows])
+
 @app.route('/api/customers/plate_log', methods=['GET'])
 def api_customers_plate_log():
     if not require_role('admin'):
