@@ -301,7 +301,9 @@ class Sale(db.Model):
     flagged     = db.Column(db.Boolean, nullable=False, default=False)
     flag_note   = db.Column(db.String(500), nullable=True)
     flag_resolved = db.Column(db.Boolean, nullable=False, default=False)
-    sub_log     = db.Column(db.Text, nullable=True)  # JSON {ingredient_id: replacement_id} for recipe subs
+    sub_log      = db.Column(db.Text, nullable=True)   # JSON {ingredient_id: replacement_id} for recipe subs
+    discount_json = db.Column(db.Text, nullable=True)  # JSON {item:{type,value}, cart:{type,value}} if discounts applied
+    discount_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # admin who applied discount
 
 
 class Special(db.Model):
@@ -1197,6 +1199,9 @@ def strong_migrate():
 
             # sub_log: JSON map {ingredient_id: replacement_id} for recipe substitutions
             pg_try("ALTER TABLE sales ADD COLUMN sub_log TEXT")
+            # discount tracking
+            pg_try("ALTER TABLE sales ADD COLUMN discount_json TEXT")
+            pg_try("ALTER TABLE sales ADD COLUMN discount_by INTEGER REFERENCES users(id)")
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS specials (
@@ -3778,10 +3783,11 @@ def api_transactions_get():
         for usr in User.query.filter(User.id.in_(uids)).all():
             user_names[usr.id] = usr.username
 
-    grouped       = defaultdict(list)
-    dates         = {}
-    users_by_sale = {}
-    flags_by_sale = {}
+    grouped         = defaultdict(list)
+    dates           = {}
+    users_by_sale   = {}
+    flags_by_sale   = {}
+    discounts_by_sale = {}
     for r in rows:
         grouped[r.sale_id].append(r)
         dates.setdefault(r.sale_id, r.date_time)
@@ -3793,6 +3799,16 @@ def api_transactions_get():
                 'flag_note':     r.flag_note,
                 'flag_resolved': r.flag_resolved,
             }
+        if r.discount_json and r.sale_id not in discounts_by_sale:
+            try:
+                import json as _json
+                disc = _json.loads(r.discount_json)
+                discounts_by_sale[r.sale_id] = {
+                    'discount_info': disc,
+                    'discount_by':   user_names.get(r.discount_by, '') if r.discount_by else '',
+                }
+            except Exception:
+                pass
 
     # Preload COGS for all sale_ids in one query
     sale_ids = list(grouped.keys())
@@ -3804,21 +3820,29 @@ def api_transactions_get():
         for c in consumptions:
             cogs_by_sale[c.sale_id] += Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
 
+    import json as _json
     result = []
     for sid in sorted(grouped.keys(), key=lambda k: max(x.id for x in grouped[k]), reverse=True):
         items = []
         total = Decimal('0')
+        sale_disc = discounts_by_sale.get(sid, {})
         for ln in grouped[sid]:
             name     = product_names.get(ln.product_id, f"Product {ln.product_id}")
             subtotal = Decimal(str(ln.qty)) * ln.unit_price
             total   += subtotal
-            items.append({
+            line = {
                 'product_id': ln.product_id,
                 'name':       name,
                 'qty':        float(ln.qty),
                 'unit_price': float(ln.unit_price),
                 'subtotal':   float(subtotal),
-            })
+            }
+            if ln.discount_json:
+                try:
+                    line['discount'] = _json.loads(ln.discount_json)
+                except Exception:
+                    pass
+            items.append(line)
         cogs   = float(round(cogs_by_sale.get(sid, Decimal('0')), 4))
         total_f = float(round(total, 2))
         margin  = round((total_f - cogs) / total_f * 100, 1) if total_f > 0 and cogs > 0 else None
@@ -3833,6 +3857,7 @@ def api_transactions_get():
             'flagged':       flags_by_sale.get(sid, {}).get('flagged', False),
             'flag_note':     flags_by_sale.get(sid, {}).get('flag_note'),
             'flag_resolved': flags_by_sale.get(sid, {}).get('flag_resolved', False),
+            'discount_by':   sale_disc.get('discount_by', ''),
         })
 
     if u.role != 'admin':
@@ -3856,7 +3881,9 @@ def api_transactions_post():
     sale_uuid = str(uuid.uuid4())
     now       = datetime.utcnow()
     u         = current_user()
-    customer_id = data.get('customer_id')  # From till badge (if customer detected)
+    customer_id  = data.get('customer_id')
+    cart_discount = data.get('cart_discount')   # {type, value} or null
+    discount_by_id = (u.id if u else None) if (cart_discount or any(i.get('item_discount') for i in cart)) else None
 
     import json as _json
 
@@ -3864,20 +3891,27 @@ def api_transactions_post():
         pid        = int(item['product_id'])
         qty        = Decimal(str(item.get('qty', 1)))
         unit_price = Decimal(str(item.get('unit_price')))
-        # subs: {ingredient_id: replacement_product_id} — sent from teller modal
         subs_raw   = item.get('subs', {})
         subs       = {int(k): int(v) for k, v in subs_raw.items()} if subs_raw else {}
-        # extras: [{ingredient_id, qty_base}] — additional ingredients added by teller
         extras     = item.get('extras', [])
+        item_discount = item.get('item_discount')  # {type, value} or null
 
-        sub_log_val = _json.dumps(subs) if subs else None
+        sub_log_val   = _json.dumps(subs) if subs else None
+        discount_val  = None
+        if item_discount or cart_discount:
+            discount_val = _json.dumps({
+                **(({'item': item_discount}) if item_discount else {}),
+                **(({'cart': cart_discount}) if cart_discount else {}),
+            })
 
         db.session.add(Sale(
             sale_id=sale_uuid, date_time=now,
             product_id=pid, qty=qty, unit_price=unit_price,
             user_id=u.id if u else None,
-            customer_id=customer_id,  # Link sale to detected customer
+            customer_id=customer_id,
             sub_log=sub_log_val,
+            discount_json=discount_val,
+            discount_by=discount_by_id,
         ))
 
         p = db.session.get(Product, pid, with_for_update=True)

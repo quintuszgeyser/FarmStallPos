@@ -2837,18 +2837,20 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     }
 
     return {
-      product_id: item.product_id,
-      qty:        item.qty,
-      unit_price: finalUnitPrice,
-      ...(item.subs   ? { subs:   item.subs   } : {}),
-      ...(item.extras ? { extras: item.extras } : {}),
+      product_id:    item.product_id,
+      qty:           item.qty,
+      unit_price:    finalUnitPrice,
+      ...(item.subs         ? { subs:          item.subs         } : {}),
+      ...(item.extras       ? { extras:        item.extras       } : {}),
+      ...(item._discount    ? { item_discount: item._discount    } : {}),
     };
   });
 
-  // Include customer_id if detected at till
+  // Include customer_id and cart-wide discount if present
   const requestBody = {
     cart: payload,
-    ...(STATE.activeCustomer?.customer_id ? { customer_id: STATE.activeCustomer.customer_id } : {})
+    ...(STATE.activeCustomer?.customer_id ? { customer_id:   STATE.activeCustomer.customer_id } : {}),
+    ...(STATE._cartDiscount               ? { cart_discount: STATE._cartDiscount               } : {}),
   };
 
   try {
@@ -3145,9 +3147,31 @@ function renderTransactions(trs) {
     const ul = document.createElement('ul'); ul.className = 'mt-1 mb-0 small';
     t.lines.forEach(ln => {
       const li = document.createElement('li');
-      li.textContent = `${ln.name} × ${fmtQty(ln.qty)} @ R${fmt(ln.unit_price)} = R${fmt(ln.subtotal)}`;
+      let discNote = '';
+      if (ln.discount) {
+        const parts = [];
+        if (ln.discount.item) {
+          const d = ln.discount.item;
+          parts.push(d.type === 'pct' ? `${d.value}% item discount` : `R${fmt(d.value)} item discount`);
+        }
+        if (ln.discount.cart) {
+          const d = ln.discount.cart;
+          parts.push(d.type === 'pct' ? `${d.value}% cart discount` : `R${fmt(d.value)} cart discount`);
+        }
+        if (parts.length) discNote = ` <span class="text-success">(${parts.join(' + ')})</span>`;
+      }
+      li.innerHTML = `${ln.name} × ${fmtQty(ln.qty)} @ R${fmt(ln.unit_price)} = R${fmt(ln.subtotal)}${discNote}`;
       ul.appendChild(li);
     });
+
+    // Show discount-by note if any discount was applied on this sale
+    if (t.discount_by) {
+      const discDiv = document.createElement('div');
+      discDiv.className = 'mt-1 small text-success';
+      discDiv.innerHTML = `<strong>Discount applied by ${t.discount_by}</strong>`;
+      body.appendChild(discDiv);
+    }
+
     body.appendChild(ul);
 
     // Show flag note if flagged
