@@ -163,7 +163,9 @@ def get_face_app():
 
                         # Get embedding
                         emb = self.recognizer.get_feat(face_img)[0].astype(np.float32)
-                        results.append((emb.tobytes(), quality, bbox))
+                        # Encode face crop as JPEG for storage
+                        _, jpeg_buf = cv2.imencode('.jpg', face_img, [cv2.IMWRITE_JPEG_QUALITY, 90])
+                        results.append((emb.tobytes(), quality, bbox, jpeg_buf.tobytes()))
 
                     return results
 
@@ -327,28 +329,28 @@ def adjacent_height_category(cat_a, cat_b):
 # ─── Feature Extraction with Quality Gates ─────────────────────────────────
 
 def extract_face_with_quality(image_path):
-    """Returns (embedding_bytes, quality_score) or (None, 0.0)"""
+    """Returns (embedding_bytes, quality_score, photo_bytes) or (None, 0.0, None)"""
     try:
         import cv2
         face_app = get_face_app()
         if not face_app:
-            return None, 0.0
+            return None, 0.0, None
 
         img = cv2.imread(image_path)
         if img is None:
-            return None, 0.0
+            return None, 0.0, None
 
         results = face_app.get_with_quality(img)
         if not results:
-            return None, 0.0
+            return None, 0.0, None
 
-        # Return best quality face
+        # Return best quality face (embedding, quality, bbox, photo_bytes)
         best = max(results, key=lambda x: x[1])
-        return best[0], best[1]
+        return best[0], best[1], best[3] if len(best) > 3 else None
 
     except Exception as e:
         logger.error(f'Face extraction error: {e}')
-        return None, 0.0
+        return None, 0.0, None
 
 def extract_gait_with_quality(image_path):
     """Returns (features_bytes, quality_score) or (None, 0.0)"""
@@ -612,10 +614,11 @@ def extract_all_signals_with_quality(event):
                 signals['plate_quality'] = plate_qual
 
         if label == 'person':
-            face_emb, face_qual = extract_face_with_quality(snapshot_path)
+            face_emb, face_qual, face_photo = extract_face_with_quality(snapshot_path)
             if face_emb:
                 signals['face_embedding'] = face_emb
                 signals['face_quality'] = face_qual
+                signals['face_photo'] = face_photo
 
             gait_feat, gait_qual = extract_gait_with_quality(snapshot_path)
             if gait_feat:
@@ -994,7 +997,11 @@ class TrackIdentity:
                 q = signals.get('face_quality', 0.0)
                 if q > best_quality:
                     best_quality = q
-                    best = {'embedding': signals['face_embedding'], 'quality': q}
+                    best = {
+                        'embedding': signals['face_embedding'],
+                        'quality': q,
+                        'photo': signals.get('face_photo'),
+                    }
             elif signal_type == 'gait' and signals.get('gait_features'):
                 q = signals.get('gait_quality', 0.0)
                 if q > best_quality:
@@ -1145,10 +1152,13 @@ def process_event(event):
                         # Enroll face if available
                         best_face = track.get_best_signal('face')
                         if best_face and best_face.get('embedding'):
-                            pos_post(f'/api/customers/{customer_id}/enroll/face', {
+                            payload = {
                                 'embedding_b64': base64.b64encode(best_face['embedding']).decode(),
-                                'quality': best_face.get('quality', 0.0)
-                            })
+                                'quality': best_face.get('quality', 0.0),
+                            }
+                            if best_face.get('photo'):
+                                payload['photo_b64'] = base64.b64encode(best_face['photo']).decode()
+                            pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
                             logger.info(f'   Face enrolled for customer #{next_number}')
 
                         # Enroll gait if available

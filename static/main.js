@@ -5241,25 +5241,35 @@ function renderCustomersList() {
   }
   container.innerHTML = STATE.customers.map(c => `
     <div class="card mb-2 ${c.active ? '' : 'opacity-50'}">
-      <div class="card-body py-2 d-flex justify-content-between align-items-center">
-        <div>
-          <span class="fw-semibold">${c.name}</span>
-          ${c.phone ? `<span class="text-muted small ms-2">${c.phone}</span>` : ''}
-          <div class="small text-muted mt-1">
-            ${c.plates.length ? `<span class="badge bg-light text-dark border me-1">${c.plates.join(', ')}</span>` : ''}
-            ${c.has_face ? '<span class="badge bg-success me-1">Face ✓</span>' : '<span class="badge bg-secondary me-1">Face —</span>'}
-            ${c.has_gait ? '<span class="badge bg-success me-1">Body ✓</span>' : '<span class="badge bg-secondary me-1">Body —</span>'}
-            <span class="text-muted">${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}</span>
-            ${c.last_visit ? ` · last ${new Date(c.last_visit).toLocaleDateString()}` : ''}
+      <div class="card-body py-2 d-flex justify-content-between align-items-center gap-3">
+        <div class="flex-shrink-0">
+          ${c.has_face
+            ? `<img src="/api/customers/${c.id}/photo" alt="face"
+                style="width:52px;height:52px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;"
+                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+            : ''}
+          <div style="width:52px;height:52px;border-radius:50%;background:#e9ecef;display:${c.has_face ? 'none' : 'flex'};align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">👤</div>
+        </div>
+        <div class="flex-grow-1 min-width-0">
+          <div class="fw-semibold">${c.name || '<span class="text-muted fst-italic">Unnamed</span>'}
+            ${c.auto_enrolled ? '<span class="badge bg-info text-dark ms-1" style="font-size:0.65rem">Auto</span>' : ''}
+            ${c.customer_number ? `<span class="text-muted small ms-1">${c.customer_number}</span>` : ''}
+          </div>
+          ${c.phone ? `<div class="small text-muted">${c.phone}</div>` : ''}
+          <div class="small mt-1 d-flex flex-wrap gap-1">
+            ${c.plates.length ? c.plates.map(p => `<span class="badge bg-light text-dark border">${p}</span>`).join('') : ''}
+            ${c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face —</span>'}
+            ${c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body —</span>'}
+            <span class="text-muted">${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}${c.last_visit ? ` · last ${new Date(c.last_visit).toLocaleDateString()}` : ''}</span>
           </div>
         </div>
-        <button class="btn btn-outline-secondary btn-sm" onclick="openCustomerEnroll(${c.id})">Edit</button>
+        <button class="btn btn-outline-secondary btn-sm flex-shrink-0" onclick="openCustomerEnroll(${c.id})">Edit</button>
       </div>
     </div>
   `).join('');
 }
 
-function openCustomerEnroll(customerId) {
+async function openCustomerEnroll(customerId) {
   const c = customerId ? STATE.customers.find(x => x.id === customerId) : null;
   document.getElementById('customerEnrollTitle').textContent = c ? 'Edit Customer' : 'Enroll Customer';
   document.getElementById('enroll-customer-id').value = c?.id || '';
@@ -5278,6 +5288,41 @@ function openCustomerEnroll(customerId) {
   document.getElementById('enroll-face-status').className    = `badge ${c?.has_face ? 'bg-success' : 'bg-secondary'}`;
   document.getElementById('enroll-gait-status').textContent  = c?.has_gait ? 'Body: enrolled ✓' : 'Body: not enrolled';
   document.getElementById('enroll-gait-status').className    = `badge ${c?.has_gait ? 'bg-success' : 'bg-secondary'}`;
+
+  // Face photo
+  const photoEl = document.getElementById('enroll-face-photo');
+  if (photoEl) {
+    if (c?.has_face) {
+      photoEl.src = `/api/customers/${c.id}/photo?t=${Date.now()}`;
+      photoEl.style.display = 'block';
+    } else {
+      photoEl.style.display = 'none';
+    }
+  }
+
+  // Physical attributes
+  const attrsEl = document.getElementById('enroll-attributes');
+  if (attrsEl) {
+    attrsEl.innerHTML = '';
+    if (c?.id) {
+      try {
+        const attrs = await api(`/api/customers/${c.id}/attributes`);
+        if (attrs) {
+          const items = [
+            attrs.hair_color   && `Hair: ${attrs.hair_color}`,
+            attrs.build        && `Build: ${attrs.build}`,
+            attrs.facial_hair && attrs.facial_hair !== 'none' && `Facial hair: ${attrs.facial_hair}`,
+            attrs.height_category && `Height: ${attrs.height_category}`,
+          ].filter(Boolean);
+          if (items.length) {
+            attrsEl.innerHTML = items.map(i =>
+              `<span class="badge bg-light text-dark border me-1 mb-1">${i}</span>`
+            ).join('');
+          }
+        }
+      } catch(e) {}
+    }
+  }
 
   const deactivateBtn = document.getElementById('btn-deactivate-customer');
   c ? show(deactivateBtn) : hide(deactivateBtn);

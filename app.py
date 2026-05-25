@@ -358,6 +358,7 @@ class CustomerFace(db.Model):
     id          = db.Column(db.Integer, primary_key=True)
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     embedding   = db.Column(db.LargeBinary, nullable=False)  # float32[512] = 2048 bytes
+    photo       = db.Column(db.LargeBinary, nullable=True)   # JPEG of aligned face crop
     enrolled_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     active      = db.Column(db.Boolean,  nullable=False, default=True)
 
@@ -2677,10 +2678,23 @@ def api_customers_enroll_face(cid):
         return jsonify({'error': 'embedding_b64 required'}), 400
     import base64
     embedding_bytes = base64.b64decode(embedding_b64)
+    photo_b64 = data.get('photo_b64')
+    photo_bytes = base64.b64decode(photo_b64) if photo_b64 else None
     CustomerFace.query.filter_by(customer_id=cid).update({'active': False})
-    db.session.add(CustomerFace(customer_id=cid, embedding=embedding_bytes))
+    db.session.add(CustomerFace(customer_id=cid, embedding=embedding_bytes, photo=photo_bytes))
     db.session.commit()
     return jsonify({'ok': True})
+
+@app.route('/api/customers/<int:cid>/photo', methods=['GET'])
+def api_customer_photo(cid):
+    """Returns the stored face photo as JPEG."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    row = CustomerFace.query.filter_by(customer_id=cid, active=True).order_by(CustomerFace.enrolled_at.desc()).first()
+    if not row or not row.photo:
+        return '', 404
+    from flask import Response
+    return Response(row.photo, mimetype='image/jpeg')
 
 @app.route('/api/customers/<int:cid>/enroll/gait', methods=['POST'])
 def api_customers_enroll_gait(cid):
