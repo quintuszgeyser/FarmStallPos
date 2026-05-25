@@ -188,6 +188,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     startCustomerVisitPoll(); // greet returning customers on teller screen
     if (STATE.user?.role === 'admin') {
       await loadSettings();
+      _populateStatsProductFilter();
       await loadStats();
       await loadUsers();
       await loadIngredients();  // pre-load cost map for recipe editor
@@ -3874,17 +3875,60 @@ function _showChartTab(tab) {
   }
 }
 
+function _populateStatsProductFilter() {
+  const sel = document.getElementById('stats-product-filter');
+  if (!sel || !STATE.products?.length) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All products</option>';
+  STATE.products
+    .filter(p => !p.is_archived && p.is_for_sale !== false)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      opt.textContent = p.name;
+      if (String(p.id) === String(current)) opt.selected = true;
+      sel.appendChild(opt);
+    });
+}
+
 async function loadStats() {
-  const start = document.getElementById('stats-start')?.value || todayISO();
-  const end   = document.getElementById('stats-end')?.value   || todayISO();
-  const label = document.getElementById('stats-period-label');
-  if (label) label.textContent = start === end ? start : `${start} → ${end}`;
+  const start     = document.getElementById('stats-start')?.value || todayISO();
+  const end       = document.getElementById('stats-end')?.value   || todayISO();
+  const productId = document.getElementById('stats-product-filter')?.value || '';
+  const label     = document.getElementById('stats-period-label');
+
+  const dateLabel    = start === end ? start : `${start} → ${end}`;
+  const productLabel = productId
+    ? ` · ${STATE.products.find(p => String(p.id) === productId)?.name || 'Product'}`
+    : '';
+  if (label) label.textContent = dateLabel + productLabel;
+
   // Sync export pickers
   const es = document.getElementById('export-start'); if (es) es.value = start;
   const ee = document.getElementById('export-end');   if (ee) ee.value = end;
 
+  // Show/hide sections that don't apply to a single-product view
+  const kitchenRow  = document.getElementById('stats-row-kitchen');
+  const empSection  = document.getElementById('stats-section-employees');
+  const suppChartBtn = document.querySelector('[data-chart-tab="suppliers"]');
+  if (productId) {
+    if (kitchenRow)   kitchenRow.style.display  = 'none';
+    if (empSection)   empSection.style.display   = 'none';
+    if (suppChartBtn) suppChartBtn.style.display  = 'none';
+    // Switch away from suppliers chart if currently on it
+    if (_statsChartTab === 'suppliers') _statsChartTab = 'daily';
+  } else {
+    if (kitchenRow)   kitchenRow.style.display  = '';
+    if (empSection)   empSection.style.display   = '';
+    if (suppChartBtn) suppChartBtn.style.display  = '';
+  }
+
+  const params = new URLSearchParams({ start, end });
+  if (productId) params.set('product_id', productId);
+
   try {
-    const j = await api(`/api/stats?start=${start}&end=${end}`);
+    const j = await api(`/api/stats?${params}`);
     _statsData = j;
     const el = id => document.getElementById(id);
 
@@ -3895,7 +3939,11 @@ async function loadStats() {
     };
 
     el('stat-total')  && (el('stat-total').textContent  = `R${fmt(j.total_sales_value)}`);
-    cardClick(el('stat-total'), () => openDrilldown('All transactions', 'range', null));
+    cardClick(el('stat-total'), () => openDrilldown(
+      j.filtered_product_name ? `Transactions with ${j.filtered_product_name}` : 'All transactions',
+      j.filtered_product_id   ? 'product' : 'range',
+      j.filtered_product_id   || null
+    ));
 
     el('stat-profit') && (el('stat-profit').textContent = `R${fmt(j.gross_profit)}`);
     el('stat-margin-sub') && (el('stat-margin-sub').textContent = j.gross_margin != null ? `${j.gross_margin}% margin` : '');
@@ -3908,13 +3956,25 @@ async function loadStats() {
     cardClick(el('stat-margin'), () => openProfitDrilldown());
 
     el('stat-tx')     && (el('stat-tx').textContent     = j.transactions_count);
-    cardClick(el('stat-tx'), () => openDrilldown('All transactions', 'range', null));
+    cardClick(el('stat-tx'), () => openDrilldown(
+      j.filtered_product_name ? `Transactions with ${j.filtered_product_name}` : 'All transactions',
+      j.filtered_product_id   ? 'product' : 'range',
+      j.filtered_product_id   || null
+    ));
 
     el('stat-avg')    && (el('stat-avg').textContent    = `R${fmt(j.avg_basket_value)}`);
-    cardClick(el('stat-avg'), () => openDrilldown('All transactions', 'range', null));
+    cardClick(el('stat-avg'), () => openDrilldown(
+      j.filtered_product_name ? `Transactions with ${j.filtered_product_name}` : 'All transactions',
+      j.filtered_product_id   ? 'product' : 'range',
+      j.filtered_product_id   || null
+    ));
 
     el('stat-items')  && (el('stat-items').textContent  = j.total_items_sold);
-    cardClick(el('stat-items'), () => openDrilldown('All transactions', 'range', null));
+    cardClick(el('stat-items'), () => openDrilldown(
+      j.filtered_product_name ? `Transactions with ${j.filtered_product_name}` : 'All transactions',
+      j.filtered_product_id   ? 'product' : 'range',
+      j.filtered_product_id   || null
+    ));
 
     if (el('stat-writeoff-cost')) {
       el('stat-writeoff-cost').textContent = j.total_writeoff_cost > 0 ? `R${fmt(j.total_writeoff_cost)}` : '—';
@@ -4383,6 +4443,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
     await loadSuppliers();
     if (_kitchenRefreshTimer) { clearInterval(_kitchenRefreshTimer); _kitchenRefreshTimer = null; }
   } else if (target === '#stats') {
+    _populateStatsProductFilter();
     // Only auto-load if no data has been loaded yet — preserve the user's selected range
     if (!_statsData) await loadStats();
   }

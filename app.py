@@ -4562,9 +4562,26 @@ def api_stats():
     except Exception:
         end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
 
-    rows = (db.session.query(Sale)
-            .filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
-            .all())
+    product_id_filter = request.args.get('product_id')
+    try:
+        product_id_filter = int(product_id_filter) if product_id_filter else None
+    except (ValueError, TypeError):
+        product_id_filter = None
+
+    sale_q = db.session.query(Sale).filter(
+        Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False
+    )
+    if product_id_filter:
+        # Filter to sale_ids that contain this product, then show only those lines for the product
+        sale_ids_with_product = {
+            r.sale_id for r in db.session.query(Sale.sale_id)
+            .filter(Sale.product_id == product_id_filter,
+                    Sale.date_time >= start_dt, Sale.date_time <= end_dt,
+                    Sale.voided == False).all()
+        }
+        sale_q = sale_q.filter(Sale.product_id == product_id_filter,
+                               Sale.sale_id.in_(sale_ids_with_product))
+    rows = sale_q.all()
 
     # ── Core totals ──
     transactions_count = len({r.sale_id for r in rows})
@@ -4790,7 +4807,14 @@ def api_stats():
         for k, v in sorted(supplier_costs.items(), key=lambda x: x[1], reverse=True)
     ]
 
+    filtered_product_name = None
+    if product_id_filter:
+        fp = db.session.get(Product, product_id_filter)
+        filtered_product_name = fp.name if fp else None
+
     return jsonify({
+        'filtered_product_id':   product_id_filter,
+        'filtered_product_name': filtered_product_name,
         'transactions_count':    transactions_count,
         'total_sales_value':     round(total_sales_value, 2),
         'total_items_sold':      round(total_items_sold, 2),
