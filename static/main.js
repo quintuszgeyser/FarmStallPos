@@ -4158,6 +4158,9 @@ document.getElementById('btn-export-writeoffs')?.addEventListener('click', () =>
 document.getElementById('btn-export-suppliers')?.addEventListener('click', () => {
   window.open(`/admin/export/suppliers?${_exportParams()}`, '_blank', 'noopener');
 });
+document.getElementById('btn-export-staff')?.addEventListener('click', () => {
+  window.open(`/admin/export/staff?${_exportParams()}`, '_blank', 'noopener');
+});
 
 // ═══════════════════════════════════════════════════════
 // SETTINGS

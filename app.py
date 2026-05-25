@@ -4678,6 +4678,99 @@ def export_suppliers_csv():
     return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
 
 
+@app.route('/admin/export/staff')
+def export_staff_csv():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    today    = date.today()
+    start_dt = _parse_dt(request.args.get('start')) or datetime(today.year, today.month, today.day)
+    end_dt   = _parse_dt(request.args.get('end'), is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
+
+    rows = db.session.query(Sale).filter(
+        Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False
+    ).all()
+
+    sessions = UserSession.query.filter(
+        UserSession.logged_in >= start_dt, UserSession.logged_in <= end_dt
+    ).all()
+
+    all_uids = {r.user_id for r in rows if r.user_id} | {s.user_id for s in sessions}
+    user_map = {u.id: u for u in User.query.filter(User.id.in_(all_uids)).all()} if all_uids else {}
+
+    # Aggregate per user
+    emp_revenue  = defaultdict(float)
+    emp_tx       = defaultdict(set)
+    emp_items    = defaultdict(float)
+    emp_first    = {}
+    emp_last     = {}
+    for r in rows:
+        uid = r.user_id or 0
+        if not uid: continue
+        val = float(Decimal(str(r.qty)) * r.unit_price)
+        emp_revenue[uid] += val
+        emp_tx[uid].add(r.sale_id)
+        emp_items[uid]   += float(r.qty)
+        dt = r.date_time
+        if uid not in emp_first or dt < emp_first[uid]: emp_first[uid] = dt
+        if uid not in emp_last  or dt > emp_last[uid]:  emp_last[uid]  = dt
+
+    now_utc = datetime.utcnow()
+    emp_session_minutes = defaultdict(float)
+    emp_session_count   = defaultdict(int)
+    emp_first_login     = {}
+    emp_last_activity   = {}
+    for s in sessions:
+        natural_end  = s.logged_out or now_utc
+        clamped_end  = min(natural_end, end_dt, now_utc)
+        dur          = (clamped_end - s.logged_in).total_seconds() / 60.0
+        if dur <= 0: continue
+        emp_session_minutes[s.user_id] += dur
+        emp_session_count[s.user_id]   += 1
+        uid = s.user_id
+        if uid not in emp_first_login or s.logged_in < emp_first_login[uid]:
+            emp_first_login[uid] = s.logged_in
+        act = s.last_active or clamped_end
+        if uid not in emp_last_activity or act > emp_last_activity[uid]:
+            emp_last_activity[uid] = act
+
+    sio = StringIO()
+    sio.write('employee,role,transactions,revenue,avg_sale,items_sold,sessions,time_logged_in_min,revenue_per_hour,sales_per_hour,first_sale,last_sale\n')
+
+    all_emp_uids = set(emp_revenue.keys()) | set(emp_session_minutes.keys())
+    sorted_uids  = sorted(all_emp_uids, key=lambda u: emp_revenue.get(u, 0), reverse=True)
+
+    for uid in sorted_uids:
+        u         = user_map.get(uid)
+        name      = (u.username if u else f'User {uid}').replace(',', ';')
+        role      = (u.role if u else '').replace(',', ';')
+        tx_count  = len(emp_tx.get(uid, set()))
+        rev       = emp_revenue.get(uid, 0)
+        items     = emp_items.get(uid, 0)
+        sess_mins = emp_session_minutes.get(uid, 0)
+        sess_cnt  = emp_session_count.get(uid, 0)
+        avg_sale  = round(rev / tx_count, 2) if tx_count > 0 else 0
+        first_login   = emp_first_login.get(uid)
+        last_activity = emp_last_activity.get(uid)
+        if first_login and last_activity and last_activity > first_login:
+            span_mins = (last_activity - first_login).total_seconds() / 60.0
+        else:
+            span_mins = sess_mins
+        rev_per_hour  = round(rev   / (span_mins / 60), 2) if span_mins > 0 else ''
+        tx_per_hour   = round(tx_count / (span_mins / 60), 2) if span_mins > 0 else ''
+        first_sale    = emp_first.get(uid, '')
+        last_sale     = emp_last.get(uid, '')
+        sio.write(
+            f"{name},{role},{tx_count},{round(rev,2)},{avg_sale},{round(items,2)},"
+            f"{sess_cnt},{round(sess_mins,1)},{rev_per_hour},{tx_per_hour},"
+            f"{first_sale.isoformat() if first_sale else ''},"
+            f"{last_sale.isoformat() if last_sale else ''}\n"
+        )
+
+    buf   = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    fname = f"staff_stats_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
+
+
 # -----------------------------
 # Settings (admin)
 # -----------------------------
