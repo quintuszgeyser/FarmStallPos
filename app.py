@@ -4395,12 +4395,114 @@ def api_kitchen_sale_move(sale_id):
 def export_products_csv():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
+
+    default_markup = float(get_setting('markup_percent', 40) or 40)
+
+    # FIFO cost per base unit for all stock items (oldest non-empty batch)
+    fifo_costs = {}
+    for batch in (StockBatch.query
+                  .filter(StockBatch.qty_remaining_base > 0)
+                  .order_by(StockBatch.product_id, StockBatch.purchased_at.asc(), StockBatch.id.asc())
+                  .all()):
+        if batch.product_id not in fifo_costs:
+            fifo_costs[batch.product_id] = float(batch.cost_per_base_unit)
+
+    def recipe_cost(product_id, _depth=0):
+        """Recursively sum FIFO cost for one unit of a recipe product."""
+        if _depth > 10:
+            return 0.0
+        total = 0.0
+        for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+            ing = db.session.get(Product, rl.ingredient_id)
+            if not ing:
+                continue
+            if ing.product_type == 'recipe':
+                total += recipe_cost(ing.id, _depth + 1) * float(rl.qty_base)
+            else:
+                total += fifo_costs.get(ing.id, 0.0) * float(rl.qty_base)
+        return total
+
+    products = (Product.query
+                .filter_by(is_archived=False, is_for_sale=True)
+                .order_by(Product.name.asc())
+                .all())
+
     sio = StringIO()
-    sio.write('id,name,price,barcode,product_type,stock_qty,unit_type,base_unit\n')
-    for p in Product.query.order_by(Product.id.asc()).all():
-        sio.write(f"{p.id},{p.name},{p.price},{p.barcode},{p.product_type},{p.stock_qty},{p.unit_type},{p.base_unit}\n")
+    sio.write('Product,Barcode,Category,Sold By,Unit,Wholesale Cost,Retail Price,Recommended Retail Price,Stock Available\n')
+
+    for p in products:
+        # Determine category label
+        category = {'simple': 'General', 'stock_item': 'Stock Item', 'recipe': 'Prepared / Bundle'}.get(p.product_type, '')
+
+        # Unit description
+        if p.sold_by_weight and p.unit_type:
+            big = 'kg' if p.unit_type == 'weight' else 'L'
+            sold_by = f'Per {big}'
+            unit    = big
+        elif p.package_unit:
+            sold_by = f'Per {p.package_unit}'
+            unit    = p.package_unit
+        else:
+            sold_by = 'Per unit'
+            unit    = 'unit'
+
+        # Wholesale cost (FIFO)
+        if p.product_type == 'stock_item':
+            cost_base = fifo_costs.get(p.id, 0.0)
+            if p.sold_by_weight:
+                # Cost per kg or L
+                conv = 1000.0  # g→kg or ml→L
+                wholesale = round(cost_base * conv, 4)
+            else:
+                pkg = float(p.package_size or 0)
+                wholesale = round(cost_base * pkg, 4) if pkg else ''
+        elif p.product_type == 'recipe':
+            c = recipe_cost(p.id)
+            wholesale = round(c, 4) if c > 0 else ''
+        else:
+            wholesale = ''
+
+        # Retail price (current selling price)
+        if p.sold_by_weight and p.price_per_unit is not None:
+            conv = 1000.0
+            retail = round(float(p.price_per_unit) * conv, 2)
+        elif p.price is not None:
+            retail = round(float(p.price), 2)
+        else:
+            retail = ''
+
+        # Recommended retail = wholesale × (1 + markup)
+        if wholesale != '':
+            rrp = round(float(wholesale) * (1 + default_markup / 100), 2)
+        else:
+            rrp = ''
+
+        # Stock available
+        if p.product_type == 'stock_item':
+            stock_level = float(p.stock_level) if hasattr(p, 'stock_level') and p.stock_level else ''
+            # Recompute from batches for accuracy
+            total_remaining = db.session.query(
+                func.sum(StockBatch.qty_remaining_base)
+            ).filter_by(product_id=p.id).scalar() or 0
+            if p.sold_by_weight:
+                stock_disp = f"{round(float(total_remaining)/1000, 3)}{unit}"
+            else:
+                pkg = float(p.package_size or 1)
+                stock_disp = f"{int(float(total_remaining) / pkg)} {unit}s" if pkg else ''
+        elif p.product_type == 'simple':
+            stock_disp = str(p.stock_qty or 0)
+        else:
+            stock_disp = ''
+
+        name    = (p.name    or '').replace(',', ';')
+        barcode = (p.barcode or '').replace(',', ';')
+
+        sio.write(f"{name},{barcode},{category},{sold_by},{unit},{wholesale},{retail},{rrp},{stock_disp}\n")
+
     buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
-    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name='products.csv')
+    from datetime import date as _date
+    fname = f"product_catalogue_{_date.today().isoformat()}.csv"
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
 
 @app.route('/admin/export/transactions')
 def export_transactions_csv():
