@@ -1122,24 +1122,25 @@ def process_event(event):
 
                 # Auto-enroll new customer
                 try:
-                    # Get next customer number
+                    # Get next customer number in CUST-XXXX format
                     r = pos_get('/api/customers/max_number')
                     if r and r.get('max_number') is not None:
                         next_number = r['max_number'] + 1
                     else:
                         next_number = 1
+                    customer_number_str = f'CUST-{next_number:04d}'
 
                     # Create customer with auto_enrolled flag
                     new_customer = pos_post('/api/customers', {
-                        'name': None,  # No name yet
+                        'name': None,
                         'auto_enrolled': True,
-                        'customer_number': next_number,
+                        'customer_number': customer_number_str,
                         'first_seen': datetime.now().isoformat()
                     })
 
                     if new_customer and new_customer.get('id'):
                         customer_id = new_customer['id']
-                        logger.info(f'✅ Auto-enrolled customer #{next_number} (id={customer_id})')
+                        logger.info(f'Auto-enrolled customer {customer_number_str} (id={customer_id})')
 
                         # Enroll face if available
                         best_face = track.get_best_signal('face')
