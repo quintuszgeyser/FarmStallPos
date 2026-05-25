@@ -40,7 +40,7 @@ FACE_THRESHOLD  = 0.40  # Minimum cosine similarity for face match
 GAIT_THRESHOLD  = 0.25  # Maximum euclidean distance for gait match
 
 # Quality gates
-FACE_QUALITY_MIN = 0.5   # Minimum face quality to use
+FACE_QUALITY_MIN = 0.35  # Minimum face quality to use (lowered for real-world camera distances)
 GAIT_QUALITY_MIN = 0.6   # Minimum gait quality to use
 PLATE_CONF_MIN   = 0.8   # Minimum OCR confidence to use
 
@@ -1068,8 +1068,8 @@ def get_current_threshold(threshold_type, context=None):
 # ─── Profile Improvement ────────────────────────────────────────────────────
 
 # Quality thresholds for deciding whether to upgrade a stored signal
-FACE_UPGRADE_MIN   = 0.65   # only upgrade face if new quality is at least this
-GAIT_UPGRADE_MIN   = 0.65
+FACE_UPGRADE_MIN   = 0.35   # only upgrade face if new quality is at least this
+GAIT_UPGRADE_MIN   = 0.50
 
 def _improve_customer_profile(customer_id, signals):
     """
