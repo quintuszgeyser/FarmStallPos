@@ -2801,15 +2801,17 @@ def api_customers_gaits_raw():
 def api_customer_faces_raw(cid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
+    import base64 as _b64
     rows = CustomerFace.query.filter_by(customer_id=cid, active=True).all()
-    return jsonify([{'embedding_b64': base64.b64encode(r.embedding).decode()} for r in rows])
+    return jsonify([{'embedding_b64': _b64.b64encode(r.embedding).decode()} for r in rows])
 
 @app.route('/api/customers/<int:cid>/gaits_raw', methods=['GET'])
 def api_customer_gaits_raw(cid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
+    import base64 as _b64
     rows = CustomerGait.query.filter_by(customer_id=cid, active=True).all()
-    return jsonify([{'features_b64': base64.b64encode(r.gait_features).decode()} for r in rows])
+    return jsonify([{'features_b64': _b64.b64encode(r.gait_features).decode()} for r in rows])
 
 @app.route('/api/customers/plate_log', methods=['GET'])
 def api_customers_plate_log():
