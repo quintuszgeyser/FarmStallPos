@@ -15,6 +15,7 @@ let STATE = {
   customers:        [],
   activeCustomer:   null,   // customer detected at till
   customerPollInterval: null,  // interval ID for till customer polling
+  _cartDiscount:    null,   // {type:'pct'|'amt', value:number} — admin cart-wide discount
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2534,31 +2535,46 @@ function renderCart() {
   const host = document.getElementById('cart'); if (!host) return;
   host.innerHTML = '';
   let total = 0;
+  const isAdmin = STATE.user?.role === 'admin';
+
   Object.values(STATE.cart).forEach(item => {
     const row = document.createElement('div');
     row.className = 'list-group-item d-flex justify-content-between align-items-center';
 
-    const label = item.is_weight
-      ? `${item.name}`
-      : `${item.name} × ${fmtQty(item.qty)}`;
+    const basePrice    = item.is_weight ? parseFloat(item._display_total || 0) : parseFloat(item.unit_price);
+    const discountedPrice = applyItemDiscount(basePrice, item._discount);
+    const hasDiscount  = item._discount && discountedPrice < basePrice;
 
-    const left  = document.createElement('span'); left.textContent = label;
-    const displayPrice = item.is_weight ? item._display_total : item.unit_price;
-    const mid   = document.createElement('span'); mid.textContent  = `R${fmt(displayPrice)}`;
-    const btns  = document.createElement('div');
+    // Label — show strikethrough original if discounted
+    const label = item.is_weight ? `${item.name}` : `${item.name} × ${fmtQty(item.qty)}`;
+    const left  = document.createElement('span');
+    left.innerHTML = label + (hasDiscount
+      ? ` <span class="text-muted text-decoration-line-through small">R${fmt(basePrice)}</span>`
+      : '');
+
+    const mid = document.createElement('span');
+    mid.className = hasDiscount ? 'text-success fw-semibold' : '';
+    mid.textContent = `R${fmt(discountedPrice)}`;
+    if (hasDiscount) {
+      const pct = item._discount.type === 'pct'
+        ? `${item._discount.value}% off`
+        : `R${fmt(item._discount.value)} off`;
+      mid.title = pct;
+    }
+
+    const btns = document.createElement('div');
 
     if (!item.is_weight) {
       const p = STATE.products.find(pr => pr.id === item.product_id);
-      // For customised items use per-unit price snapshot; for plain items scale with base price
       const pricePerUnit = (item.subs || item.extras?.length)
-        ? item.unit_price  // already the total for qty=1; keep it fixed
+        ? item.unit_price
         : parseFloat(p?.price || 0);
 
-      const plus  = document.createElement('button'); plus.textContent = '+'; plus.className = 'btn btn-sm btn-outline-primary';
+      const plus = document.createElement('button'); plus.textContent = '+'; plus.className = 'btn btn-sm btn-outline-primary';
       plus.onclick = () => {
         item.qty += 1;
         if (!(item.subs || item.extras?.length)) item.unit_price = pricePerUnit * item.qty;
-        item._special_applied = null;  // reset so special can re-evaluate
+        item._special_applied = null;
         STATE.scanHistory.push(item.product_id);
         reapplySpecials();
       };
@@ -2571,7 +2587,6 @@ function renderCart() {
       };
       btns.appendChild(plus); btns.appendChild(minus);
 
-      // Customise button — only for recipe products
       if (p?.product_type === 'recipe') {
         const cust = document.createElement('button');
         cust.textContent = 'Customise';
@@ -2581,16 +2596,43 @@ function renderCart() {
       }
     }
 
+    // Per-item discount button — admin only
+    if (isAdmin) {
+      const discBtn = document.createElement('button');
+      discBtn.className = 'btn btn-sm ms-1 ' + (hasDiscount ? 'btn-success' : 'btn-outline-success');
+      discBtn.textContent = hasDiscount ? '%✓' : '%';
+      discBtn.title = hasDiscount ? 'Edit item discount' : 'Add item discount';
+      discBtn.onclick = () => openDiscountModal(item._key);
+      btns.appendChild(discBtn);
+    }
+
     const del = document.createElement('button'); del.textContent = 'Remove'; del.className = 'btn btn-sm btn-outline-danger ms-1';
     del.onclick = () => { delete STATE.cart[item._key]; renderCart(); };
     btns.appendChild(del);
 
     row.appendChild(left); row.appendChild(mid); row.appendChild(btns);
     host.appendChild(row);
-    total += item.is_weight ? parseFloat(item._display_total || 0) : parseFloat(item.unit_price);
+    total += discountedPrice;
   });
+
+  // Apply cart-wide discount
+  const cartDisc = STATE._cartDiscount;
+  const finalTotal = applyItemDiscount(total, cartDisc);
   const t = document.getElementById('cart-total');
-  if (t) t.textContent = fmt(total);
+  if (t) t.textContent = fmt(finalTotal);
+
+  // Show/hide cart discount label
+  const discLabel = document.getElementById('cart-discount-label');
+  if (discLabel) {
+    if (cartDisc && finalTotal < total) {
+      const saving = total - finalTotal;
+      const desc   = cartDisc.type === 'pct' ? `${cartDisc.value}% cart discount` : `R${fmt(cartDisc.value)} cart discount`;
+      discLabel.textContent = `−R${fmt(saving)} (${desc})`;
+      show(discLabel);
+    } else {
+      hide(discLabel);
+    }
+  }
 }
 
 function addToCart(p) {
@@ -2653,22 +2695,155 @@ document.getElementById('btn-undo-last')?.addEventListener('click', () => {
   renderCart();
 });
 
+// ── Discounts (admin only) ──
+// _discountTarget = null (cart-wide) or a cart item key (per-item)
+let _discountTarget = null;
+
+function openDiscountModal(itemKey) {
+  if (STATE.user?.role !== 'admin') return;
+  _discountTarget = itemKey || null;
+
+  const isCart  = _discountTarget === null;
+  const item    = isCart ? null : STATE.cart[_discountTarget];
+  const current = isCart ? STATE._cartDiscount : item?._discount;
+
+  document.getElementById('discount-modal-title').textContent = isCart ? 'Cart Discount' : `Discount — ${item?.name}`;
+  document.getElementById('discount-modal-desc').textContent  = isCart
+    ? 'Apply a discount to the entire cart total.'
+    : `Discounting: ${item?.name}`;
+
+  // Restore previous discount values if any
+  const typePct = document.getElementById('discount-type-pct');
+  const typeAmt = document.getElementById('discount-type-amt');
+  if (current) {
+    (current.type === 'pct' ? typePct : typeAmt).checked = true;
+    document.getElementById('discount-value').value = current.value;
+  } else {
+    typePct.checked = true;
+    document.getElementById('discount-value').value = '';
+  }
+  updateDiscountSymbol();
+  updateDiscountPreview();
+
+  const removeBtn = document.getElementById('btn-remove-discount');
+  current ? show(removeBtn) : hide(removeBtn);
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('discountModal')).show();
+  setTimeout(() => document.getElementById('discount-value').focus(), 300);
+}
+
+function updateDiscountSymbol() {
+  const type = document.querySelector('input[name="discount-type"]:checked')?.value || 'pct';
+  document.getElementById('discount-symbol').textContent = type === 'pct' ? '%' : 'R';
+  updateDiscountPreview();
+}
+
+function updateDiscountPreview() {
+  const type  = document.querySelector('input[name="discount-type"]:checked')?.value || 'pct';
+  const val   = parseFloat(document.getElementById('discount-value').value) || 0;
+  const prev  = document.getElementById('discount-preview');
+  if (!val) { prev.textContent = ''; return; }
+
+  const isCart = _discountTarget === null;
+  const base   = isCart
+    ? parseFloat(document.getElementById('cart-total').textContent || '0')
+    : (() => {
+        const item = STATE.cart[_discountTarget];
+        return item ? (item.is_weight ? parseFloat(item._display_total || 0) : parseFloat(item.unit_price)) : 0;
+      })();
+
+  const saving = type === 'pct' ? base * val / 100 : Math.min(val, base);
+  prev.textContent = saving > 0 ? `Saves R${fmt(saving)} → R${fmt(base - saving)}` : '';
+}
+
+document.getElementById('discount-value')?.addEventListener('input', updateDiscountPreview);
+document.querySelectorAll('input[name="discount-type"]').forEach(r => r.addEventListener('change', updateDiscountSymbol));
+
+document.getElementById('btn-apply-discount')?.addEventListener('click', () => {
+  const type = document.querySelector('input[name="discount-type"]:checked')?.value || 'pct';
+  const val  = parseFloat(document.getElementById('discount-value').value);
+  if (!val || val <= 0) return toast('Enter a discount value', 'warning');
+  if (type === 'pct' && val > 100) return toast('Percentage cannot exceed 100%', 'warning');
+
+  const discount = { type, value: val };
+
+  if (_discountTarget === null) {
+    // Cart-wide discount
+    STATE._cartDiscount = discount;
+  } else {
+    // Per-item discount
+    const item = STATE.cart[_discountTarget];
+    if (!item) return;
+    item._discount = discount;
+  }
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('discountModal')).hide();
+  renderCart();
+  toast('Discount applied', 'success', 1500);
+});
+
+document.getElementById('btn-remove-discount')?.addEventListener('click', () => {
+  if (_discountTarget === null) {
+    STATE._cartDiscount = null;
+  } else {
+    const item = STATE.cart[_discountTarget];
+    if (item) delete item._discount;
+  }
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('discountModal')).hide();
+  renderCart();
+  toast('Discount removed', 'warning', 1500);
+});
+
+document.getElementById('btn-cart-discount')?.addEventListener('click', () => openDiscountModal(null));
+
+// Calculate discounted price for a single cart item
+function applyItemDiscount(basePrice, discount) {
+  if (!discount) return basePrice;
+  const saving = discount.type === 'pct'
+    ? basePrice * discount.value / 100
+    : Math.min(discount.value, basePrice);
+  return Math.max(0, basePrice - saving);
+}
+
 // ── Checkout ──
 document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   const cart = Object.values(STATE.cart);
   if (cart.length === 0) return toast('Cart is empty', 'warning');
-  const payload = cart.map(item => ({
-    product_id: item.product_id,
-    qty:        item.qty,
-    // unit_price in STATE is stored as running total (price × qty) for fixed items,
-    // but the backend expects per-unit price and multiplies by qty itself.
-    // Weight items and customised items already store the true per-unit price.
-    unit_price: (item.is_weight || item.subs || item.extras?.length)
+
+  // Pre-calculate cart subtotal for cart-wide discount pro-ration
+  const cartSubtotal = cart.reduce((sum, item) => {
+    const base = item.is_weight ? parseFloat(item._display_total || 0) : parseFloat(item.unit_price);
+    return sum + applyItemDiscount(base, item._discount);
+  }, 0);
+
+  const payload = cart.map(item => {
+    // Get base unit price (per-unit for backend)
+    const baseTotalPrice = item.is_weight ? parseFloat(item._display_total || 0) : parseFloat(item.unit_price);
+    const baseUnitPrice  = (item.is_weight || item.subs || item.extras?.length)
       ? item.unit_price
-      : item.unit_price / item.qty,
-    ...(item.subs   ? { subs:   item.subs   } : {}),
-    ...(item.extras ? { extras: item.extras } : {}),
-  }));
+      : item.unit_price / item.qty;
+
+    // Apply per-item discount to unit price
+    const afterItemDisc = item._discount
+      ? applyItemDiscount(baseTotalPrice, item._discount) / (item.is_weight ? 1 : item.qty)
+      : baseUnitPrice;
+
+    // Apply cart-wide discount pro-rata across items
+    let finalUnitPrice = afterItemDisc;
+    if (STATE._cartDiscount && cartSubtotal > 0) {
+      const itemShare  = (item.is_weight ? parseFloat(item._display_total || 0) : applyItemDiscount(baseTotalPrice, item._discount)) / cartSubtotal;
+      const cartSaving = cartSubtotal - applyItemDiscount(cartSubtotal, STATE._cartDiscount);
+      finalUnitPrice   = Math.max(0, afterItemDisc - (cartSaving * itemShare) / (item.is_weight ? 1 : item.qty));
+    }
+
+    return {
+      product_id: item.product_id,
+      qty:        item.qty,
+      unit_price: finalUnitPrice,
+      ...(item.subs   ? { subs:   item.subs   } : {}),
+      ...(item.extras ? { extras: item.extras } : {}),
+    };
+  });
 
   // Include customer_id if detected at till
   const requestBody = {
@@ -2678,7 +2853,7 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
 
   try {
     const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(requestBody) });
-    STATE.cart = {}; STATE.scanHistory = []; renderCart();
+    STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; renderCart();
     await loadTransactions();
     await loadProducts();
     const kitchenMsg = j.kitchen_orders > 0 ? ` — ${j.kitchen_orders} kitchen order${j.kitchen_orders > 1 ? 's' : ''} queued` : '';

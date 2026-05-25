@@ -310,9 +310,15 @@
           </div>
         </div>
         <div><div id="cart" class="list-group"></div></div>
-        <div class="d-flex justify-content-between align-items-center">
-          <strong>Total: R<span id="cart-total">0.00</span></strong>
-          <button id="btn-checkout" class="btn btn-primary btn-lg-touch">Checkout</button>
+        <div class="d-flex justify-content-between align-items-center mt-1">
+          <div>
+            <strong>Total: R<span id="cart-total">0.00</span></strong>
+            <span id="cart-discount-label" class="text-success small ms-2 hidden"></span>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="btn-cart-discount" class="btn btn-outline-success btn-lg-touch admin-only hidden">% Discount</button>
+            <button id="btn-checkout" class="btn btn-primary btn-lg-touch">Checkout</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1272,6 +1278,44 @@
         <div class="text-muted small me-auto">Price adjustment: <strong id="subs-price-delta"></strong></div>
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
         <button id="btn-subs-confirm" class="btn btn-success">Add to Cart</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ DISCOUNT MODAL ═══════════ -->
+<div class="modal fade" id="discountModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" style="max-width:340px">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" id="discount-modal-title">Apply Discount</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted mb-2" id="discount-modal-desc"></p>
+        <div class="mb-3">
+          <label class="form-label small fw-bold">Discount type</label>
+          <div class="d-flex gap-2">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="discount-type" id="discount-type-pct" value="pct" checked>
+              <label class="form-check-label small" for="discount-type-pct">Percentage (%)</label>
+            </div>
+            <div class="form-check ms-3">
+              <input class="form-check-input" type="radio" name="discount-type" id="discount-type-amt" value="amt">
+              <label class="form-check-label small" for="discount-type-amt">Fixed amount (R)</label>
+            </div>
+          </div>
+        </div>
+        <div class="input-group">
+          <span class="input-group-text" id="discount-symbol">%</span>
+          <input id="discount-value" type="number" min="0" step="0.01" class="form-control" placeholder="0">
+        </div>
+        <div class="mt-2 small text-muted" id="discount-preview"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button id="btn-remove-discount" class="btn btn-outline-danger me-auto hidden">Remove discount</button>
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="btn-apply-discount" class="btn btn-success">Apply</button>
       </div>
     </div>
   </div>
