@@ -2840,9 +2840,10 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
       product_id:    item.product_id,
       qty:           item.qty,
       unit_price:    finalUnitPrice,
-      ...(item.subs         ? { subs:          item.subs         } : {}),
-      ...(item.extras       ? { extras:        item.extras       } : {}),
-      ...(item._discount    ? { item_discount: item._discount    } : {}),
+      ...(item.subs            ? { subs:           item.subs                                      } : {}),
+      ...(item.extras          ? { extras:         item.extras                                    } : {}),
+      ...(item._discount       ? { item_discount:  item._discount                                 } : {}),
+      ...(item._special_applied ? { special_name: (STATE.specials.find(s => s.id === item._special_applied)?.name || '') } : {}),
     };
   });
 
@@ -3150,6 +3151,7 @@ function renderTransactions(trs) {
       let discNote = '';
       if (ln.discount) {
         const parts = [];
+        if (ln.discount.special) parts.push(`Special: ${ln.discount.special}`);
         if (ln.discount.item) {
           const d = ln.discount.item;
           parts.push(d.type === 'pct' ? `${d.value}% item discount` : `R${fmt(d.value)} item discount`);
@@ -3164,8 +3166,9 @@ function renderTransactions(trs) {
       ul.appendChild(li);
     });
 
-    // Show discount-by note if any discount was applied on this sale
-    if (t.discount_by) {
+    // Show discount-by note if a manual discount was applied (not just specials)
+    const hasManualDiscount = t.lines.some(ln => ln.discount?.item || ln.discount?.cart);
+    if (t.discount_by && hasManualDiscount) {
       const discDiv = document.createElement('div');
       discDiv.className = 'mt-1 small text-success';
       discDiv.innerHTML = `<strong>Discount applied by ${t.discount_by}</strong>`;

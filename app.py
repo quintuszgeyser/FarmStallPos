@@ -3883,7 +3883,8 @@ def api_transactions_post():
     u         = current_user()
     customer_id  = data.get('customer_id')
     cart_discount = data.get('cart_discount')   # {type, value} or null
-    discount_by_id = (u.id if u else None) if (cart_discount or any(i.get('item_discount') for i in cart)) else None
+    has_discount = cart_discount or any(i.get('item_discount') or i.get('special_name') for i in cart)
+    discount_by_id = (u.id if u else None) if has_discount else None
 
     import json as _json
 
@@ -3895,13 +3896,15 @@ def api_transactions_post():
         subs       = {int(k): int(v) for k, v in subs_raw.items()} if subs_raw else {}
         extras     = item.get('extras', [])
         item_discount = item.get('item_discount')  # {type, value} or null
+        special_name  = item.get('special_name', '')
 
         sub_log_val   = _json.dumps(subs) if subs else None
         discount_val  = None
-        if item_discount or cart_discount:
+        if item_discount or cart_discount or special_name:
             discount_val = _json.dumps({
-                **(({'item': item_discount}) if item_discount else {}),
-                **(({'cart': cart_discount}) if cart_discount else {}),
+                **(({'item':    item_discount}) if item_discount else {}),
+                **(({'cart':    cart_discount}) if cart_discount else {}),
+                **(({'special': special_name})  if special_name  else {}),
             })
 
         db.session.add(Sale(
