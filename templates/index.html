@@ -677,11 +677,29 @@
 
       <!-- ── Export ── -->
       <div class="mt-3 border-top pt-3">
-        <div class="d-flex align-items-end gap-2 flex-wrap">
-          <div><label class="form-label mb-1 small">Export start</label><input id="export-start" type="date" class="form-control form-control-sm"></div>
-          <div><label class="form-label mb-1 small">Export end</label><input id="export-end" type="date" class="form-control form-control-sm"></div>
-          <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">Download Sales CSV</button>
-          <a href="/admin/export/products" target="_blank" class="btn btn-outline-secondary btn-sm">Products CSV</a>
+        <h6 class="mb-1">Export <span class="text-muted fw-normal small" id="export-filter-label"></span></h6>
+        <p class="text-muted small mb-2">All exports use the date range and product filter selected above.</p>
+        <div class="d-flex gap-2 flex-wrap">
+          <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">
+            📄 Sales Lines
+            <span class="d-block" style="font-size:10px;color:#6c757d">Date · Product · Qty · Price · Teller</span>
+          </button>
+          <button id="btn-export-profit" class="btn btn-outline-success btn-sm">
+            📊 Profit & COGS
+            <span class="d-block" style="font-size:10px;color:#6c757d">Per-product revenue, cost, margin</span>
+          </button>
+          <button id="btn-export-writeoffs" class="btn btn-outline-danger btn-sm" id="stats-section-writeoff-export">
+            ⚠️ Write-offs
+            <span class="d-block" style="font-size:10px;color:#6c757d">Stock losses in the period</span>
+          </button>
+          <button id="btn-export-suppliers" class="btn btn-outline-secondary btn-sm">
+            🏭 Supplier Spend
+            <span class="d-block" style="font-size:10px;color:#6c757d">Purchases by supplier</span>
+          </button>
+          <a href="/admin/export/products" target="_blank" class="btn btn-outline-secondary btn-sm">
+            📦 Product Catalogue
+            <span class="d-block" style="font-size:10px;color:#6c757d">All products with prices</span>
+          </a>
         </div>
       </div>
     </div>

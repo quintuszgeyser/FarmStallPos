@@ -4460,6 +4460,118 @@ def export_transactions_csv():
     return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
 
 
+@app.route('/admin/export/profit')
+def export_profit_csv():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    today     = date.today()
+    start_dt  = _parse_dt(request.args.get('start')) or datetime(today.year, today.month, today.day)
+    end_dt    = _parse_dt(request.args.get('end'), is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
+    pid_str   = request.args.get('product_id')
+    try:    pid_filter = int(pid_str) if pid_str else None
+    except: pid_filter = None
+
+    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
+    if pid_filter:
+        q = q.filter(Sale.product_id == pid_filter)
+    rows = q.all()
+
+    sale_ids = list({r.sale_id for r in rows})
+    consumptions = StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all() if sale_ids else []
+
+    rev_map  = defaultdict(float)
+    qty_map  = defaultdict(float)
+    for r in rows:
+        rev_map[r.product_id]  += float(Decimal(str(r.qty)) * r.unit_price)
+        qty_map[r.product_id]  += float(r.qty)
+
+    sale_product_map = {r.sale_id: r.product_id for r in rows}
+    cogs_map = defaultdict(float)
+    for c in consumptions:
+        pid = sale_product_map.get(c.sale_id)
+        if pid:
+            cogs_map[pid] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
+
+    pids  = set(rev_map.keys())
+    names = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
+
+    sio = StringIO()
+    sio.write('product,qty_sold,revenue,cogs,gross_profit,margin_pct\n')
+    for pid in sorted(pids, key=lambda x: rev_map[x], reverse=True):
+        rev    = rev_map[pid]
+        cogs   = cogs_map.get(pid, 0)
+        profit = rev - cogs
+        margin = round(profit / rev * 100, 1) if rev > 0 else ''
+        name   = names.get(pid, str(pid)).replace(',', ';')
+        sio.write(f"{name},{round(qty_map[pid],2)},{round(rev,2)},{round(cogs,2)},{round(profit,2)},{margin}\n")
+
+    buf   = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    fname = f"profit_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
+
+
+@app.route('/admin/export/writeoffs')
+def export_writeoffs_csv():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    today    = date.today()
+    start_dt = _parse_dt(request.args.get('start')) or datetime(today.year, today.month, today.day)
+    end_dt   = _parse_dt(request.args.get('end'), is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
+
+    writeoffs = StockAdjustment.query.filter(
+        StockAdjustment.adjustment_type == 'writeoff',
+        StockAdjustment.adjusted_at >= start_dt,
+        StockAdjustment.adjusted_at <= end_dt
+    ).order_by(StockAdjustment.adjusted_at.asc()).all()
+
+    pids  = {w.product_id for w in writeoffs}
+    uids  = {w.user_id for w in writeoffs if w.user_id}
+    names = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
+    users = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
+
+    sio = StringIO()
+    sio.write('date,product,qty_written_off,base_unit,cost_lost,reason,by\n')
+    for w in writeoffs:
+        name   = names.get(w.product_id, str(w.product_id)).replace(',', ';')
+        reason = (w.reason or '').replace(',', ';')
+        by     = users.get(w.user_id, '').replace(',', ';')
+        sio.write(f"{w.adjusted_at.isoformat()},{name},{abs(float(w.qty_change_base or 0)):.4f},{w.base_unit or ''},{round(float(w.cost_written_off or 0),2)},{reason},{by}\n")
+
+    buf   = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    fname = f"writeoffs_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
+
+
+@app.route('/admin/export/suppliers')
+def export_suppliers_csv():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    today    = date.today()
+    start_dt = _parse_dt(request.args.get('start')) or datetime(today.year, today.month, today.day)
+    end_dt   = _parse_dt(request.args.get('end'), is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
+
+    batches = StockBatch.query.filter(
+        StockBatch.purchased_at >= start_dt, StockBatch.purchased_at <= end_dt
+    ).order_by(StockBatch.purchased_at.asc()).all()
+
+    pids  = {b.product_id for b in batches}
+    sids  = {b.supplier_id for b in batches if b.supplier_id}
+    names = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
+    sups  = {s.id: s.name for s in Supplier.query.filter(Supplier.id.in_(sids)).all()} if sids else {}
+
+    sio = StringIO()
+    sio.write('date,supplier,product,qty_purchased,base_unit,cost_per_unit,total_cost\n')
+    for b in batches:
+        sup_name  = sups.get(b.supplier_id, 'Unknown').replace(',', ';')
+        prod_name = names.get(b.product_id, str(b.product_id)).replace(',', ';')
+        total     = round(float(b.qty_purchased_base) * float(b.cost_per_base_unit), 2)
+        sio.write(f"{b.purchased_at.isoformat()},{sup_name},{prod_name},{float(b.qty_purchased_base):.4f},{b.base_unit or ''},{float(b.cost_per_base_unit):.4f},{total}\n")
+
+    buf   = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    fname = f"supplier_spend_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv"
+    return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=fname)
+
+
 # -----------------------------
 # Settings (admin)
 # -----------------------------

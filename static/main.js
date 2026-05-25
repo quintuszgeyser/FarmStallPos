@@ -3914,10 +3914,7 @@ async function loadStats() {
     ? ` · ${STATE.products.find(p => String(p.id) === productId)?.name || 'Product'}`
     : '';
   if (label) label.textContent = dateLabel + productLabel;
-
-  // Sync export pickers
-  const es = document.getElementById('export-start'); if (es) es.value = start;
-  const ee = document.getElementById('export-end');   if (ee) ee.value = end;
+  _updateExportFilterLabel();
 
   // Show/hide sections that don't apply to a single-product view
   const kitchenRow  = document.getElementById('stats-row-kitchen');
@@ -4126,22 +4123,40 @@ document.querySelectorAll('[data-chart-tab]').forEach(btn => {
 document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
 _initStatsPresets();
 
-// CSV export
-(function initExportDates() {
-  const t = todayISO();
-  const s = document.getElementById('export-start'); if (s && !s.value) s.value = t;
-  const e = document.getElementById('export-end');   if (e && !e.value) e.value = t;
-})();
-document.getElementById('btn-export-csv')?.addEventListener('click', () => {
-  // Always use the stats date range and product filter — export dates sync from stats on every load
-  const s         = document.getElementById('stats-start')?.value  || document.getElementById('export-start')?.value;
-  const e         = document.getElementById('stats-end')?.value    || document.getElementById('export-end')?.value;
+// ── Exports — all use the active stats filters ──
+function _exportParams() {
+  const s         = document.getElementById('stats-start')?.value || todayISO();
+  const e         = document.getElementById('stats-end')?.value   || todayISO();
   const productId = document.getElementById('stats-product-filter')?.value || '';
-  const p = new URLSearchParams();
-  if (s)         p.set('start',      s);
-  if (e)         p.set('end',        e);
+  const p = new URLSearchParams({ start: s, end: e });
   if (productId) p.set('product_id', productId);
-  window.open(`/admin/export/transactions?${p.toString()}`, '_blank', 'noopener');
+  return p;
+}
+
+function _updateExportFilterLabel() {
+  const label = document.getElementById('export-filter-label');
+  if (!label) return;
+  const s         = document.getElementById('stats-start')?.value || todayISO();
+  const e         = document.getElementById('stats-end')?.value   || todayISO();
+  const productId = document.getElementById('stats-product-filter')?.value || '';
+  const dateStr   = s === e ? s : `${s} → ${e}`;
+  const prodStr   = productId
+    ? ` · ${STATE.products.find(p => String(p.id) === productId)?.name || 'Product'}`
+    : '';
+  label.textContent = `(${dateStr}${prodStr})`;
+}
+
+document.getElementById('btn-export-csv')?.addEventListener('click', () => {
+  window.open(`/admin/export/transactions?${_exportParams()}`, '_blank', 'noopener');
+});
+document.getElementById('btn-export-profit')?.addEventListener('click', () => {
+  window.open(`/admin/export/profit?${_exportParams()}`, '_blank', 'noopener');
+});
+document.getElementById('btn-export-writeoffs')?.addEventListener('click', () => {
+  window.open(`/admin/export/writeoffs?${_exportParams()}`, '_blank', 'noopener');
+});
+document.getElementById('btn-export-suppliers')?.addEventListener('click', () => {
+  window.open(`/admin/export/suppliers?${_exportParams()}`, '_blank', 'noopener');
 });
 
 // ═══════════════════════════════════════════════════════
