@@ -689,7 +689,7 @@ def extract_all_signals_with_quality(event):
                     snap = cv2.imread(snapshot_path)
                     if snap is not None:
                         h, w = snap.shape[:2]
-                        scale = 200.0 / max(h, w)
+                        scale = 400.0 / max(h, w)
                         thumb = cv2.resize(snap, (int(w*scale), int(h*scale)))
                         _, jpeg_buf = cv2.imencode('.jpg', thumb, [cv2.IMWRITE_JPEG_QUALITY, 75])
                         signals['snapshot_photo'] = jpeg_buf.tobytes()

@@ -5333,7 +5333,7 @@ function renderCustomersList() {
           <div style="width:52px;height:52px;border-radius:50%;background:#e9ecef;display:${(c.has_face || c.has_photo) ? 'none' : 'flex'};align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">👤</div>
           ${c.has_body_photo
             ? `<img src="/api/customers/${c.id}/body_photo" alt="body"
-                style="width:32px;height:52px;object-fit:cover;border-radius:4px;border:2px solid #dee2e6;"
+                style="width:44px;height:66px;object-fit:cover;border-radius:4px;border:2px solid #dee2e6;"
                 onerror="this.style.display='none'">`
             : ''}
         </div>
@@ -5452,7 +5452,7 @@ async function openCustomerDetail(customerId) {
     ? `<div class="ms-2">
          <div class="text-muted" style="font-size:.65rem;margin-bottom:2px">Body</div>
          <img src="/api/customers/${c.id}/body_photo?t=${t}" alt="body"
-           style="height:90px;max-width:70px;object-fit:cover;border-radius:4px;border:2px solid #dee2e6;"
+           style="height:140px;max-width:110px;object-fit:cover;border-radius:4px;border:2px solid #dee2e6;"
            onerror="this.style.display='none'">
        </div>`
     : '';
