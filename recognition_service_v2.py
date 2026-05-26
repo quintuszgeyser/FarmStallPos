@@ -40,7 +40,7 @@ FACE_THRESHOLD  = 0.35  # Minimum cosine similarity for face match — real same
 GAIT_THRESHOLD  = 0.25  # Maximum euclidean distance for gait match
 
 # Quality gates
-FACE_QUALITY_MIN = 0.35  # Minimum face quality to use (lowered for real-world camera distances)
+FACE_QUALITY_MIN = 0.15  # Minimum face quality — size threshold recalibrated for head crops
 GAIT_QUALITY_MIN = 0.45  # Lowered: mounted camera looking down scores lower than ideal
 PLATE_CONF_MIN   = 0.8   # Minimum OCR confidence to use
 
@@ -136,7 +136,9 @@ def get_face_app():
                         # Face size
                         face_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
                         size_ratio = face_area / img_area
-                        size_score = min(1.0, size_ratio / 0.05)
+                        # Use 2.5% threshold — crops are already head-region so
+                        # face fills less of the image than a full-frame shot would
+                        size_score = min(1.0, size_ratio / 0.025)
 
                         # Blur detection
                         face_crop = img[int(bbox[1]):int(bbox[3]), int(bbox[0]):int(bbox[2])]
