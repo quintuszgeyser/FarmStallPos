@@ -2670,97 +2670,189 @@ def api_customer_profile(cid):
 
 @app.route('/api/customers/<int:cid>/radar', methods=['GET'])
 def api_customer_radar(cid):
-    """360° customer intelligence radar — biometric completeness + behavioural signals."""
+    """360° customer intelligence radar — 8 non-overlapping dimensions."""
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
     from sqlalchemy import text as _text
-    import json as _json
+    import json as _json, statistics as _stats
 
     c = db.session.get(Customer, cid)
     if not c:
         return jsonify({'error': 'Not found'}), 404
 
-    # ── 1. Identity (face angle coverage) ─────────────────────────────────────
+    # ── 1. IDENTITY — face angle coverage (breadth of biometric data) ─────────
     face_angles = CustomerFace.query.filter_by(customer_id=cid, active=True).count()
-    identity_score = min(1.0, face_angles / 10.0)  # 10 angles = full
+    identity_score = min(1.0, face_angles / 10.0)
 
-    # ── 2. Recognition confidence (best face similarity ever achieved) ─────────
+    # ── 2. RECOGNITION STABILITY — consistent ID across visits, not just peak ──
     sim_rows = db.session.execute(
-        _text("SELECT confidence_scores FROM customer_visits WHERE customer_id=:cid AND confidence_scores IS NOT NULL ORDER BY detected_at DESC LIMIT 30"),
+        _text("SELECT confidence_scores FROM customer_visits WHERE customer_id=:cid AND confidence_scores IS NOT NULL ORDER BY detected_at DESC LIMIT 20"),
         {'cid': cid}
     ).fetchall()
-    max_face_sim = 0.0
+    face_sims = []
     for (s,) in sim_rows:
         try:
             sc = _json.loads(s)
-            max_face_sim = max(max_face_sim, float(sc.get('face_similarity', 0) or 0))
+            sim = float(sc.get('face_similarity', 0) or 0)
+            if sim > 0:
+                face_sims.append(sim)
         except Exception:
             pass
+    if face_sims:
+        avg_sim = sum(face_sims) / len(face_sims)
+        variance = _stats.variance(face_sims) if len(face_sims) > 1 else 0.0
+        # High avg + low variance = stable. Penalise high variance.
+        stability_score = min(1.0, avg_sim * (1.0 - min(1.0, variance * 5)))
+    else:
+        stability_score = 0.0
+    best_sim = max(face_sims) if face_sims else 0.0
 
-    # ── 3. Attributes (physical description completeness) ─────────────────────
-    attrs_row = db.session.execute(
-        _text('SELECT hair_color,build,height_category,age_range,gender,skin_tone,eye_color,facial_hair,wearing_glasses FROM customer_physical_attributes WHERE customer_id=:cid ORDER BY detected_at DESC LIMIT 1'),
-        {'cid': cid}
-    ).fetchone()
-    attr_fields   = list(attrs_row) if attrs_row else []
-    attrs_filled  = sum(1 for v in attr_fields if v is not None and v != '')
-    attrs_total   = len(attr_fields) or 9
+    # ── 3. FRESHNESS — how current and recently refreshed is this profile? ─────
+    last_visit_days = None
+    recency = 0.0
+    if c.last_visit:
+        last_visit_days = (datetime.utcnow() - c.last_visit).days
+        recency = max(0.0, 1.0 - last_visit_days / 30.0)
+    # Also factor in how recently the embedding was updated
+    latest_face = CustomerFace.query.filter_by(customer_id=cid, active=True).order_by(
+        CustomerFace.enrolled_at.desc()).first()
+    emb_age_days = (datetime.utcnow() - latest_face.enrolled_at).days if latest_face else 999
+    emb_freshness = max(0.0, 1.0 - emb_age_days / 14.0)  # 14 days = stale
+    freshness_score = (recency * 0.6 + emb_freshness * 0.4)
 
-    # ── 4. Licence plate (strongest non-biometric signal) ─────────────────────
-    has_plate = CustomerPlate.query.filter_by(customer_id=cid, active=True).count() > 0
-
-    # ── 5. Named (do we know who this person is?) ─────────────────────────────
-    is_named = bool(c.name and c.name.strip())
-
-    # ── 6. Purchasing (buyer vs browser) ──────────────────────────────────────
-    purchase_count = db.session.execute(
+    # ── 4. CONVERSION — buyer vs browser, stepped scoring ─────────────────────
+    purchase_receipts = db.session.execute(
         _text("SELECT COUNT(DISTINCT sale_id) FROM sales WHERE customer_id=:cid AND voided=FALSE"),
         {'cid': cid}
     ).scalar() or 0
-    purchase_score = min(1.0, purchase_count / 5.0)  # 5 purchases = full score
+    if purchase_receipts == 0:
+        conversion_score = 0.0
+    elif purchase_receipts == 1:
+        conversion_score = 0.33
+    elif purchase_receipts <= 3:
+        conversion_score = 0.66
+    else:
+        conversion_score = 1.0
 
-    # ── 7. Regularity (consistency of visit pattern) ──────────────────────────
-    visit_count = c.visit_count or 0
-    visit_score = min(1.0, visit_count / 20.0)  # 20 visits = full score
-    # Bonus: if visits are spread over multiple days (not all in one session)
+    # ── 5. BASKET FAMILIARITY — how well do we know what they buy? ────────────
+    product_variety = db.session.execute(
+        _text("SELECT COUNT(DISTINCT product_id) FROM sales WHERE customer_id=:cid AND voided=FALSE"),
+        {'cid': cid}
+    ).scalar() or 0
+    if purchase_receipts == 0:
+        basket_score = 0.0
+    elif purchase_receipts == 1:
+        basket_score = 0.30
+    elif purchase_receipts <= 4:
+        basket_score = 0.60
+    else:
+        # Full basket familiarity = multiple visits with product variety
+        basket_score = min(1.0, 0.60 + (product_variety / 10.0) * 0.4)
+
+    # ── 6. PLATE CONFIDENCE — repeated confirmed plate linkage ────────────────
+    plate_count = CustomerPlate.query.filter_by(customer_id=cid, active=True).count()
+    if plate_count == 0:
+        plate_score = 0.0
+    else:
+        # How many visits had a plate signal?
+        plate_visits = db.session.execute(
+            _text("SELECT COUNT(*) FROM customer_visits WHERE customer_id=:cid AND matched_signals LIKE '%plate%'"),
+            {'cid': cid}
+        ).scalar() or 0
+        if plate_visits == 0:
+            plate_score = 0.4   # plate enrolled but not yet matched in visits
+        elif plate_visits <= 2:
+            plate_score = 0.7
+        else:
+            plate_score = 1.0
+
+    # ── 7. REGULARITY — predictable, repeatable visit pattern ─────────────────
     distinct_days = db.session.execute(
         _text("SELECT COUNT(DISTINCT DATE(detected_at)) FROM customer_visits WHERE customer_id=:cid"),
         {'cid': cid}
     ).scalar() or 0
-    regularity_score = min(1.0, distinct_days / 10.0)  # 10 distinct days = full
+    visit_count = c.visit_count or 0
+    # Regularity = distinct days spread (not 15 detections in 1 hour)
+    if distinct_days == 0:
+        regularity_score = 0.0
+    else:
+        day_spread_score = min(1.0, distinct_days / 10.0)
+        # Bonus for consistent pattern (visits per distinct day)
+        visits_per_day = visit_count / distinct_days if distinct_days else 0
+        consistency_bonus = min(0.2, visits_per_day / 10.0)
+        regularity_score = min(1.0, day_spread_score + consistency_bonus)
 
-    # ── 8. Recency (how fresh/reliable is this profile?) ─────────────────────
-    last_visit_days = None
-    recency_score = 0.0
-    if c.last_visit:
-        last_visit_days = (datetime.utcnow() - c.last_visit).days
-        # 100% if seen today, linear decay, 0% after 30 days
-        recency_score = max(0.0, 1.0 - last_visit_days / 30.0)
+    # ── 8. PROFILE DEPTH — meta: how rich is this profile overall? ────────────
+    attrs_row = db.session.execute(
+        _text('SELECT hair_color,build,height_category,age_range,gender,skin_tone,eye_color,facial_hair,wearing_glasses FROM customer_physical_attributes WHERE customer_id=:cid ORDER BY detected_at DESC LIMIT 1'),
+        {'cid': cid}
+    ).fetchone()
+    attr_fields  = list(attrs_row) if attrs_row else []
+    attrs_filled = sum(1 for v in attr_fields if v is not None and v != '')
+    attrs_total  = len(attr_fields) or 9
+    has_gait     = CustomerGait.query.filter_by(customer_id=cid, active=True).count() > 0
+    has_photo    = CustomerFace.query.filter_by(customer_id=cid).filter(CustomerFace.photo != None).count() > 0
+    is_named     = bool(c.name and c.name.strip())
+    # Weighted composite of all data layers
+    depth_score = (
+        (face_angles / 10.0)           * 0.25 +  # biometric breadth
+        (attrs_filled / attrs_total)   * 0.20 +  # description
+        (1.0 if has_gait else 0.0)     * 0.15 +  # gait
+        (1.0 if has_photo else 0.0)    * 0.15 +  # visual
+        (1.0 if is_named else 0.0)     * 0.15 +  # identity
+        (1.0 if plate_count > 0 else 0) * 0.10   # plate
+    )
+    depth_score = min(1.0, depth_score)
 
     return jsonify({
         'customer_id': cid,
         'name': c.name or c.customer_number,
+        # Two radar charts: Biometric profile + Behavioural intelligence
+        'biometric': {
+            'Identity':    identity_score,
+            'Stability':   stability_score,
+            'Freshness':   freshness_score,
+            'Attributes':  attrs_filled / attrs_total,
+            'Gait':        1.0 if has_gait else 0.0,
+            'Photo':       1.0 if has_photo else 0.0,
+            'Named':       1.0 if is_named else 0.0,
+            'Plate conf':  plate_score,
+        },
+        'behavioural': {
+            'Conversion':  conversion_score,
+            'Basket':      basket_score,
+            'Regularity':  regularity_score,
+            'Depth':       depth_score,
+            'Plate':       plate_score,
+            'Purchases':   min(1.0, purchase_receipts / 10.0),
+            'Days active': min(1.0, distinct_days / 14.0),
+            'Recency':     recency,
+        },
+        # Keep 'scores' for backward compat with existing merge modal
         'scores': {
             'Identity':    identity_score,
-            'Recognition': max_face_sim,
-            'Attributes':  attrs_filled / attrs_total,
-            'Plate':       1.0 if has_plate else 0.0,
-            'Named':       1.0 if is_named else 0.0,
-            'Purchasing':  purchase_score,
+            'Stability':   stability_score,
+            'Freshness':   freshness_score,
+            'Conversion':  conversion_score,
+            'Basket':      basket_score,
+            'Plate':       plate_score,
             'Regularity':  regularity_score,
-            'Recency':     recency_score,
+            'Depth':       depth_score,
         },
         'details': {
-            'face_angles':     face_angles,
-            'best_face_sim':   round(max_face_sim * 100, 1),
-            'attrs_filled':    attrs_filled,
-            'attrs_total':     attrs_total,
-            'has_plate':       has_plate,
-            'is_named':        is_named,
-            'purchase_count':  purchase_count,
-            'visit_count':     visit_count,
-            'distinct_days':   distinct_days,
-            'last_visit_days': last_visit_days,
+            'face_angles':       face_angles,
+            'best_face_sim':     round(best_sim * 100, 1),
+            'avg_face_sim':      round((sum(face_sims)/len(face_sims)*100) if face_sims else 0, 1),
+            'attrs_filled':      attrs_filled,
+            'attrs_total':       attrs_total,
+            'plate_count':       plate_count,
+            'is_named':          is_named,
+            'purchase_count':    purchase_receipts,
+            'product_variety':   product_variety,
+            'visit_count':       visit_count,
+            'distinct_days':     distinct_days,
+            'last_visit_days':   last_visit_days,
+            'emb_age_days':      emb_age_days if emb_age_days < 999 else None,
         }
     })
 

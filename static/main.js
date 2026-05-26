@@ -5456,10 +5456,13 @@ async function openMergeModal() {
   const radarComparison = radars.some(Boolean) ? `
     <div class="d-flex gap-3 justify-content-center mb-3 flex-wrap">
       ${customers.map((c, i) => radars[i] ? `
-        <div class="text-center">
+        <div class="text-center border rounded p-2">
           <div class="small fw-semibold mb-1">${c.name || c.customer_number}</div>
-          <canvas id="merge-radar-${c.id}" width="200" height="200"></canvas>
-          <div class="text-muted" style="font-size:.65rem">${radars[i].details.face_angles} angles · ID ${radars[i].details.best_face_sim}%</div>
+          <div class="d-flex gap-1">
+            <div><div class="text-muted" style="font-size:.6rem">Biometric</div><canvas id="merge-bio-${c.id}" width="160" height="160"></canvas></div>
+            <div><div class="text-muted" style="font-size:.6rem">Behavioural</div><canvas id="merge-beh-${c.id}" width="160" height="160"></canvas></div>
+          </div>
+          <div class="text-muted mt-1" style="font-size:.65rem">${radars[i].details.face_angles} angles · ID ${radars[i].details.best_face_sim}% · ${radars[i].details.purchase_count} purchases</div>
         </div>` : '').join('')}
     </div>` : '';
 
@@ -5472,9 +5475,13 @@ async function openMergeModal() {
       <button class="btn btn-warning" id="btn-confirm-merge">Merge</button>
     </div>`;
 
-  const colors = ['#2a6f3e', '#0d6efd', '#fd7e14', '#dc3545'];
+  const bioColors = ['#2a6f3e', '#198754', '#fd7e14', '#dc3545'];
+  const behColors = ['#0d6efd', '#6610f2', '#fd7e14', '#dc3545'];
   customers.forEach((c, i) => {
-    if (radars[i]) drawRadarChart(`merge-radar-${c.id}`, radars[i].scores, colors[i % colors.length]);
+    if (radars[i]) {
+      if (radars[i].biometric)   drawRadarChart(`merge-bio-${c.id}`, radars[i].biometric,   bioColors[i % bioColors.length]);
+      if (radars[i].behavioural) drawRadarChart(`merge-beh-${c.id}`, radars[i].behavioural, behColors[i % behColors.length]);
+    }
   });
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
@@ -5813,27 +5820,25 @@ async function openCustomerDetail(customerId) {
     <span class="text-muted small ms-2">Removes all biometric data and visit history permanently.</span>
   </div>`;
 
-  // ── Radar chart ───────────────────────────────────────────────
+  // ── Two radar charts: Biometric + Behavioural ────────────────
   const radarHtml = radar ? `
     <div class="mb-3">
-      <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Profile Completeness</div>
-      <div class="d-flex justify-content-center">
-        <canvas id="customer-radar-${c.id}" width="300" height="300" style="max-width:300px"></canvas>
-      </div>
-      <div class="d-flex flex-wrap justify-content-center gap-2 mt-1">
-        ${Object.entries(radar.scores).map(([k,v]) => {
-          const pct = Math.round(v*100);
-          const col = pct>=80?'success':pct>=40?'warning':'danger';
-          return `<span class="badge bg-${col} bg-opacity-${pct>=80?'100':'75'}">${k}: ${pct}%</span>`;
-        }).join('')}
+      <div class="d-flex gap-2 justify-content-center flex-wrap">
+        <div class="text-center">
+          <div class="text-muted small fw-semibold mb-1">Biometric</div>
+          <canvas id="customer-radar-bio-${c.id}" width="240" height="240"></canvas>
+        </div>
+        <div class="text-center">
+          <div class="text-muted small fw-semibold mb-1">Behavioural</div>
+          <canvas id="customer-radar-beh-${c.id}" width="240" height="240"></canvas>
+        </div>
       </div>
       <div class="text-muted text-center mt-1" style="font-size:.7rem">
         ${radar.details.face_angles} angle${radar.details.face_angles!==1?'s':''} ·
-        ${radar.details.attrs_filled}/${radar.details.attrs_total} attributes ·
-        ID ${radar.details.best_face_sim}% ·
+        ID best ${radar.details.best_face_sim}% avg ${radar.details.avg_face_sim}% ·
         ${radar.details.purchase_count} purchase${radar.details.purchase_count!==1?'s':''} ·
         ${radar.details.distinct_days} day${radar.details.distinct_days!==1?'s':''} ·
-        ${radar.details.last_visit_days !== null ? radar.details.last_visit_days + 'd ago' : 'never'}
+        ${radar.details.last_visit_days !== null ? radar.details.last_visit_days + 'd ago' : 'never seen'}
       </div>
     </div>` : '';
 
@@ -5858,9 +5863,10 @@ async function openCustomerDetail(customerId) {
     ${visitsHtml}
     ${deleteBtn}`;
 
-  // Draw radar after DOM is ready
+  // Draw both radars after DOM is ready
   if (radar) {
-    drawRadarChart(`customer-radar-${c.id}`, radar.scores, '#2a6f3e');
+    if (radar.biometric)   drawRadarChart(`customer-radar-bio-${c.id}`, radar.biometric,   '#2a6f3e');
+    if (radar.behavioural) drawRadarChart(`customer-radar-beh-${c.id}`, radar.behavioural, '#0d6efd');
   }
 }
 
