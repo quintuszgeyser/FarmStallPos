@@ -1117,7 +1117,7 @@ def _improve_customer_profile(customer_id, signals):
                 logger.info(f'Profile [{customer_id}]: adding face (quality={new_face_quality:.2f})')
                 payload = {
                     'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
-                    'quality': new_face_quality,
+                    'quality': float(new_face_quality),
                 }
                 if signals.get('face_photo'):
                     payload['photo_b64'] = base64.b64encode(signals['face_photo']).decode()
@@ -1128,7 +1128,7 @@ def _improve_customer_profile(customer_id, signals):
                     logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
                     payload = {
                         'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
-                        'quality': new_face_quality,
+                        'quality': float(new_face_quality),
                         'photo_b64': base64.b64encode(signals['face_photo']).decode(),
                     }
                     pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
@@ -1260,7 +1260,7 @@ def process_event(event):
                         if best_face and best_face.get('embedding'):
                             payload = {
                                 'embedding_b64': base64.b64encode(best_face['embedding']).decode(),
-                                'quality': best_face.get('quality', 0.0),
+                                'quality': float(best_face.get('quality', 0.0)),
                             }
                             if best_face.get('photo'):
                                 payload['photo_b64'] = base64.b64encode(best_face['photo']).decode()
@@ -1272,7 +1272,7 @@ def process_event(event):
                         if best_gait and best_gait.get('features'):
                             pos_post(f'/api/customers/{customer_id}/enroll/gait', {
                                 'features_b64': base64.b64encode(best_gait['features']).decode(),
-                                'quality': best_gait.get('quality', 0.0)
+                                'quality': float(best_gait.get('quality', 0.0))
                             })
                             logger.info(f'   Gait enrolled for customer #{next_number}')
 
