@@ -1600,10 +1600,10 @@ def process_event(event):
             logger.debug(f'Track {track_id[:8]} pending (age={track.age():.1f}s, confidence={track.confidence:.3f})')
 
         # Queue clip analysis for ended events with a resolved customer
-        if (ev.get('_is_ended')
+        if (event.get('_is_ended')
                 and track.customer_id
                 and track.customer_id not in (-1, None)):
-            person_box = (ev.get('data') or {}).get('box')
+            person_box = (event.get('data') or {}).get('box')
             with _clip_queue_lock:
                 if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
                         and not any(j[0] == event_id for j in _clip_analysis_queue)):
