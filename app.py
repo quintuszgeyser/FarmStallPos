@@ -2670,73 +2670,97 @@ def api_customer_profile(cid):
 
 @app.route('/api/customers/<int:cid>/radar', methods=['GET'])
 def api_customer_radar(cid):
-    """Returns radar chart data — how complete this customer's biometric profile is."""
+    """360° customer intelligence radar — biometric completeness + behavioural signals."""
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
     from sqlalchemy import text as _text
+    import json as _json
 
     c = db.session.get(Customer, cid)
     if not c:
         return jsonify({'error': 'Not found'}), 404
 
-    # Count active face angles
+    # ── 1. Identity (face angle coverage) ─────────────────────────────────────
     face_angles = CustomerFace.query.filter_by(customer_id=cid, active=True).count()
-    has_face_photo = CustomerFace.query.filter_by(customer_id=cid).filter(CustomerFace.photo != None).count() > 0
-    has_body_photo = CustomerFace.query.filter_by(customer_id=cid).filter(CustomerFace.body_photo != None).count() > 0
-    has_gait = CustomerGait.query.filter_by(customer_id=cid, active=True).count() > 0
+    identity_score = min(1.0, face_angles / 10.0)  # 10 angles = full
 
-    # Physical attributes completeness
+    # ── 2. Recognition confidence (best face similarity ever achieved) ─────────
+    sim_rows = db.session.execute(
+        _text("SELECT confidence_scores FROM customer_visits WHERE customer_id=:cid AND confidence_scores IS NOT NULL ORDER BY detected_at DESC LIMIT 30"),
+        {'cid': cid}
+    ).fetchall()
+    max_face_sim = 0.0
+    for (s,) in sim_rows:
+        try:
+            sc = _json.loads(s)
+            max_face_sim = max(max_face_sim, float(sc.get('face_similarity', 0) or 0))
+        except Exception:
+            pass
+
+    # ── 3. Attributes (physical description completeness) ─────────────────────
     attrs_row = db.session.execute(
         _text('SELECT hair_color,build,height_category,age_range,gender,skin_tone,eye_color,facial_hair,wearing_glasses FROM customer_physical_attributes WHERE customer_id=:cid ORDER BY detected_at DESC LIMIT 1'),
         {'cid': cid}
     ).fetchone()
-    attr_fields = list(attrs_row) if attrs_row else []
-    attrs_filled = sum(1 for v in attr_fields if v is not None and v != '')
-    attrs_total  = len(attr_fields)  # 9
+    attr_fields   = list(attrs_row) if attrs_row else []
+    attrs_filled  = sum(1 for v in attr_fields if v is not None and v != '')
+    attrs_total   = len(attr_fields) or 9
 
-    # Visit regularity — score based on recency and frequency
+    # ── 4. Licence plate (strongest non-biometric signal) ─────────────────────
+    has_plate = CustomerPlate.query.filter_by(customer_id=cid, active=True).count() > 0
+
+    # ── 5. Named (do we know who this person is?) ─────────────────────────────
+    is_named = bool(c.name and c.name.strip())
+
+    # ── 6. Purchasing (buyer vs browser) ──────────────────────────────────────
+    purchase_count = db.session.execute(
+        _text("SELECT COUNT(DISTINCT sale_id) FROM sales WHERE customer_id=:cid AND voided=FALSE"),
+        {'cid': cid}
+    ).scalar() or 0
+    purchase_score = min(1.0, purchase_count / 5.0)  # 5 purchases = full score
+
+    # ── 7. Regularity (consistency of visit pattern) ──────────────────────────
     visit_count = c.visit_count or 0
+    visit_score = min(1.0, visit_count / 20.0)  # 20 visits = full score
+    # Bonus: if visits are spread over multiple days (not all in one session)
+    distinct_days = db.session.execute(
+        _text("SELECT COUNT(DISTINCT DATE(detected_at)) FROM customer_visits WHERE customer_id=:cid"),
+        {'cid': cid}
+    ).scalar() or 0
+    regularity_score = min(1.0, distinct_days / 10.0)  # 10 distinct days = full
+
+    # ── 8. Recency (how fresh/reliable is this profile?) ─────────────────────
     last_visit_days = None
+    recency_score = 0.0
     if c.last_visit:
         last_visit_days = (datetime.utcnow() - c.last_visit).days
-    visit_score = min(1.0, visit_count / 20.0)  # 20 visits = full score
-
-    # Identification confidence — best face similarity from recent visits
-    best_sim = db.session.execute(
-        _text("""SELECT confidence_scores FROM customer_visits WHERE customer_id=:cid
-                 AND confidence_scores IS NOT NULL ORDER BY detected_at DESC LIMIT 20"""),
-        {'cid': cid}
-    ).fetchall()
-    import json as _json
-    max_face_sim = 0.0
-    for (scores_str,) in best_sim:
-        try:
-            scores = _json.loads(scores_str)
-            sim = float(scores.get('face_similarity', 0) or 0)
-            if sim > max_face_sim:
-                max_face_sim = sim
-        except Exception:
-            pass
+        # 100% if seen today, linear decay, 0% after 30 days
+        recency_score = max(0.0, 1.0 - last_visit_days / 30.0)
 
     return jsonify({
         'customer_id': cid,
         'name': c.name or c.customer_number,
         'scores': {
-            'Face angles':   min(1.0, face_angles / 5.0),        # 5 angles = full
-            'Face photo':    1.0 if has_face_photo else 0.0,
-            'Body snapshot': 1.0 if has_body_photo else 0.0,
-            'Gait':          1.0 if has_gait else 0.0,
-            'Attributes':    attrs_filled / attrs_total if attrs_total else 0.0,
-            'Visit history': visit_score,
-            'ID confidence': max_face_sim,
+            'Identity':    identity_score,
+            'Recognition': max_face_sim,
+            'Attributes':  attrs_filled / attrs_total,
+            'Plate':       1.0 if has_plate else 0.0,
+            'Named':       1.0 if is_named else 0.0,
+            'Purchasing':  purchase_score,
+            'Regularity':  regularity_score,
+            'Recency':     recency_score,
         },
         'details': {
-            'face_angles':  face_angles,
-            'attrs_filled': attrs_filled,
-            'attrs_total':  attrs_total,
-            'visit_count':  visit_count,
+            'face_angles':     face_angles,
+            'best_face_sim':   round(max_face_sim * 100, 1),
+            'attrs_filled':    attrs_filled,
+            'attrs_total':     attrs_total,
+            'has_plate':       has_plate,
+            'is_named':        is_named,
+            'purchase_count':  purchase_count,
+            'visit_count':     visit_count,
+            'distinct_days':   distinct_days,
             'last_visit_days': last_visit_days,
-            'best_face_sim': round(max_face_sim * 100, 1),
         }
     })
 

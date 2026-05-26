@@ -5565,20 +5565,19 @@ function drawRadarChart(canvasId, scores, color) {
     ctx.fill();
   }
 
-  // Labels
-  ctx.font = '11px system-ui, sans-serif';
-  ctx.fillStyle = '#495057';
+  // Labels — adaptive font size so longer names fit
+  const lineH = 12;
   ctx.textAlign = 'center';
   for (let i = 0; i < N; i++) {
     const a = startAngle + i * angleStep;
-    const lx = cx + Math.cos(a) * (R + 16);
-    const ly = cy + Math.sin(a) * (R + 16);
+    const lx = cx + Math.cos(a) * (R + 18);
+    const ly = cy + Math.sin(a) * (R + 18);
     const pct = Math.round(values[i] * 100);
     const label = labels[i];
-    // Multi-line: label on top, % below
-    const lineH = 12;
+    ctx.font = '10px system-ui, sans-serif';
     ctx.fillStyle = '#495057';
     ctx.fillText(label, lx, ly - 2);
+    ctx.font = 'bold 10px system-ui, sans-serif';
     ctx.fillStyle = pct >= 80 ? '#198754' : pct >= 40 ? '#fd7e14' : '#dc3545';
     ctx.fillText(pct + '%', lx, ly + lineH);
   }
@@ -5829,9 +5828,12 @@ async function openCustomerDetail(customerId) {
         }).join('')}
       </div>
       <div class="text-muted text-center mt-1" style="font-size:.7rem">
-        ${radar.details.face_angles} face angle${radar.details.face_angles!==1?'s':''} stored ·
+        ${radar.details.face_angles} angle${radar.details.face_angles!==1?'s':''} ·
         ${radar.details.attrs_filled}/${radar.details.attrs_total} attributes ·
-        best ID ${radar.details.best_face_sim}%
+        ID ${radar.details.best_face_sim}% ·
+        ${radar.details.purchase_count} purchase${radar.details.purchase_count!==1?'s':''} ·
+        ${radar.details.distinct_days} day${radar.details.distinct_days!==1?'s':''} ·
+        ${radar.details.last_visit_days !== null ? radar.details.last_visit_days + 'd ago' : 'never'}
       </div>
     </div>` : '';
 
