@@ -5968,46 +5968,15 @@ async function pollActiveCustomer() {
 function showCustomerBadge(name, customer_number) {
   const container = document.getElementById('customer-badge-container');
   if (!container) return;
-  const cid = STATE.activeCustomer?.customer_id;
   const displayName = name || customer_number || 'Unknown customer';
-  const isUnnamed = !name;
 
   container.innerHTML = `
     <div class="alert alert-info d-flex align-items-center gap-2 mb-0 py-2 px-3">
       <span class="fw-semibold">${displayName}</span>
-      ${isUnnamed && cid ? `<button class="btn btn-sm btn-outline-primary py-0" onclick="openNameCustomerModal(${cid})">Name</button>` : ''}
       <button class="btn btn-sm btn-outline-secondary py-0 ms-auto" onclick="clearActiveCustomer()">✕</button>
     </div>
   `;
 }
-
-function openNameCustomerModal(customerId) {
-  document.getElementById('name-customer-id').value = customerId;
-  document.getElementById('name-customer-input').value = '';
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('nameCustomerModal')).show();
-  setTimeout(() => document.getElementById('name-customer-input').focus(), 300);
-}
-
-document.getElementById('btn-save-customer-name')?.addEventListener('click', async () => {
-  const cid  = document.getElementById('name-customer-id').value;
-  const name = document.getElementById('name-customer-input').value.trim();
-  if (!name) return;
-  try {
-    await api(`/api/customers/${cid}/name`, { method: 'POST', body: JSON.stringify({ name }) });
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('nameCustomerModal')).hide();
-    toast(`Customer named "${name}"`, 'success');
-    // Update the badge immediately
-    if (STATE.activeCustomer) {
-      STATE.activeCustomer.name = name;
-      showCustomerBadge(name, STATE.activeCustomer.customer_number);
-    }
-    await loadCustomers();
-  } catch(e) { toast(e.message, 'danger'); }
-});
-
-document.getElementById('name-customer-input')?.addEventListener('keydown', e => {
-  if (e.key === 'Enter') document.getElementById('btn-save-customer-name')?.click();
-});
 
 function clearActiveCustomer() {
   STATE.activeCustomer = null;
