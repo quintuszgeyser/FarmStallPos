@@ -5307,6 +5307,10 @@ async function loadCustomers() {
 function renderCustomersList() {
   const container = document.getElementById('customers-list');
   if (!container) return;
+
+  // Preserve checked state across re-renders
+  const checkedIds = new Set([...document.querySelectorAll('.merge-check:checked')].map(cb => cb.dataset.id));
+
   if (!STATE.customers.length) {
     container.innerHTML = '<div class="text-muted">No customers enrolled yet.</div>';
     return;
@@ -5373,6 +5377,14 @@ function renderCustomersList() {
   `).join('');
 
   container.innerHTML = toolbarHtml + cardsHtml;
+
+  // Restore previously checked customers
+  if (checkedIds.size) {
+    document.querySelectorAll('.merge-check').forEach(cb => {
+      if (checkedIds.has(cb.dataset.id)) cb.checked = true;
+    });
+    updateMergeToolbar();
+  }
 }
 
 function updateMergeToolbar() {
