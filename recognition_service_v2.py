@@ -328,8 +328,14 @@ def adjacent_height_category(cat_a, cat_b):
 
 # ─── Feature Extraction with Quality Gates ─────────────────────────────────
 
-def extract_face_with_quality(image_path):
-    """Returns (embedding_bytes, quality_score, photo_bytes) or (None, 0.0, None)"""
+def extract_face_with_quality(image_path, person_box=None):
+    """Returns (embedding_bytes, quality_score, photo_bytes) or (None, 0.0, None)
+
+    person_box: normalised [x1,y1,x2,y2] from Frigate (0-1). When provided,
+    the image is cropped to the head region (top 35% of the box, expanded by
+    20%) before running face detection. This is critical when the camera sees
+    the full body — the face would otherwise be too small for SCRFD to detect.
+    """
     try:
         import cv2
         face_app = get_face_app()
@@ -339,6 +345,27 @@ def extract_face_with_quality(image_path):
         img = cv2.imread(image_path)
         if img is None:
             return None, 0.0, None
+
+        h, w = img.shape[:2]
+
+        # Crop to head region when a person bounding box is available
+        if person_box and len(person_box) == 4:
+            bx1, by1, bx2, by2 = person_box
+            box_h = by2 - by1
+            # Head is roughly top 35% of the person box
+            head_y1 = by1
+            head_y2 = by1 + box_h * 0.35
+            # Expand by 20% in all directions so we don't clip the face
+            pad_x = (bx2 - bx1) * 0.20
+            pad_y = box_h * 0.20
+            cx1 = max(0.0, bx1 - pad_x)
+            cy1 = max(0.0, head_y1 - pad_y)
+            cx2 = min(1.0, bx2 + pad_x)
+            cy2 = min(1.0, head_y2 + pad_y)
+            px1, py1, px2, py2 = int(cx1*w), int(cy1*h), int(cx2*w), int(cy2*h)
+            if px2 > px1 and py2 > py1:
+                img = img[py1:py2, px1:px2]
+                logger.debug(f'Face crop: box={[round(x,2) for x in person_box]} → head region {px1},{py1}-{px2},{py2} ({px2-px1}×{py2-py1}px)')
 
         results = face_app.get_with_quality(img)
         if not results:
@@ -614,7 +641,10 @@ def extract_all_signals_with_quality(event):
                 signals['plate_quality'] = plate_qual
 
         if label == 'person':
-            face_emb, face_qual, face_photo = extract_face_with_quality(snapshot_path)
+            # Pass Frigate's normalised person bounding box so face extraction
+            # can crop to just the head region (face is tiny in full-body shots)
+            person_box = (event.get('data') or {}).get('box')
+            face_emb, face_qual, face_photo = extract_face_with_quality(snapshot_path, person_box)
             if face_emb:
                 signals['face_embedding'] = face_emb
                 signals['face_quality'] = face_qual
