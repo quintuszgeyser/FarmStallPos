@@ -525,7 +525,7 @@ def extract_height_category(landmarks, img_shape):
     except Exception as e:
         return None, 0.0
 
-def extract_physical_attributes(image_path):
+def extract_physical_attributes(image_path, person_box=None):
     """Extract physical attributes with confidence"""
     try:
         import cv2
@@ -538,7 +538,20 @@ def extract_physical_attributes(image_path):
         if img is None:
             return None
 
-        # Get face detection
+        # Use full image for body measurements (gait/height need full body)
+        # but crop to person box so MediaPipe doesn't try to analyse the whole scene
+        if person_box and len(person_box) == 4:
+            h, w = img.shape[:2]
+            bx1, by1, bx2, by2 = person_box
+            pad = (bx2 - bx1) * 0.05
+            px1 = max(0, int((bx1 - pad) * w))
+            py1 = max(0, int((by1 - pad) * h))
+            px2 = min(w, int((bx2 + pad) * w))
+            py2 = min(h, int((by2 + pad) * h))
+            if px2 > px1 and py2 > py1:
+                img = img[py1:py2, px1:px2]
+
+        # Get face detection on the (cropped) image
         faces = face_app.detector.detect(img, input_size=(640, 640))
         if len(faces[0]) == 0:
             return None
@@ -676,7 +689,7 @@ def extract_all_signals_with_quality(event):
                 signals['gait_features'] = gait_feat
                 signals['gait_quality'] = gait_qual
 
-            physical = extract_physical_attributes(snapshot_path)
+            physical = extract_physical_attributes(snapshot_path, person_box)
             if physical:
                 signals['physical_attrs'] = physical
 
