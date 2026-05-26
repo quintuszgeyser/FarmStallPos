@@ -2518,6 +2518,26 @@ def api_customers_delete(cid):
     db.session.commit()
     return jsonify({'ok': True})
 
+@app.route('/api/customers/<int:cid>/delete_permanent', methods=['POST'])
+def api_customers_delete_permanent(cid):
+    """Permanently delete a customer and all associated data."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    from sqlalchemy import text as _text
+    try:
+        # Delete all associated data
+        for tbl in ['customer_physical_attributes', 'customer_faces', 'customer_gaits',
+                    'customer_visits', 'customer_plates']:
+            db.session.execute(_text(f'DELETE FROM {tbl} WHERE customer_id = :cid'), {'cid': cid})
+        # Unlink sales (keep the sale, just remove the customer link)
+        db.session.execute(_text('UPDATE sales SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
+        db.session.execute(_text('DELETE FROM customers WHERE id = :cid'), {'cid': cid})
+        db.session.commit()
+        return jsonify({'ok': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/customers/<int:cid>/profile', methods=['GET'])
 def api_customer_profile(cid):
     """Comprehensive customer analytics profile."""

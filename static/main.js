@@ -5436,9 +5436,10 @@ async function openCustomerDetail(customerId) {
     '<div class="text-center text-muted py-4">Loading...</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
 
-  const [attrs, visits] = await Promise.all([
+  const [attrs, visits, profile] = await Promise.all([
     api(`/api/customers/${c.id}/attributes`).catch(() => null),
     api(`/api/customers/${c.id}/visits`).catch(() => []),
+    api(`/api/customers/${c.id}/profile`).catch(() => null),
   ]);
 
   // ── Photo + identity signals ──────────────────────────────────
@@ -5566,6 +5567,94 @@ async function openCustomerDetail(customerId) {
     visitsHtml = '<div class="text-muted small">No visits recorded yet.</div>';
   }
 
+  // ── Business intelligence ─────────────────────────────────────
+  let bizHtml = '';
+  if (profile) {
+    const p = profile;
+    const fmtR = n => `R${fmt(n || 0)}`;
+    const fmtDwell = s => s > 0 ? (s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.round(s)}s`) : '—';
+
+    // Key stats row
+    const firstSeen = p.first_seen ? new Date(p.first_seen).toLocaleDateString('en-ZA') : '—';
+    const purchaseVisits = (p.recent_sessions || []).filter(s => s.purchase_made).length;
+    const totalVisits = (p.recent_sessions || []).length;
+    const buyRate = totalVisits > 0 ? Math.round(purchaseVisits / totalVisits * 100) : null;
+
+    bizHtml = `
+    <div class="row g-2 mb-3">
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Total Spent</div>
+        <div class="fw-bold text-success">${fmtR(p.total_spent)}</div>
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Avg Basket</div>
+        <div class="fw-bold">${fmtR(p.avg_basket)}</div>
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Buy Rate</div>
+        <div class="fw-bold ${buyRate >= 50 ? 'text-success' : 'text-warning'}">${buyRate !== null ? buyRate + '%' : '—'}</div>
+      </div></div>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Visits</div>
+        <div class="fw-bold">${p.visit_count || 0}</div>
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Avg Dwell</div>
+        <div class="fw-bold">${fmtDwell(p.avg_dwell_seconds)}</div>
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">First Seen</div>
+        <div class="fw-bold" style="font-size:12px">${firstSeen}</div>
+      </div></div>
+    </div>`;
+
+    // Favourite products
+    if (p.top_products && p.top_products.length) {
+      bizHtml += `<div class="mb-3">
+        <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Favourite Products</div>
+        <table class="table table-sm table-borderless mb-0">
+          <tbody>${p.top_products.slice(0,5).map(prod => `
+            <tr>
+              <td class="small">${prod.name}</td>
+              <td class="small text-muted text-end">${prod.count}× bought</td>
+              <td class="small text-success text-end fw-semibold">R${fmt(prod.total_spent)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    } else {
+      bizHtml += `<div class="text-muted small mb-3">No purchase history yet.</div>`;
+    }
+
+    // Last 3 receipts
+    const recentReceipts = (p.receipts || []).sort((a,b) => b.date_time.localeCompare(a.date_time)).slice(0,3);
+    if (recentReceipts.length) {
+      bizHtml += `<div class="mb-3">
+        <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Recent Purchases</div>`;
+      recentReceipts.forEach(r => {
+        const dt = new Date(r.date_time);
+        bizHtml += `<div class="border rounded px-2 py-1 mb-1 small">
+          <div class="d-flex justify-content-between">
+            <span class="text-muted">${dt.toLocaleDateString('en-ZA')} ${dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
+            <span class="fw-semibold text-success">R${fmt(r.total)}</span>
+          </div>
+          <div class="text-muted" style="font-size:11px">${r.items.map(i => `${i.product_name} ×${i.qty % 1 === 0 ? i.qty : i.qty.toFixed(1)}`).join(', ')}</div>
+        </div>`;
+      });
+      bizHtml += `</div>`;
+    }
+  }
+
+  // ── Delete button ─────────────────────────────────────────────
+  const deleteBtn = `<div class="mt-3 pt-2 border-top">
+    <button class="btn btn-outline-danger btn-sm" onclick="deleteCustomer(${c.id}, '${(c.name || c.customer_number || 'this customer').replace(/'/g, '')}')">
+      Delete Customer
+    </button>
+    <span class="text-muted small ms-2">Removes all biometric data and visit history permanently.</span>
+  </div>`;
+
   // ── Assemble ──────────────────────────────────────────────────
   document.getElementById('customerDetailBody').innerHTML = `
     <div class="d-flex gap-3 mb-3 align-items-start">
@@ -5574,16 +5663,17 @@ async function openCustomerDetail(customerId) {
         <div class="fw-semibold fs-5 mb-1">${c.name || '<span class="text-muted fst-italic">Unnamed</span>'}</div>
         <div class="mb-1">${signalBadges}</div>
         <div class="text-muted small">
-          ${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}
-          ${c.last_visit ? ' · last ' + new Date(c.last_visit).toLocaleDateString() : ''}
-          ${c.phone ? ' · ' + c.phone : ''}
+          ${c.phone ? c.phone + ' · ' : ''}
+          ${c.last_visit ? 'Last seen ' + new Date(c.last_visit).toLocaleDateString('en-ZA') : 'Never purchased'}
         </div>
       </div>
     </div>
     <hr class="my-2">
-    ${attrsHtml}
+    ${bizHtml}
+    ${attrsHtml ? '<hr class="my-2">' + attrsHtml : ''}
     <hr class="my-2">
-    ${visitsHtml}`;
+    ${visitsHtml}
+    ${deleteBtn}`;
 }
 
 async function openCustomerEnroll(customerId) {
@@ -5665,7 +5755,18 @@ function addPlateBadge(plate) {
   platesList.appendChild(badge);
 }
 
-document.getElementById('btn-add-customer')?.addEventListener('click', () => openCustomerEnroll(null));
+async function deleteCustomer(customerId, name) {
+  if (!confirm(`Permanently delete "${name}"?\n\nThis removes all biometric data, visit history and recognition data. This cannot be undone.`)) return;
+  try {
+    await api(`/api/customers/${customerId}/delete_permanent`, { method: 'POST' });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).hide();
+    toast(`${name} deleted`, 'warning');
+    await loadCustomers();
+  } catch(e) {
+    toast(e.message, 'danger');
+  }
+}
+
 document.getElementById('btn-refresh-customers')?.addEventListener('click', async () => {
   const btn = document.getElementById('btn-refresh-customers');
   btn.disabled = true;
