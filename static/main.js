@@ -5917,13 +5917,47 @@ async function loadMergeSuggestions() {
       panel.classList.add('hidden');
       return;
     }
+
+    // Auto-merge pairs ≥ 95% similar — identical embedding, no ambiguity
+    const AUTO_MERGE_THRESHOLD = 0.95;
+    const autoMerge = suggestions.filter(s => s.similarity >= AUTO_MERGE_THRESHOLD);
+    const manual    = suggestions.filter(s => s.similarity <  AUTO_MERGE_THRESHOLD);
+
+    for (const s of autoMerge) {
+      // Primary = more visits (or customer_a if tied)
+      const primary = s.customer_a.visit_count >= s.customer_b.visit_count
+        ? s.customer_a : s.customer_b;
+      const duplicate = primary.id === s.customer_a.id ? s.customer_b : s.customer_a;
+      try {
+        await api('/api/customers/merge', {
+          method: 'POST',
+          body: JSON.stringify({ primary_id: primary.id, merge_ids: [duplicate.id] })
+        });
+        toast(
+          `Auto-merged ${duplicate.name || duplicate.customer_number} → ${primary.name || primary.customer_number} (${Math.round(s.similarity * 100)}% match)`,
+          'success', 5000
+        );
+      } catch(e) {
+        toast(`Auto-merge failed: ${e.message}`, 'danger');
+      }
+    }
+
+    if (autoMerge.length) await loadCustomers();
+
+    // Show manual review panel for lower-confidence pairs
+    if (!manual.length) {
+      panel.innerHTML = '';
+      panel.classList.add('hidden');
+      return;
+    }
+
     panel.classList.remove('hidden');
     panel.innerHTML = `
       <div class="alert alert-warning py-2 mb-2">
-        <strong>${suggestions.length} likely duplicate${suggestions.length > 1 ? 's' : ''} detected</strong>
+        <strong>${manual.length} possible duplicate${manual.length > 1 ? 's' : ''} — review needed</strong>
         <span class="text-muted small ms-2">Click a pair to merge.</span>
       </div>
-      ${suggestions.map(s => `
+      ${manual.map(s => `
         <div class="border rounded px-3 py-2 mb-2 d-flex align-items-center gap-3 bg-warning-subtle"
              style="cursor:pointer" onclick="openMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id})">
           <div class="d-flex gap-2 flex-shrink-0">
@@ -5939,7 +5973,7 @@ async function loadMergeSuggestions() {
           </div>
           <span class="badge bg-warning text-dark">${Math.round(s.similarity * 100)}% similar</span>
         </div>`).join('')}`;
-  } catch(e) { /* silently fail — suggestions are optional */ }
+  } catch(e) { /* silently fail */ }
 }
 
 function openMergeSuggestion(idA, idB) {
