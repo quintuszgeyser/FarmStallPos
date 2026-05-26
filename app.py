@@ -2849,16 +2849,26 @@ def api_customers_enroll_face(cid):
     body_photo_bytes = base64.b64decode(body_photo_b64) if body_photo_b64 else None
 
     if snapshot_only:
-        # Gait-only customer — store body snapshot for display but don't
-        # deactivate existing embeddings or make this row active for matching.
-        existing_with_body = CustomerFace.query.filter_by(customer_id=cid).filter(
-            CustomerFace.body_photo != None
-        ).first()
-        if not existing_with_body and (photo_bytes or body_photo_bytes):
-            db.session.add(CustomerFace(
-                customer_id=cid, embedding=embedding_bytes,
-                photo=photo_bytes, body_photo=body_photo_bytes, active=False
-            ))
+        # Store/update body snapshot for display without affecting matching embeddings.
+        # Since we now crop to the person bounding box, every snapshot has the person
+        # in it — always update to the latest so the photo stays current.
+        new_area = float(data.get('snapshot_area', 0.0))
+        existing_body_row = (CustomerFace.query
+                             .filter_by(customer_id=cid)
+                             .filter(CustomerFace.body_photo != None)
+                             .order_by(CustomerFace.enrolled_at.desc())
+                             .first())
+        if body_photo_bytes:
+            if not existing_body_row:
+                db.session.add(CustomerFace(
+                    customer_id=cid, embedding=embedding_bytes,
+                    photo=photo_bytes, body_photo=body_photo_bytes, active=False
+                ))
+            else:
+                # Always update — person is always in frame now (bounding box crop)
+                existing_body_row.body_photo = body_photo_bytes
+                if photo_bytes:
+                    existing_body_row.photo = photo_bytes
             db.session.commit()
     else:
         CustomerFace.query.filter_by(customer_id=cid).update({'active': False})

@@ -680,21 +680,33 @@ def extract_all_signals_with_quality(event):
             if physical:
                 signals['physical_attrs'] = physical
 
-            # If no face photo was captured, store a small thumbnail of the
-            # Frigate snapshot so gait-only customers have a visible image
-            # in the UI to help with merge decisions.
-            if not signals.get('face_photo'):
-                try:
-                    import cv2
-                    snap = cv2.imread(snapshot_path)
-                    if snap is not None:
-                        h, w = snap.shape[:2]
-                        scale = 400.0 / max(h, w)
-                        thumb = cv2.resize(snap, (int(w*scale), int(h*scale)))
-                        _, jpeg_buf = cv2.imencode('.jpg', thumb, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            # Always capture a body crop using Frigate's person bounding box.
+            # This ensures the person is actually in the photo (not the whole scene).
+            # Crop is padded 5% so we don't clip limbs at the edges.
+            try:
+                import cv2
+                snap = cv2.imread(snapshot_path)
+                if snap is not None and person_box and len(person_box) == 4:
+                    sh, sw = snap.shape[:2]
+                    bx1, by1, bx2, by2 = person_box
+                    pad_x = (bx2 - bx1) * 0.05
+                    pad_y = (by2 - by1) * 0.05
+                    px1 = max(0, int((bx1 - pad_x) * sw))
+                    py1 = max(0, int((by1 - pad_y) * sh))
+                    px2 = min(sw, int((bx2 + pad_x) * sw))
+                    py2 = min(sh, int((by2 + pad_y) * sh))
+                    if px2 > px1 and py2 > py1:
+                        body_crop = snap[py1:py2, px1:px2]
+                        # Scale so longer edge is 400px
+                        ch, cw = body_crop.shape[:2]
+                        scale = 400.0 / max(ch, cw)
+                        body_crop = cv2.resize(body_crop, (int(cw*scale), int(ch*scale)),
+                                               interpolation=cv2.INTER_LINEAR)
+                        _, jpeg_buf = cv2.imencode('.jpg', body_crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
                         signals['snapshot_photo'] = jpeg_buf.tobytes()
-                except Exception:
-                    pass
+                        signals['snapshot_area'] = (bx2 - bx1) * (by2 - by1)  # for quality comparison
+            except Exception as e:
+                logger.debug(f'Body crop error: {e}')
 
         return signals
 
@@ -1187,13 +1199,15 @@ def _improve_customer_profile(customer_id, signals):
                     payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
                 pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
 
-        # --- Body snapshot: always update — gives visual even when face not detected ---
-        if has_snapshot and not has_face_embedding:
-            # Only face-less visits need the snapshot update path
+        # --- Body snapshot: update whenever we have one, keeping the best ---
+        # "Best" = largest person bounding box area (person fills most of the crop)
+        if has_snapshot:
+            new_area = float(signals.get('snapshot_area', 0.0))
             pos_post(f'/api/customers/{customer_id}/enroll/face', {
                 'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
                 'quality': 0.0,
                 'body_photo_b64': base64.b64encode(signals['snapshot_photo']).decode(),
+                'snapshot_area': new_area,
                 'snapshot_only': True,
             })
 
