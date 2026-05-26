@@ -2741,31 +2741,51 @@ def api_customers_merge():
             db.session.execute(_text('UPDATE customers SET active = FALSE, merged_into = :pid WHERE id = :sid'), {'pid': primary_id, 'sid': mid})
             merged_count += 1
 
-        # After all merges: keep only the best face on the primary.
-        # "Best" = active face row with the largest photo (biggest JPEG = sharpest crop).
-        # Keep that one active, deactivate the rest. All embeddings stay for matching.
-        best = db.session.execute(_text('''
-            SELECT id FROM customer_faces
-            WHERE customer_id = :pid AND active = TRUE AND photo IS NOT NULL
-            ORDER BY length(photo) DESC LIMIT 1
-        '''), {'pid': primary_id}).fetchone()
-        if best:
-            db.session.execute(_text('''
-                UPDATE customer_faces SET active = FALSE
-                WHERE customer_id = :pid AND id != :best_id
-            '''), {'pid': primary_id, 'best_id': best[0]})
-        # If no face has a photo, just keep the most recent active one
-        else:
-            recent = db.session.execute(_text('''
-                SELECT id FROM customer_faces
-                WHERE customer_id = :pid AND active = TRUE
-                ORDER BY enrolled_at DESC LIMIT 1
-            '''), {'pid': primary_id}).fetchone()
-            if recent:
+        # After all merges: compute a centroid embedding from all active face rows,
+        # paired with the best available photo (largest JPEG = sharpest crop).
+        # The centroid is the L2-normalised mean of all embeddings — it represents
+        # the "average appearance" across captures and matches better than any single one.
+        import numpy as np, base64 as _b64
+        face_rows = db.session.execute(_text('''
+            SELECT id, embedding, photo FROM customer_faces
+            WHERE customer_id = :pid AND active = TRUE
+        '''), {'pid': primary_id}).fetchall()
+
+        if face_rows:
+            # Decode all embeddings (each is 2048 bytes = 512 float32 values)
+            embeddings = []
+            for row in face_rows:
+                emb = np.frombuffer(row[1], dtype=np.float32)
+                if emb.shape == (512,):
+                    embeddings.append(emb)
+
+            # Best photo = largest JPEG among rows that have one
+            best_photo = None
+            for row in sorted(face_rows, key=lambda r: len(r[2]) if r[2] else 0, reverse=True):
+                if row[2]:
+                    best_photo = row[2]
+                    break
+
+            if embeddings:
+                # Compute centroid and L2-normalise
+                centroid = np.mean(embeddings, axis=0).astype(np.float32)
+                norm = np.linalg.norm(centroid)
+                if norm > 0:
+                    centroid /= norm
+                centroid_bytes = centroid.tobytes()
+
+                # Deactivate all existing face rows
                 db.session.execute(_text('''
                     UPDATE customer_faces SET active = FALSE
-                    WHERE customer_id = :pid AND id != :keep_id
-                '''), {'pid': primary_id, 'keep_id': recent[0]})
+                    WHERE customer_id = :pid
+                '''), {'pid': primary_id})
+
+                # Insert new centroid row as the single active face
+                db.session.execute(_text('''
+                    INSERT INTO customer_faces (customer_id, embedding, photo, enrolled_at, active)
+                    VALUES (:pid, :emb, :photo, NOW(), TRUE)
+                '''), {'pid': primary_id, 'emb': centroid_bytes, 'photo': best_photo})
+                app.logger.info(f'Merge [{primary_id}]: centroid from {len(embeddings)} embeddings, photo={best_photo is not None}')
 
         db.session.commit()
         return jsonify({'ok': True, 'merged': merged_count})
