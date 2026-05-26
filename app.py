@@ -2692,6 +2692,61 @@ def api_customer_visits(cid):
         })
     return jsonify(result)
 
+@app.route('/api/customers/merge_suggestions', methods=['GET'])
+def api_customers_merge_suggestions():
+    """Compare all active face embeddings pairwise and return pairs that are
+    likely the same person (cosine similarity above merge_suggest_min_sim)."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    import numpy as np, base64 as _b64
+    min_sim = float(get_setting('merge_suggest_min_sim', 0.55) or 0.55)
+
+    # Load one embedding per active customer (the active face row)
+    customers = Customer.query.filter_by(active=True).all()
+    embeddings = {}
+    for c in customers:
+        row = CustomerFace.query.filter_by(customer_id=c.id, active=True).first()
+        if row and len(row.embedding) == 2048:
+            emb = np.frombuffer(row.embedding, dtype=np.float32)
+            norm = np.linalg.norm(emb)
+            if norm > 0:
+                embeddings[c.id] = (emb / norm, c)
+
+    cids = list(embeddings.keys())
+    suggestions = []
+    for i in range(len(cids)):
+        for j in range(i + 1, len(cids)):
+            a_id, b_id = cids[i], cids[j]
+            a_emb, a_c = embeddings[a_id]
+            b_emb, b_c = embeddings[b_id]
+            sim = float(np.dot(a_emb, b_emb))
+            if sim >= min_sim:
+                suggestions.append({
+                    'similarity': round(sim, 3),
+                    'customer_a': {'id': a_c.id, 'customer_number': a_c.customer_number,
+                                   'name': a_c.name, 'visit_count': a_c.visit_count},
+                    'customer_b': {'id': b_c.id, 'customer_number': b_c.customer_number,
+                                   'name': b_c.name, 'visit_count': b_c.visit_count},
+                })
+    suggestions.sort(key=lambda x: x['similarity'], reverse=True)
+    return jsonify(suggestions)
+
+@app.route('/api/customers/<int:cid>/name', methods=['POST'])
+def api_customer_name(cid):
+    """Quick-name a customer from the till."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.json or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    c.name = name
+    db.session.commit()
+    return jsonify({'ok': True})
+
 @app.route('/api/customers/merge', methods=['POST'])
 def api_customers_merge():
     """Merge multiple customers into one primary customer.
@@ -5039,15 +5094,27 @@ def api_settings():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     if request.method == 'GET':
-        return jsonify({'markup_percent': float(get_setting('markup_percent', 20) or 20)})
+        return jsonify({
+            'markup_percent':        float(get_setting('markup_percent', 20) or 20),
+            'face_threshold':        float(get_setting('face_threshold', 0.35) or 0.35),
+            'link_threshold':        float(get_setting('link_threshold', 0.55) or 0.55),
+            'face_quality_min':      float(get_setting('face_quality_min', 0.15) or 0.15),
+            'merge_suggest_min_sim': float(get_setting('merge_suggest_min_sim', 0.55) or 0.55),
+        })
     data = request.json or {}
-    mp   = data.get('markup_percent')
-    try:
-        mp = float(mp)
-    except Exception:
-        return jsonify({'error': 'Invalid markup_percent'}), 400
-    set_setting('markup_percent', mp)
-    return jsonify({'ok': True})
+    saved = {}
+    for key, cast in [
+        ('markup_percent', float), ('face_threshold', float),
+        ('link_threshold', float), ('face_quality_min', float),
+        ('merge_suggest_min_sim', float),
+    ]:
+        if key in data:
+            try:
+                set_setting(key, cast(data[key]))
+                saved[key] = cast(data[key])
+            except Exception:
+                return jsonify({'error': f'Invalid {key}'}), 400
+    return jsonify({'ok': True, 'saved': saved})
 
 
 # -----------------------------

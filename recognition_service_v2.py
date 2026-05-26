@@ -35,14 +35,32 @@ POS_PASS        = os.environ.get('POS_PASS',    'admin123')
 FRIGATE_URL     = os.environ.get('FRIGATE_URL', 'http://127.0.0.1:8971')
 WEBHOOK_PORT    = int(os.environ.get('WEBHOOK_PORT', '8080'))
 
-# Model thresholds
-FACE_THRESHOLD  = 0.35  # Minimum cosine similarity for face match — real same-person scores ~0.35-0.55
+# Model thresholds — overridden at startup from POS settings (GET /api/settings)
+FACE_THRESHOLD  = 0.35  # Minimum cosine similarity for face match
 GAIT_THRESHOLD  = 0.25  # Maximum euclidean distance for gait match
 
 # Quality gates
-FACE_QUALITY_MIN = 0.15  # Minimum face quality — size threshold recalibrated for head crops
-GAIT_QUALITY_MIN = 0.45  # Lowered: mounted camera looking down scores lower than ideal
+FACE_QUALITY_MIN = 0.15  # Minimum face quality — recalibrated for head crops
+GAIT_QUALITY_MIN = 0.45  # Mounted camera looking down scores lower
 PLATE_CONF_MIN   = 0.8   # Minimum OCR confidence to use
+
+def reload_thresholds_from_pos():
+    """Pull face_threshold, link_threshold, face_quality_min from POS settings."""
+    global FACE_THRESHOLD, FACE_QUALITY_MIN
+    try:
+        settings = pos_get('/api/settings')
+        if isinstance(settings, dict):
+            if 'face_threshold' in settings:
+                FACE_THRESHOLD = float(settings['face_threshold'])
+            if 'face_quality_min' in settings:
+                FACE_QUALITY_MIN = float(settings['face_quality_min'])
+            # link_threshold lives in ThresholdManager — update it directly
+            if 'link_threshold' in settings:
+                _threshold_manager.global_thresholds['link'] = float(settings['link_threshold'])
+            logger.info(f'Thresholds reloaded: face={FACE_THRESHOLD}, quality_min={FACE_QUALITY_MIN}, '
+                        f'link={_threshold_manager.global_thresholds["link"]}')
+    except Exception as e:
+        logger.warning(f'Could not reload thresholds from POS: {e}')
 
 # Multi-embedding: keep this many best face embeddings per customer in the signals cache
 MAX_FACE_EMBEDDINGS = 3
@@ -298,6 +316,7 @@ def _cache_refresh_loop():
     while True:
         try:
             refresh_customers()
+            reload_thresholds_from_pos()
         except Exception as e:
             logger.warning(f'Cache refresh error: {e}')
         time.sleep(60)
@@ -1554,6 +1573,7 @@ if __name__ == '__main__':
 
     pos_login()
     refresh_customers()
+    reload_thresholds_from_pos()
 
     # Force a full signal cache rebuild on startup so embeddings are loaded
     # before any events are processed. refresh_customers() already invalidates

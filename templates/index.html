@@ -278,6 +278,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#suppliers">Suppliers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Recognition</button></li>
   </ul>
 
   <div id="tab-contents" class="tab-content hidden mt-3">
@@ -711,12 +712,61 @@
       </div>
     </div>
 
+    <!-- ═══════════════ RECOGNITION SETTINGS ═══════════════ -->
+    <div class="tab-pane fade" id="recognition-settings">
+      <h5 class="mb-3">Recognition Settings</h5>
+      <div class="row g-3" style="max-width:520px">
+        <div class="col-12">
+          <label class="form-label fw-semibold">Face match threshold <span class="text-muted fw-normal small">(min similarity to count as a match)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="set-face-threshold" min="0.1" max="0.9" step="0.05">
+            <span id="set-face-threshold-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Identity link threshold <span class="text-muted fw-normal small">(confidence needed to link a track to a customer)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="set-link-threshold" min="0.1" max="0.95" step="0.05">
+            <span id="set-link-threshold-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Face quality minimum <span class="text-muted fw-normal small">(lower = accepts blurrier/smaller faces)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="set-face-quality-min" min="0.05" max="0.5" step="0.05">
+            <span id="set-face-quality-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Duplicate suggestion threshold <span class="text-muted fw-normal small">(similarity needed to suggest a merge)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="set-merge-suggest-min" min="0.3" max="0.95" step="0.05">
+            <span id="set-merge-suggest-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary" id="btn-save-recognition-settings">Save Settings</button>
+          <span class="text-muted small ms-2">Changes take effect within 60 seconds (no restart needed).</span>
+        </div>
+      </div>
+    </div>
+
     <!-- ═══════════════ CUSTOMERS ═══════════════ -->
     <div class="tab-pane fade" id="customers">
-      <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="d-flex justify-content-between align-items-center mb-2">
         <h5 class="mb-0">Customers</h5>
-        <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-customers" title="Refresh">↻ Refresh</button>
+        <div class="d-flex gap-2 align-items-center">
+          <select id="customer-sort" class="form-select form-select-sm" style="width:160px">
+            <option value="last_visit">Last seen</option>
+            <option value="visit_count">Most visits</option>
+            <option value="name">Name</option>
+            <option value="no_purchase">Never purchased</option>
+          </select>
+          <button class="btn btn-outline-warning btn-sm" id="btn-merge-suggestions" title="Find duplicate customers">Duplicates?</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-customers" title="Refresh">↻ Refresh</button>
+        </div>
       </div>
+      <div id="merge-suggestions-panel" class="hidden mb-3"></div>
       <div id="customers-list"></div>
     </div>
 
@@ -779,6 +829,26 @@
           <button class="btn btn-secondary me-2" data-bs-dismiss="modal">Cancel</button>
           <button class="btn btn-primary" id="btn-save-customer">Save</button>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ NAME CUSTOMER MODAL ═══════════ -->
+<div class="modal fade" id="nameCustomerModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title">Name this customer</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="name-customer-id">
+        <input type="text" class="form-control" id="name-customer-input" placeholder="Customer name" autocomplete="off">
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary btn-sm" id="btn-save-customer-name">Save</button>
       </div>
     </div>
   </div>

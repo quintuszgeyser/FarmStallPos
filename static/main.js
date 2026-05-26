@@ -5310,6 +5310,18 @@ function renderCustomersList() {
     return;
   }
 
+  // Apply sort
+  const sort = document.getElementById('customer-sort')?.value || 'last_visit';
+  const sorted = [...STATE.customers].sort((a, b) => {
+    if (sort === 'last_visit')    return (b.last_visit || '') .localeCompare(a.last_visit || '');
+    if (sort === 'visit_count')   return (b.visit_count || 0) - (a.visit_count || 0);
+    if (sort === 'name')          return (a.name || 'zzz').localeCompare(b.name || 'zzz');
+    if (sort === 'no_purchase')   return (a.visit_count || 0) - (b.visit_count || 0); // fewest visits first
+    return 0;
+  });
+  // For no_purchase: only show customers with visits but no linked sales (we approximate by showing all, sorted by fewest visits)
+  STATE._sortedCustomers = sort === 'no_purchase' ? sorted : sorted;
+
   // Merge toolbar — shown when ≥2 checked
   const toolbarHtml = `
     <div id="merge-toolbar" class="d-none mb-2 p-2 bg-warning-subtle border rounded d-flex align-items-center gap-2">
@@ -5319,7 +5331,7 @@ function renderCustomersList() {
       <button class="btn btn-outline-secondary btn-sm" onclick="clearMergeSelection()">Cancel</button>
     </div>`;
 
-  const cardsHtml = STATE.customers.map(c => `
+  const cardsHtml = sorted.map(c => `
     <div class="card mb-2 ${c.active ? '' : 'opacity-50'}" data-customer-id="${c.id}">
       <div class="card-body py-2 d-flex align-items-center gap-2">
         <input type="checkbox" class="form-check-input merge-check flex-shrink-0" style="width:1.1rem;height:1.1rem"
@@ -5842,6 +5854,9 @@ document.getElementById('btn-deactivate-customer')?.addEventListener('click', as
   }
 });
 
+// Sort change re-renders without reloading
+document.getElementById('customer-sort')?.addEventListener('change', renderCustomersList);
+
 // Auto-refresh customers tab every 5 seconds while visible
 let _customerTabRefreshTimer = null;
 document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown.bs.tab', () => {
@@ -5851,6 +5866,78 @@ document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown
 });
 document.querySelector('[data-bs-target="#customers"]')?.addEventListener('hidden.bs.tab', () => {
   if (_customerTabRefreshTimer) { clearInterval(_customerTabRefreshTimer); _customerTabRefreshTimer = null; }
+});
+
+// ─── Merge Suggestions ───────────────────────────────────────
+document.getElementById('btn-merge-suggestions')?.addEventListener('click', async () => {
+  const panel = document.getElementById('merge-suggestions-panel');
+  if (!panel.classList.contains('hidden')) {
+    panel.classList.add('hidden'); panel.innerHTML = ''; return;
+  }
+  panel.innerHTML = '<div class="text-muted small p-2">Scanning for duplicates…</div>';
+  panel.classList.remove('hidden');
+  try {
+    const suggestions = await api('/api/customers/merge_suggestions');
+    if (!suggestions.length) {
+      panel.innerHTML = '<div class="alert alert-success py-2 small mb-0">No likely duplicates found at current threshold.</div>';
+      return;
+    }
+    panel.innerHTML = `
+      <div class="alert alert-warning py-2 mb-2">
+        <strong>${suggestions.length} possible duplicate${suggestions.length > 1 ? 's' : ''} found</strong>
+        <span class="text-muted small ms-2">Click a pair to open the merge flow.</span>
+      </div>
+      ${suggestions.map(s => `
+        <div class="border rounded px-3 py-2 mb-2 d-flex align-items-center gap-3 bg-warning-subtle"
+             style="cursor:pointer" onclick="openMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id})">
+          <div class="flex-grow-1">
+            <span class="fw-semibold">${s.customer_a.name || s.customer_a.customer_number}</span>
+            <span class="text-muted small ms-1">(${s.customer_a.visit_count} visits)</span>
+            <span class="mx-2 text-muted">↔</span>
+            <span class="fw-semibold">${s.customer_b.name || s.customer_b.customer_number}</span>
+            <span class="text-muted small ms-1">(${s.customer_b.visit_count} visits)</span>
+          </div>
+          <span class="badge bg-warning text-dark">${Math.round(s.similarity * 100)}% similar</span>
+        </div>`).join('')}`;
+  } catch(e) { panel.innerHTML = `<div class="text-danger small">${e.message}</div>`; }
+});
+
+function openMergeSuggestion(idA, idB) {
+  // Tick both checkboxes and open merge modal
+  document.querySelectorAll('.merge-check').forEach(cb => {
+    cb.checked = cb.dataset.id == idA || cb.dataset.id == idB;
+  });
+  updateMergeToolbar();
+  openMergeModal();
+}
+
+// ─── Recognition Settings Tab ────────────────────────────────
+document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', async () => {
+  try {
+    const s = await api('/api/settings');
+    const setSlider = (id, valId, val) => {
+      const el = document.getElementById(id);
+      const vEl = document.getElementById(valId);
+      if (el) { el.value = val; el.oninput = () => { if (vEl) vEl.textContent = parseFloat(el.value).toFixed(2); }; }
+      if (vEl) vEl.textContent = parseFloat(val).toFixed(2);
+    };
+    setSlider('set-face-threshold',  'set-face-threshold-val',  s.face_threshold);
+    setSlider('set-link-threshold',  'set-link-threshold-val',  s.link_threshold);
+    setSlider('set-face-quality-min','set-face-quality-val',    s.face_quality_min);
+    setSlider('set-merge-suggest-min','set-merge-suggest-val',  s.merge_suggest_min_sim);
+  } catch(e) { console.error('loadSettings', e); }
+});
+
+document.getElementById('btn-save-recognition-settings')?.addEventListener('click', async () => {
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      face_threshold:        parseFloat(document.getElementById('set-face-threshold')?.value),
+      link_threshold:        parseFloat(document.getElementById('set-link-threshold')?.value),
+      face_quality_min:      parseFloat(document.getElementById('set-face-quality-min')?.value),
+      merge_suggest_min_sim: parseFloat(document.getElementById('set-merge-suggest-min')?.value),
+    })});
+    toast('Settings saved — recognition will apply within 60 seconds', 'success', 4000);
+  } catch(e) { toast(e.message, 'danger'); }
 });
 
 // ═══════════════════════════════════════════════════════
@@ -5881,17 +5968,46 @@ async function pollActiveCustomer() {
 function showCustomerBadge(name, customer_number) {
   const container = document.getElementById('customer-badge-container');
   if (!container) return;
+  const cid = STATE.activeCustomer?.customer_id;
+  const displayName = name || customer_number || 'Unknown customer';
+  const isUnnamed = !name;
 
   container.innerHTML = `
-    <div class="alert alert-info d-inline-flex align-items-center mb-0 py-2 px-3">
-      <i class="bi bi-person-check me-2"></i>
-      <span class="me-3"><strong>${name}</strong></span>
-      <button class="btn btn-sm btn-outline-secondary" onclick="clearActiveCustomer()">
-        <i class="bi bi-x"></i> Clear
-      </button>
+    <div class="alert alert-info d-flex align-items-center gap-2 mb-0 py-2 px-3">
+      <span class="fw-semibold">${displayName}</span>
+      ${isUnnamed && cid ? `<button class="btn btn-sm btn-outline-primary py-0" onclick="openNameCustomerModal(${cid})">Name</button>` : ''}
+      <button class="btn btn-sm btn-outline-secondary py-0 ms-auto" onclick="clearActiveCustomer()">✕</button>
     </div>
   `;
 }
+
+function openNameCustomerModal(customerId) {
+  document.getElementById('name-customer-id').value = customerId;
+  document.getElementById('name-customer-input').value = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('nameCustomerModal')).show();
+  setTimeout(() => document.getElementById('name-customer-input').focus(), 300);
+}
+
+document.getElementById('btn-save-customer-name')?.addEventListener('click', async () => {
+  const cid  = document.getElementById('name-customer-id').value;
+  const name = document.getElementById('name-customer-input').value.trim();
+  if (!name) return;
+  try {
+    await api(`/api/customers/${cid}/name`, { method: 'POST', body: JSON.stringify({ name }) });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('nameCustomerModal')).hide();
+    toast(`Customer named "${name}"`, 'success');
+    // Update the badge immediately
+    if (STATE.activeCustomer) {
+      STATE.activeCustomer.name = name;
+      showCustomerBadge(name, STATE.activeCustomer.customer_number);
+    }
+    await loadCustomers();
+  } catch(e) { toast(e.message, 'danger'); }
+});
+
+document.getElementById('name-customer-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('btn-save-customer-name')?.click();
+});
 
 function clearActiveCustomer() {
   STATE.activeCustomer = null;
