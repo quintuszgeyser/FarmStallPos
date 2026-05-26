@@ -2922,7 +2922,7 @@ def api_customers_merge():
                 # Select up to MAX_EMBEDDINGS distinct-angle embeddings from all
                 # merged faces. Like building an iPhone fingerprint: keep each
                 # angle that covers new ground (cosine distance > MIN_DISTANCE).
-                MAX_EMBEDDINGS  = 5
+                MAX_EMBEDDINGS  = 10
                 MIN_DISTANCE    = 0.30
 
                 # Normalise all embeddings — keep original bytes for DB insert
@@ -3273,7 +3273,7 @@ def api_customer_faces_raw(cid):
     rows = (CustomerFace.query
             .filter_by(customer_id=cid, active=True)
             .order_by(CustomerFace.enrolled_at.desc())
-            .limit(5).all())
+            .limit(10).all())
     return jsonify([{'embedding_b64': _b64.b64encode(r.embedding).decode()} for r in rows])
 
 @app.route('/api/customers/<int:cid>/gaits_raw', methods=['GET'])

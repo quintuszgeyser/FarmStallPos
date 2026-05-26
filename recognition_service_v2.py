@@ -894,7 +894,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=15):
                 break
         if is_new:
             distinct_faces.append(cand)
-        if len(distinct_faces) >= 5:
+        if len(distinct_faces) >= 10:
             break
 
     logger.debug(f'Clip faces: {len(face_candidates)} candidates → {len(distinct_faces)} distinct angles')
