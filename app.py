@@ -2720,7 +2720,7 @@ def api_customers_merge():
                     visit_count = visit_count + :src_vc,
                     last_visit  = GREATEST(last_visit,  :src_lv),
                     first_seen  = LEAST(first_seen, :src_fs),
-                    name        = CASE WHEN name IS NULL AND :src_name IS NOT NULL THEN :src_name ELSE name END
+                    name        = CASE WHEN name IS NULL AND :src_name::VARCHAR IS NOT NULL THEN :src_name::VARCHAR ELSE name END
                 WHERE id = :pid
             '''), {
                 'pid': primary_id,
