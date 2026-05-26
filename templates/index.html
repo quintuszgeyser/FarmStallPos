@@ -776,6 +776,20 @@
           </style>
         </div>
         <div class="col-12">
+          <label class="form-label fw-semibold">Max face angles stored per customer <span class="text-muted fw-normal small">(more = better cross-camera matching, more storage)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="set-max-face-angles" min="3" max="40" step="1">
+            <span id="set-max-face-angles-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Min angle distance <span class="text-muted fw-normal small">(how different two embeddings must be to count as a new angle — lower = more angles stored)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="set-min-angle-dist" min="0.10" max="0.60" step="0.05">
+            <span id="set-min-angle-dist-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
           <button class="btn btn-primary" id="btn-save-recognition-settings">Save Settings</button>
           <span class="text-muted small ms-2">Changes take effect within 60 seconds (no restart needed).</span>
         </div>

@@ -3038,8 +3038,8 @@ def api_customers_merge():
                 # Select up to MAX_EMBEDDINGS distinct-angle embeddings from all
                 # merged faces. Like building an iPhone fingerprint: keep each
                 # angle that covers new ground (cosine distance > MIN_DISTANCE).
-                MAX_EMBEDDINGS  = 10
-                MIN_DISTANCE    = 0.30
+                MAX_EMBEDDINGS  = int(float(get_setting('max_face_angles', 24) or 24))
+                MIN_DISTANCE    = float(get_setting('min_angle_distance', 0.25) or 0.25)
 
                 # Normalise all embeddings — keep original bytes for DB insert
                 normed = []
@@ -3168,7 +3168,7 @@ def api_customers_enroll_face(cid):
         # re-presenting from new angles until full angular coverage is built up.
         import numpy as np
         MAX_EMBEDDINGS = 5          # max distinct angles to keep
-        MIN_DISTANCE   = 0.30       # min cosine distance to count as a new angle
+        MIN_DISTANCE   = float(get_setting('min_angle_distance', 0.25) or 0.25)
 
         new_emb = np.frombuffer(embedding_bytes, dtype=np.float32).copy()
         norm = np.linalg.norm(new_emb)
@@ -5405,6 +5405,8 @@ def api_settings():
             'face_quality_min':      float(get_setting('face_quality_min', 0.15) or 0.15),
             'merge_suggest_min_sim': float(get_setting('merge_suggest_min_sim', 0.55) or 0.55),
             'auto_merge_min_sim':    float(get_setting('auto_merge_min_sim',    0.95) or 0.95),
+            'max_face_angles':       int(float(get_setting('max_face_angles',   24) or 24)),
+            'min_angle_distance':    float(get_setting('min_angle_distance',    0.25) or 0.25),
         })
     data = request.json or {}
     saved = {}
@@ -5412,6 +5414,7 @@ def api_settings():
         ('markup_percent', float), ('face_threshold', float),
         ('link_threshold', float), ('face_quality_min', float),
         ('merge_suggest_min_sim', float), ('auto_merge_min_sim', float),
+        ('max_face_angles', int), ('min_angle_distance', float),
     ]:
         if key in data:
             try:

@@ -6202,6 +6202,8 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     setSlider('set-face-threshold',   'set-face-threshold-val',  s.face_threshold);
     setSlider('set-link-threshold',   'set-link-threshold-val',  s.link_threshold);
     setSlider('set-face-quality-min', 'set-face-quality-val',    s.face_quality_min);
+    setSlider('set-max-face-angles',  'set-max-face-angles-val', s.max_face_angles,  v => Math.round(v) + ' angles');
+    setSlider('set-min-angle-dist',   'set-min-angle-dist-val',  s.min_angle_distance, v => parseFloat(v).toFixed(2));
     // Merge dual slider
     initMergeSlider(s.merge_suggest_min_sim, s.auto_merge_min_sim ?? 0.95);
   } catch(e) { console.error('loadSettings', e); }
@@ -6217,6 +6219,8 @@ document.getElementById('btn-save-recognition-settings')?.addEventListener('clic
       face_quality_min:      parseFloat(document.getElementById('set-face-quality-min')?.value),
       merge_suggest_min_sim: reviewPct / 100,
       auto_merge_min_sim:    autoPct   / 100,
+      max_face_angles:       parseInt(document.getElementById('set-max-face-angles')?.value || 24),
+      min_angle_distance:    parseFloat(document.getElementById('set-min-angle-dist')?.value || 0.25),
     })});
     toast('Settings saved', 'success', 3000);
   } catch(e) { toast(e.message, 'danger'); }

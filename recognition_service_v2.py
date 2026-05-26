@@ -45,8 +45,8 @@ GAIT_QUALITY_MIN = 0.45  # Mounted camera looking down scores lower
 PLATE_CONF_MIN   = 0.8   # Minimum OCR confidence to use
 
 def reload_thresholds_from_pos():
-    """Pull face_threshold, link_threshold, face_quality_min from POS settings."""
-    global FACE_THRESHOLD, FACE_QUALITY_MIN
+    """Pull all tunable thresholds from POS settings."""
+    global FACE_THRESHOLD, FACE_QUALITY_MIN, MAX_FACE_EMBEDDINGS, MIN_ANGLE_DISTANCE
     try:
         settings = pos_get('/api/settings')
         if isinstance(settings, dict):
@@ -54,16 +54,23 @@ def reload_thresholds_from_pos():
                 FACE_THRESHOLD = float(settings['face_threshold'])
             if 'face_quality_min' in settings:
                 FACE_QUALITY_MIN = float(settings['face_quality_min'])
-            # link_threshold lives in ThresholdManager — update it directly
             if 'link_threshold' in settings:
                 _threshold_manager.global_thresholds['link'] = float(settings['link_threshold'])
+            if 'max_face_angles' in settings:
+                MAX_FACE_EMBEDDINGS = int(float(settings['max_face_angles']))
+            if 'min_angle_distance' in settings:
+                MIN_ANGLE_DISTANCE = float(settings['min_angle_distance'])
             logger.info(f'Thresholds reloaded: face={FACE_THRESHOLD}, quality_min={FACE_QUALITY_MIN}, '
-                        f'link={_threshold_manager.global_thresholds["link"]}')
+                        f'link={_threshold_manager.global_thresholds["link"]}, '
+                        f'max_angles={MAX_FACE_EMBEDDINGS}, min_dist={MIN_ANGLE_DISTANCE}')
     except Exception as e:
         logger.warning(f'Could not reload thresholds from POS: {e}')
 
-# Multi-embedding: keep this many best face embeddings per customer in the signals cache
-MAX_FACE_EMBEDDINGS = 3
+# Multi-embedding: keep this many distinct-angle embeddings per customer
+# Default = 24 for a 6-camera shop (6 cameras × ~4 meaningful angles each)
+# Configurable from POS Settings → Recognition tab without restart
+MAX_FACE_EMBEDDINGS = 24
+MIN_ANGLE_DISTANCE  = 0.25   # min cosine distance to count as a genuinely new angle
 
 # Versioning
 WEIGHTS_VERSION = "v2.0_production"
@@ -874,7 +881,6 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=15):
     # different from each other (cosine distance > 0.25) so each one covers
     # a new angle. The POS enroll/face endpoint also enforces this gate —
     # these are just the candidates we'll submit.
-    MIN_ANGLE_DISTANCE = 0.25
     face_candidates.sort(key=lambda x: x[0], reverse=True)  # best quality first
 
     distinct_faces = []  # [(quality, embedding_bytes, photo_bytes, attrs)]
