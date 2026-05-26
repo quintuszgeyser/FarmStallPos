@@ -5554,10 +5554,12 @@ def api_stats_drilldown():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
 
-    slice_type = request.args.get('type')   # day | hour | minute | product | user | range
-    slice_val  = request.args.get('value')  # ISO date, hour int, HH:MM, product_id, user_id
-    start_arg  = request.args.get('start')
-    end_arg    = request.args.get('end')
+    slice_type        = request.args.get('type')   # day | hour | minute | product | user | range
+    slice_val         = request.args.get('value')  # ISO date, hour int, HH:MM, product_id, user_id
+    start_arg         = request.args.get('start')
+    end_arg           = request.args.get('end')
+    user_id_filter    = request.args.get('user_id',    type=int)
+    product_id_filter = request.args.get('product_id', type=int)
 
     today = date.today()
     try:
@@ -5571,6 +5573,8 @@ def api_stats_drilldown():
         end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
 
     q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
+    if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
+    if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
 
     if slice_type == 'day' and slice_val:
         try:
@@ -5737,8 +5741,10 @@ def api_stats_drilldown_kitchen():
     """Return kitchen orders in the date range."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    start_arg = request.args.get('start')
-    end_arg   = request.args.get('end')
+    start_arg         = request.args.get('start')
+    end_arg           = request.args.get('end')
+    user_id_filter    = request.args.get('user_id',    type=int)
+    product_id_filter = request.args.get('product_id', type=int)
     today = date.today()
     try:
         start_dt = datetime.fromisoformat(start_arg) if start_arg else datetime(today.year, today.month, today.day)
@@ -5750,10 +5756,13 @@ def api_stats_drilldown_kitchen():
     except Exception:
         end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
 
-    orders = KitchenOrder.query.filter(
+    kq = KitchenOrder.query.filter(
         KitchenOrder.queued_at >= start_dt,
         KitchenOrder.queued_at <= end_dt
-    ).order_by(KitchenOrder.queued_at.desc()).all()
+    )
+    if user_id_filter:    kq = kq.filter(KitchenOrder.teller_id   == user_id_filter)
+    if product_id_filter: kq = kq.filter(KitchenOrder.product_id  == product_id_filter)
+    orders = kq.order_by(KitchenOrder.queued_at.desc()).all()
 
     uids = {o.teller_id for o in orders if o.teller_id}
     user_names = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
@@ -5783,8 +5792,10 @@ def api_stats_drilldown_writeoffs():
     """Return write-off adjustments in the date range."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    start_arg = request.args.get('start')
-    end_arg   = request.args.get('end')
+    start_arg         = request.args.get('start')
+    end_arg           = request.args.get('end')
+    user_id_filter    = request.args.get('user_id',    type=int)
+    product_id_filter = request.args.get('product_id', type=int)
     today = date.today()
     try:
         start_dt = datetime.fromisoformat(start_arg) if start_arg else datetime(today.year, today.month, today.day)
@@ -5796,11 +5807,14 @@ def api_stats_drilldown_writeoffs():
     except Exception:
         end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
 
-    writeoffs = StockAdjustment.query.filter(
+    wq = StockAdjustment.query.filter(
         StockAdjustment.adjustment_type == 'writeoff',
         StockAdjustment.adjusted_at >= start_dt,
         StockAdjustment.adjusted_at <= end_dt
-    ).order_by(StockAdjustment.adjusted_at.desc()).all()
+    )
+    if user_id_filter:    wq = wq.filter(StockAdjustment.user_id    == user_id_filter)
+    if product_id_filter: wq = wq.filter(StockAdjustment.product_id == product_id_filter)
+    writeoffs = wq.order_by(StockAdjustment.adjusted_at.desc()).all()
 
     pids  = {w.product_id for w in writeoffs}
     uids  = {w.user_id for w in writeoffs if w.user_id}
@@ -5826,8 +5840,10 @@ def api_stats_drilldown_profit():
     """Return per-product profit breakdown for the date range."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    start_arg = request.args.get('start')
-    end_arg   = request.args.get('end')
+    start_arg         = request.args.get('start')
+    end_arg           = request.args.get('end')
+    user_id_filter    = request.args.get('user_id',    type=int)
+    product_id_filter = request.args.get('product_id', type=int)
     today = date.today()
     try:
         start_dt = datetime.fromisoformat(start_arg) if start_arg else datetime(today.year, today.month, today.day)
@@ -5839,9 +5855,12 @@ def api_stats_drilldown_profit():
     except Exception:
         end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
 
-    rows = db.session.query(Sale).filter(
+    q = db.session.query(Sale).filter(
         Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False
-    ).all()
+    )
+    if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
+    if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
+    rows = q.all()
 
     sale_ids = list({r.sale_id for r in rows})
     consumptions = StockConsumption.query.filter(

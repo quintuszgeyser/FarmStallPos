@@ -3645,14 +3645,23 @@ function _renderDrilldownTransactions(data, opts = {}) {
   return html;
 }
 
+function _statsFilterParams() {
+  const start     = document.getElementById('stats-start')?.value || todayISO();
+  const end       = document.getElementById('stats-end')?.value   || todayISO();
+  const productId = document.getElementById('stats-product-filter')?.value || '';
+  const userId    = document.getElementById('stats-user-filter')?.value    || '';
+  const p = new URLSearchParams({ start, end });
+  if (productId) p.set('product_id', productId);
+  if (userId)    p.set('user_id',    userId);
+  return p;
+}
+
 async function openDrilldown(title, type, value, opts = {}) {
-  const start = document.getElementById('stats-start')?.value || todayISO();
-  const end   = document.getElementById('stats-end')?.value   || todayISO();
   document.getElementById('drilldown-title').textContent = title;
   document.getElementById('drilldown-body').innerHTML = '<div class="text-center text-muted p-3">Loading…</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
   try {
-    const params = new URLSearchParams({ start, end });
+    const params = _statsFilterParams();
     if (type && type !== 'range') { params.set('type', type); params.set('value', value ?? ''); }
     const data = await api(`/api/stats/drilldown?${params}`);
     if (!data.transactions?.length) {
@@ -3666,13 +3675,12 @@ async function openDrilldown(title, type, value, opts = {}) {
 }
 
 async function openSupplierDrilldown(supplierName) {
-  const start = document.getElementById('stats-start')?.value || todayISO();
-  const end   = document.getElementById('stats-end')?.value   || todayISO();
   document.getElementById('drilldown-title').textContent = `Stock purchases — ${supplierName}`;
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
   try {
-    const params = new URLSearchParams({ supplier: supplierName, start, end });
+    const params = _statsFilterParams();
+    params.set('supplier', supplierName);
     const batches = await api(`/api/stats/drilldown/supplier?${params}`);
     if (!batches.length) {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No stock purchases found.</div>';
@@ -3700,13 +3708,11 @@ async function openSupplierDrilldown(supplierName) {
 }
 
 async function openKitchenDrilldown() {
-  const start = document.getElementById('stats-start')?.value || todayISO();
-  const end   = document.getElementById('stats-end')?.value   || todayISO();
   document.getElementById('drilldown-title').textContent = 'Kitchen Orders';
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
   try {
-    const params = new URLSearchParams({ start, end });
+    const params = _statsFilterParams();
     const orders = await api(`/api/stats/drilldown/kitchen?${params}`);
     if (!orders.length) {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No kitchen orders found.</div>';
@@ -3738,13 +3744,11 @@ async function openKitchenDrilldown() {
 }
 
 async function openWriteoffDrilldown() {
-  const start = document.getElementById('stats-start')?.value || todayISO();
-  const end   = document.getElementById('stats-end')?.value   || todayISO();
   document.getElementById('drilldown-title').textContent = 'Stock Write-offs';
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
   try {
-    const params = new URLSearchParams({ start, end });
+    const params = _statsFilterParams();
     const items = await api(`/api/stats/drilldown/writeoffs?${params}`);
     if (!items.length) {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No write-offs found.</div>';
@@ -3771,13 +3775,11 @@ async function openWriteoffDrilldown() {
 }
 
 async function openProfitDrilldown() {
-  const start = document.getElementById('stats-start')?.value || todayISO();
-  const end   = document.getElementById('stats-end')?.value   || todayISO();
   document.getElementById('drilldown-title').textContent = 'Profit Breakdown by Product';
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
   try {
-    const params = new URLSearchParams({ start, end });
+    const params = _statsFilterParams();
     const items = await api(`/api/stats/drilldown/profit?${params}`);
     if (!items.length) {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No data found.</div>';
@@ -3930,8 +3932,8 @@ async function loadStats() {
     if (kitchenRow)   kitchenRow.style.display  = '';
     if (suppChartBtn) suppChartBtn.style.display = '';
   }
-  // Employee table hidden when filtered by employee (redundant), shown otherwise
-  if (empSection) empSection.style.display = userId ? 'none' : '';
+  // Employee table: always shown (when filtering by employee it shows that employee's session log)
+  if (empSection) empSection.style.display = '';
 
   // Active filter chips
   const chipArea = document.getElementById('stats-active-filters');
