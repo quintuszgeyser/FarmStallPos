@@ -856,40 +856,63 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=15):
     if not face_candidates and not gait_candidates:
         return None
 
-    signals = {'camera': 'clip_analysis', 'source': 'clip_analysis'}
+    # Select distinct-angle face embeddings from all candidates.
+    # Like iPhone fingerprint enrollment: keep embeddings that are sufficiently
+    # different from each other (cosine distance > 0.25) so each one covers
+    # a new angle. The POS enroll/face endpoint also enforces this gate —
+    # these are just the candidates we'll submit.
+    MIN_ANGLE_DISTANCE = 0.25
+    face_candidates.sort(key=lambda x: x[0], reverse=True)  # best quality first
 
-    if face_candidates:
-        face_candidates.sort(key=lambda x: x[0], reverse=True)
-        best_qual, best_emb, best_photo, best_attrs = face_candidates[0]
-        signals['face_photo'] = best_photo
-        signals['face_quality'] = float(best_qual)
+    distinct_faces = []  # [(quality, embedding_bytes, photo_bytes, attrs)]
+    for cand in face_candidates:
+        cand_emb = np.frombuffer(cand[1], dtype=np.float32).copy()
+        n = np.linalg.norm(cand_emb)
+        if n > 0:
+            cand_emb /= n
+        is_new = True
+        for prev in distinct_faces:
+            prev_emb = np.frombuffer(prev[1], dtype=np.float32).copy()
+            pn = np.linalg.norm(prev_emb)
+            if pn > 0:
+                prev_emb /= pn
+            if float(np.dot(cand_emb, prev_emb)) > (1.0 - MIN_ANGLE_DISTANCE):
+                is_new = False
+                break
+        if is_new:
+            distinct_faces.append(cand)
+        if len(distinct_faces) >= 5:
+            break
+
+    logger.debug(f'Clip faces: {len(face_candidates)} candidates → {len(distinct_faces)} distinct angles')
+
+    # Build result — multiple face signals, best gait, best body snapshot
+    result = {
+        'camera': 'clip_analysis',
+        'source': 'clip_analysis',
+        'distinct_faces': distinct_faces,  # list for multi-angle enrollment
+    }
+
+    if distinct_faces:
+        best_qual, best_emb, best_photo, best_attrs = distinct_faces[0]
+        result['face_embedding'] = best_emb
+        result['face_quality']   = float(best_qual)
+        result['face_photo']     = best_photo
         if best_attrs:
-            signals['physical_attrs'] = best_attrs
-
-        # Embedding = L2-normalised mean of top-3 frames
-        top_k = face_candidates[:3]
-        if len(top_k) >= 2:
-            embs = [np.frombuffer(e, dtype=np.float32) for _, e, _, _ in top_k]
-            centroid = np.mean(embs, axis=0).astype(np.float32)
-            norm = np.linalg.norm(centroid)
-            if norm > 0:
-                centroid /= norm
-            signals['face_embedding'] = centroid.tobytes()
-        else:
-            signals['face_embedding'] = best_emb
+            result['physical_attrs'] = best_attrs
 
     if gait_candidates:
         gait_arrays = [np.frombuffer(f, dtype=np.float32) for _, f in gait_candidates]
         avg_gait = np.mean(gait_arrays, axis=0).astype(np.float32)
-        signals['gait_features'] = avg_gait.tobytes()
-        signals['gait_quality'] = float(max(q for q, _ in gait_candidates))
+        result['gait_features'] = avg_gait.tobytes()
+        result['gait_quality']  = float(max(q for q, _ in gait_candidates))
         logger.debug(f'Clip gait: {len(gait_candidates)} frames averaged')
 
     if best_body_snapshot:
-        signals['snapshot_photo'] = best_body_snapshot
-        signals['snapshot_area'] = best_body_area
+        result['snapshot_photo'] = best_body_snapshot
+        result['snapshot_area']  = best_body_area
 
-    return signals
+    return result
 
 # ─── Scoring Engine ─────────────────────────────────────────────────────────
 
@@ -1639,10 +1662,31 @@ def _clip_analysis_loop():
             try:
                 signals = analyze_clip_for_best_signals(clip_path, person_box)
                 if signals:
-                    _improve_customer_profile(customer_id, signals)
+                    distinct_faces = signals.pop('distinct_faces', [])
+
+                    # Submit each distinct face angle separately so the POS
+                    # enroll/face endpoint can add it as a new angle if distinct
+                    angles_added = 0
+                    for qual, emb_bytes, photo_bytes, attrs in distinct_faces:
+                        angle_signals = dict(signals)
+                        angle_signals['face_embedding'] = emb_bytes
+                        angle_signals['face_quality']   = float(qual)
+                        angle_signals['face_photo']     = photo_bytes
+                        if attrs:
+                            angle_signals['physical_attrs'] = attrs
+                        r = _improve_customer_profile(customer_id, angle_signals)
+                        angles_added += 1
+
+                    # Also update gait + body snapshot from the main signals
+                    if signals.get('gait_features') or signals.get('snapshot_photo'):
+                        _improve_customer_profile(customer_id, {
+                            k: v for k, v in signals.items()
+                            if k not in ('face_embedding', 'face_quality', 'face_photo', 'physical_attrs')
+                        })
+
                     logger.info(
                         f'Clip enrichment: customer={customer_id} '
-                        f'face_q={signals.get("face_quality", 0):.2f} '
+                        f'angles={angles_added} '
                         f'gait={bool(signals.get("gait_features"))}'
                     )
             except Exception as e:

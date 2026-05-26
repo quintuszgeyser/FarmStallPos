@@ -2846,25 +2846,52 @@ def api_customers_merge():
                     break
 
             if embeddings:
-                # Compute centroid and L2-normalise
-                centroid = np.mean(embeddings, axis=0).astype(np.float32)
-                norm = np.linalg.norm(centroid)
-                if norm > 0:
-                    centroid /= norm
-                centroid_bytes = centroid.tobytes()
+                # Select up to MAX_EMBEDDINGS distinct-angle embeddings from all
+                # merged faces. Like building an iPhone fingerprint: keep each
+                # angle that covers new ground (cosine distance > MIN_DISTANCE).
+                MAX_EMBEDDINGS  = 5
+                MIN_DISTANCE    = 0.30
 
-                # Deactivate all existing face rows
-                db.session.execute(_text('''
-                    UPDATE customer_faces SET active = FALSE
-                    WHERE customer_id = :pid
-                '''), {'pid': primary_id})
+                # Normalise all embeddings
+                normed = []
+                for raw_emb, row_id, row_photo in zip(
+                    embeddings,
+                    [r[0] for r in face_rows],
+                    [r[2] for r in face_rows]
+                ):
+                    n = np.linalg.norm(raw_emb)
+                    if n > 0:
+                        normed.append((raw_emb / n, raw_emb, row_photo))
 
-                # Insert new centroid row as the single active face
-                db.session.execute(_text('''
-                    INSERT INTO customer_faces (customer_id, embedding, photo, enrolled_at, active)
-                    VALUES (:pid, :emb, :photo, NOW(), TRUE)
-                '''), {'pid': primary_id, 'emb': centroid_bytes, 'photo': best_photo})
-                app.logger.info(f'Merge [{primary_id}]: centroid from {len(embeddings)} embeddings, photo={best_photo is not None}')
+                # Greedy selection of distinct angles (best quality = longest path through space)
+                selected = []   # [(normed_emb, raw_bytes, photo)]
+                for normed_emb, raw_bytes, photo in normed:
+                    is_new = True
+                    for sel_normed, _, _ in selected:
+                        if float(np.dot(normed_emb, sel_normed)) > (1.0 - MIN_DISTANCE):
+                            is_new = False
+                            break
+                    if is_new:
+                        selected.append((normed_emb, raw_bytes, photo))
+                    if len(selected) >= MAX_EMBEDDINGS:
+                        break
+
+                # Deactivate all existing face rows for this customer
+                db.session.execute(_text(
+                    'UPDATE customer_faces SET active = FALSE WHERE customer_id = :pid'
+                ), {'pid': primary_id})
+
+                # Re-insert the selected distinct-angle embeddings
+                for _, raw_bytes, photo in selected:
+                    db.session.execute(_text('''
+                        INSERT INTO customer_faces (customer_id, embedding, photo, enrolled_at, active)
+                        VALUES (:pid, :emb, :photo, NOW(), TRUE)
+                    '''), {'pid': primary_id, 'emb': raw_bytes, 'photo': photo})
+
+                app.logger.info(
+                    f'Merge [{primary_id}]: {len(selected)} distinct angles '
+                    f'selected from {len(embeddings)} total embeddings'
+                )
 
         db.session.commit()
         return jsonify({'ok': True, 'merged': merged_count})
@@ -2946,13 +2973,48 @@ def api_customers_enroll_face(cid):
                     existing_body_row.photo = photo_bytes
             db.session.commit()
     else:
-        CustomerFace.query.filter_by(customer_id=cid).update({'active': False})
-        db.session.add(CustomerFace(
-            customer_id=cid, embedding=embedding_bytes,
-            photo=photo_bytes, body_photo=body_photo_bytes
-        ))
+        # Multi-angle enrollment: add new embedding only if it's distinct from
+        # existing ones (fills a gap). Like iPhone fingerprint — keep lifting and
+        # re-presenting from new angles until full angular coverage is built up.
+        import numpy as np
+        MAX_EMBEDDINGS = 5          # max distinct angles to keep
+        MIN_DISTANCE   = 0.30       # min cosine distance to count as a new angle
+
+        new_emb = np.frombuffer(embedding_bytes, dtype=np.float32).copy()
+        norm = np.linalg.norm(new_emb)
+        if norm > 0:
+            new_emb /= norm
+
+        existing = CustomerFace.query.filter_by(customer_id=cid, active=True).all()
+        is_new_angle = True
+        for row in existing:
+            stored = np.frombuffer(row.embedding, dtype=np.float32).copy()
+            s_norm = np.linalg.norm(stored)
+            if s_norm > 0:
+                stored /= s_norm
+            sim = float(np.dot(new_emb, stored))
+            if sim > (1.0 - MIN_DISTANCE):  # too similar to an existing angle
+                # Update photo if new quality is better (larger photo = sharper)
+                if photo_bytes and (not row.photo or len(photo_bytes) > len(row.photo)):
+                    row.photo = photo_bytes
+                db.session.commit()
+                is_new_angle = False
+                break
+
+        if is_new_angle:
+            if len(existing) >= MAX_EMBEDDINGS:
+                # Drop the oldest embedding to make room — it has had the least
+                # benefit from subsequent profile improvements
+                oldest = min(existing, key=lambda r: r.enrolled_at)
+                oldest.active = False
+
+            db.session.add(CustomerFace(
+                customer_id=cid, embedding=embedding_bytes,
+                photo=photo_bytes, body_photo=body_photo_bytes
+            ))
+
         db.session.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'new_angle': is_new_angle if not snapshot_only else None})
 
 @app.route('/api/customers/<int:cid>/photo', methods=['GET'])
 def api_customer_photo(cid):
@@ -3113,11 +3175,11 @@ def api_customer_faces_raw(cid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
     import base64 as _b64
-    # Return up to 3 most-recent active embeddings for multi-embedding matching
+    # Return up to 5 active embeddings (distinct angles) for multi-embedding matching
     rows = (CustomerFace.query
             .filter_by(customer_id=cid, active=True)
             .order_by(CustomerFace.enrolled_at.desc())
-            .limit(3).all())
+            .limit(5).all())
     return jsonify([{'embedding_b64': _b64.b64encode(r.embedding).decode()} for r in rows])
 
 @app.route('/api/customers/<int:cid>/gaits_raw', methods=['GET'])
