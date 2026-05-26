@@ -5527,10 +5527,13 @@ async function openCustomerDetail(customerId) {
         return `<span class="badge ${colour}" style="font-size:.7rem">${label}${pct !== null ? ': ' + pct + '%' : ''}</span>`;
       }).filter(Boolean).join(' ');
 
-      // Sub-detail: raw similarity values
+      // Sub-detail: similarity values — convert gait distance to % match (0=perfect, 0.25=threshold)
+      const gaitPct = scores.gait_distance != null
+        ? Math.max(0, Math.round((1 - scores.gait_distance / 0.25) * 100))
+        : null;
       const details = [
         scores.face_similarity != null ? `face sim: ${(scores.face_similarity * 100).toFixed(1)}%` : '',
-        scores.gait_distance   != null ? `gait dist: ${scores.gait_distance.toFixed(3)}` : '',
+        gaitPct !== null ? `gait match: ${gaitPct}%` : '',
         v.matched_signals && v.matched_signals !== 'track_consensus' ? `method: ${v.matched_signals}` : '',
       ].filter(Boolean).join(' · ');
 
