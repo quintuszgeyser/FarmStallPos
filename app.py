@@ -2672,6 +2672,7 @@ def api_customers_merge():
     """Merge multiple customers into one primary customer.
     Moves all faces, gaits, plates, visits, and sales to the primary.
     Marks merged customers as inactive with merged_into set.
+    Uses raw SQL throughout to avoid ORM autoflush issues.
     """
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2681,49 +2682,65 @@ def api_customers_merge():
     if not primary_id or not merge_ids:
         return jsonify({'error': 'primary_id and merge_ids required'}), 400
 
-    primary = db.session.get(Customer, primary_id)
-    if not primary:
-        return jsonify({'error': 'Primary customer not found'}), 404
+    from sqlalchemy import text as _text
+    try:
+        # Verify primary exists
+        row = db.session.execute(_text('SELECT id FROM customers WHERE id = :id'), {'id': primary_id}).fetchone()
+        if not row:
+            return jsonify({'error': 'Primary customer not found'}), 404
 
-    merged_count = 0
-    for mid in merge_ids:
-        if mid == primary_id:
-            continue
-        src = db.session.get(Customer, mid)
-        if not src:
-            continue
+        merged_count = 0
+        for mid in merge_ids:
+            if mid == primary_id:
+                continue
+            src_row = db.session.execute(_text('SELECT id, visit_count, last_visit, first_seen, name FROM customers WHERE id = :id'), {'id': mid}).fetchone()
+            if not src_row:
+                continue
 
-        # Move biometrics, plates, visits, sales
-        CustomerFace.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
-        CustomerGait.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
-        CustomerPlate.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
-        CustomerVisit.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
-        Sale.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
+            # Move biometrics and visits (no unique constraint issues)
+            db.session.execute(_text('UPDATE customer_faces   SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE customer_gaits   SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE customer_visits  SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE sales            SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
 
-        # Roll up visit stats
-        primary.visit_count = (primary.visit_count or 0) + (src.visit_count or 0)
-        if src.last_visit and (not primary.last_visit or src.last_visit > primary.last_visit):
-            primary.last_visit = src.last_visit
-        if src.first_seen and (not primary.first_seen or src.first_seen < primary.first_seen):
-            primary.first_seen = src.first_seen
+            # Plates: skip any that would duplicate an existing plate on the primary
+            db.session.execute(_text('''
+                UPDATE customer_plates SET customer_id = :pid
+                WHERE customer_id = :sid
+                AND plate_number NOT IN (
+                    SELECT plate_number FROM customer_plates WHERE customer_id = :pid
+                )
+            '''), {'pid': primary_id, 'sid': mid})
+            # Delete any remaining plates on the source (duplicates)
+            db.session.execute(_text('DELETE FROM customer_plates WHERE customer_id = :sid'), {'sid': mid})
 
-        # If primary has no name but merged customer does, take it
-        if not primary.name and src.name:
-            primary.name = src.name
+            # Roll up visit stats on primary
+            db.session.execute(_text('''
+                UPDATE customers SET
+                    visit_count = visit_count + :src_vc,
+                    last_visit  = GREATEST(last_visit,  :src_lv),
+                    first_seen  = LEAST(first_seen, :src_fs),
+                    name        = CASE WHEN name IS NULL AND :src_name IS NOT NULL THEN :src_name ELSE name END
+                WHERE id = :pid
+            '''), {
+                'pid': primary_id,
+                'src_vc':   src_row[1] or 0,
+                'src_lv':   src_row[2],
+                'src_fs':   src_row[3],
+                'src_name': src_row[4],
+            })
 
-        # Deactivate source
-        src.active = False
-        try:
-            from sqlalchemy import text as _text
-            db.session.execute(_text('UPDATE customers SET merged_into = :pid WHERE id = :sid'),
-                               {'pid': primary_id, 'sid': mid})
-        except Exception:
-            pass
+            # Deactivate source and set merged_into
+            db.session.execute(_text('UPDATE customers SET active = FALSE, merged_into = :pid WHERE id = :sid'), {'pid': primary_id, 'sid': mid})
+            merged_count += 1
 
-        merged_count += 1
+        db.session.commit()
+        return jsonify({'ok': True, 'merged': merged_count})
 
-    db.session.commit()
-    return jsonify({'ok': True, 'merged': merged_count})
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'Merge error: {e}')
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/customers/<int:cid>/enroll/plate', methods=['POST'])
 def api_customers_enroll_plate(cid):
