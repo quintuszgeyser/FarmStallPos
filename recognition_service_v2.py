@@ -36,7 +36,7 @@ FRIGATE_URL     = os.environ.get('FRIGATE_URL', 'http://127.0.0.1:8971')
 WEBHOOK_PORT    = int(os.environ.get('WEBHOOK_PORT', '8080'))
 
 # Model thresholds
-FACE_THRESHOLD  = 0.40  # Minimum cosine similarity for face match
+FACE_THRESHOLD  = 0.25  # Minimum cosine similarity for face match (lowered for real-world camera quality)
 GAIT_THRESHOLD  = 0.25  # Maximum euclidean distance for gait match
 
 # Quality gates
@@ -1236,8 +1236,8 @@ def process_event(event):
         link_threshold, link_source = get_current_threshold('link', context)
         pending_threshold, pending_source = get_current_threshold('pending', context)
 
-        # Decision logic
-        if track.customer_id and track.confidence >= link_threshold:
+        # Decision logic (-1 means enrollment in progress, skip)
+        if track.customer_id and track.customer_id != -1 and track.confidence >= link_threshold:
             logger.info(f'Track {track_id[:8]} linked to customer {track.customer_id} (confidence={track.confidence:.3f})')
 
             # Log visit
@@ -1253,6 +1253,14 @@ def process_event(event):
 
         elif track.age() >= 30 and track.has_enrollment_quality():
             if track.confidence < pending_threshold:
+                # Guard against multiple threads enrolling the same track simultaneously
+                with _tracks_lock:
+                    if track.customer_id:
+                        # Another thread already enrolled this track — skip
+                        return
+                    # Claim this track immediately so no other thread enrolls it
+                    track.customer_id = -1  # sentinel: enrollment in progress
+
                 logger.info(f'Track {track_id[:8]} ready for enrollment (age={track.age():.1f}s, quality=ok)')
 
                 # Auto-enroll new customer
@@ -1357,8 +1365,13 @@ def poll_frigate_events():
                     if label != 'person':
                         continue
 
-                    # Active event (no end_time yet) — process every poll to build up track
+                    # Active event (no end_time yet) — process every poll but
+                    # skip if the event is stale (started more than 5 min ago)
                     if not end_time:
+                        start_time = ev.get('start_time', now)
+                        if (now - start_time) > 300:
+                            logger.debug(f'Skipping stale active event {eid[:20]} (age={int(now-start_time)}s)')
+                            continue
                         recent_count += 1
                         new_count += 1
                         logger.info(f'Processing active event {eid[:20]} (camera={ev.get("camera")})')
