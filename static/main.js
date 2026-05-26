@@ -5552,6 +5552,14 @@ function addPlateBadge(plate) {
 }
 
 document.getElementById('btn-add-customer')?.addEventListener('click', () => openCustomerEnroll(null));
+document.getElementById('btn-refresh-customers')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-refresh-customers');
+  btn.disabled = true;
+  btn.textContent = '↻ Refreshing...';
+  await loadCustomers();
+  btn.disabled = false;
+  btn.textContent = '↻ Refresh';
+});
 
 document.getElementById('btn-add-plate')?.addEventListener('click', () => {
   const input = document.getElementById('enroll-plate-input');
