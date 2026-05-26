@@ -2719,16 +2719,22 @@ def api_customers_merge():
                 UPDATE customers SET
                     visit_count = visit_count + :src_vc,
                     last_visit  = GREATEST(last_visit,  :src_lv),
-                    first_seen  = LEAST(first_seen, :src_fs),
-                    name        = CASE WHEN name IS NULL AND :src_name::VARCHAR IS NOT NULL THEN :src_name::VARCHAR ELSE name END
+                    first_seen  = LEAST(first_seen, :src_fs)
                 WHERE id = :pid
             '''), {
-                'pid': primary_id,
-                'src_vc':   src_row[1] or 0,
-                'src_lv':   src_row[2],
-                'src_fs':   src_row[3],
-                'src_name': src_row[4],
+                'pid':    primary_id,
+                'src_vc': src_row[1] or 0,
+                'src_lv': src_row[2],
+                'src_fs': src_row[3],
             })
+            # Take name from source if primary has none
+            if src_row[4] and not db.session.execute(
+                _text('SELECT name FROM customers WHERE id = :pid'), {'pid': primary_id}
+            ).fetchone()[0]:
+                db.session.execute(
+                    _text('UPDATE customers SET name = :n WHERE id = :pid'),
+                    {'n': src_row[4], 'pid': primary_id}
+                )
 
             # Deactivate source and set merged_into
             db.session.execute(_text('UPDATE customers SET active = FALSE, merged_into = :pid WHERE id = :sid'), {'pid': primary_id, 'sid': mid})
