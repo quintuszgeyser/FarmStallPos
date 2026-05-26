@@ -2985,10 +2985,10 @@ def api_customers_pending_visits():
     result = []
     for v in visits:
         c = db.session.get(Customer, v.customer_id)
-        if c:
+        if c and (c.name or c.customer_number):
             result.append({
                 'id': v.id,
-                'customer_name': c.name,
+                'customer_name': c.name or c.customer_number,
                 'visit_count': c.visit_count,
                 'matched_signals': v.matched_signals,
                 'detected_at': v.detected_at.isoformat(),

@@ -5287,7 +5287,7 @@ function startCustomerVisitPoll() {
         if (_acknowledgedVisits.has(v.id)) continue;
         _acknowledgedVisits.add(v.id);
         const ordinal = v.visit_count > 1 ? ` (visit #${v.visit_count})` : ' — first visit!';
-        toast(`Welcome back, ${v.customer_name}${ordinal}`, 'info', 8000);
+        toast(`Welcome back, ${v.customer_name || 'customer'}${ordinal}`, 'info', 8000);
         api(`/api/customers/visits/${v.id}/acknowledge`, { method: 'POST' }).catch(() => {});
       }
     } catch {}
