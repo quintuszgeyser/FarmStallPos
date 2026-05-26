@@ -36,13 +36,16 @@ FRIGATE_URL     = os.environ.get('FRIGATE_URL', 'http://127.0.0.1:8971')
 WEBHOOK_PORT    = int(os.environ.get('WEBHOOK_PORT', '8080'))
 
 # Model thresholds
-FACE_THRESHOLD  = 0.25  # Minimum cosine similarity for face match (lowered for real-world camera quality)
+FACE_THRESHOLD  = 0.35  # Minimum cosine similarity for face match — real same-person scores ~0.35-0.55
 GAIT_THRESHOLD  = 0.25  # Maximum euclidean distance for gait match
 
 # Quality gates
 FACE_QUALITY_MIN = 0.35  # Minimum face quality to use (lowered for real-world camera distances)
-GAIT_QUALITY_MIN = 0.6   # Minimum gait quality to use
+GAIT_QUALITY_MIN = 0.45  # Lowered: mounted camera looking down scores lower than ideal
 PLATE_CONF_MIN   = 0.8   # Minimum OCR confidence to use
+
+# Multi-embedding: keep this many best face embeddings per customer in the signals cache
+MAX_FACE_EMBEDDINGS = 3
 
 # Versioning
 WEIGHTS_VERSION = "v2.0_production"
@@ -1080,8 +1083,8 @@ class ThresholdManager:
 
     def __init__(self):
         self.global_thresholds = {
-            'link': 0.75,      # Conservative initial
-            'pending': 0.60
+            'link': 0.55,      # Face-only max score at 0.45 sim ≈ 0.27; at 0.65 sim ≈ 0.46 → need lower bar
+            'pending': 0.45    # Don't enroll if already matched at this level
         }
         self.segment_thresholds = {}
         self.version = "v1.0_initial"
@@ -1462,8 +1465,21 @@ if __name__ == '__main__':
     pos_login()
     refresh_customers()
 
+    # Force a full signal cache rebuild on startup so embeddings are loaded
+    # before any events are processed. Without this, customers enrolled just
+    # before a restart would not be in the cache and would be re-enrolled.
+    global _signals_cache_ids
+    _signals_cache_ids = set()  # invalidate so next get_all_customer_signals() rebuilds
+    get_all_customer_signals()
+    logger.info(f'Signal cache primed: {len(_signals_cache)} customers loaded')
+
     # Background cache refresh
     threading.Thread(target=_cache_refresh_loop, daemon=True).start()
+
+    # Brief delay before starting the Frigate poller — lets models load and
+    # signal cache settle before processing any events.
+    import time as _startup_time
+    _startup_time.sleep(5)
 
     # Background Frigate poller
     threading.Thread(target=poll_frigate_events, daemon=True).start()
