@@ -963,11 +963,11 @@ class TrackIdentity:
         if not qualities:
             return False
 
-        high_quality_count = sum(1 for q in qualities if q >= 0.8)
-        medium_quality_count = sum(1 for q in qualities if q >= 0.6)
+        high_quality_count = sum(1 for q in qualities if q >= 0.5)
+        medium_quality_count = sum(1 for q in qualities if q >= 0.35)
 
         has_sufficient_quality = (high_quality_count >= 1 or medium_quality_count >= 3)
-        has_sufficient_weight = total_biometric_weight >= 5.0
+        has_sufficient_weight = total_biometric_weight >= 3.0
 
         return has_sufficient_quality and has_sufficient_weight
 
