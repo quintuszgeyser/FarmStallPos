@@ -5489,13 +5489,6 @@ async function openCustomerDetail(customerId) {
   const SIGNAL_LABELS = {
     face: 'Face', gait: 'Body', plate: 'Plate',
     height_cat: 'Height', auto_enrollment: 'Auto-enroll',
-    track_confidence: 'Track',
-  };
-
-  // ── Visit history ─────────────────────────────────────────────
-  const SIGNAL_LABELS = {
-    face: 'Face', gait: 'Body', plate: 'Plate',
-    height_cat: 'Height', auto_enrollment: 'Auto-enroll',
     track_confidence: 'Track match',
     face_similarity: 'Face sim', gait_distance: 'Gait dist',
   };
