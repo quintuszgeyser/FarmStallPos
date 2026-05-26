@@ -680,6 +680,22 @@ def extract_all_signals_with_quality(event):
             if physical:
                 signals['physical_attrs'] = physical
 
+            # If no face photo was captured, store a small thumbnail of the
+            # Frigate snapshot so gait-only customers have a visible image
+            # in the UI to help with merge decisions.
+            if not signals.get('face_photo'):
+                try:
+                    import cv2
+                    snap = cv2.imread(snapshot_path)
+                    if snap is not None:
+                        h, w = snap.shape[:2]
+                        scale = 200.0 / max(h, w)
+                        thumb = cv2.resize(snap, (int(w*scale), int(h*scale)))
+                        _, jpeg_buf = cv2.imencode('.jpg', thumb, [cv2.IMWRITE_JPEG_QUALITY, 75])
+                        signals['snapshot_photo'] = jpeg_buf.tobytes()
+                except Exception:
+                    pass
+
         return signals
 
     finally:
@@ -1346,6 +1362,21 @@ def process_event(event):
                                 'quality': float(best_gait.get('quality', 0.0))
                             })
                             logger.info(f'   Gait enrolled for customer #{next_number}')
+
+                        # Always store body snapshot so every customer card has
+                        # a visual — face crop if available, full-body otherwise
+                        if signals.get('snapshot_photo'):
+                            payload = {
+                                'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
+                                'quality': 0.0,
+                                'body_photo_b64': base64.b64encode(signals['snapshot_photo']).decode(),
+                                'snapshot_only': True,
+                            }
+                            # Include face crop as photo if we have one
+                            if best_face and best_face.get('photo'):
+                                payload['photo_b64'] = base64.b64encode(best_face['photo']).decode()
+                            pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+                            logger.info(f'   Body snapshot stored for customer #{next_number}')
 
                         # Enroll physical attributes if extracted
                         if signals.get('attributes'):

@@ -359,6 +359,7 @@ class CustomerFace(db.Model):
     customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
     embedding   = db.Column(db.LargeBinary, nullable=False)  # float32[512] = 2048 bytes
     photo       = db.Column(db.LargeBinary, nullable=True)   # JPEG of aligned face crop
+    body_photo  = db.Column(db.LargeBinary, nullable=True)   # JPEG of full-body snapshot thumbnail
     enrolled_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     active      = db.Column(db.Boolean,  nullable=False, default=True)
 
@@ -1312,6 +1313,7 @@ def strong_migrate():
             pg_try("ALTER TABLE customers ADD COLUMN first_seen TIMESTAMP DEFAULT NOW()")
             pg_try("ALTER TABLE customers ADD COLUMN is_employee BOOLEAN DEFAULT FALSE")
             pg_try("ALTER TABLE customers ADD COLUMN merged_into INTEGER REFERENCES customers(id)")
+            pg_try("ALTER TABLE customer_faces ADD COLUMN body_photo BYTEA")
 
             # Link sales to customers
             pg_try("ALTER TABLE sales ADD COLUMN customer_id INTEGER REFERENCES customers(id)")
@@ -2447,6 +2449,8 @@ def _customer_dict(c):
         'plates': [p.plate_number for p in CustomerPlate.query.filter_by(customer_id=c.id, active=True).all()],
         'has_face': CustomerFace.query.filter_by(customer_id=c.id, active=True).count() > 0,
         'has_gait': CustomerGait.query.filter_by(customer_id=c.id, active=True).count() > 0,
+        'has_photo': CustomerFace.query.filter_by(customer_id=c.id).filter(CustomerFace.photo != None).count() > 0,
+        'has_body_photo': CustomerFace.query.filter_by(customer_id=c.id).filter(CustomerFace.body_photo != None).count() > 0,
     }
 
 @app.route('/api/customers', methods=['GET'])
@@ -2839,21 +2843,70 @@ def api_customers_enroll_face(cid):
     embedding_bytes = base64.b64decode(embedding_b64)
     photo_b64 = data.get('photo_b64')
     photo_bytes = base64.b64decode(photo_b64) if photo_b64 else None
-    CustomerFace.query.filter_by(customer_id=cid).update({'active': False})
-    db.session.add(CustomerFace(customer_id=cid, embedding=embedding_bytes, photo=photo_bytes))
-    db.session.commit()
+    snapshot_only = data.get('snapshot_only', False)
+
+    body_photo_b64 = data.get('body_photo_b64')
+    body_photo_bytes = base64.b64decode(body_photo_b64) if body_photo_b64 else None
+
+    if snapshot_only:
+        # Gait-only customer — store body snapshot for display but don't
+        # deactivate existing embeddings or make this row active for matching.
+        existing_with_body = CustomerFace.query.filter_by(customer_id=cid).filter(
+            CustomerFace.body_photo != None
+        ).first()
+        if not existing_with_body and (photo_bytes or body_photo_bytes):
+            db.session.add(CustomerFace(
+                customer_id=cid, embedding=embedding_bytes,
+                photo=photo_bytes, body_photo=body_photo_bytes, active=False
+            ))
+            db.session.commit()
+    else:
+        CustomerFace.query.filter_by(customer_id=cid).update({'active': False})
+        db.session.add(CustomerFace(
+            customer_id=cid, embedding=embedding_bytes,
+            photo=photo_bytes, body_photo=body_photo_bytes
+        ))
+        db.session.commit()
     return jsonify({'ok': True})
 
 @app.route('/api/customers/<int:cid>/photo', methods=['GET'])
 def api_customer_photo(cid):
-    """Returns the stored face photo as JPEG."""
+    """Returns face photo (or body snapshot fallback) as JPEG."""
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
+    # Try active face photo first
     row = CustomerFace.query.filter_by(customer_id=cid, active=True).order_by(CustomerFace.enrolled_at.desc()).first()
-    if not row or not row.photo:
+    if row and row.photo:
+        from flask import Response
+        return Response(row.photo, mimetype='image/jpeg')
+    # Fall back to any body snapshot stored for this customer
+    snap_row = (CustomerFace.query.filter_by(customer_id=cid)
+                .filter(CustomerFace.body_photo != None)
+                .order_by(CustomerFace.enrolled_at.desc()).first())
+    if snap_row and snap_row.body_photo:
+        from flask import Response
+        return Response(snap_row.body_photo, mimetype='image/jpeg')
+    # Fall back to any inactive face photo (e.g. snapshot_only row)
+    any_row = (CustomerFace.query.filter_by(customer_id=cid)
+               .filter(CustomerFace.photo != None)
+               .order_by(CustomerFace.enrolled_at.desc()).first())
+    if any_row and any_row.photo:
+        from flask import Response
+        return Response(any_row.photo, mimetype='image/jpeg')
+    return '', 404
+
+@app.route('/api/customers/<int:cid>/body_photo', methods=['GET'])
+def api_customer_body_photo(cid):
+    """Returns full-body snapshot thumbnail as JPEG."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    row = (CustomerFace.query.filter_by(customer_id=cid)
+           .filter(CustomerFace.body_photo != None)
+           .order_by(CustomerFace.enrolled_at.desc()).first())
+    if not row or not row.body_photo:
         return '', 404
     from flask import Response
-    return Response(row.photo, mimetype='image/jpeg')
+    return Response(row.body_photo, mimetype='image/jpeg')
 
 @app.route('/api/customers/<int:cid>/enroll/gait', methods=['POST'])
 def api_customers_enroll_gait(cid):
