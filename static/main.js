@@ -5918,8 +5918,10 @@ async function loadMergeSuggestions() {
       return;
     }
 
-    // Auto-merge pairs ≥ 95% similar — identical embedding, no ambiguity
-    const AUTO_MERGE_THRESHOLD = 0.95;
+    // Auto-merge threshold — read from settings, default 0.95
+    let AUTO_MERGE_THRESHOLD = 0.95;
+    try { const cfg = await api('/api/settings'); AUTO_MERGE_THRESHOLD = parseFloat(cfg.auto_merge_min_sim ?? 0.95); } catch {}
+
     const autoMerge = suggestions.filter(s => s.similarity >= AUTO_MERGE_THRESHOLD);
     const manual    = suggestions.filter(s => s.similarity <  AUTO_MERGE_THRESHOLD);
 
@@ -5985,32 +5987,92 @@ function openMergeSuggestion(idA, idB) {
   openMergeModal();
 }
 
+// ─── Dual-handle merge slider ────────────────────────────────
+function initMergeSlider(reviewPct, autoPct) {
+  const reviewEl = document.getElementById('merge-review-min');
+  const autoEl   = document.getElementById('merge-auto-min');
+  const reviewVal = document.getElementById('merge-review-val');
+  const autoVal   = document.getElementById('merge-auto-val');
+  const track     = document.getElementById('merge-slider-track');
+  if (!reviewEl || !autoEl) return;
+
+  reviewEl.value = Math.round(reviewPct * 100);
+  autoEl.value   = Math.round(autoPct   * 100);
+
+  function updateTrack() {
+    const min = 30, max = 99;
+    const r = parseInt(reviewEl.value);
+    const a = parseInt(autoEl.value);
+    const rPct = (r - min) / (max - min) * 100;
+    const aPct = (a - min) / (max - min) * 100;
+    if (track) track.style.left  = rPct + '%';
+    if (track) track.style.width = Math.max(0, aPct - rPct) + '%';
+    if (reviewVal) reviewVal.textContent = r;
+    if (autoVal)   autoVal.textContent   = a;
+    // Enable pointer events on slider thumbs
+    reviewEl.style.pointerEvents = 'none';
+    autoEl.style.pointerEvents   = 'none';
+    // Whichever thumb is being dragged gets pointer events
+  }
+
+  reviewEl.addEventListener('input', () => {
+    if (parseInt(reviewEl.value) > parseInt(autoEl.value))
+      reviewEl.value = autoEl.value;
+    updateTrack();
+  });
+  autoEl.addEventListener('input', () => {
+    if (parseInt(autoEl.value) < parseInt(reviewEl.value))
+      autoEl.value = reviewEl.value;
+    updateTrack();
+  });
+
+  // Allow both thumbs to be dragged by detecting which is closer to click
+  const wrap = document.getElementById('merge-slider-wrap');
+  if (wrap) {
+    wrap.addEventListener('mousedown', e => {
+      reviewEl.style.pointerEvents = 'auto';
+      autoEl.style.pointerEvents   = 'auto';
+    });
+    wrap.addEventListener('touchstart', e => {
+      reviewEl.style.pointerEvents = 'auto';
+      autoEl.style.pointerEvents   = 'auto';
+    }, { passive: true });
+  }
+
+  updateTrack();
+}
+
 // ─── Recognition Settings Tab ────────────────────────────────
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', async () => {
   try {
     const s = await api('/api/settings');
-    const setSlider = (id, valId, val) => {
-      const el = document.getElementById(id);
+    const setSlider = (id, valId, val, fmt) => {
+      const el  = document.getElementById(id);
       const vEl = document.getElementById(valId);
-      if (el) { el.value = val; el.oninput = () => { if (vEl) vEl.textContent = parseFloat(el.value).toFixed(2); }; }
-      if (vEl) vEl.textContent = parseFloat(val).toFixed(2);
+      const display = fmt ? fmt(val) : parseFloat(val).toFixed(2);
+      if (el)  { el.value = val; el.oninput = () => { if (vEl) vEl.textContent = fmt ? fmt(parseFloat(el.value)) : parseFloat(el.value).toFixed(2); }; }
+      if (vEl) vEl.textContent = display;
     };
-    setSlider('set-face-threshold',  'set-face-threshold-val',  s.face_threshold);
-    setSlider('set-link-threshold',  'set-link-threshold-val',  s.link_threshold);
-    setSlider('set-face-quality-min','set-face-quality-val',    s.face_quality_min);
-    setSlider('set-merge-suggest-min','set-merge-suggest-val',  s.merge_suggest_min_sim);
+    setSlider('set-face-threshold',   'set-face-threshold-val',  s.face_threshold);
+    setSlider('set-link-threshold',   'set-link-threshold-val',  s.link_threshold);
+    setSlider('set-face-quality-min', 'set-face-quality-val',    s.face_quality_min);
+    // Merge dual slider
+    initMergeSlider(s.merge_suggest_min_sim, s.auto_merge_min_sim ?? 0.95);
   } catch(e) { console.error('loadSettings', e); }
 });
 
 document.getElementById('btn-save-recognition-settings')?.addEventListener('click', async () => {
   try {
+    const reviewPct = parseInt(document.getElementById('merge-review-min')?.value || 55);
+    const autoPct   = parseInt(document.getElementById('merge-auto-min')?.value   || 95);
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
       face_threshold:        parseFloat(document.getElementById('set-face-threshold')?.value),
       link_threshold:        parseFloat(document.getElementById('set-link-threshold')?.value),
       face_quality_min:      parseFloat(document.getElementById('set-face-quality-min')?.value),
-      merge_suggest_min_sim: parseFloat(document.getElementById('set-merge-suggest-min')?.value),
+      merge_suggest_min_sim: reviewPct / 100,
+      auto_merge_min_sim:    autoPct   / 100,
     })});
-    toast('Settings saved — recognition will apply within 60 seconds', 'success', 4000);
+    toast('Settings saved', 'success', 3000);
   } catch(e) { toast(e.message, 'danger'); }
 });
 

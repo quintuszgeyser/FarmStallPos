@@ -738,11 +738,42 @@
           </div>
         </div>
         <div class="col-12">
-          <label class="form-label fw-semibold">Duplicate suggestion threshold <span class="text-muted fw-normal small">(similarity needed to suggest a merge)</span></label>
-          <div class="d-flex align-items-center gap-2">
-            <input type="range" class="form-range flex-grow-1" id="set-merge-suggest-min" min="0.3" max="0.95" step="0.05">
-            <span id="set-merge-suggest-val" class="text-muted small" style="min-width:40px"></span>
+          <label class="form-label fw-semibold">Merge thresholds</label>
+          <div class="text-muted small mb-2">
+            <span class="badge bg-warning text-dark me-1">Review</span> Show in panel for manual confirmation ·
+            <span class="badge bg-success me-1">Auto</span> Merge automatically without asking
           </div>
+          <!-- Dual-handle range slider -->
+          <div class="position-relative" style="height:40px;user-select:none" id="merge-slider-wrap">
+            <div class="position-absolute w-100" style="top:14px;height:8px;background:#dee2e6;border-radius:4px"></div>
+            <div class="position-absolute" id="merge-slider-track"
+                 style="top:14px;height:8px;border-radius:4px;background:linear-gradient(to right,#ffc107,#198754)"></div>
+            <input type="range" class="position-absolute w-100" id="merge-review-min"
+                   min="30" max="99" step="1" style="top:6px;height:24px;background:none;pointer-events:none;-webkit-appearance:none;appearance:none">
+            <input type="range" class="position-absolute w-100" id="merge-auto-min"
+                   min="30" max="99" step="1" style="top:6px;height:24px;background:none;pointer-events:none;-webkit-appearance:none;appearance:none">
+          </div>
+          <div class="d-flex justify-content-between mt-1">
+            <span class="small text-muted">30%</span>
+            <span class="small">
+              <span class="badge bg-warning text-dark">Review ≥ <span id="merge-review-val">55</span>%</span>
+              &nbsp;
+              <span class="badge bg-success">Auto ≥ <span id="merge-auto-val">95</span>%</span>
+            </span>
+            <span class="small text-muted">99%</span>
+          </div>
+          <style>
+            #merge-review-min::-webkit-slider-thumb,
+            #merge-auto-min::-webkit-slider-thumb {
+              pointer-events:all; width:20px; height:20px; border-radius:50%;
+              border:2px solid #fff; cursor:pointer; -webkit-appearance:none; appearance:none;
+              box-shadow:0 1px 4px rgba(0,0,0,.3);
+            }
+            #merge-review-min::-webkit-slider-thumb { background:#ffc107; }
+            #merge-auto-min::-webkit-slider-thumb  { background:#198754; }
+            #merge-review-min::-moz-range-thumb { width:18px;height:18px;border-radius:50%;background:#ffc107;border:2px solid #fff;cursor:pointer; }
+            #merge-auto-min::-moz-range-thumb   { width:18px;height:18px;border-radius:50%;background:#198754;border:2px solid #fff;cursor:pointer; }
+          </style>
         </div>
         <div class="col-12">
           <button class="btn btn-primary" id="btn-save-recognition-settings">Save Settings</button>

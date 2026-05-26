@@ -5132,13 +5132,14 @@ def api_settings():
             'link_threshold':        float(get_setting('link_threshold', 0.55) or 0.55),
             'face_quality_min':      float(get_setting('face_quality_min', 0.15) or 0.15),
             'merge_suggest_min_sim': float(get_setting('merge_suggest_min_sim', 0.55) or 0.55),
+            'auto_merge_min_sim':    float(get_setting('auto_merge_min_sim',    0.95) or 0.95),
         })
     data = request.json or {}
     saved = {}
     for key, cast in [
         ('markup_percent', float), ('face_threshold', float),
         ('link_threshold', float), ('face_quality_min', float),
-        ('merge_suggest_min_sim', float),
+        ('merge_suggest_min_sim', float), ('auto_merge_min_sim', float),
     ]:
         if key in data:
             try:
