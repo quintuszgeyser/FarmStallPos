@@ -1390,13 +1390,10 @@ def poll_frigate_events():
                     if label != 'person':
                         continue
 
-                    # Active event (no end_time yet) — process every poll but
-                    # skip if the event is stale (started more than 5 min ago)
+                    # Active event (no end_time yet) — process every poll.
+                    # For long-running events (>5min), use the snapshot but treat
+                    # each poll as a fresh snapshot so the person can be enrolled/matched.
                     if not end_time:
-                        start_time = ev.get('start_time', now)
-                        if (now - start_time) > 300:
-                            logger.debug(f'Skipping stale active event {eid[:20]} (age={int(now-start_time)}s)')
-                            continue
                         recent_count += 1
                         new_count += 1
                         logger.info(f'Processing active event {eid[:20]} (camera={ev.get("camera")})')
