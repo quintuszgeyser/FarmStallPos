@@ -5379,10 +5379,18 @@ async function openCustomerEnroll(customerId) {
         const attrs = await api(`/api/customers/${c.id}/attributes`);
         if (attrs) {
           const items = [
-            attrs.hair_color   && `Hair: ${attrs.hair_color}`,
-            attrs.build        && `Build: ${attrs.build}`,
-            attrs.facial_hair && attrs.facial_hair !== 'none' && `Facial hair: ${attrs.facial_hair}`,
             attrs.height_category && `Height: ${attrs.height_category}`,
+            attrs.height_cm       && `${attrs.height_cm}cm`,
+            attrs.build           && `Build: ${attrs.build}`,
+            attrs.age_range       && `Age: ${attrs.age_range}`,
+            attrs.gender          && `Gender: ${attrs.gender}`,
+            attrs.hair_color      && `Hair: ${attrs.hair_color}`,
+            attrs.skin_tone       && `Skin: ${attrs.skin_tone}`,
+            attrs.eye_color       && `Eyes: ${attrs.eye_color}`,
+            attrs.facial_hair && attrs.facial_hair !== 'none' && `Facial hair: ${attrs.facial_hair}`,
+            attrs.wearing_glasses !== null && attrs.wearing_glasses !== undefined && `Glasses: ${attrs.wearing_glasses ? 'yes' : 'no'}`,
+            attrs.camera_source   && `Camera: ${attrs.camera_source}`,
+            attrs.confidence      && `Confidence: ${Math.round(attrs.confidence * 100)}%`,
           ].filter(Boolean);
           if (items.length) {
             attrsEl.innerHTML = items.map(i =>

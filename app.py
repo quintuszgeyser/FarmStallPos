@@ -2858,8 +2858,8 @@ def api_customers_max_number():
 
     if max_customer and max_customer.customer_number:
         try:
-            # Extract number from "CUST-0001" format
-            num = int(max_customer.customer_number.split('-')[1])
+            cn = max_customer.customer_number
+            num = int(cn.split('-')[1]) if '-' in cn else int(cn)
             return jsonify({'max_number': num})
         except (IndexError, ValueError):
             pass
