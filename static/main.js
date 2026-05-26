@@ -5309,9 +5309,21 @@ function renderCustomersList() {
     container.innerHTML = '<div class="text-muted">No customers enrolled yet.</div>';
     return;
   }
-  container.innerHTML = STATE.customers.map(c => `
-    <div class="card mb-2 ${c.active ? '' : 'opacity-50'}">
-      <div class="card-body py-2 d-flex justify-content-between align-items-center gap-3">
+
+  // Merge toolbar — shown when ≥2 checked
+  const toolbarHtml = `
+    <div id="merge-toolbar" class="d-none mb-2 p-2 bg-warning-subtle border rounded d-flex align-items-center gap-2">
+      <span id="merge-selected-count" class="small fw-semibold"></span>
+      <span class="text-muted small flex-grow-1">Select the primary customer first (keep their details), then check the duplicates.</span>
+      <button class="btn btn-warning btn-sm" onclick="openMergeModal()">Merge Selected</button>
+      <button class="btn btn-outline-secondary btn-sm" onclick="clearMergeSelection()">Cancel</button>
+    </div>`;
+
+  const cardsHtml = STATE.customers.map(c => `
+    <div class="card mb-2 ${c.active ? '' : 'opacity-50'}" data-customer-id="${c.id}">
+      <div class="card-body py-2 d-flex align-items-center gap-2">
+        <input type="checkbox" class="form-check-input merge-check flex-shrink-0" style="width:1.1rem;height:1.1rem"
+          data-id="${c.id}" onchange="updateMergeToolbar()">
         <div class="flex-shrink-0">
           ${c.has_face
             ? `<img src="/api/customers/${c.id}/photo" alt="face"
@@ -5340,6 +5352,73 @@ function renderCustomersList() {
       </div>
     </div>
   `).join('');
+
+  container.innerHTML = toolbarHtml + cardsHtml;
+}
+
+function updateMergeToolbar() {
+  const checked = [...document.querySelectorAll('.merge-check:checked')];
+  const toolbar = document.getElementById('merge-toolbar');
+  const countEl = document.getElementById('merge-selected-count');
+  if (checked.length >= 2) {
+    toolbar.classList.remove('d-none');
+    toolbar.classList.add('d-flex');
+    countEl.textContent = `${checked.length} selected`;
+  } else {
+    toolbar.classList.add('d-none');
+    toolbar.classList.remove('d-flex');
+  }
+}
+
+function clearMergeSelection() {
+  document.querySelectorAll('.merge-check').forEach(cb => cb.checked = false);
+  updateMergeToolbar();
+}
+
+async function openMergeModal() {
+  const checked = [...document.querySelectorAll('.merge-check:checked')];
+  if (checked.length < 2) return;
+  const ids = checked.map(cb => parseInt(cb.dataset.id));
+  const customers = ids.map(id => STATE.customers.find(c => c.id === id));
+
+  // Build a modal asking which is primary
+  const opts = customers.map(c => `
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="radio" name="primary_pick" value="${c.id}" id="pp_${c.id}">
+      <label class="form-check-label" for="pp_${c.id}">
+        <strong>${c.customer_number}</strong> — ${c.name || 'Unnamed'}
+        <span class="text-muted small ms-1">${c.visit_count} visits · ${c.has_face ? 'Face ✓' : 'No face'} · ${c.has_gait ? 'Body ✓' : 'No body'}</span>
+      </label>
+    </div>`).join('');
+
+  const body = document.getElementById('customerDetailBody');
+  const title = document.getElementById('customerDetailTitle');
+  title.textContent = 'Merge Customers — Pick Primary';
+  body.innerHTML = `
+    <p class="text-muted small">The primary customer keeps their number, name and details. All biometrics, visits and purchases from the others will be moved to them.</p>
+    <div class="mb-3">${opts}</div>
+    <div class="d-flex justify-content-end gap-2">
+      <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button class="btn btn-warning" id="btn-confirm-merge">Merge</button>
+    </div>`;
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
+
+  document.getElementById('btn-confirm-merge').onclick = async () => {
+    const primaryRadio = document.querySelector('input[name="primary_pick"]:checked');
+    if (!primaryRadio) { toast('Select the primary customer', 'danger'); return; }
+    const primaryId = parseInt(primaryRadio.value);
+    const mergeIds = ids.filter(id => id !== primaryId);
+    try {
+      await api('/api/customers/merge', { method: 'POST', body: JSON.stringify({ primary_id: primaryId, merge_ids: mergeIds }) });
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).hide();
+      clearMergeSelection();
+      toast('Customers merged', 'success');
+      await loadCustomers();
+    } catch(e) {
+      toast(e.message, 'danger');
+    }
+  };
 }
 
 async function openCustomerDetail(customerId) {
@@ -5413,36 +5492,60 @@ async function openCustomerDetail(customerId) {
     track_confidence: 'Track',
   };
 
+  // ── Visit history ─────────────────────────────────────────────
+  const SIGNAL_LABELS = {
+    face: 'Face', gait: 'Body', plate: 'Plate',
+    height_cat: 'Height', auto_enrollment: 'Auto-enroll',
+    track_confidence: 'Track match',
+    face_similarity: 'Face sim', gait_distance: 'Gait dist',
+  };
+
   let visitsHtml = '';
   if (visits.length) {
     const rows = visits.map(v => {
       const dt = new Date(v.detected_at);
-      const dtStr = dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      const dateStr = dt.toLocaleDateString('en-ZA', {day:'2-digit', month:'short', year:'numeric'});
+      const timeStr = dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
       const camera = v.camera_source
-        ? `<span class="badge bg-light text-dark border ms-1" style="font-size:.65rem">${v.camera_source}</span>` : '';
+        ? `<span class="badge bg-light text-dark border" style="font-size:.65rem">${v.camera_source}</span>` : '';
 
       const scores = v.confidence_scores || {};
-      const signals = Object.entries(scores).map(([k, score]) => {
+      const signalBadges = Object.entries(scores).map(([k, score]) => {
+        if (k === 'face_similarity' || k === 'gait_distance') return ''; // shown as sub-detail
         const label = SIGNAL_LABELS[k] || k;
         const pct = typeof score === 'number' ? Math.round(score * 100) : null;
         const colour = pct === null ? 'bg-secondary'
-          : pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning text-dark' : 'bg-secondary';
-        return `<span class="badge ${colour} me-1" style="font-size:.7rem">${label}${pct !== null ? ' ' + pct + '%' : ''}</span>`;
-      }).join('');
+          : pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning text-dark' : 'bg-danger';
+        return `<span class="badge ${colour}" style="font-size:.7rem">${label}${pct !== null ? ': ' + pct + '%' : ''}</span>`;
+      }).filter(Boolean).join(' ');
+
+      // Sub-detail: raw similarity values
+      const details = [
+        scores.face_similarity != null ? `face sim: ${(scores.face_similarity * 100).toFixed(1)}%` : '',
+        scores.gait_distance   != null ? `gait dist: ${scores.gait_distance.toFixed(3)}` : '',
+        v.matched_signals && v.matched_signals !== 'track_consensus' ? `method: ${v.matched_signals}` : '',
+      ].filter(Boolean).join(' · ');
 
       return `<tr>
-        <td class="small text-muted" style="white-space:nowrap">${dtStr}${camera}</td>
-        <td>${signals || '<span class="text-muted small">—</span>'}</td>
+        <td style="white-space:nowrap;vertical-align:top" class="pe-3">
+          <div class="small fw-semibold">${timeStr}</div>
+          <div class="text-muted" style="font-size:.7rem">${dateStr}</div>
+          <div class="mt-1">${camera}</div>
+        </td>
+        <td style="vertical-align:top">
+          <div class="d-flex flex-wrap gap-1 mb-1">${signalBadges || '<span class="text-muted small">—</span>'}</div>
+          ${details ? `<div class="text-muted" style="font-size:.7rem">${details}</div>` : ''}
+        </td>
       </tr>`;
     }).join('');
 
     visitsHtml = `<div>
       <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Visit History (last ${visits.length})</div>
-      <div style="max-height:220px;overflow-y:auto">
+      <div style="max-height:260px;overflow-y:auto">
         <table class="table table-sm table-borderless mb-0">
           <thead><tr>
-            <th class="small text-muted fw-normal">When</th>
-            <th class="small text-muted fw-normal">Signals used</th>
+            <th class="small text-muted fw-normal pe-3">When</th>
+            <th class="small text-muted fw-normal">Signals captured</th>
           </tr></thead>
           <tbody>${rows}</tbody>
         </table>

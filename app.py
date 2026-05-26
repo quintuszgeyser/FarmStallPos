@@ -2667,6 +2667,64 @@ def api_customer_visits(cid):
         })
     return jsonify(result)
 
+@app.route('/api/customers/merge', methods=['POST'])
+def api_customers_merge():
+    """Merge multiple customers into one primary customer.
+    Moves all faces, gaits, plates, visits, and sales to the primary.
+    Marks merged customers as inactive with merged_into set.
+    """
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    primary_id = data.get('primary_id')
+    merge_ids = data.get('merge_ids', [])
+    if not primary_id or not merge_ids:
+        return jsonify({'error': 'primary_id and merge_ids required'}), 400
+
+    primary = db.session.get(Customer, primary_id)
+    if not primary:
+        return jsonify({'error': 'Primary customer not found'}), 404
+
+    merged_count = 0
+    for mid in merge_ids:
+        if mid == primary_id:
+            continue
+        src = db.session.get(Customer, mid)
+        if not src:
+            continue
+
+        # Move biometrics, plates, visits, sales
+        CustomerFace.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
+        CustomerGait.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
+        CustomerPlate.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
+        CustomerVisit.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
+        Sale.query.filter_by(customer_id=mid).update({'customer_id': primary_id})
+
+        # Roll up visit stats
+        primary.visit_count = (primary.visit_count or 0) + (src.visit_count or 0)
+        if src.last_visit and (not primary.last_visit or src.last_visit > primary.last_visit):
+            primary.last_visit = src.last_visit
+        if src.first_seen and (not primary.first_seen or src.first_seen < primary.first_seen):
+            primary.first_seen = src.first_seen
+
+        # If primary has no name but merged customer does, take it
+        if not primary.name and src.name:
+            primary.name = src.name
+
+        # Deactivate source
+        src.active = False
+        try:
+            from sqlalchemy import text as _text
+            db.session.execute(_text('UPDATE customers SET merged_into = :pid WHERE id = :sid'),
+                               {'pid': primary_id, 'sid': mid})
+        except Exception:
+            pass
+
+        merged_count += 1
+
+    db.session.commit()
+    return jsonify({'ok': True, 'merged': merged_count})
+
 @app.route('/api/customers/<int:cid>/enroll/plate', methods=['POST'])
 def api_customers_enroll_plate(cid):
     if not require_role('admin'):
