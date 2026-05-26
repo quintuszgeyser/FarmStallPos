@@ -1311,6 +1311,7 @@ def strong_migrate():
             pg_try("ALTER TABLE customers ADD COLUMN customer_number VARCHAR(20) UNIQUE")
             pg_try("ALTER TABLE customers ADD COLUMN first_seen TIMESTAMP DEFAULT NOW()")
             pg_try("ALTER TABLE customers ADD COLUMN is_employee BOOLEAN DEFAULT FALSE")
+            pg_try("ALTER TABLE customers ADD COLUMN merged_into INTEGER REFERENCES customers(id)")
 
             # Link sales to customers
             pg_try("ALTER TABLE sales ADD COLUMN customer_id INTEGER REFERENCES customers(id)")
