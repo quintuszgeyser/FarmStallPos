@@ -342,6 +342,7 @@ class Customer(db.Model):
     customer_number = db.Column(db.String(20),  nullable=True, unique=True)
     first_seen      = db.Column(db.DateTime,    nullable=True)
     is_employee     = db.Column(db.Boolean,     nullable=False, default=False)
+    merged_into     = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
 
 
 class CustomerPlate(db.Model):
@@ -3161,6 +3162,12 @@ def api_customers_identify():
     c = db.session.get(Customer, cid)
     if not c:
         return jsonify({'error': 'Not found'}), 404
+    # If this customer was merged, log the visit against the primary instead
+    if not c.active and c.merged_into:
+        primary = db.session.get(Customer, c.merged_into)
+        if primary and primary.active:
+            c = primary
+            cid = c.id
     visit = CustomerVisit(
         customer_id=cid,
         matched_signals=matched_signals,
@@ -3203,16 +3210,30 @@ def api_customers_pending_visits():
               .order_by(CustomerVisit.detected_at.desc())
               .all())
     result = []
+    seen_customers = set()  # deduplicate — one greeting per customer per poll
     for v in visits:
         c = db.session.get(Customer, v.customer_id)
-        if c and (c.name or c.customer_number):
-            result.append({
-                'id': v.id,
-                'customer_name': c.name or c.customer_number,
-                'visit_count': c.visit_count,
-                'matched_signals': v.matched_signals,
-                'detected_at': v.detected_at.isoformat(),
-            })
+        if not c:
+            continue
+        # If this customer was merged, follow to the primary
+        if not c.active and c.merged_into:
+            primary = db.session.get(Customer, c.merged_into)
+            if primary and primary.active:
+                c = primary
+        if not c.active:
+            continue
+        if not (c.name or c.customer_number):
+            continue
+        if c.id in seen_customers:
+            continue
+        seen_customers.add(c.id)
+        result.append({
+            'id': v.id,
+            'customer_name': c.name or c.customer_number,
+            'visit_count': c.visit_count,
+            'matched_signals': v.matched_signals,
+            'detected_at': v.detected_at.isoformat(),
+        })
     return jsonify(result)
 
 @app.route('/api/customers/visits/<int:vid>/acknowledge', methods=['POST'])
