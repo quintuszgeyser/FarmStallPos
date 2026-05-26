@@ -5842,8 +5842,16 @@ document.getElementById('btn-deactivate-customer')?.addEventListener('click', as
   }
 });
 
-// Load customers when tab is shown
-document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown.bs.tab', loadCustomers);
+// Auto-refresh customers tab every 5 seconds while visible
+let _customerTabRefreshTimer = null;
+document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown.bs.tab', () => {
+  loadCustomers();
+  if (_customerTabRefreshTimer) clearInterval(_customerTabRefreshTimer);
+  _customerTabRefreshTimer = setInterval(loadCustomers, 5000);
+});
+document.querySelector('[data-bs-target="#customers"]')?.addEventListener('hidden.bs.tab', () => {
+  if (_customerTabRefreshTimer) { clearInterval(_customerTabRefreshTimer); _customerTabRefreshTimer = null; }
+});
 
 // ═══════════════════════════════════════════════════════
 // TILL CUSTOMER DETECTION (Phase 1: Purchase Linking)
