@@ -6000,7 +6000,7 @@ function initMergeSlider(reviewPct, autoPct) {
   autoEl.value   = Math.round(autoPct   * 100);
 
   function updateTrack() {
-    const min = 30, max = 99;
+    const min = 10, max = 99;
     const r = parseInt(reviewEl.value);
     const a = parseInt(autoEl.value);
     const rPct = (r - min) / (max - min) * 100;
