@@ -763,6 +763,134 @@ def fetch_frigate_snapshot(event_id):
         logger.warning(f'Snapshot fetch error: {e}')
     return None
 
+def fetch_frigate_clip(event_id):
+    """Download event clip to temp file. Tries clip.mp4 then VOD endpoint."""
+    import tempfile
+    for url in [
+        f'{FRIGATE_URL}/api/events/{event_id}/clip.mp4',
+        f'{FRIGATE_URL}/api/vod/event/{event_id}',
+    ]:
+        try:
+            r = requests.get(url, timeout=60, stream=True)
+            if r.ok:
+                content = b''.join(r.iter_content(chunk_size=65536))
+                if len(content) > 1000:
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+                    tmp.write(content)
+                    tmp.close()
+                    return tmp.name
+        except Exception as e:
+            logger.debug(f'Clip fetch attempt failed ({url[:60]}): {e}')
+    return None
+
+def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=15):
+    """
+    Sample n_sample evenly-spaced frames from a clip.
+    Returns signals dict:
+      face_photo    = highest-quality single frame (best photo)
+      face_embedding = L2-normalised mean of top-3 embeddings
+      gait_features  = mean of all quality-passing pose observations
+      physical_attrs = from the best-face frame
+    """
+    import cv2, tempfile
+
+    cap = cv2.VideoCapture(clip_path)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if frame_count == 0:
+        cap.release()
+        return None
+
+    indices = [int(i * frame_count / n_sample) for i in range(n_sample)]
+    face_candidates = []   # (quality, embedding_bytes, photo_bytes, attrs_or_None)
+    gait_candidates = []   # (quality, features_bytes)
+    best_body_snapshot = None
+    best_body_area = 0.0
+
+    for idx in indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            continue
+
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+        cv2.imwrite(tmp.name, frame)
+        tmp.close()
+        try:
+            # Face — no person_box: person may have moved between frames
+            face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name)
+            if face_emb and face_qual >= FACE_QUALITY_MIN:
+                attrs = extract_physical_attributes(tmp.name)
+                face_candidates.append((face_qual, face_emb, face_photo, attrs))
+
+            # Gait
+            gait_feat, gait_qual = extract_gait_with_quality(tmp.name)
+            if gait_feat and gait_qual >= GAIT_QUALITY_MIN:
+                gait_candidates.append((gait_qual, gait_feat))
+
+            # Body snapshot — crop to person box, keep largest-area frame
+            if person_box and len(person_box) == 4:
+                area = (person_box[2] - person_box[0]) * (person_box[3] - person_box[1])
+                if area > best_body_area:
+                    h, w = frame.shape[:2]
+                    bx1, by1, bx2, by2 = person_box
+                    px1 = max(0, int(bx1 * w))
+                    py1 = max(0, int(by1 * h))
+                    px2 = min(w, int(bx2 * w))
+                    py2 = min(h, int(by2 * h))
+                    if px2 > px1 and py2 > py1:
+                        crop = frame[py1:py2, px1:px2]
+                        scale = 400.0 / max(crop.shape[:2])
+                        if scale > 1.0:
+                            crop = cv2.resize(crop, (int(crop.shape[1] * scale), int(crop.shape[0] * scale)))
+                        _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                        best_body_snapshot = buf.tobytes()
+                        best_body_area = area
+        finally:
+            try:
+                os.unlink(tmp.name)
+            except Exception:
+                pass
+
+    cap.release()
+
+    if not face_candidates and not gait_candidates:
+        return None
+
+    signals = {'camera': 'clip_analysis', 'source': 'clip_analysis'}
+
+    if face_candidates:
+        face_candidates.sort(key=lambda x: x[0], reverse=True)
+        best_qual, best_emb, best_photo, best_attrs = face_candidates[0]
+        signals['face_photo'] = best_photo
+        signals['face_quality'] = float(best_qual)
+        if best_attrs:
+            signals['physical_attrs'] = best_attrs
+
+        # Embedding = L2-normalised mean of top-3 frames
+        top_k = face_candidates[:3]
+        if len(top_k) >= 2:
+            embs = [np.frombuffer(e, dtype=np.float32) for _, e, _, _ in top_k]
+            centroid = np.mean(embs, axis=0).astype(np.float32)
+            norm = np.linalg.norm(centroid)
+            if norm > 0:
+                centroid /= norm
+            signals['face_embedding'] = centroid.tobytes()
+        else:
+            signals['face_embedding'] = best_emb
+
+    if gait_candidates:
+        gait_arrays = [np.frombuffer(f, dtype=np.float32) for _, f in gait_candidates]
+        avg_gait = np.mean(gait_arrays, axis=0).astype(np.float32)
+        signals['gait_features'] = avg_gait.tobytes()
+        signals['gait_quality'] = float(max(q for q, _ in gait_candidates))
+        logger.debug(f'Clip gait: {len(gait_candidates)} frames averaged')
+
+    if best_body_snapshot:
+        signals['snapshot_photo'] = best_body_snapshot
+        signals['snapshot_area'] = best_body_area
+
+    return signals
+
 # ─── Scoring Engine ─────────────────────────────────────────────────────────
 
 def calculate_match_score_safe(new_signals, customer_signals, track_history=None):
@@ -1471,6 +1599,17 @@ def process_event(event):
         else:
             logger.debug(f'Track {track_id[:8]} pending (age={track.age():.1f}s, confidence={track.confidence:.3f})')
 
+        # Queue clip analysis for ended events with a resolved customer
+        if (ev.get('_is_ended')
+                and track.customer_id
+                and track.customer_id not in (-1, None)):
+            person_box = (ev.get('data') or {}).get('box')
+            with _clip_queue_lock:
+                if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
+                        and not any(j[0] == event_id for j in _clip_analysis_queue)):
+                    _clip_analysis_queue.append((event_id, track.customer_id, person_box))
+                    logger.debug(f'Queued clip analysis for event {event_id[:12]} customer={track.customer_id}')
+
     except Exception as e:
         logger.error(f'Event processing error: {e}')
         import traceback
@@ -1479,6 +1618,40 @@ def process_event(event):
 # ─── Frigate Integration ────────────────────────────────────────────────────
 
 _seen_events = set()
+_clip_analysis_queue = []      # [(event_id, customer_id, person_box)]
+_clip_queue_lock = threading.Lock()
+MAX_CLIP_QUEUE = 50
+
+def _clip_analysis_loop():
+    """Background thread: post-event clip enrichment."""
+    import time as _t
+    while True:
+        _t.sleep(10)
+        with _clip_queue_lock:
+            jobs = list(_clip_analysis_queue)
+            _clip_analysis_queue.clear()
+
+        for event_id, customer_id, person_box in jobs:
+            clip_path = fetch_frigate_clip(event_id)
+            if not clip_path:
+                logger.debug(f'Clip not available for {event_id[:12]}')
+                continue
+            try:
+                signals = analyze_clip_for_best_signals(clip_path, person_box)
+                if signals:
+                    _improve_customer_profile(customer_id, signals)
+                    logger.info(
+                        f'Clip enrichment: customer={customer_id} '
+                        f'face_q={signals.get("face_quality", 0):.2f} '
+                        f'gait={bool(signals.get("gait_features"))}'
+                    )
+            except Exception as e:
+                logger.warning(f'Clip analysis failed for {event_id[:12]}: {e}')
+            finally:
+                try:
+                    os.unlink(clip_path)
+                except Exception:
+                    pass
 
 def poll_frigate_events():
     """Background poller for Frigate events"""
@@ -1522,6 +1695,7 @@ def poll_frigate_events():
                                 for o in oldest:
                                     _seen_events.discard(o)
                             logger.info(f'Processing ended event {eid[:20]} (camera={ev.get("camera")})')
+                            ev['_is_ended'] = True  # signal process_event to queue clip analysis
                             threading.Thread(target=process_event, args=(ev,), daemon=True).start()
 
                 logger.debug(f'Frigate poll complete: {len(events)} total, {recent_count} recent, {new_count} new')
@@ -1592,6 +1766,9 @@ if __name__ == '__main__':
 
     # Background Frigate poller
     threading.Thread(target=poll_frigate_events, daemon=True).start()
+
+    # Background clip enrichment (post-event quality improvement)
+    threading.Thread(target=_clip_analysis_loop, daemon=True).start()
 
     # Webhook server (blocking)
     run_webhook_server()
