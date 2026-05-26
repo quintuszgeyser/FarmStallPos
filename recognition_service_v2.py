@@ -1466,12 +1466,11 @@ if __name__ == '__main__':
     refresh_customers()
 
     # Force a full signal cache rebuild on startup so embeddings are loaded
-    # before any events are processed. Without this, customers enrolled just
-    # before a restart would not be in the cache and would be re-enrolled.
-    global _signals_cache_ids
-    _signals_cache_ids = set()  # invalidate so next get_all_customer_signals() rebuilds
+    # before any events are processed. refresh_customers() already invalidates
+    # _signals_cache_ids, so the next get_all_customer_signals() will rebuild.
+    refresh_customers()
     get_all_customer_signals()
-    logger.info(f'Signal cache primed: {len(_signals_cache)} customers loaded')
+    logger.info('Signal cache primed')
 
     # Background cache refresh
     threading.Thread(target=_cache_refresh_loop, daemon=True).start()
