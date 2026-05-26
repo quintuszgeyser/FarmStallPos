@@ -1057,6 +1057,10 @@ class TrackIdentity:
 # Global track registry
 _active_tracks = {}
 _tracks_lock = threading.Lock()
+# One persistent track per camera — reused across Frigate event IDs so
+# a person in frame accumulates age instead of resetting every 30s.
+_camera_tracks = {}   # camera_name -> track_id
+CAMERA_TRACK_TIMEOUT = 120  # seconds — if no event from camera for 2min, start fresh
 
 # ─── Threshold Manager ──────────────────────────────────────────────────────
 
@@ -1181,11 +1185,26 @@ def process_event(event):
         if not signals:
             return
 
-        # Generate track ID
-        track_id = event.get('id', str(uuid.uuid4()))
+        # Resolve to a persistent per-camera track so age accumulates across
+        # multiple Frigate event IDs for the same physical person in frame.
+        camera = signals.get('camera', 'unknown')
+        event_id = event.get('id', str(uuid.uuid4()))
 
         with _tracks_lock:
-            if track_id not in _active_tracks:
+            existing_tid = _camera_tracks.get(camera)
+            if existing_tid and existing_tid in _active_tracks:
+                existing_track = _active_tracks[existing_tid]
+                # Reuse if the track is still recent
+                if time.time() - existing_track.last_seen <= CAMERA_TRACK_TIMEOUT:
+                    track_id = existing_tid
+                else:
+                    # Stale — start fresh
+                    track_id = event_id
+                    _camera_tracks[camera] = track_id
+                    _active_tracks[track_id] = TrackIdentity(track_id)
+            else:
+                track_id = event_id
+                _camera_tracks[camera] = track_id
                 _active_tracks[track_id] = TrackIdentity(track_id)
             track = _active_tracks[track_id]
 
@@ -1232,7 +1251,7 @@ def process_event(event):
             # Continuous profile improvement — fill in missing or upgrade quality
             _improve_customer_profile(track.customer_id, signals)
 
-        elif track.age() >= 60 and track.has_enrollment_quality():
+        elif track.age() >= 30 and track.has_enrollment_quality():
             if track.confidence < pending_threshold:
                 logger.info(f'Track {track_id[:8]} ready for enrollment (age={track.age():.1f}s, quality=ok)')
 
