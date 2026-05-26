@@ -1141,13 +1141,16 @@ def _improve_customer_profile(customer_id, signals):
                 logger.info(f'Profile [{customer_id}]: adding gait (quality={new_gait_quality:.2f})')
                 pos_post(f'/api/customers/{customer_id}/enroll/gait', {
                     'features_b64': base64.b64encode(signals['gait_features']).decode(),
-                    'quality': new_gait_quality,
+                    'quality': float(new_gait_quality),
                 })
 
         # --- Physical attributes: always update when detected ---
         if signals.get('physical_attrs'):
             attrs = signals['physical_attrs']
             existing = pos_get(f'/api/customers/{customer_id}/attributes')
+            # pos_get returns [] on 404/error; treat that as no existing attrs
+            if isinstance(existing, list):
+                existing = None
             # Fill in fields that are missing or update all if confidence is high
             should_update = (
                 existing is None or
@@ -1222,7 +1225,7 @@ def process_event(event):
             pos_post('/api/customers/identify', {
                 'customer_id': track.customer_id,
                 'matched_signals': 'track_consensus',
-                'confidence_scores': {'track_confidence': track.confidence},
+                'confidence_scores': {'track_confidence': float(track.confidence)},
                 'camera_source': signals.get('camera'),
             })
 
