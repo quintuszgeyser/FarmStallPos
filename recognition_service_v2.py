@@ -803,14 +803,12 @@ def fetch_frigate_clip(event_id):
             logger.debug(f'Clip fetch attempt failed ({url[:60]}): {e}')
     return None
 
-def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=15):
+def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
     """
-    Sample n_sample evenly-spaced frames from a clip.
-    Returns signals dict:
-      face_photo    = highest-quality single frame (best photo)
-      face_embedding = L2-normalised mean of top-3 embeddings
-      gait_features  = mean of all quality-passing pose observations
-      physical_attrs = from the best-face frame
+    Extract as many distinct-angle faces as possible from a clip.
+    Samples every few frames (not just N evenly spaced) to maximise angular coverage —
+    at 5fps a 10s clip = 50 frames, we sample up to 50 of them.
+    Stops collecting new angles once MAX_FACE_EMBEDDINGS distinct angles found.
     """
     import cv2, tempfile
 
@@ -820,13 +818,23 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=15):
         cap.release()
         return None
 
-    indices = [int(i * frame_count / n_sample) for i in range(n_sample)]
+    # Sample densely — every 2nd frame up to 50 samples
+    step = max(1, frame_count // 50)
+    indices = list(range(0, frame_count, step))
     face_candidates = []   # (quality, embedding_bytes, photo_bytes, attrs_or_None)
     gait_candidates = []   # (quality, features_bytes)
     best_body_snapshot = None
     best_body_area = 0.0
 
+    # Track distinct angles found so far for early exit
+    distinct_seen = []
+
     for idx in indices:
+        # Early exit: if we already have MAX_FACE_EMBEDDINGS distinct angles, stop
+        if len(distinct_seen) >= MAX_FACE_EMBEDDINGS:
+            logger.debug(f'Clip: reached {MAX_FACE_EMBEDDINGS} distinct angles, stopping early')
+            break
+
         cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
         ret, frame = cap.read()
         if not ret or frame is None:
@@ -839,6 +847,17 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=15):
             # Face — no person_box: person may have moved between frames
             face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name)
             if face_emb and face_qual >= FACE_QUALITY_MIN:
+                # Check if this is a genuinely new angle vs what we've already found
+                new_emb = np.frombuffer(face_emb, dtype=np.float32).copy()
+                n = np.linalg.norm(new_emb)
+                if n > 0:
+                    new_emb /= n
+                is_new_angle = all(
+                    float(np.dot(new_emb, prev)) < (1.0 - MIN_ANGLE_DISTANCE)
+                    for prev in distinct_seen
+                )
+                if is_new_angle:
+                    distinct_seen.append(new_emb)
                 attrs = extract_physical_attributes(tmp.name)
                 face_candidates.append((face_qual, face_emb, face_photo, attrs))
 

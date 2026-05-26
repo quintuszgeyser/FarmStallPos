@@ -5459,8 +5459,8 @@ async function openMergeModal() {
         <div class="text-center border rounded p-2">
           <div class="small fw-semibold mb-1">${c.name || c.customer_number}</div>
           <div class="d-flex gap-1">
-            <div><div class="text-muted" style="font-size:.6rem">Biometric</div><canvas id="merge-bio-${c.id}" width="160" height="160"></canvas></div>
-            <div><div class="text-muted" style="font-size:.6rem">Behavioural</div><canvas id="merge-beh-${c.id}" width="160" height="160"></canvas></div>
+            <div><div class="text-muted" style="font-size:.6rem">Biometric</div><canvas id="merge-bio-${c.id}" width="200" height="200"></canvas></div>
+            <div><div class="text-muted" style="font-size:.6rem">Behavioural</div><canvas id="merge-beh-${c.id}" width="200" height="200"></canvas></div>
           </div>
           <div class="text-muted mt-1" style="font-size:.65rem">${radars[i].details.face_angles} angles · ID ${radars[i].details.best_face_sim}% · ${radars[i].details.purchase_count} purchases</div>
         </div>` : '').join('')}
@@ -5509,7 +5509,8 @@ function drawRadarChart(canvasId, scores, color) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2;
-  const R = Math.min(cx, cy) - 28;
+  // Leave generous margin for labels — 52px on all sides
+  const R = Math.min(cx, cy) - 52;
   const labels = Object.keys(scores);
   const values = Object.values(scores);
   const N = labels.length;
@@ -5572,21 +5573,42 @@ function drawRadarChart(canvasId, scores, color) {
     ctx.fill();
   }
 
-  // Labels — adaptive font size so longer names fit
-  const lineH = 12;
+  // Labels — positioned well outside the radar ring with word-wrap for long names
+  const lineH = 13;
   ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
   for (let i = 0; i < N; i++) {
     const a = startAngle + i * angleStep;
-    const lx = cx + Math.cos(a) * (R + 18);
-    const ly = cy + Math.sin(a) * (R + 18);
+    // Push labels further out — 26px clearance from ring edge
+    const labelR = R + 26;
+    const lx = cx + Math.cos(a) * labelR;
+    const ly = cy + Math.sin(a) * labelR;
     const pct = Math.round(values[i] * 100);
     const label = labels[i];
+
+    // Split label into two lines if longer than 8 chars
+    const words = label.split(' ');
+    let line1 = label, line2 = '';
+    if (label.length > 8 && words.length > 1) {
+      const mid = Math.ceil(words.length / 2);
+      line1 = words.slice(0, mid).join(' ');
+      line2 = words.slice(mid).join(' ');
+    }
+
     ctx.font = '10px system-ui, sans-serif';
     ctx.fillStyle = '#495057';
-    ctx.fillText(label, lx, ly - 2);
-    ctx.font = 'bold 10px system-ui, sans-serif';
-    ctx.fillStyle = pct >= 80 ? '#198754' : pct >= 40 ? '#fd7e14' : '#dc3545';
-    ctx.fillText(pct + '%', lx, ly + lineH);
+    if (line2) {
+      ctx.fillText(line1, lx, ly - lineH);
+      ctx.fillText(line2, lx, ly);
+      ctx.font = 'bold 10px system-ui, sans-serif';
+      ctx.fillStyle = pct >= 80 ? '#198754' : pct >= 40 ? '#fd7e14' : '#dc3545';
+      ctx.fillText(pct + '%', lx, ly + lineH);
+    } else {
+      ctx.fillText(line1, lx, ly - 6);
+      ctx.font = 'bold 10px system-ui, sans-serif';
+      ctx.fillStyle = pct >= 80 ? '#198754' : pct >= 40 ? '#fd7e14' : '#dc3545';
+      ctx.fillText(pct + '%', lx, ly + 7);
+    }
   }
 }
 
@@ -5826,11 +5848,11 @@ async function openCustomerDetail(customerId) {
       <div class="d-flex gap-2 justify-content-center flex-wrap">
         <div class="text-center">
           <div class="text-muted small fw-semibold mb-1">Biometric</div>
-          <canvas id="customer-radar-bio-${c.id}" width="240" height="240"></canvas>
+          <canvas id="customer-radar-bio-${c.id}" width="300" height="300"></canvas>
         </div>
         <div class="text-center">
           <div class="text-muted small fw-semibold mb-1">Behavioural</div>
-          <canvas id="customer-radar-beh-${c.id}" width="240" height="240"></canvas>
+          <canvas id="customer-radar-beh-${c.id}" width="300" height="300"></canvas>
         </div>
       </div>
       <div class="text-muted text-center mt-1" style="font-size:.7rem">
