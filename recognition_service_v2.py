@@ -105,7 +105,7 @@ def get_face_app():
                 return None
 
             detector = SCRFD(model_file=det_model)
-            detector.prepare(ctx_id=-1, input_size=(640, 640), det_thresh=0.5)
+            detector.prepare(ctx_id=-1, input_size=(640, 640), det_thresh=0.3)
 
             recognizer = ArcFaceONNX(model_file=rec_model)
             recognizer.prepare(ctx_id=-1)
@@ -122,7 +122,9 @@ def get_face_app():
                     """
                     bboxes, kpss = self.detector.detect(img, input_size=(640, 640))
                     if len(bboxes) == 0 or len(kpss) == 0:
+                        logger.debug(f'SCRFD: no faces in {img.shape[1]}x{img.shape[0]} image')
                         return []
+                    logger.debug(f'SCRFD: {len(bboxes)} face(s) in {img.shape[1]}x{img.shape[0]}, confs={[round(float(b[4]),2) for b in bboxes]}')
 
                     results = []
                     img_area = img.shape[0] * img.shape[1]
@@ -373,7 +375,16 @@ def extract_face_with_quality(image_path, person_box=None):
             px1, py1, px2, py2 = int(cx1*w), int(cy1*h), int(cx2*w), int(cy2*h)
             if px2 > px1 and py2 > py1:
                 img = img[py1:py2, px1:px2]
-                logger.debug(f'Face crop: box={[round(x,2) for x in person_box]} → head region {px1},{py1}-{px2},{py2} ({px2-px1}×{py2-py1}px)')
+                # Upscale small crops so the face fills the SCRFD input.
+                # SCRFD uses input_size=(640,640) — a 150×180px crop gets
+                # downscaled to ~150px which is too small for reliable detection.
+                # Resize so the longer edge is 480px, keeping aspect ratio.
+                ch, cw = img.shape[:2]
+                scale = 480.0 / max(ch, cw)
+                if scale > 1.0:
+                    new_w, new_h = int(cw * scale), int(ch * scale)
+                    img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
+                logger.debug(f'Face crop: box={[round(x,2) for x in person_box]} → head region {px1},{py1}-{px2},{py2} ({px2-px1}×{py2-py1}px → {img.shape[1]}×{img.shape[0]}px)')
 
         results = face_app.get_with_quality(img)
         if not results:
