@@ -2852,7 +2852,7 @@ def api_customers_merge():
                 MAX_EMBEDDINGS  = 5
                 MIN_DISTANCE    = 0.30
 
-                # Normalise all embeddings
+                # Normalise all embeddings — keep original bytes for DB insert
                 normed = []
                 for raw_emb, row_id, row_photo in zip(
                     embeddings,
@@ -2861,7 +2861,8 @@ def api_customers_merge():
                 ):
                     n = np.linalg.norm(raw_emb)
                     if n > 0:
-                        normed.append((raw_emb / n, raw_emb, row_photo))
+                        raw_bytes = bytes(raw_emb.tobytes())  # ensure plain bytes for psycopg
+                        normed.append((raw_emb / n, raw_bytes, row_photo))
 
                 # Greedy selection of distinct angles (best quality = longest path through space)
                 selected = []   # [(normed_emb, raw_bytes, photo)]
