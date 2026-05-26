@@ -1613,7 +1613,9 @@ function _buildStockBody(item, prod) {
             data-edit-batch-date="${b.purchased_at.slice(0,10)}"
             data-edit-batch-supplier="${b.supplier_id || ''}"
             data-edit-batch-total="${totalCost}"
-            data-edit-batch-qty="${purchased}">✏️</button>
+            data-edit-batch-qty-base="${b.qty_purchased_base}"
+            data-edit-batch-qty-remaining="${b.qty_remaining_base}"
+            data-edit-batch-unit="${item.unit_type}">✏️</button>
         </td>`;
       tbody.appendChild(tr);
     });
@@ -1647,12 +1649,24 @@ document.getElementById('products-card-list')?.addEventListener('click', (e) => 
   const date         = btn.dataset.editBatchDate;
   const supplierId   = btn.dataset.editBatchSupplier;
   const total        = btn.dataset.editBatchTotal;
-  const qtyLabel     = btn.dataset.editBatchQty;
+  const qtyBase      = parseFloat(btn.dataset.editBatchQtyBase || '0');
+  const qtyRemaining = parseFloat(btn.dataset.editBatchQtyRemaining || '0');
+  const unitType     = btn.dataset.editBatchUnit || 'unit';
 
-  document.getElementById('edit-batch-id').value          = batchId;
-  document.getElementById('edit-batch-date').value        = date;
-  document.getElementById('edit-batch-total-price').value = total;
-  document.getElementById('edit-batch-qty-label').textContent = qtyLabel ? `for ${qtyLabel}` : '';
+  // Convert base qty to display unit for the input
+  const unitConversions = { weight: 1000, volume: 1000, unit: 1 };
+  const divisor = unitConversions[unitType] || 1;
+  const displayUnit = unitType === 'weight' ? 'kg' : unitType === 'volume' ? 'L' : 'unit';
+  const qtyDisplay = divisor > 1 ? qtyBase / divisor : qtyBase;
+
+  document.getElementById('edit-batch-id').value             = batchId;
+  document.getElementById('edit-batch-date').value           = date;
+  document.getElementById('edit-batch-total-price').value    = total;
+  document.getElementById('edit-batch-qty-purchased').value  = qtyDisplay;
+  document.getElementById('edit-batch-unit-label').textContent = `(${displayUnit})`;
+  // Store for save handler
+  document.getElementById('edit-batch-qty-purchased').dataset.unitDivisor   = divisor;
+  document.getElementById('edit-batch-qty-purchased').dataset.qtyRemaining  = qtyRemaining;
 
   const sel = document.getElementById('edit-batch-supplier');
   sel.innerHTML = '<option value="">— No supplier —</option>';
@@ -1667,20 +1681,28 @@ document.getElementById('products-card-list')?.addEventListener('click', (e) => 
 });
 
 document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', async () => {
-  const batchId    = document.getElementById('edit-batch-id').value;
-  const supplierId = document.getElementById('edit-batch-supplier').value || null;
-  const date       = document.getElementById('edit-batch-date').value;
-  const totalPrice = parseFloat(document.getElementById('edit-batch-total-price').value || '0');
+  const batchId      = document.getElementById('edit-batch-id').value;
+  const supplierId   = document.getElementById('edit-batch-supplier').value || null;
+  const date         = document.getElementById('edit-batch-date').value;
+  const totalPrice   = parseFloat(document.getElementById('edit-batch-total-price').value || '0');
+  const qtyInput     = document.getElementById('edit-batch-qty-purchased');
+  const qtyDisplay   = parseFloat(qtyInput.value || '0');
+  const divisor      = parseFloat(qtyInput.dataset.unitDivisor || '1');
+  const qtyBase      = qtyDisplay * divisor;
+  const qtyRemaining = parseFloat(qtyInput.dataset.qtyRemaining || '0');
 
   if (!totalPrice || totalPrice <= 0) return toast('Enter a valid total price', 'warning');
+  if (!qtyDisplay || qtyDisplay <= 0) return toast('Enter a valid quantity', 'warning');
+  if (qtyBase < qtyRemaining) return toast(`Cannot reduce qty below what's already been consumed (${displayQty(qtyRemaining, qtyInput.dataset.unitDivisor > 1 ? (divisor === 1000 ? 'weight' : 'volume') : 'unit')} remaining)`, 'warning');
 
   try {
     await api(`/api/stock/batches/${batchId}`, {
       method: 'PATCH',
       body: JSON.stringify({
-        supplier_id:  supplierId ? parseInt(supplierId) : null,
-        purchased_at: date,
-        total_price:  totalPrice,
+        supplier_id:       supplierId ? parseInt(supplierId) : null,
+        purchased_at:      date,
+        total_price:       totalPrice,
+        qty_purchased_base: qtyBase,
       }),
     });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editBatchModal')).hide();

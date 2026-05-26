@@ -1346,7 +1346,11 @@
           </select>
         </div>
         <div class="mb-2">
-          <label class="form-label small">Total amount paid (R) <span class="text-muted" id="edit-batch-qty-label"></span></label>
+          <label class="form-label small">Qty purchased <span class="text-muted" id="edit-batch-unit-label"></span></label>
+          <input id="edit-batch-qty-purchased" type="number" step="any" min="0.001" class="form-control" placeholder="0">
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Total amount paid (R)</label>
           <div class="input-group">
             <span class="input-group-text">R</span>
             <input id="edit-batch-total-price" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">

@@ -3587,9 +3587,23 @@ def api_stock_adjust():
     u   = current_user()
     now = datetime.utcnow()
 
+    cost_written_off = Decimal('0')
     if diff < 0:
         # Less stock than expected — consume from oldest batches (unexplained loss)
-        consume_fifo(pid, abs(diff), f'adj-{uuid.uuid4()}', now)
+        # Calculate COGS lost before consuming (batches will be modified by consume_fifo)
+        loss_qty = abs(diff)
+        remaining = loss_qty
+        for b in (StockBatch.query
+                  .filter_by(product_id=pid)
+                  .filter(StockBatch.qty_remaining_base > 0)
+                  .order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc())
+                  .all()):
+            take = min(Decimal(str(b.qty_remaining_base)), remaining)
+            cost_written_off += take * Decimal(str(b.cost_per_base_unit))
+            remaining -= take
+            if remaining <= 0:
+                break
+        consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now)
     elif diff > 0:
         # More stock than expected — add to the most recent batch at its cost
         latest_batch = (StockBatch.query
@@ -3612,11 +3626,13 @@ def api_stock_adjust():
                 user_id=u.id if u else None
             ))
 
+    adj_type = 'writeoff' if diff < 0 else 'stocktake'
     db.session.add(StockAdjustment(
         product_id=pid,
-        adjustment_type='stocktake',
+        adjustment_type=adj_type,
         qty_change_base=diff,
         system_qty_before=system_base,
+        cost_written_off=cost_written_off if diff < 0 else None,
         reason=reason,
         adjusted_at=now,
         user_id=u.id if u else None
@@ -3651,10 +3667,26 @@ def api_stock_batch_edit(batch_id):
         except Exception:
             return jsonify({'error': 'Invalid purchased_at date'}), 400
 
+    if 'qty_purchased_base' in data:
+        try:
+            new_qty = Decimal(str(float(data['qty_purchased_base'])))
+            if new_qty <= 0:
+                return jsonify({'error': 'qty_purchased_base must be positive'}), 400
+            consumed = Decimal(str(batch.qty_purchased_base)) - Decimal(str(batch.qty_remaining_base))
+            if new_qty < consumed:
+                return jsonify({'error': f'Cannot reduce below already-consumed qty ({float(consumed):.4f})'}), 400
+            batch.qty_purchased_base = new_qty
+            batch.qty_remaining_base = new_qty - consumed
+            # Recalculate cost_per_base_unit using current total price
+            current_total = Decimal(str(batch.cost_per_base_unit)) * Decimal(str(batch.qty_purchased_base))
+            batch.cost_per_base_unit = current_total / new_qty
+        except Exception:
+            return jsonify({'error': 'Invalid qty_purchased_base'}), 400
+
     if 'total_price' in data:
         try:
-            total = float(data['total_price'])
-            batch.cost_per_base_unit = total / float(batch.qty_purchased_base)
+            total = Decimal(str(float(data['total_price'])))
+            batch.cost_per_base_unit = total / Decimal(str(batch.qty_purchased_base))
         except Exception:
             return jsonify({'error': 'Invalid total_price'}), 400
 
