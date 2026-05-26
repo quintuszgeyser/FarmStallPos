@@ -5872,9 +5872,11 @@ document.getElementById('btn-deactivate-customer')?.addEventListener('click', as
 document.getElementById('customer-sort')?.addEventListener('change', renderCustomersList);
 
 // Auto-refresh customers tab every 5 seconds while visible
+// Also run duplicate check automatically on open
 let _customerTabRefreshTimer = null;
 document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown.bs.tab', () => {
   loadCustomers();
+  loadMergeSuggestions();
   if (_customerTabRefreshTimer) clearInterval(_customerTabRefreshTimer);
   _customerTabRefreshTimer = setInterval(loadCustomers, 5000);
 });
@@ -5882,28 +5884,30 @@ document.querySelector('[data-bs-target="#customers"]')?.addEventListener('hidde
   if (_customerTabRefreshTimer) { clearInterval(_customerTabRefreshTimer); _customerTabRefreshTimer = null; }
 });
 
-// ─── Merge Suggestions ───────────────────────────────────────
-document.getElementById('btn-merge-suggestions')?.addEventListener('click', async () => {
+// ─── Merge Suggestions — runs automatically on tab open ──────
+async function loadMergeSuggestions() {
   const panel = document.getElementById('merge-suggestions-panel');
-  if (!panel.classList.contains('hidden')) {
-    panel.classList.add('hidden'); panel.innerHTML = ''; return;
-  }
-  panel.innerHTML = '<div class="text-muted small p-2">Scanning for duplicates…</div>';
-  panel.classList.remove('hidden');
+  if (!panel) return;
   try {
     const suggestions = await api('/api/customers/merge_suggestions');
     if (!suggestions.length) {
-      panel.innerHTML = '<div class="alert alert-success py-2 small mb-0">No likely duplicates found at current threshold.</div>';
+      panel.innerHTML = '';
+      panel.classList.add('hidden');
       return;
     }
+    panel.classList.remove('hidden');
     panel.innerHTML = `
       <div class="alert alert-warning py-2 mb-2">
-        <strong>${suggestions.length} possible duplicate${suggestions.length > 1 ? 's' : ''} found</strong>
-        <span class="text-muted small ms-2">Click a pair to open the merge flow.</span>
+        <strong>${suggestions.length} likely duplicate${suggestions.length > 1 ? 's' : ''} detected</strong>
+        <span class="text-muted small ms-2">Click a pair to merge.</span>
       </div>
       ${suggestions.map(s => `
         <div class="border rounded px-3 py-2 mb-2 d-flex align-items-center gap-3 bg-warning-subtle"
              style="cursor:pointer" onclick="openMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id})">
+          <div class="d-flex gap-2 flex-shrink-0">
+            <img src="/api/customers/${s.customer_a.id}/photo" style="width:40px;height:40px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6" onerror="this.style.display='none'">
+            <img src="/api/customers/${s.customer_b.id}/photo" style="width:40px;height:40px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6" onerror="this.style.display='none'">
+          </div>
           <div class="flex-grow-1">
             <span class="fw-semibold">${s.customer_a.name || s.customer_a.customer_number}</span>
             <span class="text-muted small ms-1">(${s.customer_a.visit_count} visits)</span>
@@ -5913,8 +5917,8 @@ document.getElementById('btn-merge-suggestions')?.addEventListener('click', asyn
           </div>
           <span class="badge bg-warning text-dark">${Math.round(s.similarity * 100)}% similar</span>
         </div>`).join('')}`;
-  } catch(e) { panel.innerHTML = `<div class="text-danger small">${e.message}</div>`; }
-});
+  } catch(e) { /* silently fail — suggestions are optional */ }
+}
 
 function openMergeSuggestion(idA, idB) {
   // Tick both checkboxes and open merge modal
