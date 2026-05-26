@@ -273,13 +273,18 @@ def pos_get(path, retries=2):
 
 # ─── Customer cache ─────────────────────────────────────────────────────────
 _customers_cache = []
+_signals_cache = {}       # customer_id -> signals dict, rebuilt when customer list changes
+_signals_cache_ids = set()  # set of customer ids in the cache, used to detect changes
 _cache_lock = threading.Lock()
 
 def refresh_customers():
+    global _signals_cache_ids
     customers = pos_get('/api/customers')
     with _cache_lock:
         _customers_cache.clear()
         _customers_cache.extend(customers)
+    # Invalidate signals cache so next event rebuilds with new customer set
+    _signals_cache_ids = set()
     logger.info(f'Customer cache refreshed: {len(customers)} customers')
 
 def _cache_refresh_loop():
@@ -855,38 +860,43 @@ def rank_candidates(candidates):
 
 def get_all_customer_signals():
     """
-    Fetch all customer signals from POS
-
-    Returns: {customer_id: {face_embeddings: [...], gait_features: [...], plates: [...], ...}}
+    Returns cached signals dict, rebuilding only when the customer list changes.
+    This avoids 3× N HTTP calls on every single event.
     """
+    global _signals_cache, _signals_cache_ids
+
     with _cache_lock:
         customers = list(_customers_cache)
 
-    customer_signals = {}
+    current_ids = {c['id'] for c in customers}
 
+    # Rebuild only if customer set changed
+    if current_ids == _signals_cache_ids:
+        return _signals_cache
+
+    logger.debug(f'Rebuilding signals cache for {len(customers)} customers')
+    customer_signals = {}
     for customer in customers:
         cid = customer['id']
-
-        # Fetch biometric signals
         face_embeddings = pos_get(f'/api/customers/{cid}/faces_raw') or []
-        gait_features = pos_get(f'/api/customers/{cid}/gaits_raw') or []
-        plates = customer.get('plates', [])
-
-        # Fetch physical attributes
-        attrs = pos_get(f'/api/customers/{cid}/attributes') or {}
-
+        gait_features   = pos_get(f'/api/customers/{cid}/gaits_raw') or []
+        attrs           = pos_get(f'/api/customers/{cid}/attributes') or {}
+        if isinstance(attrs, list):
+            attrs = {}
         customer_signals[cid] = {
             'id': cid,
             'face_embeddings': [f['embedding_b64'] for f in face_embeddings],
-            'gait_features': [g['features_b64'] for g in gait_features],
-            'plates': plates,
+            'gait_features':   [g['features_b64']   for g in gait_features],
+            'plates':          customer.get('plates', []),
             'height_category': attrs.get('height_category'),
-            'build': attrs.get('build'),
-            'hair_color': attrs.get('hair_color'),
-            'facial_hair': attrs.get('facial_hair'),
+            'build':           attrs.get('build'),
+            'hair_color':      attrs.get('hair_color'),
+            'facial_hair':     attrs.get('facial_hair'),
         }
 
-    return customer_signals
+    _signals_cache     = customer_signals
+    _signals_cache_ids = current_ids
+    return _signals_cache
 
 # ─── Track Identity Manager ─────────────────────────────────────────────────
 
@@ -902,6 +912,7 @@ class TrackIdentity:
         self.confidence = 0.0
         self.frame_observations = []
         self.customer_votes = {}  # customer_id -> [{'score': ..., 'weight': ..., 'quality': ...}]
+        self.enrollment_claimed = False  # True once any thread has started enrolling this track
 
     def add_observation(self, signals, match_results):
         """
@@ -1236,15 +1247,30 @@ def process_event(event):
         link_threshold, link_source = get_current_threshold('link', context)
         pending_threshold, pending_source = get_current_threshold('pending', context)
 
-        # Decision logic (-1 means enrollment in progress, skip)
-        if track.customer_id and track.customer_id != -1 and track.confidence >= link_threshold:
+        # Decision logic
+        if track.customer_id and track.confidence >= link_threshold:
             logger.info(f'Track {track_id[:8]} linked to customer {track.customer_id} (confidence={track.confidence:.3f})')
+
+            # Build confidence scores including raw signal values for the detail view
+            conf_scores = {'track_confidence': float(track.confidence)}
+            if signals.get('face_quality'):
+                conf_scores['face'] = float(signals['face_quality'])
+            if signals.get('gait_quality'):
+                conf_scores['gait'] = float(signals['gait_quality'])
+            # Include best face similarity from match results if available
+            for cid_m, score_m, breakdown_m, _, _ in match_results:
+                if cid_m == track.customer_id:
+                    if 'face_similarity' in breakdown_m:
+                        conf_scores['face_similarity'] = float(breakdown_m['face_similarity'])
+                    if 'gait_distance' in breakdown_m:
+                        conf_scores['gait_distance'] = float(breakdown_m['gait_distance'])
+                    break
 
             # Log visit
             pos_post('/api/customers/identify', {
                 'customer_id': track.customer_id,
                 'matched_signals': 'track_consensus',
-                'confidence_scores': {'track_confidence': float(track.confidence)},
+                'confidence_scores': conf_scores,
                 'camera_source': signals.get('camera'),
             })
 
@@ -1255,11 +1281,10 @@ def process_event(event):
             if track.confidence < pending_threshold:
                 # Guard against multiple threads enrolling the same track simultaneously
                 with _tracks_lock:
-                    if track.customer_id:
-                        # Another thread already enrolled this track — skip
+                    if track.enrollment_claimed:
+                        logger.debug(f'Track {track_id[:8]} enrollment already claimed, skipping')
                         return
-                    # Claim this track immediately so no other thread enrolls it
-                    track.customer_id = -1  # sentinel: enrollment in progress
+                    track.enrollment_claimed = True  # atomic claim under lock
 
                 logger.info(f'Track {track_id[:8]} ready for enrollment (age={track.age():.1f}s, quality=ok)')
 
