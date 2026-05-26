@@ -1154,65 +1154,84 @@ def _improve_customer_profile(customer_id, signals):
     Fills in missing biometric data and upgrades to higher-quality observations.
     """
     try:
-        # --- Face: upgrade if we have a better observation or none stored ---
-        new_face_quality = signals.get('face_quality', 0.0)
-        if signals.get('face_embedding') and new_face_quality >= FACE_UPGRADE_MIN:
+        new_face_quality = float(signals.get('face_quality', 0.0))
+        has_face_embedding = bool(signals.get('face_embedding'))
+        has_face_photo = bool(signals.get('face_photo'))
+        has_snapshot = bool(signals.get('snapshot_photo'))
+
+        # --- Face embedding: add if missing, upgrade if meaningfully better ---
+        if has_face_embedding and new_face_quality >= FACE_UPGRADE_MIN:
             existing_faces = pos_get(f'/api/customers/{customer_id}/faces_raw') or []
-            # Check stored quality (we store quality as part of the enroll call response isn't available,
-            # so we upgrade if no face stored yet, or if new quality is meaningfully better)
-            if not existing_faces:
-                logger.info(f'Profile [{customer_id}]: adding face (quality={new_face_quality:.2f})')
+            if isinstance(existing_faces, list) and len(existing_faces) == 0:
+                # No active face embedding — add one regardless of quality
+                logger.info(f'Profile [{customer_id}]: adding face embedding (quality={new_face_quality:.2f})')
                 payload = {
                     'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
-                    'quality': float(new_face_quality),
+                    'quality': new_face_quality,
                 }
-                if signals.get('face_photo'):
+                if has_face_photo:
                     payload['photo_b64'] = base64.b64encode(signals['face_photo']).decode()
+                if has_snapshot:
+                    payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
                 pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
-            elif signals.get('face_photo'):
-                # We have a face stored — upgrade photo if this is high quality
-                if new_face_quality >= 0.80:
-                    logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
-                    payload = {
-                        'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
-                        'quality': float(new_face_quality),
-                        'photo_b64': base64.b64encode(signals['face_photo']).decode(),
-                    }
-                    pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
 
-        # --- Gait: add if missing ---
-        new_gait_quality = signals.get('gait_quality', 0.0)
+            elif new_face_quality >= 0.60 and has_face_photo:
+                # Good quality face photo — upgrade if better than what's stored
+                logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
+                payload = {
+                    'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
+                    'quality': new_face_quality,
+                    'photo_b64': base64.b64encode(signals['face_photo']).decode(),
+                }
+                if has_snapshot:
+                    payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
+                pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+
+        # --- Body snapshot: always update — gives visual even when face not detected ---
+        if has_snapshot and not has_face_embedding:
+            # Only face-less visits need the snapshot update path
+            pos_post(f'/api/customers/{customer_id}/enroll/face', {
+                'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
+                'quality': 0.0,
+                'body_photo_b64': base64.b64encode(signals['snapshot_photo']).decode(),
+                'snapshot_only': True,
+            })
+
+        # --- Gait: add if missing, upgrade if better quality ---
+        new_gait_quality = float(signals.get('gait_quality', 0.0))
         if signals.get('gait_features') and new_gait_quality >= GAIT_UPGRADE_MIN:
             existing_gaits = pos_get(f'/api/customers/{customer_id}/gaits_raw') or []
             if not existing_gaits:
                 logger.info(f'Profile [{customer_id}]: adding gait (quality={new_gait_quality:.2f})')
                 pos_post(f'/api/customers/{customer_id}/enroll/gait', {
                     'features_b64': base64.b64encode(signals['gait_features']).decode(),
-                    'quality': float(new_gait_quality),
+                    'quality': new_gait_quality,
                 })
 
-        # --- Physical attributes: always update when detected ---
+        # --- Physical attributes: fill in missing fields, upgrade on higher confidence ---
         if signals.get('physical_attrs'):
             attrs = signals['physical_attrs']
             existing = pos_get(f'/api/customers/{customer_id}/attributes')
-            # pos_get returns [] on 404/error; treat that as no existing attrs
             if isinstance(existing, list):
                 existing = None
-            # Fill in fields that are missing or update all if confidence is high
-            should_update = (
-                existing is None or
-                not existing.get('hair_color') or
-                attrs.get('confidence', 0) > (existing.get('confidence') or 0)
-            )
-            if should_update:
-                logger.info(f'Profile [{customer_id}]: updating physical attributes')
+            new_conf = float(attrs.get('confidence', 0.0))
+            old_conf = float((existing or {}).get('confidence') or 0.0)
+            missing_fields = existing is None or not existing.get('hair_color') or not existing.get('build')
+            if missing_fields or new_conf > old_conf:
+                logger.info(f'Profile [{customer_id}]: updating physical attributes (conf={new_conf:.2f})')
                 pos_post(f'/api/customers/{customer_id}/attributes', {
-                    'hair_color':   attrs.get('hair_color'),
-                    'build':        attrs.get('build'),
-                    'facial_hair':  attrs.get('facial_hair'),
+                    'hair_color':      attrs.get('hair_color'),
+                    'build':           attrs.get('build'),
+                    'facial_hair':     attrs.get('facial_hair'),
                     'height_category': attrs.get('height_category'),
-                    'confidence':   attrs.get('confidence', 0.0),
-                    'camera_source': signals.get('camera'),
+                    'height_cm':       attrs.get('height_cm'),
+                    'skin_tone':       attrs.get('skin_tone'),
+                    'eye_color':       attrs.get('eye_color'),
+                    'age_range':       attrs.get('age_range'),
+                    'gender':          attrs.get('gender'),
+                    'wearing_glasses': attrs.get('wearing_glasses'),
+                    'confidence':      new_conf,
+                    'camera_source':   signals.get('camera'),
                 })
 
     except Exception as e:
