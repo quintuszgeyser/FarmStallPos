@@ -5447,13 +5447,35 @@ async function openMergeModal() {
   const body = document.getElementById('customerDetailBody');
   const title = document.getElementById('customerDetailTitle');
   title.textContent = 'Merge Customers — Pick Primary';
+
+  // Load radars for all selected customers
+  const radars = await Promise.all(
+    customers.map(c => api(`/api/customers/${c.id}/radar`).catch(() => null))
+  );
+
+  const radarComparison = radars.some(Boolean) ? `
+    <div class="d-flex gap-3 justify-content-center mb-3 flex-wrap">
+      ${customers.map((c, i) => radars[i] ? `
+        <div class="text-center">
+          <div class="small fw-semibold mb-1">${c.name || c.customer_number}</div>
+          <canvas id="merge-radar-${c.id}" width="200" height="200"></canvas>
+          <div class="text-muted" style="font-size:.65rem">${radars[i].details.face_angles} angles · ID ${radars[i].details.best_face_sim}%</div>
+        </div>` : '').join('')}
+    </div>` : '';
+
   body.innerHTML = `
     <p class="text-muted small">The primary customer keeps their number, name and details. All biometrics, visits and purchases from the others will be moved to them.</p>
+    ${radarComparison}
     <div class="mb-3">${opts}</div>
     <div class="d-flex justify-content-end gap-2">
       <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
       <button class="btn btn-warning" id="btn-confirm-merge">Merge</button>
     </div>`;
+
+  const colors = ['#2a6f3e', '#0d6efd', '#fd7e14', '#dc3545'];
+  customers.forEach((c, i) => {
+    if (radars[i]) drawRadarChart(`merge-radar-${c.id}`, radars[i].scores, colors[i % colors.length]);
+  });
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
 
@@ -5474,6 +5496,94 @@ async function openMergeModal() {
   };
 }
 
+function drawRadarChart(canvasId, scores, color) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const cx = W / 2, cy = H / 2;
+  const R = Math.min(cx, cy) - 28;
+  const labels = Object.keys(scores);
+  const values = Object.values(scores);
+  const N = labels.length;
+  const angleStep = (2 * Math.PI) / N;
+  const startAngle = -Math.PI / 2;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Grid rings
+  for (let r = 1; r <= 5; r++) {
+    ctx.beginPath();
+    for (let i = 0; i < N; i++) {
+      const a = startAngle + i * angleStep;
+      const x = cx + Math.cos(a) * (R * r / 5);
+      const y = cy + Math.sin(a) * (R * r / 5);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = r === 5 ? '#adb5bd' : '#dee2e6';
+    ctx.lineWidth = r === 5 ? 1.5 : 0.8;
+    ctx.stroke();
+  }
+
+  // Spokes
+  for (let i = 0; i < N; i++) {
+    const a = startAngle + i * angleStep;
+    ctx.beginPath();
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(cx + Math.cos(a) * R, cy + Math.sin(a) * R);
+    ctx.strokeStyle = '#dee2e6';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+  }
+
+  // Data polygon
+  ctx.beginPath();
+  for (let i = 0; i < N; i++) {
+    const a = startAngle + i * angleStep;
+    const v = Math.max(0, Math.min(1, values[i]));
+    const x = cx + Math.cos(a) * R * v;
+    const y = cy + Math.sin(a) * R * v;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color + '33';
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // Data points
+  for (let i = 0; i < N; i++) {
+    const a = startAngle + i * angleStep;
+    const v = Math.max(0, Math.min(1, values[i]));
+    const x = cx + Math.cos(a) * R * v;
+    const y = cy + Math.sin(a) * R * v;
+    ctx.beginPath();
+    ctx.arc(x, y, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  // Labels
+  ctx.font = '11px system-ui, sans-serif';
+  ctx.fillStyle = '#495057';
+  ctx.textAlign = 'center';
+  for (let i = 0; i < N; i++) {
+    const a = startAngle + i * angleStep;
+    const lx = cx + Math.cos(a) * (R + 16);
+    const ly = cy + Math.sin(a) * (R + 16);
+    const pct = Math.round(values[i] * 100);
+    const label = labels[i];
+    // Multi-line: label on top, % below
+    const lineH = 12;
+    ctx.fillStyle = '#495057';
+    ctx.fillText(label, lx, ly - 2);
+    ctx.fillStyle = pct >= 80 ? '#198754' : pct >= 40 ? '#fd7e14' : '#dc3545';
+    ctx.fillText(pct + '%', lx, ly + lineH);
+  }
+}
+
 async function openCustomerDetail(customerId) {
   const c = STATE.customers.find(x => x.id === customerId);
   if (!c) return;
@@ -5484,10 +5594,11 @@ async function openCustomerDetail(customerId) {
     '<div class="text-center text-muted py-4">Loading...</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
 
-  const [attrs, visits, profile] = await Promise.all([
+  const [attrs, visits, profile, radar] = await Promise.all([
     api(`/api/customers/${c.id}/attributes`).catch(() => null),
     api(`/api/customers/${c.id}/visits`).catch(() => []),
     api(`/api/customers/${c.id}/profile`).catch(() => null),
+    api(`/api/customers/${c.id}/radar`).catch(() => null),
   ]);
 
   // ── Photo + identity signals ──────────────────────────────────
@@ -5703,6 +5814,27 @@ async function openCustomerDetail(customerId) {
     <span class="text-muted small ms-2">Removes all biometric data and visit history permanently.</span>
   </div>`;
 
+  // ── Radar chart ───────────────────────────────────────────────
+  const radarHtml = radar ? `
+    <div class="mb-3">
+      <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Profile Completeness</div>
+      <div class="d-flex justify-content-center">
+        <canvas id="customer-radar-${c.id}" width="300" height="300" style="max-width:300px"></canvas>
+      </div>
+      <div class="d-flex flex-wrap justify-content-center gap-2 mt-1">
+        ${Object.entries(radar.scores).map(([k,v]) => {
+          const pct = Math.round(v*100);
+          const col = pct>=80?'success':pct>=40?'warning':'danger';
+          return `<span class="badge bg-${col} bg-opacity-${pct>=80?'100':'75'}">${k}: ${pct}%</span>`;
+        }).join('')}
+      </div>
+      <div class="text-muted text-center mt-1" style="font-size:.7rem">
+        ${radar.details.face_angles} face angle${radar.details.face_angles!==1?'s':''} stored ·
+        ${radar.details.attrs_filled}/${radar.details.attrs_total} attributes ·
+        best ID ${radar.details.best_face_sim}%
+      </div>
+    </div>` : '';
+
   // ── Assemble ──────────────────────────────────────────────────
   document.getElementById('customerDetailBody').innerHTML = `
     <div class="d-flex gap-3 mb-3 align-items-start">
@@ -5717,11 +5849,17 @@ async function openCustomerDetail(customerId) {
       </div>
     </div>
     <hr class="my-2">
+    ${radarHtml}
     ${bizHtml}
     ${attrsHtml ? '<hr class="my-2">' + attrsHtml : ''}
     <hr class="my-2">
     ${visitsHtml}
     ${deleteBtn}`;
+
+  // Draw radar after DOM is ready
+  if (radar) {
+    drawRadarChart(`customer-radar-${c.id}`, radar.scores, '#2a6f3e');
+  }
 }
 
 async function openCustomerEnroll(customerId) {
