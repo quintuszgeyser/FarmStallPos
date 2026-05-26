@@ -2642,6 +2642,31 @@ def api_customer_profile(cid):
         }
     })
 
+@app.route('/api/customers/<int:cid>/visits', methods=['GET'])
+def api_customer_visits(cid):
+    """Recent visits with signal breakdown for the detail view."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    visits = (CustomerVisit.query
+              .filter_by(customer_id=cid)
+              .order_by(CustomerVisit.detected_at.desc())
+              .limit(20).all())
+    result = []
+    for v in visits:
+        scores = {}
+        try:
+            scores = _json.loads(v.confidence_scores) if v.confidence_scores else {}
+        except Exception:
+            pass
+        result.append({
+            'id': v.id,
+            'detected_at': v.detected_at.isoformat(),
+            'matched_signals': v.matched_signals,
+            'confidence_scores': scores,
+            'camera_source': v.camera_source,
+        })
+    return jsonify(result)
+
 @app.route('/api/customers/<int:cid>/enroll/plate', methods=['POST'])
 def api_customers_enroll_plate(cid):
     if not require_role('admin'):

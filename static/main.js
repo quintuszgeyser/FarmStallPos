@@ -5333,10 +5333,143 @@ function renderCustomersList() {
             <span class="text-muted">${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}${c.last_visit ? ` · last ${new Date(c.last_visit).toLocaleDateString()}` : ''}</span>
           </div>
         </div>
-        <button class="btn btn-outline-secondary btn-sm flex-shrink-0" onclick="openCustomerEnroll(${c.id})">Edit</button>
+        <div class="d-flex flex-column gap-1 flex-shrink-0">
+          <button class="btn btn-outline-primary btn-sm" onclick="openCustomerDetail(${c.id})">Details</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="openCustomerEnroll(${c.id})">Edit</button>
+        </div>
       </div>
     </div>
   `).join('');
+}
+
+async function openCustomerDetail(customerId) {
+  const c = STATE.customers.find(x => x.id === customerId);
+  if (!c) return;
+
+  document.getElementById('customerDetailTitle').textContent =
+    (c.name || 'Unnamed') + (c.customer_number ? ` — ${c.customer_number}` : '');
+  document.getElementById('customerDetailBody').innerHTML =
+    '<div class="text-center text-muted py-4">Loading...</div>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
+
+  const [attrs, visits] = await Promise.all([
+    api(`/api/customers/${c.id}/attributes`).catch(() => null),
+    api(`/api/customers/${c.id}/visits`).catch(() => []),
+  ]);
+
+  // ── Photo + identity signals ──────────────────────────────────
+  const photoHtml = c.has_face
+    ? `<img src="/api/customers/${c.id}/photo?t=${Date.now()}" alt="face"
+         style="width:90px;height:90px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;"
+         onerror="this.style.display='none'">`
+    : `<div style="width:90px;height:90px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:2rem;">👤</div>`;
+
+  const signalBadges = [
+    c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face —</span>',
+    c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body —</span>',
+    ...(c.plates || []).map(p => `<span class="badge bg-light text-dark border">${p}</span>`),
+    c.auto_enrolled ? '<span class="badge bg-info text-dark">Auto-enrolled</span>' : '',
+  ].filter(Boolean).join(' ');
+
+  // ── 12 Physical attributes ────────────────────────────────────
+  const ATTR_LABELS = [
+    ['height_category', 'Height',       v => v],
+    ['height_cm',       'Height (cm)',  v => v + ' cm'],
+    ['build',           'Build',        v => v],
+    ['age_range',       'Age',          v => v],
+    ['gender',          'Gender',       v => v],
+    ['hair_color',      'Hair',         v => v],
+    ['skin_tone',       'Skin',         v => v],
+    ['eye_color',       'Eyes',         v => v],
+    ['facial_hair',     'Facial hair',  v => v],
+    ['wearing_glasses', 'Glasses',      v => v ? 'yes' : 'no'],
+    ['camera_source',   'Camera',       v => v],
+    ['confidence',      'Conf.',        v => Math.round(v * 100) + '%'],
+  ];
+
+  let attrsHtml = '';
+  if (attrs) {
+    const rows = ATTR_LABELS.map(([key, label, fmt]) => {
+      const val = attrs[key];
+      if (val === null || val === undefined || val === '') return '';
+      if (key === 'facial_hair' && val === 'none') return '';
+      if (key === 'wearing_glasses' && val === null) return '';
+      return `<tr><td class="text-muted small pe-3" style="white-space:nowrap">${label}</td>
+                  <td class="small fw-semibold">${fmt(val)}</td></tr>`;
+    }).filter(Boolean);
+
+    attrsHtml = rows.length
+      ? `<div class="mb-3">
+           <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Physical Attributes</div>
+           <table class="table table-sm table-borderless mb-0" style="width:auto"><tbody>${rows.join('')}</tbody></table>
+         </div>`
+      : `<div class="text-muted small mb-3">No physical attributes captured yet.</div>`;
+  }
+
+  // ── Visit history ─────────────────────────────────────────────
+  const SIGNAL_LABELS = {
+    face: 'Face', gait: 'Body', plate: 'Plate',
+    height_cat: 'Height', auto_enrollment: 'Auto-enroll',
+    track_confidence: 'Track',
+  };
+
+  let visitsHtml = '';
+  if (visits.length) {
+    const rows = visits.map(v => {
+      const dt = new Date(v.detected_at);
+      const dtStr = dt.toLocaleDateString() + ' ' + dt.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      const camera = v.camera_source
+        ? `<span class="badge bg-light text-dark border ms-1" style="font-size:.65rem">${v.camera_source}</span>` : '';
+
+      const scores = v.confidence_scores || {};
+      const signals = Object.entries(scores).map(([k, score]) => {
+        const label = SIGNAL_LABELS[k] || k;
+        const pct = typeof score === 'number' ? Math.round(score * 100) : null;
+        const colour = pct === null ? 'bg-secondary'
+          : pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning text-dark' : 'bg-secondary';
+        return `<span class="badge ${colour} me-1" style="font-size:.7rem">${label}${pct !== null ? ' ' + pct + '%' : ''}</span>`;
+      }).join('');
+
+      return `<tr>
+        <td class="small text-muted" style="white-space:nowrap">${dtStr}${camera}</td>
+        <td>${signals || '<span class="text-muted small">—</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    visitsHtml = `<div>
+      <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Visit History (last ${visits.length})</div>
+      <div style="max-height:220px;overflow-y:auto">
+        <table class="table table-sm table-borderless mb-0">
+          <thead><tr>
+            <th class="small text-muted fw-normal">When</th>
+            <th class="small text-muted fw-normal">Signals used</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </div>`;
+  } else {
+    visitsHtml = '<div class="text-muted small">No visits recorded yet.</div>';
+  }
+
+  // ── Assemble ──────────────────────────────────────────────────
+  document.getElementById('customerDetailBody').innerHTML = `
+    <div class="d-flex gap-3 mb-3 align-items-start">
+      <div class="flex-shrink-0">${photoHtml}</div>
+      <div class="flex-grow-1">
+        <div class="fw-semibold fs-5 mb-1">${c.name || '<span class="text-muted fst-italic">Unnamed</span>'}</div>
+        <div class="mb-1">${signalBadges}</div>
+        <div class="text-muted small">
+          ${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}
+          ${c.last_visit ? ' · last ' + new Date(c.last_visit).toLocaleDateString() : ''}
+          ${c.phone ? ' · ' + c.phone : ''}
+        </div>
+      </div>
+    </div>
+    <hr class="my-2">
+    ${attrsHtml}
+    <hr class="my-2">
+    ${visitsHtml}`;
 }
 
 async function openCustomerEnroll(customerId) {
