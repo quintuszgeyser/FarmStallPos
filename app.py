@@ -2453,7 +2453,7 @@ def _customer_dict(c):
 def api_customers_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
-    customers = Customer.query.order_by(Customer.name.asc()).all()
+    customers = Customer.query.filter_by(active=True).order_by(Customer.name.asc()).all()
     return jsonify([_customer_dict(c) for c in customers])
 
 @app.route('/api/customers', methods=['POST'])
@@ -2740,6 +2740,32 @@ def api_customers_merge():
             # Deactivate source and set merged_into
             db.session.execute(_text('UPDATE customers SET active = FALSE, merged_into = :pid WHERE id = :sid'), {'pid': primary_id, 'sid': mid})
             merged_count += 1
+
+        # After all merges: keep only the best face on the primary.
+        # "Best" = active face row with the largest photo (biggest JPEG = sharpest crop).
+        # Keep that one active, deactivate the rest. All embeddings stay for matching.
+        best = db.session.execute(_text('''
+            SELECT id FROM customer_faces
+            WHERE customer_id = :pid AND active = TRUE AND photo IS NOT NULL
+            ORDER BY length(photo) DESC LIMIT 1
+        '''), {'pid': primary_id}).fetchone()
+        if best:
+            db.session.execute(_text('''
+                UPDATE customer_faces SET active = FALSE
+                WHERE customer_id = :pid AND id != :best_id
+            '''), {'pid': primary_id, 'best_id': best[0]})
+        # If no face has a photo, just keep the most recent active one
+        else:
+            recent = db.session.execute(_text('''
+                SELECT id FROM customer_faces
+                WHERE customer_id = :pid AND active = TRUE
+                ORDER BY enrolled_at DESC LIMIT 1
+            '''), {'pid': primary_id}).fetchone()
+            if recent:
+                db.session.execute(_text('''
+                    UPDATE customer_faces SET active = FALSE
+                    WHERE customer_id = :pid AND id != :keep_id
+                '''), {'pid': primary_id, 'keep_id': recent[0]})
 
         db.session.commit()
         return jsonify({'ok': True, 'merged': merged_count})
