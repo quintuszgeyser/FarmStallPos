@@ -2939,7 +2939,8 @@ def api_customer_name(cid):
 @app.route('/api/customers/merge', methods=['POST'])
 def api_customers_merge():
     """Merge multiple customers into one primary customer.
-    Moves all faces, gaits, plates, visits, and sales to the primary.
+    Moves all faces, gaits, plates, visits, physical_attributes, visit_sessions, and sales to the primary.
+    Fills in missing fields (name, phone, email, notes, is_employee) on primary from source.
     Marks merged customers as inactive with merged_into set.
     Uses raw SQL throughout to avoid ORM autoflush issues.
     """
@@ -2962,15 +2963,17 @@ def api_customers_merge():
         for mid in merge_ids:
             if mid == primary_id:
                 continue
-            src_row = db.session.execute(_text('SELECT id, visit_count, last_visit, first_seen, name FROM customers WHERE id = :id'), {'id': mid}).fetchone()
+            src_row = db.session.execute(_text('SELECT id, visit_count, last_visit, first_seen, name, phone, email, notes, is_employee FROM customers WHERE id = :id'), {'id': mid}).fetchone()
             if not src_row:
                 continue
 
             # Move biometrics and visits (no unique constraint issues)
-            db.session.execute(_text('UPDATE customer_faces   SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
-            db.session.execute(_text('UPDATE customer_gaits   SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
-            db.session.execute(_text('UPDATE customer_visits  SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
-            db.session.execute(_text('UPDATE sales            SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE customer_faces              SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE customer_gaits              SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE customer_visits             SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE customer_physical_attributes SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE visit_sessions              SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
+            db.session.execute(_text('UPDATE sales                       SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
 
             # Plates: skip any that would duplicate an existing plate on the primary
             db.session.execute(_text('''
@@ -2996,14 +2999,21 @@ def api_customers_merge():
                 'src_lv': src_row[2],
                 'src_fs': src_row[3],
             })
-            # Take name from source if primary has none
-            if src_row[4] and not db.session.execute(
-                _text('SELECT name FROM customers WHERE id = :pid'), {'pid': primary_id}
-            ).fetchone()[0]:
-                db.session.execute(
-                    _text('UPDATE customers SET name = :n WHERE id = :pid'),
-                    {'n': src_row[4], 'pid': primary_id}
-                )
+            # Fill in any missing fields on the primary from the source
+            pri = db.session.execute(
+                _text('SELECT name, phone, email, notes, is_employee FROM customers WHERE id = :pid'),
+                {'pid': primary_id}
+            ).fetchone()
+            updates = {}
+            if src_row[4] and not pri[0]:   updates['name']  = src_row[4]
+            if src_row[5] and not pri[1]:   updates['phone'] = src_row[5]
+            if src_row[6] and not pri[2]:   updates['email'] = src_row[6]
+            if src_row[7] and not pri[3]:   updates['notes'] = src_row[7]
+            if src_row[8] and not pri[4]:   updates['is_employee'] = True
+            if updates:
+                set_clause = ', '.join(f'{k} = :{k}' for k in updates)
+                updates['pid'] = primary_id
+                db.session.execute(_text(f'UPDATE customers SET {set_clause} WHERE id = :pid'), updates)
 
             # Deactivate source and set merged_into
             db.session.execute(_text('UPDATE customers SET active = FALSE, merged_into = :pid WHERE id = :sid'), {'pid': primary_id, 'sid': mid})
