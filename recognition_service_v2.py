@@ -80,7 +80,9 @@ THRESHOLD_VERSION = "v1.0_initial"
 FEATURE_WEIGHTS = {
     # Biometric (identity-grade)
     'face':         6.0,
-    'gait':         3.0,
+    # Gait here is single-frame body proportions, not temporal gait — weight accordingly.
+    # True temporal gait (stride cadence etc.) would warrant 3.0+.
+    'gait':         1.0,
 
     # Support signals (cannot link alone)
     'plate':        2.0,
@@ -292,6 +294,9 @@ def pos_get(path, retries=2):
     for attempt in range(retries + 1):
         try:
             r = _pos_session.get(f'{POS_URL}{path}', timeout=10)
+            if r.status_code == 401:
+                pos_login()
+                r = _pos_session.get(f'{POS_URL}{path}', timeout=10)
             return r.json() if r.ok else []
         except (requests.Timeout, requests.ConnectionError) as e:
             if attempt < retries:
@@ -308,6 +313,7 @@ _customers_cache = []
 _signals_cache = {}       # customer_id -> signals dict, rebuilt when customer list changes
 _signals_cache_ids = set()  # set of customer ids in the cache, used to detect changes
 _cache_lock = threading.Lock()
+_cache_rebuild_lock = threading.Lock()  # prevents concurrent full cache rebuilds
 
 def refresh_customers():
     global _signals_cache_ids
@@ -598,22 +604,36 @@ def extract_physical_attributes(image_path, person_box=None):
         face_bbox = faces[0][0]
         attributes = {}
 
-        # Hair color
-        hair_region = img[max(0, int(face_bbox[1] - 50)):int(face_bbox[1]),
-                          int(face_bbox[0]):int(face_bbox[2])]
+        # Hair color — sample above the face, but exclude sky-blue and wall-grey
+        # pixels by requiring moderate saturation (pure background has near-zero sat).
+        face_w = face_bbox[2] - face_bbox[0]
+        face_h = face_bbox[3] - face_bbox[1]
+        hair_y1 = max(0, int(face_bbox[1] - face_h * 0.5))
+        hair_y2 = max(0, int(face_bbox[1]))
+        hair_x1 = max(0, int(face_bbox[0]))
+        hair_x2 = min(img.shape[1], int(face_bbox[2]))
+        hair_region = img[hair_y1:hair_y2, hair_x1:hair_x2]
         if hair_region.size > 0:
-            avg_color = cv2.mean(hair_region)[:3]
-            b, g, r = avg_color
-            brightness = (r + g + b) / 3
-
-            if brightness < 50:
-                attributes['hair_color'] = 'black'
-            elif brightness < 100:
-                attributes['hair_color'] = 'brown'
-            elif brightness > 180:
-                attributes['hair_color'] = 'blonde' if r <= g else 'red'
-            else:
-                attributes['hair_color'] = 'gray'
+            hsv_hair = cv2.cvtColor(hair_region, cv2.COLOR_BGR2HSV)
+            # Keep only pixels with low saturation (natural hair colours) or red hue
+            sat = hsv_hair[:, :, 1]
+            val = hsv_hair[:, :, 2]
+            # Exclude near-white/grey backgrounds (high val + low sat = sky/wall)
+            fg_mask = ~((sat < 30) & (val > 180))
+            fg_pixels = hair_region[fg_mask]
+            if len(fg_pixels) > 20:
+                b, g, r = np.mean(fg_pixels, axis=0)[:3]
+                brightness = (r + g + b) / 3
+                if brightness < 55:
+                    attributes['hair_color'] = 'black'
+                elif brightness < 110:
+                    attributes['hair_color'] = 'brown'
+                elif r > g * 1.2 and r > 120:
+                    attributes['hair_color'] = 'red'
+                elif brightness > 185:
+                    attributes['hair_color'] = 'blonde'
+                else:
+                    attributes['hair_color'] = 'gray'
 
         # Build (from gait if available)
         pose_landmarker = get_pose()
@@ -650,17 +670,24 @@ def extract_physical_attributes(image_path, person_box=None):
                 else:
                     attributes['build'] = 'slim'
 
-        # Facial hair
+        # Facial hair — compare chin region darkness RELATIVE to mid-face to avoid
+        # false positives on dark skin. A beard makes the chin darker than the cheeks;
+        # the absolute level varies with skin tone.
         face_region = img[int(face_bbox[1]):int(face_bbox[3]),
                           int(face_bbox[0]):int(face_bbox[2])]
         if face_region.size > 0:
             face_height = face_bbox[3] - face_bbox[1]
-            chin_region = face_region[int(face_height * 0.7):, :]
-            if chin_region.size > 0:
-                chin_darkness = np.mean(cv2.cvtColor(chin_region, cv2.COLOR_BGR2GRAY))
-                if chin_darkness < 80:
+            mid_region  = face_region[int(face_height * 0.35):int(face_height * 0.60), :]
+            chin_region = face_region[int(face_height * 0.72):, :]
+            if chin_region.size > 0 and mid_region.size > 0:
+                chin_gray = cv2.cvtColor(chin_region, cv2.COLOR_BGR2GRAY)
+                mid_gray  = cv2.cvtColor(mid_region, cv2.COLOR_BGR2GRAY)
+                chin_val  = float(np.mean(chin_gray))
+                mid_val   = float(np.mean(mid_gray))
+                relative_darkness = mid_val - chin_val  # positive = chin darker than cheeks
+                if relative_darkness > 25:
                     attributes['facial_hair'] = 'beard'
-                elif chin_darkness < 120:
+                elif relative_darkness > 12:
                     attributes['facial_hair'] = 'mustache'
                 else:
                     attributes['facial_hair'] = 'none'
@@ -728,9 +755,12 @@ def extract_all_signals_with_quality(event):
                 signals['gait_features'] = gait_feat
                 signals['gait_quality'] = gait_qual
 
-            physical = extract_physical_attributes(snapshot_path, person_box)
-            if physical:
-                signals['physical_attrs'] = physical
+            # Skip second MediaPipe inference: only run physical_attributes
+            # when gait did not already run pose on this same image.
+            if not gait_feat:
+                physical = extract_physical_attributes(snapshot_path, person_box)
+                if physical:
+                    signals['physical_attrs'] = physical
 
             # Only capture a body crop when a face was also confirmed in this snapshot.
             # Skipping when no face found avoids empty-frame body photos (person walked out).
@@ -844,9 +874,10 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         cv2.imwrite(tmp.name, frame)
         tmp.close()
         try:
-            # Face — pass person_box so SCRFD only looks at the right person's head region.
-            # This prevents picking up a bystander's face when multiple people are in frame.
-            face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, person_box)
+            # Face — do NOT pass person_box for clips: the trigger-frame box is stale
+            # as the person moves through the clip. Let SCRFD find the face freely.
+            # We pick the best-quality face found in each frame regardless of position.
+            face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, None)
             if face_emb and face_qual >= FACE_QUALITY_MIN:
                 # Check if this is a genuinely new angle vs what we've already found
                 new_emb = np.frombuffer(face_emb, dtype=np.float32).copy()
@@ -922,7 +953,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
                 break
         if is_new:
             distinct_faces.append(cand)
-        if len(distinct_faces) >= 10:
+        if len(distinct_faces) >= MAX_FACE_EMBEDDINGS:
             break
 
     logger.debug(f'Clip faces: {len(face_candidates)} candidates → {len(distinct_faces)} distinct angles')
@@ -1142,28 +1173,32 @@ def get_all_customer_signals():
     if current_ids == _signals_cache_ids:
         return _signals_cache
 
-    logger.debug(f'Rebuilding signals cache for {len(customers)} customers')
-    customer_signals = {}
-    for customer in customers:
-        cid = customer['id']
-        face_embeddings = pos_get(f'/api/customers/{cid}/faces_raw') or []
-        gait_features   = pos_get(f'/api/customers/{cid}/gaits_raw') or []
-        attrs           = pos_get(f'/api/customers/{cid}/attributes') or {}
-        if isinstance(attrs, list):
-            attrs = {}
-        customer_signals[cid] = {
-            'id': cid,
-            'face_embeddings': [f['embedding_b64'] for f in face_embeddings],
-            'gait_features':   [g['features_b64']   for g in gait_features],
-            'plates':          customer.get('plates', []),
-            'height_category': attrs.get('height_category'),
-            'build':           attrs.get('build'),
-            'hair_color':      attrs.get('hair_color'),
-            'facial_hair':     attrs.get('facial_hair'),
-        }
+    with _cache_rebuild_lock:
+        # Double-checked: another thread may have rebuilt while we waited for the lock
+        if current_ids == _signals_cache_ids:
+            return _signals_cache
+        logger.debug(f'Rebuilding signals cache for {len(customers)} customers')
+        customer_signals = {}
+        for customer in customers:
+            cid = customer['id']
+            face_embeddings = pos_get(f'/api/customers/{cid}/faces_raw') or []
+            gait_features   = pos_get(f'/api/customers/{cid}/gaits_raw') or []
+            attrs           = pos_get(f'/api/customers/{cid}/attributes') or {}
+            if isinstance(attrs, list):
+                attrs = {}
+            customer_signals[cid] = {
+                'id': cid,
+                'face_embeddings': [f['embedding_b64'] for f in face_embeddings],
+                'gait_features':   [g['features_b64']   for g in gait_features],
+                'plates':          customer.get('plates', []),
+                'height_category': attrs.get('height_category'),
+                'build':           attrs.get('build'),
+                'hair_color':      attrs.get('hair_color'),
+                'facial_hair':     attrs.get('facial_hair'),
+            }
 
-    _signals_cache     = customer_signals
-    _signals_cache_ids = current_ids
+        _signals_cache     = customer_signals
+        _signals_cache_ids = current_ids
     return _signals_cache
 
 # ─── Track Identity Manager ─────────────────────────────────────────────────
@@ -1244,7 +1279,8 @@ class TrackIdentity:
         best_customer = max(weighted_scores.keys(), key=lambda cid: weighted_scores[cid])
         best_score = weighted_scores[best_customer]
 
-        if best_score >= 0.70:
+        link_thresh = _threshold_manager.global_thresholds.get('link', 0.55)
+        if best_score >= link_thresh:
             self.customer_id = best_customer
             self.confidence = best_score
         else:
@@ -1337,11 +1373,8 @@ class TrackIdentity:
 # Global track registry
 _active_tracks = {}
 _tracks_lock = threading.Lock()
-# One persistent track per camera — reused across Frigate event IDs so
-# a person in frame accumulates age instead of resetting every 30s.
-# _camera_tracks removed: each Frigate event_id is already unique per person.
-# Using event_id directly as track_id supports simultaneous multi-person tracking.
-CAMERA_TRACK_TIMEOUT = 120  # seconds — if no event from camera for 2min, start fresh
+# Limit concurrent event-processing threads to avoid fan-out at shop scale.
+_event_semaphore = threading.Semaphore(20)
 
 # ─── Threshold Manager ──────────────────────────────────────────────────────
 
@@ -1400,10 +1433,23 @@ def _improve_customer_profile(customer_id, signals):
         has_face_photo = bool(signals.get('face_photo'))
         has_snapshot = bool(signals.get('snapshot_photo'))
 
+        # Fast exit: skip all network calls when there's nothing useful to update
+        if (not has_face_embedding and not has_snapshot
+                and not signals.get('gait_features')
+                and not signals.get('physical_attrs')):
+            return
+
         # --- Face embedding: add if missing, upgrade if meaningfully better ---
         if has_face_embedding and new_face_quality >= FACE_UPGRADE_MIN:
-            existing_faces = pos_get(f'/api/customers/{customer_id}/faces_raw') or []
-            if isinstance(existing_faces, list) and len(existing_faces) == 0:
+            # Use cached embeddings to decide whether to enroll — avoids a GET per event.
+            # Fall back to API only if this customer isn't in the cache yet.
+            cached = _signals_cache.get(customer_id, {})
+            cached_faces = cached.get('face_embeddings', None)
+            if cached_faces is None:
+                existing_faces = pos_get(f'/api/customers/{customer_id}/faces_raw') or []
+                cached_faces = [f['embedding_b64'] for f in existing_faces] if isinstance(existing_faces, list) else []
+            enrolled_new_angle = False
+            if len(cached_faces) == 0:
                 # No active face embedding — add one regardless of quality
                 logger.info(f'Profile [{customer_id}]: adding face embedding (quality={new_face_quality:.2f})')
                 payload = {
@@ -1415,6 +1461,7 @@ def _improve_customer_profile(customer_id, signals):
                 if has_snapshot:
                     payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
                 pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+                enrolled_new_angle = True
 
             elif new_face_quality >= 0.60 and has_face_photo:
                 # Good quality face photo — upgrade if better than what's stored
@@ -1427,6 +1474,12 @@ def _improve_customer_profile(customer_id, signals):
                 if has_snapshot:
                     payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
                 pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+                enrolled_new_angle = True
+
+            # Invalidate signals cache so new embedding is available for matching immediately
+            if enrolled_new_angle:
+                global _signals_cache_ids
+                _signals_cache_ids = set()
 
         # --- Body snapshot: update whenever we have one, keeping the best ---
         # "Best" = largest person bounding box area (person fills most of the crop)
@@ -1440,10 +1493,13 @@ def _improve_customer_profile(customer_id, signals):
                 'snapshot_only': True,
             })
 
-        # --- Gait: add if missing, upgrade if better quality ---
+        # --- Gait: add if missing (use cache to avoid a GET call) ---
         new_gait_quality = float(signals.get('gait_quality', 0.0))
         if signals.get('gait_features') and new_gait_quality >= GAIT_UPGRADE_MIN:
-            existing_gaits = pos_get(f'/api/customers/{customer_id}/gaits_raw') or []
+            cached = _signals_cache.get(customer_id, {})
+            existing_gaits = cached.get('gait_features', None)
+            if existing_gaits is None:
+                existing_gaits = pos_get(f'/api/customers/{customer_id}/gaits_raw') or []
             if not existing_gaits:
                 logger.info(f'Profile [{customer_id}]: adding gait (quality={new_gait_quality:.2f})')
                 pos_post(f'/api/customers/{customer_id}/enroll/gait', {
@@ -1454,12 +1510,19 @@ def _improve_customer_profile(customer_id, signals):
         # --- Physical attributes: fill in missing fields, upgrade on higher confidence ---
         if signals.get('physical_attrs'):
             attrs = signals['physical_attrs']
-            existing = pos_get(f'/api/customers/{customer_id}/attributes')
-            if isinstance(existing, list):
-                existing = None
             new_conf = float(attrs.get('confidence', 0.0))
-            old_conf = float((existing or {}).get('confidence') or 0.0)
-            missing_fields = existing is None or not existing.get('hair_color') or not existing.get('build')
+            # Only fetch existing attrs when the new observation might be worth writing.
+            # This avoids a GET call on every low-quality observation.
+            if new_conf >= 0.3:
+                existing = pos_get(f'/api/customers/{customer_id}/attributes')
+                if isinstance(existing, list):
+                    existing = None
+                old_conf = float((existing or {}).get('confidence') or 0.0)
+                missing_fields = existing is None or not existing.get('hair_color') or not existing.get('build')
+            else:
+                existing = None
+                old_conf = 1.0  # treat low-conf as not worth writing
+                missing_fields = False
             if missing_fields or new_conf > old_conf:
                 logger.info(f'Profile [{customer_id}]: updating physical attributes (conf={new_conf:.2f})')
                 pos_post(f'/api/customers/{customer_id}/attributes', {
@@ -1553,12 +1616,18 @@ def process_event(event):
 
             # Log visit — at most once per VISIT_LOG_INTERVAL per track
             if time.time() - track.visit_logged_at >= VISIT_LOG_INTERVAL:
-                pos_post('/api/customers/identify', {
+                identify_payload = {
                     'customer_id': track.customer_id,
                     'matched_signals': 'track_consensus',
                     'confidence_scores': conf_scores,
                     'camera_source': signals.get('camera'),
-                })
+                }
+                # Include dwell time for ended events (Frigate start_time / end_time are Unix timestamps)
+                start_time = event.get('start_time')
+                end_time_ev = event.get('end_time')
+                if event.get('_is_ended') and start_time and end_time_ev:
+                    identify_payload['dwell_seconds'] = int(end_time_ev - start_time)
+                pos_post('/api/customers/identify', identify_payload)
                 track.visit_logged_at = time.time()
 
             # Continuous profile improvement — fill in missing or upgrade quality
@@ -1637,8 +1706,8 @@ def process_event(event):
                             logger.info(f'   Body snapshot stored for customer #{next_number}')
 
                         # Enroll physical attributes if extracted
-                        if signals.get('attributes'):
-                            pos_post(f'/api/customers/{customer_id}/attributes', signals['attributes'])
+                        if signals.get('physical_attrs'):
+                            pos_post(f'/api/customers/{customer_id}/attributes', signals['physical_attrs'])
                             logger.info(f'   Attributes enrolled for customer #{next_number}')
 
                         # Link track to new customer
@@ -1649,25 +1718,33 @@ def process_event(event):
                         refresh_customers()
 
                         # Log visit
-                        pos_post('/api/customers/identify', {
+                        enroll_identify = {
                             'customer_id': customer_id,
                             'matched_signals': 'auto_enrollment',
                             'confidence_scores': {'auto_enroll': 1.0},
                             'camera_source': signals.get('camera'),
-                        })
+                        }
+                        start_time = event.get('start_time')
+                        end_time_ev = event.get('end_time')
+                        if start_time and end_time_ev:
+                            enroll_identify['dwell_seconds'] = int(end_time_ev - start_time)
+                        pos_post('/api/customers/identify', enroll_identify)
 
                 except Exception as e:
                     logger.error(f'Auto-enrollment failed: {e}')
                     import traceback
                     traceback.print_exc()
+                    # Release the claim so the next event can retry enrollment
+                    with _tracks_lock:
+                        track.enrollment_claimed = False
 
         else:
             logger.debug(f'Track {track_id[:8]} pending (age={track.age():.1f}s, confidence={track.confidence:.3f})')
 
-        # Queue clip analysis for ended events with a resolved customer
-        if (event.get('_is_ended')
-                and track.customer_id
-                and track.customer_id not in (-1, None)):
+        # Queue clip analysis for all ended events — both resolved (profile enrichment)
+        # and unresolved (first-time visitor who got a poor real-time snapshot).
+        # customer_id may be None for unresolved tracks; _clip_analysis_loop handles both.
+        if event.get('_is_ended'):
             person_box = (event.get('data') or {}).get('box')
             with _clip_queue_lock:
                 if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
@@ -1682,7 +1759,7 @@ def process_event(event):
 
 # ─── Frigate Integration ────────────────────────────────────────────────────
 
-_seen_events = set()
+_seen_events = {}  # event_id -> timestamp; insertion-ordered for FIFO eviction
 _clip_analysis_queue = []      # [(event_id, customer_id, person_box)]
 _clip_queue_lock = threading.Lock()
 MAX_CLIP_QUEUE = 50
@@ -1703,34 +1780,71 @@ def _clip_analysis_loop():
                 continue
             try:
                 signals = analyze_clip_for_best_signals(clip_path, person_box)
-                if signals:
-                    distinct_faces = signals.pop('distinct_faces', [])
+                if not signals:
+                    continue
 
-                    # Submit each distinct face angle separately so the POS
-                    # enroll/face endpoint can add it as a new angle if distinct
-                    angles_added = 0
-                    for qual, emb_bytes, photo_bytes, attrs in distinct_faces:
-                        angle_signals = dict(signals)
-                        angle_signals['face_embedding'] = emb_bytes
-                        angle_signals['face_quality']   = float(qual)
-                        angle_signals['face_photo']     = photo_bytes
-                        if attrs:
-                            angle_signals['physical_attrs'] = attrs
-                        r = _improve_customer_profile(customer_id, angle_signals)
-                        angles_added += 1
+                distinct_faces = signals.pop('distinct_faces', [])
 
-                    # Also update gait + body snapshot from the main signals
-                    if signals.get('gait_features') or signals.get('snapshot_photo'):
-                        _improve_customer_profile(customer_id, {
-                            k: v for k, v in signals.items()
-                            if k not in ('face_embedding', 'face_quality', 'face_photo', 'physical_attrs')
+                # --- Unresolved track: try to identify from clip signals first ---
+                if customer_id is None and signals.get('face_embedding'):
+                    all_sigs = get_all_customer_signals()
+                    best_match_id = None
+                    best_match_score = 0.0
+                    link_thresh = _threshold_manager.global_thresholds.get('link', 0.55)
+                    for cid_cand, cust_sigs in all_sigs.items():
+                        score, _, _, safe, _ = calculate_match_score_safe(signals, cust_sigs)
+                        if safe and score > best_match_score:
+                            best_match_score = score
+                            best_match_id = cid_cand
+                    if best_match_id and best_match_score >= link_thresh:
+                        customer_id = best_match_id
+                        logger.info(f'Clip resolved unresolved track {event_id[:12]} → customer={customer_id} (score={best_match_score:.3f})')
+                    else:
+                        # Still unresolved — enroll as new customer from clip
+                        logger.info(f'Clip enrolling new customer from unresolved track {event_id[:12]}')
+                        r = pos_get('/api/customers/max_number')
+                        next_number = (r.get('max_number') or 0) + 1 if r else 1
+                        customer_number_str = f'CUST-{next_number:04d}'
+                        new_customer = pos_post('/api/customers', {
+                            'name': None,
+                            'auto_enrolled': True,
+                            'customer_number': customer_number_str,
                         })
+                        if new_customer and new_customer.get('id'):
+                            customer_id = new_customer['id']
+                            logger.info(f'Clip enrolled new customer {customer_number_str} (id={customer_id})')
+                            refresh_customers()
+                        else:
+                            logger.warning(f'Clip enrollment failed for {event_id[:12]}')
+                            continue
 
-                    logger.info(
-                        f'Clip enrichment: customer={customer_id} '
-                        f'angles={angles_added} '
-                        f'gait={bool(signals.get("gait_features"))}'
-                    )
+                if customer_id is None:
+                    continue
+
+                # Submit each distinct face angle separately
+                angles_added = 0
+                for qual, emb_bytes, photo_bytes, attrs in distinct_faces:
+                    angle_signals = dict(signals)
+                    angle_signals['face_embedding'] = emb_bytes
+                    angle_signals['face_quality']   = float(qual)
+                    angle_signals['face_photo']     = photo_bytes
+                    if attrs:
+                        angle_signals['physical_attrs'] = attrs
+                    _improve_customer_profile(customer_id, angle_signals)
+                    angles_added += 1
+
+                # Update gait + body snapshot
+                if signals.get('gait_features') or signals.get('snapshot_photo'):
+                    _improve_customer_profile(customer_id, {
+                        k: v for k, v in signals.items()
+                        if k not in ('face_embedding', 'face_quality', 'face_photo', 'physical_attrs')
+                    })
+
+                logger.info(
+                    f'Clip enrichment: customer={customer_id} '
+                    f'angles={angles_added} '
+                    f'gait={bool(signals.get("gait_features"))}'
+                )
             except Exception as e:
                 logger.warning(f'Clip analysis failed for {event_id[:12]}: {e}')
             finally:
@@ -1771,31 +1885,36 @@ def poll_frigate_events():
                     end_time = ev.get('end_time')
                     label = ev.get('label')
 
-                    if label != 'person':
+                    # Only process persons and outdoor cars (for ANPR)
+                    if label not in ('person', 'car'):
                         continue
 
                     # Active event (no end_time yet) — process every poll.
-                    # For long-running events (>5min), use the snapshot but treat
-                    # each poll as a fresh snapshot so the person can be enrolled/matched.
                     if not end_time:
                         recent_count += 1
                         new_count += 1
-                        logger.info(f'Processing active event {eid[:20]} (camera={ev.get("camera")})')
-                        threading.Thread(target=process_event, args=(ev,), daemon=True).start()
+                        logger.info(f'Processing active event {eid[:20]} (label={label} camera={ev.get("camera")})')
+                        def _run_active(e=ev):
+                            with _event_semaphore:
+                                process_event(e)
+                        threading.Thread(target=_run_active, daemon=True).start()
 
                     # Ended event within last 60 seconds — process once
                     elif (now - end_time) <= 60:
                         recent_count += 1
                         if eid and eid not in _seen_events:
                             new_count += 1
-                            _seen_events.add(eid)
+                            _seen_events[eid] = now
                             if len(_seen_events) > 500:
-                                oldest = list(_seen_events)[:100]
+                                oldest = list(_seen_events.keys())[:100]
                                 for o in oldest:
-                                    _seen_events.discard(o)
-                            logger.info(f'Processing ended event {eid[:20]} (camera={ev.get("camera")})')
+                                    _seen_events.pop(o, None)
+                            logger.info(f'Processing ended event {eid[:20]} (label={label} camera={ev.get("camera")})')
                             ev['_is_ended'] = True  # signal process_event to queue clip analysis
-                            threading.Thread(target=process_event, args=(ev,), daemon=True).start()
+                            def _run_ended(e=ev):
+                                with _event_semaphore:
+                                    process_event(e)
+                            threading.Thread(target=_run_ended, daemon=True).start()
 
                 logger.debug(f'Frigate poll complete: {len(events)} total, {recent_count} recent, {new_count} new')
         except Exception as e:
@@ -1805,6 +1924,11 @@ def poll_frigate_events():
 # ─── Webhook Server ─────────────────────────────────────────────────────────
 
 from http.server import HTTPServer, BaseHTTPRequestHandler
+import socketserver
+
+class ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
 
 class WebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
@@ -1827,13 +1951,19 @@ class WebhookHandler(BaseHTTPRequestHandler):
             after = payload.get('after') or payload.get('before') or {}
 
             # Process both updates (track building) and end events (final snapshot)
-            if event_type in ('update', 'end') and after.get('label') == 'person':
-                threading.Thread(target=process_event, args=(after,), daemon=True).start()
+            # Accept 'person' for recognition and 'car' for ANPR plate reading
+            if event_type in ('update', 'end') and after.get('label') in ('person', 'car'):
+                if event_type == 'end':
+                    after['_is_ended'] = True
+                def _run_webhook(e=after):
+                    with _event_semaphore:
+                        process_event(e)
+                threading.Thread(target=_run_webhook, daemon=True).start()
         except Exception as e:
             logger.warning(f'Webhook parse error: {e}')
 
 def run_webhook_server():
-    server = HTTPServer(('0.0.0.0', WEBHOOK_PORT), WebhookHandler)
+    server = ThreadedHTTPServer(('0.0.0.0', WEBHOOK_PORT), WebhookHandler)
     logger.info(f'Webhook server listening on port {WEBHOOK_PORT}')
     server.serve_forever()
 

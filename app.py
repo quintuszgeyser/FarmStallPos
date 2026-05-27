@@ -3322,6 +3322,24 @@ def api_customers_identify():
     db.session.add(visit)
     c.visit_count = (c.visit_count or 0) + 1
     c.last_visit = datetime.utcnow()
+
+    # Write a visit_sessions row when dwell time is provided by the recognition service
+    dwell_seconds = data.get('dwell_seconds')
+    if dwell_seconds and int(dwell_seconds) > 0:
+        from sqlalchemy import text as _t2
+        now_utc = datetime.utcnow()
+        db.session.execute(_t2("""
+            INSERT INTO visit_sessions
+                (customer_id, session_start, session_end, entry_camera, dwell_seconds)
+            VALUES (:cid, :start, :end, :cam, :dwell)
+        """), {
+            'cid': cid,
+            'start': now_utc - timedelta(seconds=int(dwell_seconds)),
+            'end': now_utc,
+            'cam': camera_source,
+            'dwell': int(dwell_seconds),
+        })
+
     db.session.commit()
     return jsonify({'ok': True, 'visit_id': visit.id})
 
