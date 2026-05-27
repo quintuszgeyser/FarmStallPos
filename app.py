@@ -2783,12 +2783,9 @@ def api_customer_radar(cid):
         regularity_score = min(1.0, day_spread_score + consistency_bonus)
 
     # ── 8. PROFILE DEPTH — meta: how rich is this profile overall? ────────────
-    attrs_row = db.session.execute(
-        _text('SELECT hair_color,build,height_category,age_range,gender,skin_tone,eye_color,facial_hair,wearing_glasses FROM customer_physical_attributes WHERE customer_id=:cid ORDER BY detected_at DESC LIMIT 1'),
-        {'cid': cid}
-    ).fetchone()
-    attr_fields  = list(attrs_row) if attrs_row else []
-    attrs_filled = sum(1 for v in attr_fields if v is not None and v != '')
+    voted_attrs = _voted_attributes(_fetch_attr_rows(cid))
+    attr_fields  = [voted_attrs[k] for k in ('hair_color','build','height_category','age_range','gender','skin_tone','eye_color','facial_hair','wearing_glasses')] if voted_attrs else []
+    attrs_filled = sum(1 for v in attr_fields if v is not None and v != '' and v is not False)
     attrs_total  = len(attr_fields) or 9
     has_gait     = CustomerGait.query.filter_by(customer_id=cid, active=True).count() > 0
     has_photo    = CustomerFace.query.filter_by(customer_id=cid).filter(CustomerFace.photo != None).count() > 0
@@ -3443,6 +3440,63 @@ def api_customers_max_number():
 
     return jsonify({'max_number': 0})
 
+_ATTR_WINDOW = 10  # how many recent detections to vote over
+
+def _fetch_attr_rows(cid, limit=None):
+    from sqlalchemy import text as _t
+    lim = limit if limit is not None else _ATTR_WINDOW
+    return db.session.execute(
+        _t("""SELECT height_cm, hair_color, skin_tone, build, eye_color,
+                     age_range, gender, wearing_glasses, facial_hair,
+                     detected_at, camera_source, confidence, height_category
+              FROM customer_physical_attributes
+              WHERE customer_id = :cid
+              ORDER BY detected_at DESC LIMIT :lim"""),
+        {'cid': cid, 'lim': lim}
+    ).fetchall()
+
+
+def _voted_attributes(rows):
+    """Majority-vote over recent observations so one bad detection doesn't flip the profile.
+    Categorical fields: most frequent non-null value wins.
+    Boolean fields: True only if >50% of non-null observations are True.
+    Numeric fields (height_cm): median of non-null values.
+    """
+    from collections import Counter
+    if not rows:
+        return None
+
+    def mode_of(vals):
+        counts = Counter(v for v in vals if v is not None and v != '')
+        return counts.most_common(1)[0][0] if counts else None
+
+    def bool_vote(vals):
+        non_null = [v for v in vals if v is not None]
+        if not non_null:
+            return None
+        return sum(1 for v in non_null if v) > len(non_null) / 2
+
+    def median_int(vals):
+        nums = sorted(v for v in vals if v is not None)
+        return nums[len(nums) // 2] if nums else None
+
+    return {
+        'height_cm':       median_int([r[0] for r in rows]),
+        'hair_color':      mode_of([r[1] for r in rows]),
+        'skin_tone':       mode_of([r[2] for r in rows]),
+        'build':           mode_of([r[3] for r in rows]),
+        'eye_color':       mode_of([r[4] for r in rows]),
+        'age_range':       mode_of([r[5] for r in rows]),
+        'gender':          mode_of([r[6] for r in rows]),
+        'wearing_glasses': bool_vote([r[7] for r in rows]),
+        'facial_hair':     mode_of([r[8] for r in rows]),
+        'detected_at':     rows[0][9].isoformat() if rows[0][9] else None,
+        'camera_source':   rows[0][10],
+        'confidence':      float(rows[0][11]) if rows[0][11] else None,
+        'height_category': mode_of([r[12] for r in rows]),
+    }
+
+
 @app.route('/api/customers/<int:cid>/attributes', methods=['GET', 'POST'])
 def api_customer_attributes(cid):
     """Get or store physical attributes for a customer."""
@@ -3454,35 +3508,9 @@ def api_customer_attributes(cid):
         return jsonify({'error': 'Customer not found'}), 404
 
     if request.method == 'GET':
-        # Get most recent attributes
-        from sqlalchemy import text
-        result = db.session.execute(
-            text("""SELECT height_cm, hair_color, skin_tone, build, eye_color,
-                           age_range, gender, wearing_glasses, facial_hair,
-                           detected_at, camera_source, confidence, height_category
-                    FROM customer_physical_attributes
-                    WHERE customer_id = :cid
-                    ORDER BY detected_at DESC LIMIT 1"""),
-            {'cid': cid}
-        ).fetchone()
-
-        if result:
-            return jsonify({
-                'height_cm':        result[0],
-                'hair_color':       result[1],
-                'skin_tone':        result[2],
-                'build':            result[3],
-                'eye_color':        result[4],
-                'age_range':        result[5],
-                'gender':           result[6],
-                'wearing_glasses':  result[7],
-                'facial_hair':      result[8],
-                'detected_at':      result[9].isoformat() if result[9] else None,
-                'camera_source':    result[10],
-                'confidence':       float(result[11]) if result[11] else None,
-                'height_category':  result[12],
-            })
-        return jsonify(None)
+        rows = _fetch_attr_rows(cid)
+        voted = _voted_attributes(rows)
+        return jsonify(voted)
 
     else:  # POST
         data = request.get_json()
@@ -3515,37 +3543,37 @@ def api_customer_attributes(cid):
 
 @app.route('/api/customers/attributes_bulk', methods=['GET'])
 def api_customers_attributes_bulk():
-    """Get all customers' physical attributes in bulk (for caching)."""
+    """Get voted attributes for all customers in bulk (for caching)."""
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
 
     from sqlalchemy import text
-    # Get most recent attributes for each customer
+    # Fetch last _ATTR_WINDOW rows per customer via a ranked subquery
     result = db.session.execute(
-        text("""SELECT DISTINCT ON (customer_id)
-                       customer_id, height_cm, hair_color, skin_tone, build,
-                       eye_color, age_range, gender, wearing_glasses, facial_hair,
-                       detected_at, camera_source, confidence
-                FROM customer_physical_attributes
-                ORDER BY customer_id, detected_at DESC""")
+        text(f"""SELECT customer_id, height_cm, hair_color, skin_tone, build,
+                        eye_color, age_range, gender, wearing_glasses, facial_hair,
+                        detected_at, camera_source, confidence, height_category
+               FROM (
+                   SELECT *, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY detected_at DESC) AS rn
+                   FROM customer_physical_attributes
+               ) ranked
+               WHERE rn <= {_ATTR_WINDOW}
+               ORDER BY customer_id, detected_at DESC""")
     ).fetchall()
 
-    attributes_by_customer = {}
+    # Group rows by customer_id then vote
+    from collections import defaultdict
+    rows_by_cid = defaultdict(list)
     for row in result:
-        attributes_by_customer[row[0]] = {
-            'height_cm': row[1],
-            'hair_color': row[2],
-            'skin_tone': row[3],
-            'build': row[4],
-            'eye_color': row[5],
-            'age_range': row[6],
-            'gender': row[7],
-            'wearing_glasses': row[8],
-            'facial_hair': row[9],
-            'detected_at': row[10].isoformat() if row[10] else None,
-            'camera_source': row[11],
-            'confidence': float(row[12]) if row[12] else None
-        }
+        rows_by_cid[row[0]].append(row[1:])  # strip customer_id prefix
+
+    # Wrap in namedtuple-compatible tuples matching _voted_attributes indexing
+    attributes_by_customer = {}
+    for cid, cid_rows in rows_by_cid.items():
+        # cid_rows already have same column order as _fetch_attr_rows (minus customer_id)
+        voted = _voted_attributes(cid_rows)
+        if voted:
+            attributes_by_customer[str(cid)] = voted
 
     return jsonify(attributes_by_customer)
 
