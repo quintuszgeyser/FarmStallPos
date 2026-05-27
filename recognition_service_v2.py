@@ -1862,24 +1862,50 @@ def _clip_analysis_loop():
                 if customer_id is None:
                     continue
 
-                # Submit each distinct face angle separately
+                # Submit each distinct face angle directly — avoids N redundant
+                # faces_raw/gaits_raw/attributes GETs that _improve_customer_profile
+                # would make for each of the N angles.
                 angles_added = 0
+                best_attrs = None
                 for qual, emb_bytes, photo_bytes, attrs in distinct_faces:
-                    angle_signals = dict(signals)
-                    angle_signals['face_embedding'] = emb_bytes
-                    angle_signals['face_quality']   = float(qual)
-                    angle_signals['face_photo']     = photo_bytes
-                    if attrs:
-                        angle_signals['physical_attrs'] = attrs
-                    _improve_customer_profile(customer_id, angle_signals)
+                    payload = {
+                        'embedding_b64': base64.b64encode(emb_bytes).decode(),
+                        'quality': float(qual),
+                    }
+                    if photo_bytes:
+                        payload['photo_b64'] = base64.b64encode(photo_bytes).decode()
+                    pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
                     angles_added += 1
+                    if attrs and (best_attrs is None or float(attrs.get('confidence', 0)) > float((best_attrs or {}).get('confidence', 0))):
+                        best_attrs = attrs
 
-                # Update gait + body snapshot
-                if signals.get('gait_features') or signals.get('snapshot_photo'):
-                    _improve_customer_profile(customer_id, {
-                        k: v for k, v in signals.items()
-                        if k not in ('face_embedding', 'face_quality', 'face_photo', 'physical_attrs')
+                # Invalidate cache: new angles were just added
+                if angles_added > 0:
+                    global _signals_cache_ids
+                    _signals_cache_ids = set()
+
+                # Gait — enroll once from averaged clip gait
+                if signals.get('gait_features'):
+                    existing_gaits = pos_get(f'/api/customers/{customer_id}/gaits_raw') or []
+                    if not existing_gaits:
+                        pos_post(f'/api/customers/{customer_id}/enroll/gait', {
+                            'features_b64': base64.b64encode(signals['gait_features']).decode(),
+                            'quality': float(signals.get('gait_quality', 0.5)),
+                        })
+
+                # Body snapshot
+                if signals.get('snapshot_photo'):
+                    pos_post(f'/api/customers/{customer_id}/enroll/face', {
+                        'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
+                        'quality': 0.0,
+                        'body_photo_b64': base64.b64encode(signals['snapshot_photo']).decode(),
+                        'snapshot_only': True,
                     })
+
+                # Best physical attributes — one write total
+                attrs_to_write = best_attrs or signals.get('physical_attrs')
+                if attrs_to_write and float(attrs_to_write.get('confidence', 0)) >= 0.3:
+                    pos_post(f'/api/customers/{customer_id}/attributes', attrs_to_write)
 
                 logger.info(
                     f'Clip enrichment: customer={customer_id} '
