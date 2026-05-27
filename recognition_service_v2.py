@@ -779,9 +779,15 @@ def extract_all_signals_with_quality(event):
                 signals['plate_quality'] = plate_qual
 
         if label == 'person':
-            # Pass Frigate's normalised person bounding box so face extraction
-            # can crop to just the head region (face is tiny in full-body shots)
             person_box = (event.get('data') or {}).get('box')
+
+            # Skip edge-of-frame crops: if person box is narrower than 8% of frame
+            # width, the face will be ~20-30px after upscale — too noisy for ArcFace.
+            if person_box and len(person_box) == 4:
+                box_width = person_box[2] - person_box[0]
+                if box_width < 0.08:
+                    logger.debug(f'Skipping face extraction: person_box too narrow ({box_width:.3f} < 0.08)')
+                    person_box = None  # still extract gait/attrs but skip face
             face_emb, face_qual, face_photo = extract_face_with_quality(snapshot_path, person_box)
             if face_emb:
                 signals['face_embedding'] = face_emb
@@ -1669,7 +1675,14 @@ def process_event(event):
                 # Update track so future events don't need to re-resolve
                 track.customer_id = primary_id
 
-            logger.info(f'Track {track_id[:8]} linked to customer {resolved_id} (confidence={track.confidence:.3f})')
+            # Log face_similarity alongside track confidence for threshold tuning
+            best_face_sim = 0.0
+            for cid_m, score_m, breakdown_m, _, _ in match_results:
+                if cid_m == resolved_id and 'face_similarity' in breakdown_m:
+                    best_face_sim = float(breakdown_m['face_similarity'])
+                    break
+            sim_str = f' face_sim={best_face_sim:.3f}' if best_face_sim > 0 else ''
+            logger.info(f'Track {track_id[:8]} linked to customer {resolved_id} (confidence={track.confidence:.3f}{sim_str})')
 
             # Build confidence scores — all values must be plain Python float, not
             # numpy.float32, or json.dumps will raise "not JSON serializable".
@@ -1727,6 +1740,12 @@ def process_event(event):
                         r = pos_get('/api/customers/max_number')
                         next_number = (r.get('max_number') or 0) + 1 if r else 1
                         customer_number_str = f'CUST-{next_number:04d}'
+                        # Skip if this customer_number was recently enrolled (post-restart dedup)
+                        skip_nums = globals().get('_startup_skip_numbers', set())
+                        if customer_number_str in skip_nums:
+                            logger.info(f'Track {track_id[:8]} skipping re-enrollment of {customer_number_str} (enrolled in last 5 min)')
+                            skip_nums.discard(customer_number_str)
+                            break
                         new_customer = pos_post('/api/customers', {
                             'name': None,
                             'auto_enrolled': True,
@@ -2106,6 +2125,32 @@ if __name__ == '__main__':
     refresh_customers()
     get_all_customer_signals()
     logger.info('Signal cache primed')
+
+    # Build a set of recently-enrolled customer numbers (last 5 min) so that
+    # if we restart while people are still in frame, we don't re-enroll them.
+    # process_event checks this set before enrolling a new track.
+    _startup_recent_customers = set()
+    try:
+        import time as _st
+        cutoff = _st.time() - 300
+        for c in _customers_cache:
+            first_seen = c.get('first_seen')
+            if first_seen:
+                try:
+                    from datetime import timezone
+                    fs_dt = datetime.fromisoformat(first_seen.replace('Z', '+00:00'))
+                    fs_epoch = fs_dt.replace(tzinfo=timezone.utc).timestamp() if fs_dt.tzinfo else fs_dt.timestamp()
+                    if fs_epoch >= cutoff:
+                        _startup_recent_customers.add(c.get('customer_number'))
+                except Exception:
+                    pass
+        if _startup_recent_customers:
+            logger.info(f'Startup: {len(_startup_recent_customers)} recently enrolled customers — will skip re-enrollment: {_startup_recent_customers}')
+    except Exception as e:
+        logger.warning(f'Startup recent-customer check failed: {e}')
+
+    # Store globally so process_event can check on first poll
+    globals()['_startup_skip_numbers'] = _startup_recent_customers
 
     # Background cache refresh
     threading.Thread(target=_cache_refresh_loop, daemon=True).start()
