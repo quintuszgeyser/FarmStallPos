@@ -245,12 +245,19 @@ def get_pose():
     return _mp_pose_inst
 
 # ─── POS API session ────────────────────────────────────────────────────────
+import urllib3
+from requests.adapters import HTTPAdapter
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 _pos_session = requests.Session()
 _pos_session.verify = False
+# Keep-alive pool: 10 connections, no retry storms
+_adapter = HTTPAdapter(pool_connections=2, pool_maxsize=10, max_retries=0)
+_pos_session.mount('http://', _adapter)
+_pos_session.mount('https://', _adapter)
+_pos_session.headers.update({'Connection': 'keep-alive'})
 _pos_logged_in = False
-
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 def pos_login():
     global _pos_logged_in
@@ -1419,8 +1426,13 @@ def get_current_threshold(threshold_type, context=None):
 FACE_UPGRADE_MIN   = 0.35   # only upgrade face if new quality is at least this
 GAIT_UPGRADE_MIN   = 0.50
 
-VISIT_LOG_INTERVAL = 300   # min seconds between visit logs for the same track
-TRACK_IDLE_EXPIRY  = 300   # remove tracks idle longer than this (seconds)
+VISIT_LOG_INTERVAL   = 300  # min seconds between visit logs for the same track
+TRACK_IDLE_EXPIRY    = 300  # remove tracks idle longer than this (seconds)
+PROFILE_UPGRADE_INTERVAL = 300  # min seconds between photo/body upgrades per customer
+
+# Per-customer timestamp of last photo/body upgrade — prevents upgrade on every poll
+_profile_upgrade_times = {}   # customer_id -> float (epoch time)
+_profile_upgrade_lock  = threading.Lock()
 
 def _improve_customer_profile(customer_id, signals):
     """
@@ -1449,6 +1461,7 @@ def _improve_customer_profile(customer_id, signals):
                 existing_faces = pos_get(f'/api/customers/{customer_id}/faces_raw') or []
                 cached_faces = [f['embedding_b64'] for f in existing_faces] if isinstance(existing_faces, list) else []
             enrolled_new_angle = False
+            upgraded_photo_only = False
             if len(cached_faces) == 0:
                 # No active face embedding — add one regardless of quality
                 logger.info(f'Profile [{customer_id}]: adding face embedding (quality={new_face_quality:.2f})')
@@ -1464,34 +1477,50 @@ def _improve_customer_profile(customer_id, signals):
                 enrolled_new_angle = True
 
             elif new_face_quality >= 0.60 and has_face_photo:
-                # Good quality face photo — upgrade if better than what's stored
-                logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
-                payload = {
-                    'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
-                    'quality': new_face_quality,
-                    'photo_b64': base64.b64encode(signals['face_photo']).decode(),
-                }
-                if has_snapshot:
-                    payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
-                pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
-                enrolled_new_angle = True
+                # Good quality face photo — upgrade if better than what's stored.
+                # Rate-limited to once per PROFILE_UPGRADE_INTERVAL per customer so
+                # a customer standing in frame for 5+ min doesn't spam upgrades.
+                # This is a photo-only update; it does NOT add a new embedding so
+                # we must NOT invalidate the signals cache (would cause rebuild loop).
+                with _profile_upgrade_lock:
+                    last_upgrade = _profile_upgrade_times.get(customer_id, 0.0)
+                    due_upgrade = (time.time() - last_upgrade) >= PROFILE_UPGRADE_INTERVAL
+                    if due_upgrade:
+                        _profile_upgrade_times[customer_id] = time.time()
+                if due_upgrade:
+                    logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
+                    payload = {
+                        'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
+                        'quality': new_face_quality,
+                        'photo_b64': base64.b64encode(signals['face_photo']).decode(),
+                    }
+                    if has_snapshot:
+                        payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
+                    pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+                    upgraded_photo_only = True
 
-            # Invalidate signals cache so new embedding is available for matching immediately
+            # Only invalidate signals cache when a genuinely new angle embedding was stored.
+            # Photo-only upgrades don't change embeddings so no cache invalidation needed.
             if enrolled_new_angle:
                 global _signals_cache_ids
                 _signals_cache_ids = set()
 
-        # --- Body snapshot: update whenever we have one, keeping the best ---
-        # "Best" = largest person bounding box area (person fills most of the crop)
+        # --- Body snapshot: update at most once per PROFILE_UPGRADE_INTERVAL ---
         if has_snapshot:
-            new_area = float(signals.get('snapshot_area', 0.0))
-            pos_post(f'/api/customers/{customer_id}/enroll/face', {
-                'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
-                'quality': 0.0,
-                'body_photo_b64': base64.b64encode(signals['snapshot_photo']).decode(),
-                'snapshot_area': new_area,
-                'snapshot_only': True,
-            })
+            with _profile_upgrade_lock:
+                last_upgrade = _profile_upgrade_times.get(customer_id, 0.0)
+                due_snap = (time.time() - last_upgrade) >= PROFILE_UPGRADE_INTERVAL
+                if due_snap:
+                    _profile_upgrade_times[customer_id] = time.time()
+            if due_snap:
+                new_area = float(signals.get('snapshot_area', 0.0))
+                pos_post(f'/api/customers/{customer_id}/enroll/face', {
+                    'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
+                    'quality': 0.0,
+                    'body_photo_b64': base64.b64encode(signals['snapshot_photo']).decode(),
+                    'snapshot_area': new_area,
+                    'snapshot_only': True,
+                })
 
         # --- Gait: add if missing (use cache to avoid a GET call) ---
         new_gait_quality = float(signals.get('gait_quality', 0.0))
@@ -1597,7 +1626,19 @@ def process_event(event):
 
         # Decision logic
         if track.customer_id and track.confidence >= link_threshold:
-            logger.info(f'Track {track_id[:8]} linked to customer {track.customer_id} (confidence={track.confidence:.3f})')
+            # Resolve merged_into chain: the tracked customer may have been merged
+            # after the track was created. Follow to the active primary so visits
+            # and profile improvements land on the right customer.
+            resolved_id = track.customer_id
+            resolved = pos_get(f'/api/customers/{resolved_id}')
+            if isinstance(resolved, dict) and not resolved.get('active', True) and resolved.get('merged_into'):
+                primary_id = resolved['merged_into']
+                logger.info(f'Track {track_id[:8]} resolved merged customer {resolved_id} → primary {primary_id}')
+                resolved_id = primary_id
+                # Update track so future events don't need to re-resolve
+                track.customer_id = primary_id
+
+            logger.info(f'Track {track_id[:8]} linked to customer {resolved_id} (confidence={track.confidence:.3f})')
 
             # Build confidence scores including raw signal values for the detail view
             conf_scores = {'track_confidence': float(track.confidence)}
@@ -1607,7 +1648,7 @@ def process_event(event):
                 conf_scores['gait'] = float(signals['gait_quality'])
             # Include best face similarity from match results if available
             for cid_m, score_m, breakdown_m, _, _ in match_results:
-                if cid_m == track.customer_id:
+                if cid_m == resolved_id:
                     if 'face_similarity' in breakdown_m:
                         conf_scores['face_similarity'] = float(breakdown_m['face_similarity'])
                     if 'gait_distance' in breakdown_m:
@@ -1617,7 +1658,7 @@ def process_event(event):
             # Log visit — at most once per VISIT_LOG_INTERVAL per track
             if time.time() - track.visit_logged_at >= VISIT_LOG_INTERVAL:
                 identify_payload = {
-                    'customer_id': track.customer_id,
+                    'customer_id': resolved_id,
                     'matched_signals': 'track_consensus',
                     'confidence_scores': conf_scores,
                     'camera_source': signals.get('camera'),
@@ -1631,7 +1672,7 @@ def process_event(event):
                 track.visit_logged_at = time.time()
 
             # Continuous profile improvement — fill in missing or upgrade quality
-            _improve_customer_profile(track.customer_id, signals)
+            _improve_customer_profile(resolved_id, signals)
 
         elif track.age() >= 30 and track.has_enrollment_quality():
             if track.confidence < pending_threshold:
