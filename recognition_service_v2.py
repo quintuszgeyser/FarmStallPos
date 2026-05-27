@@ -732,13 +732,13 @@ def extract_all_signals_with_quality(event):
             if physical:
                 signals['physical_attrs'] = physical
 
-            # Always capture a body crop using Frigate's person bounding box.
-            # This ensures the person is actually in the photo (not the whole scene).
-            # Crop is padded 5% so we don't clip limbs at the edges.
+            # Only capture a body crop when a face was also confirmed in this snapshot.
+            # Skipping when no face found avoids empty-frame body photos (person walked out).
+            # person_box from Frigate already scopes to the right person even with bystanders.
             try:
                 import cv2
                 snap = cv2.imread(snapshot_path)
-                if snap is not None and person_box and len(person_box) == 4:
+                if snap is not None and person_box and len(person_box) == 4 and face_emb:
                     sh, sw = snap.shape[:2]
                     bx1, by1, bx2, by2 = person_box
                     pad_x = (bx2 - bx1) * 0.05
@@ -824,7 +824,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
     face_candidates = []   # (quality, embedding_bytes, photo_bytes, attrs_or_None)
     gait_candidates = []   # (quality, features_bytes)
     best_body_snapshot = None
-    best_body_area = 0.0
+    best_body_best_face_qual = 0.0  # body frame chosen by face quality, not box area
 
     # Track distinct angles found so far for early exit
     distinct_seen = []
@@ -844,8 +844,9 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         cv2.imwrite(tmp.name, frame)
         tmp.close()
         try:
-            # Face — no person_box: person may have moved between frames
-            face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name)
+            # Face — pass person_box so SCRFD only looks at the right person's head region.
+            # This prevents picking up a bystander's face when multiple people are in frame.
+            face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, person_box)
             if face_emb and face_qual >= FACE_QUALITY_MIN:
                 # Check if this is a genuinely new angle vs what we've already found
                 new_emb = np.frombuffer(face_emb, dtype=np.float32).copy()
@@ -866,24 +867,26 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
             if gait_feat and gait_qual >= GAIT_QUALITY_MIN:
                 gait_candidates.append((gait_qual, gait_feat))
 
-            # Body snapshot — crop to person box, keep largest-area frame
-            if person_box and len(person_box) == 4:
-                area = (person_box[2] - person_box[0]) * (person_box[3] - person_box[1])
-                if area > best_body_area:
-                    h, w = frame.shape[:2]
-                    bx1, by1, bx2, by2 = person_box
-                    px1 = max(0, int(bx1 * w))
-                    py1 = max(0, int(by1 * h))
-                    px2 = min(w, int(bx2 * w))
-                    py2 = min(h, int(by2 * h))
-                    if px2 > px1 and py2 > py1:
-                        crop = frame[py1:py2, px1:px2]
-                        scale = 400.0 / max(crop.shape[:2])
-                        if scale > 1.0:
-                            crop = cv2.resize(crop, (int(crop.shape[1] * scale), int(crop.shape[0] * scale)))
-                        _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                        best_body_snapshot = buf.tobytes()
-                        best_body_area = area
+            # Body snapshot — only take this frame's body crop when a face was also
+            # confirmed in the SAME frame. This guarantees face and body always match,
+            # and skips frames where the person has walked out of shot.
+            if person_box and len(person_box) == 4 and face_emb and face_qual > best_body_best_face_qual:
+                h, w = frame.shape[:2]
+                bx1, by1, bx2, by2 = person_box
+                pad_x = (bx2 - bx1) * 0.05
+                pad_y = (by2 - by1) * 0.05
+                px1 = max(0, int((bx1 - pad_x) * w))
+                py1 = max(0, int((by1 - pad_y) * h))
+                px2 = min(w, int((bx2 + pad_x) * w))
+                py2 = min(h, int((by2 + pad_y) * h))
+                if px2 > px1 and py2 > py1:
+                    crop = frame[py1:py2, px1:px2]
+                    scale = 400.0 / max(crop.shape[:2])
+                    if scale > 1.0:
+                        crop = cv2.resize(crop, (int(crop.shape[1] * scale), int(crop.shape[0] * scale)))
+                    _, buf = cv2.imencode('.jpg', crop, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                    best_body_snapshot = buf.tobytes()
+                    best_body_best_face_qual = face_qual
         finally:
             try:
                 os.unlink(tmp.name)
@@ -948,7 +951,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
 
     if best_body_snapshot:
         result['snapshot_photo'] = best_body_snapshot
-        result['snapshot_area']  = best_body_area
+        result['snapshot_area']  = best_body_best_face_qual
 
     return result
 
@@ -1335,7 +1338,8 @@ _active_tracks = {}
 _tracks_lock = threading.Lock()
 # One persistent track per camera — reused across Frigate event IDs so
 # a person in frame accumulates age instead of resetting every 30s.
-_camera_tracks = {}   # camera_name -> track_id
+# _camera_tracks removed: each Frigate event_id is already unique per person.
+# Using event_id directly as track_id supports simultaneous multi-person tracking.
 CAMERA_TRACK_TIMEOUT = 120  # seconds — if no event from camera for 2min, start fresh
 
 # ─── Threshold Manager ──────────────────────────────────────────────────────
@@ -1481,29 +1485,20 @@ def process_event(event):
         signals = extract_all_signals_with_quality(event)
         if not signals:
             return
-
-        # Resolve to a persistent per-camera track so age accumulates across
+        # event_id is Frigate's stable identifier for one person detection session.
+        # Using it as track_id directly supports multiple simultaneous people per camera.
         # multiple Frigate event IDs for the same physical person in frame.
         camera = signals.get('camera', 'unknown')
         event_id = event.get('id', str(uuid.uuid4()))
 
+        # Each Frigate event_id is stable for the lifetime of one person detection.
+        # Use it directly as the track key — one track per person, no camera-level
+        # single-slot that would overwrite a second person entering the same camera.
         with _tracks_lock:
-            existing_tid = _camera_tracks.get(camera)
-            if existing_tid and existing_tid in _active_tracks:
-                existing_track = _active_tracks[existing_tid]
-                # Reuse if the track is still recent
-                if time.time() - existing_track.last_seen <= CAMERA_TRACK_TIMEOUT:
-                    track_id = existing_tid
-                else:
-                    # Stale — start fresh
-                    track_id = event_id
-                    _camera_tracks[camera] = track_id
-                    _active_tracks[track_id] = TrackIdentity(track_id)
-            else:
-                track_id = event_id
-                _camera_tracks[camera] = track_id
-                _active_tracks[track_id] = TrackIdentity(track_id)
-            track = _active_tracks[track_id]
+            if event_id not in _active_tracks:
+                _active_tracks[event_id] = TrackIdentity(event_id)
+            track = _active_tracks[event_id]
+            track_id = event_id
 
         # Get all customer signals
         all_customer_signals = get_all_customer_signals()
