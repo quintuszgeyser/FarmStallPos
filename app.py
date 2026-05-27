@@ -2489,7 +2489,13 @@ def api_customers_post():
         first_seen=datetime.fromisoformat(first_seen_str) if first_seen_str else None,
     )
     db.session.add(c)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        if 'unique' in str(e).lower() or 'duplicate' in str(e).lower():
+            return jsonify({'error': 'customer_number_conflict'}), 409
+        raise
     return jsonify({'ok': True, 'id': c.id})
 
 @app.route('/api/customers/<int:cid>', methods=['POST'])
@@ -3291,6 +3297,22 @@ def api_customers_identify():
         if primary and primary.active:
             c = primary
             cid = c.id
+
+    # Dedup: skip if a visit from the same camera was logged very recently.
+    # Guards against the recognition service firing multiple times per person.
+    from sqlalchemy import text as _t
+    visit_min_gap = int(float(get_setting('visit_min_gap_seconds', 180) or 180))
+    if camera_source:
+        recent = db.session.execute(_t('''
+            SELECT detected_at FROM customer_visits
+            WHERE customer_id = :cid AND camera_source = :cam
+            ORDER BY detected_at DESC LIMIT 1
+        '''), {'cid': cid, 'cam': camera_source}).fetchone()
+        if recent and recent[0]:
+            gap = (datetime.utcnow() - recent[0]).total_seconds()
+            if gap < visit_min_gap:
+                return jsonify({'ok': True, 'skipped': True, 'reason': 'too_soon', 'gap_seconds': int(gap)})
+
     visit = CustomerVisit(
         customer_id=cid,
         matched_signals=matched_signals,

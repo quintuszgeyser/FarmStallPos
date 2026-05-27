@@ -1182,6 +1182,7 @@ class TrackIdentity:
         self.customer_votes = {}  # customer_id -> [{'score': ..., 'weight': ..., 'quality': ...}]
         self.enrollment_claimed = False  # True once any thread has started enrolling this track
 
+        self.visit_logged_at = 0.0       # epoch time of last logged visit for this track
     def add_observation(self, signals, match_results):
         """
         Add frame observation
@@ -1385,6 +1386,9 @@ def get_current_threshold(threshold_type, context=None):
 FACE_UPGRADE_MIN   = 0.35   # only upgrade face if new quality is at least this
 GAIT_UPGRADE_MIN   = 0.50
 
+VISIT_LOG_INTERVAL = 300   # min seconds between visit logs for the same track
+TRACK_IDLE_EXPIRY  = 300   # remove tracks idle longer than this (seconds)
+
 def _improve_customer_profile(customer_id, signals):
     """
     Called every time a known customer is seen.
@@ -1547,13 +1551,15 @@ def process_event(event):
                         conf_scores['gait_distance'] = float(breakdown_m['gait_distance'])
                     break
 
-            # Log visit
-            pos_post('/api/customers/identify', {
-                'customer_id': track.customer_id,
-                'matched_signals': 'track_consensus',
-                'confidence_scores': conf_scores,
-                'camera_source': signals.get('camera'),
-            })
+            # Log visit — at most once per VISIT_LOG_INTERVAL per track
+            if time.time() - track.visit_logged_at >= VISIT_LOG_INTERVAL:
+                pos_post('/api/customers/identify', {
+                    'customer_id': track.customer_id,
+                    'matched_signals': 'track_consensus',
+                    'confidence_scores': conf_scores,
+                    'camera_source': signals.get('camera'),
+                })
+                track.visit_logged_at = time.time()
 
             # Continuous profile improvement — fill in missing or upgrade quality
             _improve_customer_profile(track.customer_id, signals)
@@ -1569,28 +1575,31 @@ def process_event(event):
 
                 logger.info(f'Track {track_id[:8]} ready for enrollment (age={track.age():.1f}s, quality=ok)')
 
-                # Auto-enroll new customer
+                # Auto-enroll new customer — retry up to 3x on customer_number collision
+                new_customer = None
+                customer_number_str = None
+                next_number = 1
                 try:
-                    # Get next customer number in CUST-XXXX format
-                    r = pos_get('/api/customers/max_number')
-                    if r and r.get('max_number') is not None:
-                        next_number = r['max_number'] + 1
-                    else:
-                        next_number = 1
-                    customer_number_str = f'CUST-{next_number:04d}'
-
-                    # Create customer with auto_enrolled flag
-                    new_customer = pos_post('/api/customers', {
-                        'name': None,
-                        'auto_enrolled': True,
-                        'customer_number': customer_number_str,
-                        'first_seen': datetime.now().isoformat()
-                    })
-
+                    for _attempt in range(3):
+                        r = pos_get('/api/customers/max_number')
+                        next_number = (r.get('max_number') or 0) + 1 if r else 1
+                        customer_number_str = f'CUST-{next_number:04d}'
+                        new_customer = pos_post('/api/customers', {
+                            'name': None,
+                            'auto_enrolled': True,
+                            'customer_number': customer_number_str,
+                            'first_seen': datetime.now().isoformat()
+                        })
+                        if new_customer and new_customer.get('id'):
+                            break  # success
+                        if new_customer and new_customer.get('error') == 'customer_number_conflict':
+                            logger.warning(f'customer_number collision on {customer_number_str}, retrying...')
+                            time.sleep(0.1 * (_attempt + 1))
+                            continue
+                        break  # unexpected response — don't retry
                     if new_customer and new_customer.get('id'):
                         customer_id = new_customer['id']
                         logger.info(f'Auto-enrolled customer {customer_number_str} (id={customer_id})')
-
                         # Enroll face if available
                         best_face = track.get_best_signal('face')
                         if best_face and best_face.get('embedding'):
@@ -1730,6 +1739,19 @@ def _clip_analysis_loop():
                 except Exception:
                     pass
 
+def _track_cleanup_loop():
+    """Background thread: expire stale tracks to prevent memory growth."""
+    while True:
+        time.sleep(60)
+        with _tracks_lock:
+            expired = [tid for tid, t in list(_active_tracks.items())
+                       if t.idle_time() > TRACK_IDLE_EXPIRY]
+            for tid in expired:
+                del _active_tracks[tid]
+            if expired:
+                logger.debug(f'Track cleanup: removed {len(expired)} stale tracks, {len(_active_tracks)} remaining')
+
+
 def poll_frigate_events():
     """Background poller for Frigate events"""
     import time as time_module
@@ -1846,6 +1868,9 @@ if __name__ == '__main__':
 
     # Background clip enrichment (post-event quality improvement)
     threading.Thread(target=_clip_analysis_loop, daemon=True).start()
+
+    # Background track cleanup (prevents _active_tracks memory growth)
+    threading.Thread(target=_track_cleanup_loop, daemon=True).start()
 
     # Webhook server (blocking)
     run_webhook_server()
