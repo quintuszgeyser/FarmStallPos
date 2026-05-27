@@ -259,42 +259,69 @@ _pos_session.mount('https://', _adapter)
 _pos_session.headers.update({'Connection': 'keep-alive'})
 _pos_logged_in = False
 
+_pos_last_success = time.time()   # epoch of last successful POS API call
+_pos_down_warned  = False         # suppress repeated "POS down" warnings
+
 def pos_login():
-    global _pos_logged_in
+    global _pos_logged_in, _pos_last_success, _pos_down_warned
     try:
         r = _pos_session.post(f'{POS_URL}/api/login', json={'username': POS_USER, 'password': POS_PASS}, timeout=5)
         if r.ok:
             _pos_logged_in = True
+            _pos_last_success = time.time()
+            _pos_down_warned = False
             logger.info('Logged in to POS API')
         else:
             logger.warning(f'POS login failed: {r.text}')
     except Exception as e:
         logger.warning(f'POS login error: {e}')
+        _check_pos_sustained_outage()
+
+def _to_json_safe(obj):
+    """Recursively cast numpy scalar types to Python builtins for JSON serialisation."""
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_json_safe(v) for v in obj]
+    if hasattr(obj, 'item'):   # numpy scalar (float32, int64, etc.)
+        return obj.item()
+    return obj
+
+def _check_pos_sustained_outage():
+    global _pos_down_warned
+    if not _pos_down_warned and (time.time() - _pos_last_success) > 300:
+        logger.error(f'POS has been unreachable for >5 minutes — visits and enrollments are not being recorded')
+        _pos_down_warned = True
 
 def pos_post(path, payload, retries=2):
-    global _pos_logged_in
+    global _pos_logged_in, _pos_last_success, _pos_down_warned
     if not _pos_logged_in:
         pos_login()
 
+    payload = _to_json_safe(payload)
     for attempt in range(retries + 1):
         try:
             r = _pos_session.post(f'{POS_URL}{path}', json=payload, timeout=10)
             if r.status_code == 401:
                 pos_login()
                 r = _pos_session.post(f'{POS_URL}{path}', json=payload, timeout=10)
+            if r.ok:
+                _pos_last_success = time.time()
+                _pos_down_warned = False
             return r.json() if r.ok else None
         except (requests.Timeout, requests.ConnectionError) as e:
             if attempt < retries:
                 time.sleep(0.5)
                 continue
             logger.warning(f'POS POST {path} failed after {retries} retries: {e}')
+            _check_pos_sustained_outage()
             return None
         except Exception as e:
             logger.warning(f'POS POST {path} error: {e}')
             return None
 
 def pos_get(path, retries=2):
-    global _pos_logged_in
+    global _pos_logged_in, _pos_last_success, _pos_down_warned
     if not _pos_logged_in:
         pos_login()
 
@@ -304,12 +331,16 @@ def pos_get(path, retries=2):
             if r.status_code == 401:
                 pos_login()
                 r = _pos_session.get(f'{POS_URL}{path}', timeout=10)
+            if r.ok:
+                _pos_last_success = time.time()
+                _pos_down_warned = False
             return r.json() if r.ok else []
         except (requests.Timeout, requests.ConnectionError) as e:
             if attempt < retries:
                 time.sleep(0.5)
                 continue
             logger.warning(f'POS GET {path} failed after {retries} retries: {e}')
+            _check_pos_sustained_outage()
             return []
         except Exception as e:
             logger.warning(f'POS GET {path} error: {e}')
@@ -1640,19 +1671,21 @@ def process_event(event):
 
             logger.info(f'Track {track_id[:8]} linked to customer {resolved_id} (confidence={track.confidence:.3f})')
 
-            # Build confidence scores including raw signal values for the detail view
+            # Build confidence scores — all values must be plain Python float, not
+            # numpy.float32, or json.dumps will raise "not JSON serializable".
             conf_scores = {'track_confidence': float(track.confidence)}
             if signals.get('face_quality'):
                 conf_scores['face'] = float(signals['face_quality'])
             if signals.get('gait_quality'):
                 conf_scores['gait'] = float(signals['gait_quality'])
-            # Include best face similarity from match results if available
             for cid_m, score_m, breakdown_m, _, _ in match_results:
                 if cid_m == resolved_id:
                     if 'face_similarity' in breakdown_m:
                         conf_scores['face_similarity'] = float(breakdown_m['face_similarity'])
                     if 'gait_distance' in breakdown_m:
                         conf_scores['gait_distance'] = float(breakdown_m['gait_distance'])
+                    if 'face' in breakdown_m:
+                        conf_scores['face_score'] = float(breakdown_m['face'])
                     break
 
             # Log visit — at most once per VISIT_LOG_INTERVAL per track
@@ -1707,6 +1740,8 @@ def process_event(event):
                             time.sleep(0.1 * (_attempt + 1))
                             continue
                         break  # unexpected response — don't retry
+                    if not new_customer:
+                        logger.error(f'Auto-enrollment failed: POS returned None for customer POST (POS down?), track={track_id[:8]}')
                     if new_customer and new_customer.get('id'):
                         customer_id = new_customer['id']
                         logger.info(f'Auto-enrolled customer {customer_number_str} (id={customer_id})')
@@ -1755,8 +1790,28 @@ def process_event(event):
                         track.customer_id = customer_id
                         track.confidence = 1.0
 
-                        # Refresh customer cache to include new customer
-                        refresh_customers()
+                        # Insert new customer into caches directly — avoids a full
+                        # O(N×3) refresh_customers() rebuild just for one new entry.
+                        new_entry = {
+                            'id': customer_id,
+                            'auto_enrolled': True,
+                            'customer_number': customer_number_str,
+                            'name': None,
+                            'plates': [],
+                        }
+                        with _cache_lock:
+                            _customers_cache.append(new_entry)
+                        with _cache_rebuild_lock:
+                            _signals_cache[customer_id] = {
+                                'id': customer_id,
+                                'face_embeddings': [],
+                                'gait_features': [],
+                                'plates': [],
+                                'height_category': None,
+                                'build': None,
+                                'hair_color': None,
+                                'facial_hair': None,
+                            }
 
                         # Log visit
                         enroll_identify = {
