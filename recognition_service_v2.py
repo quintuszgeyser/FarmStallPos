@@ -67,10 +67,37 @@ def reload_thresholds_from_pos():
         logger.warning(f'Could not reload thresholds from POS: {e}')
 
 # Multi-embedding: keep this many distinct-angle embeddings per customer
-# Default = 24 for a 6-camera shop (6 cameras × ~4 meaningful angles each)
-# Configurable from POS Settings → Recognition tab without restart
 MAX_FACE_EMBEDDINGS = 24
-MIN_ANGLE_DISTANCE  = 0.25   # min cosine distance to count as a genuinely new angle
+MIN_ANGLE_DISTANCE  = 0.25
+
+# ─── Session-centric identity constants ─────────────────────────────────────
+# Real-time track path: advisory only — never creates customers
+STRONG_LINK_THRESHOLD    = 0.65   # face_sim threshold for teller notification
+MIN_STRONG_MATCH_OBS     = 2      # consecutive face-present obs at ≥0.65 before notifying
+MIN_FACE_FOR_WELCOME     = 0.55   # face_sim floor — gait/context alone cannot trigger welcome
+
+# Session lifecycle
+SESSION_IDLE_EXPIRY      = 60     # seconds idle → resolver fires
+MAX_SESSION_LIFETIME     = 300    # seconds hard cap regardless of activity
+
+# Session clustering thresholds
+SESSION_JOIN_FACE_SIM    = 0.40   # min face_sim to join an existing session
+SESSION_MERGE_FACE_SIM   = 0.50   # min face_sim to merge two sessions (stricter than join)
+
+# Resolver thresholds
+RESOLVER_LINK_THRESHOLD  = 0.50   # resolver links to existing customer
+RECENT_CUSTOMER_SIM      = 0.40   # anti-clone: link to recently-created customer
+ANON_IDENTITY_SIM        = 0.45   # sim to anonymous identity → merge evidence into it
+
+# Customer creation gates (all must pass)
+MIN_FACES_TO_CREATE      = 3      # face embedding count required
+MIN_HIGH_QUALITY_FACES   = 2      # of those, must be quality ≥ FACE_QUALITY_MIN_CREATE
+FACE_QUALITY_MIN_CREATE  = 0.40   # quality floor for "high quality" face
+MIN_SESSION_DURATION     = 30     # seconds session must exist before creation
+CLEARLY_NOT_EXISTING     = 0.30   # best_face_sim must be BELOW this to create
+                                   # 0.30–0.50 band → anonymous identity, not new customer
+
+ANON_IDENTITY_TTL        = 86400  # 24 hours
 
 # Versioning
 WEIGHTS_VERSION = "v2.0_production"
@@ -1768,6 +1795,108 @@ _threshold_manager = ThresholdManager()
 def get_current_threshold(threshold_type, context=None):
     return _threshold_manager.get_threshold(threshold_type, context)
 
+# ─── VisitorSession — session-centric identity accumulator ──────────────────
+
+class VisitorSession:
+    """Accumulates evidence from all sources (real-time + clips) for one visit.
+    The resolver is the ONLY authority that creates persistent customer records."""
+
+    def __init__(self):
+        self.session_id      = str(uuid.uuid4())
+        self.created_at      = time.time()
+        self.last_evidence_at = time.time()
+        # list of (embedding_bytes, quality_float, camera_str)
+        self.face_embeddings  = []
+        self.gait_features    = None   # (features_bytes, quality) — best seen
+        self.cameras_seen     = set()
+        self.source_event_ids = set()
+        self.best_face_sim    = 0.0    # highest sim seen against any existing customer
+        self.candidate_customer_id = None
+        # accumulating → resolving (transitional lock) → resolved | expired
+        self.status = 'accumulating'
+
+    def add_evidence(self, face_emb=None, quality=0.0, camera=None,
+                     gait=None, gait_quality=0.0, event_id=None,
+                     candidate_cid=None, candidate_sim=0.0,
+                     face_embeddings_list=None):
+        """Add biometric evidence from a track observation or clip analysis."""
+        self.last_evidence_at = time.time()
+        if camera:
+            self.cameras_seen.add(camera)
+        if event_id:
+            self.source_event_ids.add(event_id)
+
+        # Single face embedding from real-time observation
+        if face_emb and quality >= FACE_QUALITY_MIN_CREATE:
+            self.face_embeddings.append((face_emb, quality, camera or ''))
+
+        # List of distinct face embeddings from clip analysis
+        if face_embeddings_list:
+            for qual, emb_bytes, photo_bytes, attrs in face_embeddings_list:
+                if qual >= FACE_QUALITY_MIN_CREATE:
+                    self.face_embeddings.append((emb_bytes, float(qual), camera or ''))
+
+        # Best gait wins
+        if gait and gait_quality > 0:
+            if self.gait_features is None or gait_quality > self.gait_features[1]:
+                self.gait_features = (gait, gait_quality)
+
+        # Update best candidate hint from real-time voting
+        if candidate_cid and candidate_sim > self.best_face_sim:
+            self.best_face_sim = candidate_sim
+            self.candidate_customer_id = candidate_cid
+
+    @property
+    def best_face_embedding(self):
+        """Return highest-quality stored face embedding bytes, or None."""
+        if not self.face_embeddings:
+            return None
+        return max(self.face_embeddings, key=lambda e: e[1])[0]
+
+    @property
+    def high_quality_face_count(self):
+        return sum(1 for _, q, _ in self.face_embeddings if q >= FACE_QUALITY_MIN_CREATE)
+
+    def duration(self):
+        return self.last_evidence_at - self.created_at
+
+
+# Session registry
+_active_sessions    = {}   # session_id → VisitorSession
+_sessions_lock      = threading.Lock()
+
+# Anonymous identities — evidence that didn't meet creation threshold, held 24h
+_anonymous_identities = {}
+# anon_id → {face_embeddings, gait, cameras, created_at, last_seen_at}
+
+# Idempotency guard — session_ids that already triggered a customer creation
+_created_from_session_ids = set()
+
+# Recently-created customer embeddings cache — for anti-clone gate (last 10 min)
+_recent_customers_cache   = []   # list of {cid, embeddings, created_at}
+_recent_customers_lock    = threading.Lock()
+
+
+def _register_recent_customer(cid, embedding_bytes_list):
+    """Called after customer creation so anti-clone gate can find it."""
+    with _recent_customers_lock:
+        _recent_customers_cache.append({
+            'cid': cid,
+            'embeddings': embedding_bytes_list,
+            'created_at': time.time(),
+        })
+        # Keep only last 10 minutes
+        cutoff = time.time() - 600
+        _recent_customers_cache[:] = [c for c in _recent_customers_cache if c['created_at'] > cutoff]
+
+
+def _get_recent_customer_embeddings(minutes=10):
+    """Return [(cid, [emb_bytes, ...]), ...] for customers created in last N minutes."""
+    cutoff = time.time() - minutes * 60
+    with _recent_customers_lock:
+        return [(c['cid'], c['embeddings']) for c in _recent_customers_cache if c['created_at'] > cutoff]
+
+
 # ─── Profile Improvement ────────────────────────────────────────────────────
 
 # Quality thresholds for deciding whether to upgrade a stored signal
@@ -1922,6 +2051,311 @@ def _improve_customer_profile(customer_id, signals):
     except Exception as e:
         logger.warning(f'Profile improvement error for customer {customer_id}: {e}')
 
+# ─── Session Management ─────────────────────────────────────────────────────
+
+def _assign_to_session(face_emb, camera, event_id, ts):
+    """Assign new evidence to an existing session (similarity-gated) or create one.
+    Returns the session_id to use."""
+    with _sessions_lock:
+        best_session, best_sim = None, -1.0
+
+        for sid, sess in list(_active_sessions.items()):
+            if sess.status != 'accumulating':
+                continue
+            time_gap = ts - sess.last_evidence_at
+
+            # Face similarity gate — primary assignment criterion
+            if face_emb and sess.face_embeddings:
+                sim = max(cosine_sim(face_emb, e[0]) for e in sess.face_embeddings)
+                if sim > SESSION_JOIN_FACE_SIM and sim > best_sim:
+                    best_sim, best_session = sim, sid
+
+            # No-face same-camera fallback — only if exactly ONE eligible recent session
+            elif (not face_emb and camera and camera in sess.cameras_seen and time_gap < 30):
+                eligible = [s for s in _active_sessions.values()
+                            if s.status == 'accumulating'
+                            and camera in s.cameras_seen
+                            and ts - s.last_evidence_at < 30]
+                if len(eligible) == 1 and best_session is None:
+                    best_session = eligible[0].session_id
+
+        if best_session:
+            _active_sessions[best_session].last_evidence_at = ts
+            return best_session
+
+        # No match — start a new session
+        sess = VisitorSession()
+        _active_sessions[sess.session_id] = sess
+        logger.debug(f'New session {sess.session_id[:8]} (camera={camera})')
+        return sess.session_id
+
+
+def _merge_overlapping_sessions():
+    """Merge sessions with very similar face embeddings into one.
+    Runs before the resolver so it always sees consolidated evidence.
+    Uses SESSION_MERGE_FACE_SIM (0.50) — stricter than join threshold."""
+    with _sessions_lock:
+        open_sessions = [s for s in _active_sessions.values() if s.status == 'accumulating']
+
+    for i, a in enumerate(open_sessions):
+        for b in open_sessions[i+1:]:
+            if not (a.face_embeddings and b.face_embeddings):
+                continue
+            sim = max(
+                cosine_sim(e1[0], e2[0])
+                for e1 in a.face_embeddings
+                for e2 in b.face_embeddings
+            )
+            if sim >= SESSION_MERGE_FACE_SIM:
+                with _sessions_lock:
+                    if a.status != 'accumulating' or b.status != 'accumulating':
+                        continue
+                    # Merge B into A — keep best-quality embeddings from both
+                    a.face_embeddings.extend(b.face_embeddings)
+                    a.cameras_seen.update(b.cameras_seen)
+                    a.source_event_ids.update(b.source_event_ids)
+                    if b.gait_features and (not a.gait_features or
+                                            b.gait_features[1] > a.gait_features[1]):
+                        a.gait_features = b.gait_features
+                    if b.best_face_sim > a.best_face_sim:
+                        a.best_face_sim = b.best_face_sim
+                        a.candidate_customer_id = b.candidate_customer_id
+                    a.last_evidence_at = max(a.last_evidence_at, b.last_evidence_at)
+                    b.status = 'expired'
+                logger.debug(f'Sessions merged: {b.session_id[:8]} → {a.session_id[:8]} '
+                             f'(sim={sim:.3f})')
+
+
+def _create_customer_from_embeddings(face_embeddings, gait_features, session_id):
+    """Create a new customer in POS, enroll all face embeddings and gait.
+    Returns customer_id or None on failure."""
+    if session_id in _created_from_session_ids:
+        logger.debug(f'Session {session_id[:8]} already created a customer, skipping')
+        return None
+    _created_from_session_ids.add(session_id)
+
+    r = pos_get('/api/customers/max_number')
+    next_number = (r.get('max_number') or 0) + 1 if r else 1
+    customer_number_str = f'CUST-{next_number:04d}'
+
+    new_customer = pos_post('/api/customers', {
+        'name': None,
+        'auto_enrolled': True,
+        'customer_number': customer_number_str,
+    })
+    if not (new_customer and new_customer.get('id')):
+        logger.error(f'Session {session_id[:8]}: customer creation failed')
+        _created_from_session_ids.discard(session_id)
+        return None
+
+    cid = new_customer['id']
+    logger.info(f'Session {session_id[:8]} → created {customer_number_str} (id={cid})')
+
+    # Enroll face embeddings
+    for emb_bytes, quality, camera_src in face_embeddings:
+        pos_post(f'/api/customers/{cid}/enroll/face', {
+            'embedding_b64': base64.b64encode(emb_bytes).decode(),
+            'quality': float(quality),
+            'camera_source': camera_src or None,
+        })
+
+    # Enroll gait if available
+    if gait_features:
+        gait_bytes, gait_qual = gait_features
+        pos_post(f'/api/customers/{cid}/enroll/gait', {
+            'features_b64': base64.b64encode(gait_bytes).decode(),
+            'quality': float(gait_qual),
+        })
+
+    # Cache for anti-clone gate
+    emb_b64_list = [base64.b64encode(e[0]).decode() for e in face_embeddings]
+    _register_recent_customer(cid, emb_b64_list)
+
+    # Insert into recognition caches
+    new_entry = {'id': cid, 'auto_enrolled': True, 'customer_number': customer_number_str,
+                 'name': None, 'plates': [], 'visit_count': 0, 'visit_hour_avg': None,
+                 'visit_hour_std': None, 'last_visit': None}
+    with _cache_lock:
+        _customers_cache.append(new_entry)
+        _customers_cache_map[cid] = new_entry
+    global _threshold_cache_time
+    _threshold_cache_time = 0.0
+    with _cache_rebuild_lock:
+        _signals_cache[cid] = {
+            'id': cid, 'face_embeddings': [], 'gait_features': [], 'plates': [],
+            'height_category': None, 'build': None, 'hair_color': None, 'facial_hair': None,
+            'visit_count': 0, 'visit_hour_avg': None, 'visit_hour_std': None,
+        }
+        _signals_cache_ids.add(cid)
+
+    return cid
+
+
+def _log_session_visit(cid, session, dwell_seconds=None):
+    """Log a visit for a resolved session."""
+    payload = {
+        'customer_id': cid,
+        'matched_signals': 'session_resolved',
+        'confidence_scores': {
+            'session_face_sim': float(session.best_face_sim),
+            'session_cameras': len(session.cameras_seen),
+            'session_faces': len(session.face_embeddings),
+        },
+        'camera_source': (list(session.cameras_seen) or [None])[0],
+    }
+    if dwell_seconds:
+        payload['dwell_seconds'] = int(dwell_seconds)
+    pos_post('/api/customers/identify', payload)
+
+
+def _resolve_session(session):
+    """Single authority for customer creation. 5-step decision.
+    Sets session.status to 'resolved' or 'expired'."""
+
+    # Atomic: prevent double-resolution races
+    with _sessions_lock:
+        if session.status != 'accumulating':
+            return
+        session.status = 'resolving'
+
+    try:
+        best_emb = session.best_face_embedding
+        all_cust_sigs = get_all_customer_signals()
+
+        # Re-score all customers against all session embeddings for best match
+        if best_emb and all_cust_sigs:
+            for cid, csigs in all_cust_sigs.items():
+                if not csigs.get('face_embeddings'):
+                    continue
+                for face_entry in csigs['face_embeddings']:
+                    emb_b64 = face_entry['embedding_b64'] if isinstance(face_entry, dict) else face_entry
+                    stored = np.frombuffer(base64.b64decode(emb_b64), dtype=np.float32)
+                    for sess_emb, _, _ in session.face_embeddings:
+                        sim = float(cosine_sim(
+                            np.frombuffer(sess_emb, dtype=np.float32), stored))
+                        if sim > session.best_face_sim:
+                            session.best_face_sim = sim
+                            session.candidate_customer_id = cid
+
+        # ── Step 1: Link to existing customer ────────────────────────────────
+        if (session.best_face_sim >= RESOLVER_LINK_THRESHOLD
+                and session.candidate_customer_id):
+            _log_session_visit(session.candidate_customer_id, session,
+                               dwell_seconds=session.duration())
+            session.status = 'resolved'
+            logger.info(f'Resolver: session {session.session_id[:8]} → '
+                        f'linked cid={session.candidate_customer_id} '
+                        f'face_sim={session.best_face_sim:.3f}')
+            return
+
+        # ── Step 2: Anti-clone — recent customer suppression ─────────────────
+        if best_emb:
+            best_emb_arr = np.frombuffer(best_emb, dtype=np.float32)
+            for recent_cid, recent_emb_list in _get_recent_customer_embeddings(minutes=10):
+                for emb_b64 in recent_emb_list:
+                    try:
+                        stored = np.frombuffer(base64.b64decode(emb_b64), dtype=np.float32)
+                        sim = float(cosine_sim(best_emb_arr, stored))
+                        if sim > RECENT_CUSTOMER_SIM:
+                            _log_session_visit(recent_cid, session)
+                            session.status = 'resolved'
+                            logger.info(f'Resolver: session {session.session_id[:8]} → '
+                                        f'anti-clone cid={recent_cid} sim={sim:.3f}')
+                            return
+                    except Exception:
+                        pass
+
+        # ── Step 3: Anonymous identity matching ───────────────────────────────
+        if best_emb:
+            best_emb_arr = np.frombuffer(best_emb, dtype=np.float32)
+            best_anon_id, best_anon_sim = None, -1.0
+            now = time.time()
+            for anon_id, anon in list(_anonymous_identities.items()):
+                if now - anon.get('last_seen_at', anon['created_at']) > ANON_IDENTITY_TTL:
+                    continue
+                for emb_bytes, _, _ in anon.get('face_embeddings', []):
+                    try:
+                        stored = np.frombuffer(emb_bytes, dtype=np.float32)
+                        sim = float(cosine_sim(best_emb_arr, stored))
+                        if sim > ANON_IDENTITY_SIM and sim > best_anon_sim:
+                            best_anon_sim, best_anon_id = sim, anon_id
+                    except Exception:
+                        pass
+
+            if best_anon_id:
+                anon = _anonymous_identities[best_anon_id]
+                # Merge session evidence into anonymous identity
+                anon['face_embeddings'].extend(session.face_embeddings)
+                if session.gait_features:
+                    if not anon.get('gait') or session.gait_features[1] > anon['gait'][1]:
+                        anon['gait'] = session.gait_features
+                anon['cameras'].update(session.cameras_seen)
+                anon['last_seen_at'] = now
+
+                # Re-evaluate combined evidence against creation gates
+                high_q = [e for e in anon['face_embeddings'] if e[1] >= FACE_QUALITY_MIN_CREATE]
+                if (len(anon['face_embeddings']) >= MIN_FACES_TO_CREATE
+                        and len(high_q) >= MIN_HIGH_QUALITY_FACES
+                        and session.best_face_sim < CLEARLY_NOT_EXISTING):
+                    cid = _create_customer_from_embeddings(
+                        anon['face_embeddings'], anon.get('gait'), session.session_id)
+                    if cid:
+                        _log_session_visit(cid, session)
+                        del _anonymous_identities[best_anon_id]
+                        session.status = 'resolved'
+                        logger.info(f'Resolver: session {session.session_id[:8]} → '
+                                    f'anon {best_anon_id[:8]} promoted to cid={cid}')
+                        return
+                # Not yet promotable — keep anon, expire this session
+                session.status = 'expired'
+                logger.debug(f'Resolver: session {session.session_id[:8]} → '
+                             f'merged into anon {best_anon_id[:8]}, not yet promotable')
+                return
+
+        # ── Step 4: Safe to create new customer? ──────────────────────────────
+        high_q = [e for e in session.face_embeddings if e[1] >= FACE_QUALITY_MIN_CREATE]
+        safe_to_create = (
+            len(session.face_embeddings) >= MIN_FACES_TO_CREATE
+            and len(high_q) >= MIN_HIGH_QUALITY_FACES
+            and session.duration() >= MIN_SESSION_DURATION
+            and session.best_face_sim < CLEARLY_NOT_EXISTING
+        )
+        if safe_to_create:
+            cid = _create_customer_from_embeddings(
+                session.face_embeddings, session.gait_features, session.session_id)
+            if cid:
+                _log_session_visit(cid, session, dwell_seconds=session.duration())
+                session.status = 'resolved'
+                logger.info(f'Resolver: session {session.session_id[:8]} → '
+                            f'new customer cid={cid} '
+                            f'(faces={len(session.face_embeddings)} '
+                            f'hq={len(high_q)} dur={session.duration():.0f}s)')
+                return
+
+        # ── Step 5: Insufficient evidence ─────────────────────────────────────
+        if session.face_embeddings:
+            anon_id = str(uuid.uuid4())
+            _anonymous_identities[anon_id] = {
+                'face_embeddings': list(session.face_embeddings),
+                'gait': session.gait_features,
+                'cameras': set(session.cameras_seen),
+                'created_at': session.created_at,
+                'last_seen_at': time.time(),
+            }
+            logger.debug(f'Resolver: session {session.session_id[:8]} → '
+                         f'anonymous identity {anon_id[:8]} '
+                         f'(faces={len(session.face_embeddings)} '
+                         f'best_sim={session.best_face_sim:.3f})')
+        else:
+            logger.debug(f'Resolver: session {session.session_id[:8]} → discarded (no face)')
+        session.status = 'expired'
+
+    except Exception as e:
+        logger.error(f'Resolver error for session {session.session_id[:8]}: {e}')
+        import traceback; traceback.print_exc()
+        session.status = 'expired'
+
+
 # ─── Event Processing ───────────────────────────────────────────────────────
 
 def process_event(event):
@@ -2045,181 +2479,75 @@ def process_event(event):
                         conf_scores['gait_distance'] = float(breakdown_m['gait_distance'])
                     break
 
-            # Log visit — at most once per VISIT_LOG_INTERVAL per track
-            if time.time() - track.visit_logged_at >= VISIT_LOG_INTERVAL:
-                identify_payload = {
-                    'customer_id': resolved_id,
-                    'matched_signals': 'track_consensus',
-                    'confidence_scores': conf_scores,
-                    'camera_source': signals.get('camera'),
-                }
-                # Include dwell time for ended events (Frigate start_time / end_time are Unix timestamps)
-                start_time = event.get('start_time')
-                end_time_ev = event.get('end_time')
-                if event.get('_is_ended') and start_time and end_time_ev:
-                    identify_payload['dwell_seconds'] = int(end_time_ev - start_time)
-                pos_post('/api/customers/identify', identify_payload)
-                track.visit_logged_at = time.time()
+            # Real-time: notify teller only when STABLE + FACE-DOMINANT match.
+            # Advisory only — does not create customers.
+            # Requires MIN_STRONG_MATCH_OBS consecutive obs at face_sim ≥ STRONG_LINK_THRESHOLD
+            # AND face_sim ≥ MIN_FACE_FOR_WELCOME (gait/context alone cannot trigger welcome).
+            face_sim_this_obs = best_face_sim
+            face_present_for_welcome = (
+                signals.get('face_quality', 0) > 0
+                and face_sim_this_obs >= MIN_FACE_FOR_WELCOME
+            )
+            if face_sim_this_obs >= STRONG_LINK_THRESHOLD and face_present_for_welcome:
+                track._strong_obs = getattr(track, '_strong_obs', 0) + 1
+            else:
+                track._strong_obs = 0
 
-            # Continuous profile improvement — fill in missing or upgrade quality
-            _improve_customer_profile(resolved_id, signals)
+            if getattr(track, '_strong_obs', 0) >= MIN_STRONG_MATCH_OBS:
+                # Stable confirmed match — log visit (teller notification) rate-limited
+                if time.time() - track.visit_logged_at >= VISIT_LOG_INTERVAL:
+                    identify_payload = {
+                        'customer_id': resolved_id,
+                        'matched_signals': 'track_consensus',
+                        'confidence_scores': conf_scores,
+                        'camera_source': signals.get('camera'),
+                    }
+                    start_time = event.get('start_time')
+                    end_time_ev = event.get('end_time')
+                    if event.get('_is_ended') and start_time and end_time_ev:
+                        identify_payload['dwell_seconds'] = int(end_time_ev - start_time)
+                    pos_post('/api/customers/identify', identify_payload)
+                    track.visit_logged_at = time.time()
 
-        elif track.age() >= 30 and track.has_enrollment_quality():
-            if track.confidence < pending_threshold:
-                # Guard against multiple threads enrolling the same track simultaneously
-                with _tracks_lock:
-                    if track.enrollment_claimed:
-                        logger.debug(f'Track {track_id[:8]} enrollment already claimed, skipping')
-                        return
-                    track.enrollment_claimed = True  # atomic claim under lock
-
-                logger.info(f'Track {track_id[:8]} ready for enrollment (age={track.age():.1f}s, quality=ok)')
-
-                # Auto-enroll new customer — retry up to 3x on customer_number collision
-                new_customer = None
-                customer_number_str = None
-                next_number = 1
-                try:
-                    for _attempt in range(3):
-                        r = pos_get('/api/customers/max_number')
-                        next_number = (r.get('max_number') or 0) + 1 if r else 1
-                        customer_number_str = f'CUST-{next_number:04d}'
-                        # Skip if this customer_number was recently enrolled (post-restart dedup)
-                        skip_nums = globals().get('_startup_skip_numbers', set())
-                        if customer_number_str in skip_nums:
-                            logger.info(f'Track {track_id[:8]} skipping re-enrollment of {customer_number_str} (enrolled in last 5 min)')
-                            skip_nums.discard(customer_number_str)
-                            break
-                        new_customer = pos_post('/api/customers', {
-                            'name': None,
-                            'auto_enrolled': True,
-                            'customer_number': customer_number_str,
-                            'first_seen': datetime.now().isoformat()
-                        })
-                        if new_customer and new_customer.get('id'):
-                            break  # success
-                        if new_customer and new_customer.get('error') == 'customer_number_conflict':
-                            logger.warning(f'customer_number collision on {customer_number_str}, retrying...')
-                            time.sleep(0.1 * (_attempt + 1))
-                            continue
-                        break  # unexpected response — don't retry
-                    if not new_customer:
-                        logger.error(f'Auto-enrollment failed: POS returned None for customer POST (POS down?), track={track_id[:8]}')
-                    if new_customer and new_customer.get('id'):
-                        customer_id = new_customer['id']
-                        logger.info(f'Auto-enrolled customer {customer_number_str} (id={customer_id})')
-                        # Enroll face if available
-                        best_face = track.get_best_signal('face')
-                        if best_face and best_face.get('embedding'):
-                            payload = {
-                                'embedding_b64': base64.b64encode(best_face['embedding']).decode(),
-                                'quality': float(best_face.get('quality', 0.0)),
-                                'camera_source': camera,
-                            }
-                            if best_face.get('photo'):
-                                payload['photo_b64'] = base64.b64encode(best_face['photo']).decode()
-                            pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
-                            logger.info(f'   Face enrolled for customer #{next_number}')
-
-                        # Enroll gait if available
-                        best_gait = track.get_best_signal('gait')
-                        if best_gait and best_gait.get('features'):
-                            pos_post(f'/api/customers/{customer_id}/enroll/gait', {
-                                'features_b64': base64.b64encode(best_gait['features']).decode(),
-                                'quality': float(best_gait.get('quality', 0.0))
-                            })
-                            logger.info(f'   Gait enrolled for customer #{next_number}')
-
-                        # Always store body snapshot so every customer card has
-                        # a visual — face crop if available, full-body otherwise
-                        if signals.get('snapshot_photo'):
-                            payload = {
-                                'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
-                                'quality': 0.0,
-                                'body_photo_b64': base64.b64encode(signals['snapshot_photo']).decode(),
-                                'snapshot_only': True,
-                            }
-                            # Include face crop as photo if we have one
-                            if best_face and best_face.get('photo'):
-                                payload['photo_b64'] = base64.b64encode(best_face['photo']).decode()
-                            pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
-                            logger.info(f'   Body snapshot stored for customer #{next_number}')
-
-                        # Enroll physical attributes if extracted
-                        if signals.get('physical_attrs'):
-                            pos_post(f'/api/customers/{customer_id}/attributes', signals['physical_attrs'])
-                            logger.info(f'   Attributes enrolled for customer #{next_number}')
-
-                        # Link track to new customer
-                        track.customer_id = customer_id
-                        track.confidence = 1.0
-
-                        # Insert new customer into caches directly — avoids a full
-                        # O(N×3) refresh_customers() rebuild just for one new entry.
-                        new_entry = {
-                            'id': customer_id,
-                            'auto_enrolled': True,
-                            'customer_number': customer_number_str,
-                            'name': None,
-                            'plates': [],
-                        }
-                        with _cache_lock:
-                            _customers_cache.append(new_entry)
-                            _customers_cache_map[customer_id] = new_entry
-                        global _threshold_cache_time
-                        _threshold_cache_time = 0.0  # invalidate — new customer added
-                        new_signals_entry = {
-                            'id': customer_id,
-                            'face_embeddings': [],
-                            'gait_features': [],
-                            'plates': [],
-                            'height_category': None,
-                            'build': None,
-                            'hair_color': None,
-                            'facial_hair': None,
-                            'visit_count': 0,
-                            'visit_hour_avg': None,
-                            'visit_hour_std': None,
-                        }
-                        with _cache_rebuild_lock:
-                            _signals_cache[customer_id] = new_signals_entry
-                            # MUST update _signals_cache_ids to include the new customer.
-                            _signals_cache_ids.add(customer_id)
-
-                        # Log visit
-                        enroll_identify = {
-                            'customer_id': customer_id,
-                            'matched_signals': 'auto_enrollment',
-                            'confidence_scores': {'auto_enroll': 1.0},
-                            'camera_source': signals.get('camera'),
-                        }
-                        start_time = event.get('start_time')
-                        end_time_ev = event.get('end_time')
-                        if start_time and end_time_ev:
-                            enroll_identify['dwell_seconds'] = int(end_time_ev - start_time)
-                        pos_post('/api/customers/identify', enroll_identify)
-
-                except Exception as e:
-                    logger.error(f'Auto-enrollment failed: {e}')
-                    import traceback
-                    traceback.print_exc()
-                    # Release the claim so the next event can retry enrollment
-                    with _tracks_lock:
-                        track.enrollment_claimed = False
+                # Continuous profile improvement — fill in missing or upgrade quality
+                _improve_customer_profile(resolved_id, signals)
+            else:
+                logger.debug(f'Track {track_id[:8]} waiting for stable match '
+                             f'(strong_obs={getattr(track, "_strong_obs", 0)}/{MIN_STRONG_MATCH_OBS} '
+                             f'face_sim={face_sim_this_obs:.3f})')
 
         else:
-            logger.debug(f'Track {track_id[:8]} pending (age={track.age():.1f}s, confidence={track.confidence:.3f})')
+            logger.debug(f'Track {track_id[:8]} pending '
+                         f'(age={track.age():.1f}s confidence={track.confidence:.3f})')
 
-        # Queue clip analysis for all ended events — both resolved (profile enrichment)
-        # and unresolved (first-time visitor who got a poor real-time snapshot).
-        # customer_id may be None for unresolved tracks; _clip_analysis_loop handles both.
+        # ── Feed evidence into VisitorSession (all tracks, regardless of link status) ──
+        # The session resolver is the sole authority for customer creation.
+        face_emb_for_session = signals.get('face_embedding') if signals.get('face_quality', 0) >= FACE_QUALITY_MIN_CREATE else None
+        session_id = _assign_to_session(face_emb_for_session, camera, event_id, time.time())
+        sess = _active_sessions.get(session_id)
+        if sess:
+            # Pass candidate hint if track has a confirmed identity
+            candidate_cid = resolved_id if (track.customer_id and track.confidence >= RESOLVER_LINK_THRESHOLD) else None
+            sess.add_evidence(
+                face_emb=face_emb_for_session,
+                quality=float(signals.get('face_quality', 0)),
+                camera=camera,
+                gait=signals.get('gait_features'),
+                gait_quality=float(signals.get('gait_quality', 0)),
+                event_id=event_id,
+                candidate_cid=candidate_cid,
+                candidate_sim=best_face_sim,
+            )
+
+        # Queue clip analysis for ended events (enrichment path)
         if event.get('_is_ended'):
             person_box = (event.get('data') or {}).get('box')
             with _clip_queue_lock:
                 if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
                         and not any(j[0] == event_id for j in _clip_analysis_queue)):
                     _clip_analysis_queue.append((event_id, track.customer_id, person_box))
-                    logger.debug(f'Queued clip analysis for event {event_id[:12]} customer={track.customer_id}')
+                    logger.debug(f'Queued clip analysis for event {event_id[:12]} '
+                                 f'customer={track.customer_id} session={session_id[:8]}')
 
     except Exception as e:
         logger.error(f'Event processing error: {e}')
@@ -2254,8 +2582,9 @@ def _clip_analysis_loop():
                     continue
 
                 distinct_faces = signals.pop('distinct_faces', [])
+                clip_camera = signals.get('camera') or signals.get('source')
 
-                # --- Unresolved track: try to identify from clip signals first ---
+                # --- If clip matched an existing customer: enrich their profile ---
                 if customer_id is None and signals.get('face_embedding'):
                     all_sigs = get_all_customer_signals()
                     best_match_id = None
@@ -2268,42 +2597,30 @@ def _clip_analysis_loop():
                             best_match_id = cid_cand
                     if best_match_id and best_match_score >= link_thresh:
                         customer_id = best_match_id
-                        logger.info(f'Clip resolved unresolved track {event_id[:12]} → customer={customer_id} (score={best_match_score:.3f})')
-                    else:
-                        # Still unresolved — enroll as new customer from clip
-                        logger.info(f'Clip enrolling new customer from unresolved track {event_id[:12]}')
-                        r = pos_get('/api/customers/max_number')
-                        next_number = (r.get('max_number') or 0) + 1 if r else 1
-                        customer_number_str = f'CUST-{next_number:04d}'
-                        new_customer = pos_post('/api/customers', {
-                            'name': None,
-                            'auto_enrolled': True,
-                            'customer_number': customer_number_str,
-                        })
-                        if new_customer and new_customer.get('id'):
-                            customer_id = new_customer['id']
-                            logger.info(f'Clip enrolled new customer {customer_number_str} (id={customer_id})')
-                            # Direct cache insert — avoids O(N×3) rebuild from refresh_customers()
-                            new_clip_entry = {'id': customer_id, 'auto_enrolled': True,
-                                              'customer_number': customer_number_str, 'name': None, 'plates': []}
-                            with _cache_lock:
-                                _customers_cache.append(new_clip_entry)
-                                _customers_cache_map[customer_id] = new_clip_entry
-                            _threshold_cache_time = 0.0  # invalidate threshold cache
-                            with _cache_rebuild_lock:
-                                _signals_cache[customer_id] = {'id': customer_id, 'face_embeddings': [],
-                                                               'gait_features': [], 'plates': [],
-                                                               'height_category': None, 'build': None,
-                                                               'hair_color': None, 'facial_hair': None,
-                                                               'visit_count': 0, 'visit_hour_avg': None,
-                                                               'visit_hour_std': None}
-                                _signals_cache_ids.add(customer_id)
-                        else:
-                            logger.warning(f'Clip enrollment failed for {event_id[:12]}')
-                            continue
+                        logger.info(f'Clip matched existing customer={customer_id} '
+                                    f'(score={best_match_score:.3f}) for event {event_id[:12]}')
 
+                # --- Unresolved: feed evidence into VisitorSession, NOT directly creating a customer ---
                 if customer_id is None:
-                    continue
+                    # Session resolver will decide what to do with this evidence
+                    face_emb_for_sess = signals.get('face_embedding') if signals.get('face_quality', 0) >= FACE_QUALITY_MIN_CREATE else None
+                    sess_id = _assign_to_session(face_emb_for_sess, clip_camera, event_id, time.time())
+                    sess = _active_sessions.get(sess_id)
+                    if sess:
+                        gait_for_sess = signals.get('gait_features')
+                        gait_q = float(signals.get('gait_quality', 0))
+                        sess.add_evidence(
+                            face_emb=face_emb_for_sess,
+                            quality=float(signals.get('face_quality', 0)),
+                            camera=clip_camera,
+                            gait=gait_for_sess,
+                            gait_quality=gait_q,
+                            event_id=event_id,
+                            face_embeddings_list=distinct_faces,
+                        )
+                        logger.debug(f'Clip evidence → session {sess_id[:8]}: '
+                                     f'{len(distinct_faces)} angles from {event_id[:12]}')
+                    continue  # Do NOT proceed to enrichment for unresolved clips
 
                 # Submit each distinct face angle directly.
                 # For established customers (visit_count > 2) and within daily cap,
@@ -2387,6 +2704,58 @@ def _track_cleanup_loop():
                 del _active_tracks[tid]
             if expired:
                 logger.debug(f'Track cleanup: removed {len(expired)} stale tracks, {len(_active_tracks)} remaining')
+
+
+def _session_resolver_loop():
+    """Background thread: runs every 10s.
+    1. Merges overlapping sessions (face_sim ≥ SESSION_MERGE_FACE_SIM)
+    2. Resolves sessions idle ≥ SESSION_IDLE_EXPIRY or age ≥ MAX_SESSION_LIFETIME
+    3. Evicts expired sessions and stale anonymous identities"""
+    while True:
+        time.sleep(10)
+        try:
+            now = time.time()
+
+            # Step 1: consolidate sessions before resolving
+            _merge_overlapping_sessions()
+
+            # Step 2: find sessions ready to resolve
+            with _sessions_lock:
+                to_resolve = [
+                    sess for sess in list(_active_sessions.values())
+                    if sess.status == 'accumulating' and (
+                        now - sess.last_evidence_at > SESSION_IDLE_EXPIRY or
+                        now - sess.created_at > MAX_SESSION_LIFETIME
+                    )
+                ]
+
+            for sess in to_resolve:
+                try:
+                    _resolve_session(sess)
+                except Exception as e:
+                    logger.error(f'Session resolver error: {e}')
+                    sess.status = 'expired'
+
+            # Step 3: evict expired sessions
+            with _sessions_lock:
+                expired_sids = [k for k, v in list(_active_sessions.items())
+                                if v.status in ('resolved', 'expired')]
+                for sid in expired_sids:
+                    del _active_sessions[sid]
+
+            # Step 4: evict stale anonymous identities (TTL based on last_seen_at)
+            stale = [k for k, v in list(_anonymous_identities.items())
+                     if now - v.get('last_seen_at', v['created_at']) > ANON_IDENTITY_TTL]
+            for k in stale:
+                del _anonymous_identities[k]
+
+            if to_resolve:
+                logger.debug(f'Session resolver: processed {len(to_resolve)} sessions, '
+                             f'{len(_active_sessions)} active, '
+                             f'{len(_anonymous_identities)} anonymous identities')
+
+        except Exception as e:
+            logger.error(f'Session resolver loop error: {e}')
 
 
 def poll_frigate_events():
@@ -2620,6 +2989,10 @@ if __name__ == '__main__':
 
     # Background track cleanup (prevents _active_tracks memory growth)
     threading.Thread(target=_track_cleanup_loop, daemon=True).start()
+
+    # Session resolver — single authority for customer creation
+    threading.Thread(target=_session_resolver_loop, daemon=True).start()
+    logger.info('Session resolver started (idle_expiry=60s max_lifetime=300s)')
 
     # Nightly reindex — refreshes embeddings for customers not seen in >90 days
     threading.Thread(target=_nightly_reindex_loop, daemon=True).start()
