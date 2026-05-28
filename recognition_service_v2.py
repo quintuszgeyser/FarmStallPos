@@ -1356,6 +1356,9 @@ def calculate_match_score_safe(new_signals, customer_signals, track_history=None
 
         for stored_gait_b64 in customer_signals['gait_features']:
             stored = np.frombuffer(base64.b64decode(stored_gait_b64), dtype=np.float32)
+            # Skip if vectors have incompatible dimensions (old 6-dim vs new 12-dim)
+            if stored.shape != new_gait.shape:
+                continue
             dist = euclidean_dist(new_gait, stored)
             best_dist = min(best_dist, dist)
 
