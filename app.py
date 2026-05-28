@@ -371,6 +371,9 @@ class CustomerFace(db.Model):
     body_photo  = db.Column(db.LargeBinary, nullable=True)   # JPEG of full-body snapshot thumbnail
     enrolled_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     active      = db.Column(db.Boolean,  nullable=False, default=True)
+    quality     = db.Column(Numeric(4, 3), nullable=True)    # face extraction quality score 0–1
+    camera_source = db.Column(db.String(20), nullable=True)  # camera that produced this embedding
+    original_customer_id = db.Column(db.Integer, nullable=True)  # pre-merge origin (for unmerge)
 
 
 class CustomerGait(db.Model):
@@ -1495,6 +1498,9 @@ def strong_migrate():
             pg_try("ALTER TABLE customer_faces ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
             pg_try("ALTER TABLE customer_gaits ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
             pg_try("ALTER TABLE customer_physical_attributes ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
+            # Embedding quality + camera source for per-angle quality upgrade and camera boost
+            pg_try("ALTER TABLE customer_faces ADD COLUMN quality NUMERIC(4,3)")
+            pg_try("ALTER TABLE customer_faces ADD COLUMN camera_source VARCHAR(20)")
 
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
@@ -2469,6 +2475,13 @@ def api_suppliers_purchase_run(sid):
 import json as _json
 
 def _customer_dict(c):
+    from sqlalchemy import text as _txt
+    # Visit time pattern — average and std dev of hour-of-day across all visits
+    # Used by recognition service for temporal pattern scoring (no extra API call needed)
+    _hr_row = db.session.execute(_txt(
+        'SELECT AVG(EXTRACT(HOUR FROM detected_at)), STDDEV(EXTRACT(HOUR FROM detected_at)) '
+        'FROM customer_visits WHERE customer_id = :cid'
+    ), {'cid': c.id}).fetchone()
     return {
         'id': c.id, 'name': c.name, 'phone': c.phone, 'email': c.email,
         'notes': c.notes, 'visit_count': c.visit_count, 'active': c.active,
@@ -2478,11 +2491,14 @@ def _customer_dict(c):
         'auto_enrolled': c.auto_enrolled,
         'first_seen': c.first_seen.isoformat() if c.first_seen else None,
         'is_employee': c.is_employee,
+        'merged_into': c.merged_into,
         'plates': [p.plate_number for p in CustomerPlate.query.filter_by(customer_id=c.id, active=True).all()],
         'has_face': CustomerFace.query.filter_by(customer_id=c.id, active=True).count() > 0,
         'has_gait': CustomerGait.query.filter_by(customer_id=c.id, active=True).count() > 0,
         'has_photo': CustomerFace.query.filter_by(customer_id=c.id).filter(CustomerFace.photo != None).count() > 0,
         'has_body_photo': CustomerFace.query.filter_by(customer_id=c.id).filter(CustomerFace.body_photo != None).count() > 0,
+        'visit_hour_avg': float(_hr_row[0]) if _hr_row and _hr_row[0] is not None else None,
+        'visit_hour_std': float(_hr_row[1]) if _hr_row and _hr_row[1] is not None else None,
     }
 
 @app.route('/api/customers', methods=['GET'])
@@ -3510,6 +3526,7 @@ def api_customers_enroll_face(cid):
     photo_b64 = data.get('photo_b64')
     photo_bytes = base64.b64decode(photo_b64) if photo_b64 else None
     snapshot_only = data.get('snapshot_only', False)
+    camera_source_val = data.get('camera_source') or None
 
     body_photo_b64 = data.get('body_photo_b64')
     body_photo_bytes = base64.b64decode(body_photo_b64) if body_photo_b64 else None
@@ -3541,8 +3558,10 @@ def api_customers_enroll_face(cid):
         # existing ones (fills a gap). Like iPhone fingerprint — keep lifting and
         # re-presenting from new angles until full angular coverage is built up.
         import numpy as np
-        MAX_EMBEDDINGS = 5          # max distinct angles to keep
-        MIN_DISTANCE   = float(get_setting('min_angle_distance', 0.25) or 0.25)
+        MAX_EMBEDDINGS   = int(float(get_setting('max_face_angles', 24) or 24))
+        MIN_DISTANCE     = float(get_setting('min_angle_distance', 0.25) or 0.25)
+        replace_if_better = data.get('replace_if_better', False)
+        new_quality       = float(data.get('quality', 0.0))
 
         new_emb = np.frombuffer(embedding_bytes, dtype=np.float32).copy()
         norm = np.linalg.norm(new_emb)
@@ -3551,30 +3570,48 @@ def api_customers_enroll_face(cid):
 
         existing = CustomerFace.query.filter_by(customer_id=cid, active=True).all()
         is_new_angle = True
+        replaced = False
         for row in existing:
             stored = np.frombuffer(row.embedding, dtype=np.float32).copy()
             s_norm = np.linalg.norm(stored)
             if s_norm > 0:
                 stored /= s_norm
             sim = float(np.dot(new_emb, stored))
-            if sim > (1.0 - MIN_DISTANCE):  # too similar to an existing angle
-                # Update photo if new quality is better (larger photo = sharper)
-                if photo_bytes and (not row.photo or len(photo_bytes) > len(row.photo)):
-                    row.photo = photo_bytes
-                db.session.commit()
-                is_new_angle = False
+            if sim > (1.0 - MIN_DISTANCE):  # same angle region
+                stored_quality = float(row.quality) if row.quality else 0.0
+                if (replace_if_better and
+                        new_quality > 0 and
+                        new_quality > stored_quality + 0.10):
+                    # Replace with higher-quality embedding (hysteresis: +0.10 margin)
+                    row.active = False
+                    db.session.flush()
+                    db.session.add(CustomerFace(
+                        customer_id=cid, embedding=embedding_bytes,
+                        photo=photo_bytes or row.photo,
+                        body_photo=body_photo_bytes,
+                        quality=new_quality,
+                        camera_source=camera_source_val,
+                    ))
+                    replaced = True
+                    is_new_angle = False
+                else:
+                    # Same angle, not better enough — just update photo if sharper
+                    if photo_bytes and (not row.photo or len(photo_bytes) > len(row.photo)):
+                        row.photo = photo_bytes
+                    is_new_angle = False
                 break
 
-        if is_new_angle:
+        if is_new_angle and not replaced:
             if len(existing) >= MAX_EMBEDDINGS:
-                # Drop the oldest embedding to make room — it has had the least
-                # benefit from subsequent profile improvements
+                # Drop the oldest embedding to make room
                 oldest = min(existing, key=lambda r: r.enrolled_at)
                 oldest.active = False
 
             db.session.add(CustomerFace(
                 customer_id=cid, embedding=embedding_bytes,
-                photo=photo_bytes, body_photo=body_photo_bytes
+                photo=photo_bytes, body_photo=body_photo_bytes,
+                quality=new_quality if new_quality > 0 else None,
+                camera_source=camera_source_val,
             ))
 
         db.session.commit()
@@ -3798,7 +3835,11 @@ def api_customer_faces_raw(cid):
             .filter_by(customer_id=cid, active=True)
             .order_by(CustomerFace.enrolled_at.desc())
             .limit(10).all())
-    return jsonify([{'embedding_b64': _b64.b64encode(r.embedding).decode()} for r in rows])
+    return jsonify([{
+        'embedding_b64': _b64.b64encode(r.embedding).decode(),
+        'camera': r.camera_source,
+        'quality': float(r.quality) if r.quality is not None else None,
+    } for r in rows])
 
 @app.route('/api/customers/<int:cid>/gaits_raw', methods=['GET'])
 def api_customer_gaits_raw(cid):
