@@ -290,18 +290,30 @@ def extract_temporal_gait_from_clip(frames_seq):
     Uses zero-crossing cadence analysis — no FFT, stable on noisy real-world clips.
     Returns (features_bytes, quality) or (None, 0.0).
     Feature vector: 12 × float32, L2-normalized. Incompatible with old 6-float gait.
+    Creates a fresh VIDEO mode pose instance per clip — MediaPipe VIDEO mode requires
+    strictly monotonically increasing timestamps across its lifetime, so reusing an
+    instance across clips would fail when clip 2's timestamps restart from 0.
     """
     if len(frames_seq) < 20:
         return None, 0.0
     try:
         import cv2
         import mediapipe as mp
+        from mediapipe.tasks import python
+        from mediapipe.tasks.python import vision
 
-        pose = get_pose_video()
-        if not pose:
+        model_dir = os.path.expanduser('~/.mediapipe/models')
+        model_path = os.path.join(model_dir, 'pose_landmarker_lite.task')
+        if not os.path.exists(model_path):
+            get_pose()  # trigger download
+        if not os.path.exists(model_path):
             return None, 0.0
 
-        from mediapipe.tasks.python import vision
+        # Fresh instance per clip — avoids non-monotonic timestamp error across clips
+        options = vision.PoseLandmarkerOptions(
+            base_options=python.BaseOptions(model_asset_path=model_path),
+            running_mode=vision.RunningMode.VIDEO)
+        pose = vision.PoseLandmarker.create_from_options(options)
 
         ankle_y_l, ankle_y_r, shoulder_w, hip_w = [], [], [], []
 
