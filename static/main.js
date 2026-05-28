@@ -156,18 +156,25 @@ function updateVisibility() {
   }
   hide(loginCard); show(authBar);
   const au = document.getElementById('auth-user');
-  if (au) au.textContent = `${STATE.user.username} (${STATE.user.role})`;
+  const roles = STATE.user.roles || [STATE.user.role];
+  const isAdmin = roles.includes('admin');
+  const isDev   = roles.includes('developer');
+  const isTeller = roles.includes('teller');
+  const roleLabels = roles.map(r => `<span class="badge ${r==='admin'?'bg-danger':r==='developer'?'bg-info text-dark':'bg-secondary'} ms-1">${r}</span>`).join('');
+  if (au) au.innerHTML = `${STATE.user.username} ${roleLabels}`;
   show(tabs); show(contents);
   document.querySelectorAll('.admin-only').forEach(el =>
-    STATE.user.role === 'admin' ? show(el) : hide(el));
+    isAdmin ? show(el) : hide(el));
   document.querySelectorAll('.teller-only').forEach(el =>
-    STATE.user.role !== 'admin' ? show(el) : hide(el));
+    (isTeller || (!isAdmin && !isDev)) ? show(el) : hide(el));
+  document.querySelectorAll('.dev-only').forEach(el =>
+    (isDev || isAdmin) ? show(el) : hide(el));
 }
 
 async function refreshMe() {
   const me = await api('/api/me');
   if (me.logged_in) {
-    STATE.user = { username: me.username, role: me.role };
+    STATE.user = { username: me.username, role: me.role, roles: me.roles || [me.role] };
     hide(document.getElementById('btn-login'));
     show(document.getElementById('btn-logout'));
     const s = document.getElementById('login-status'); if (s) s.textContent = '';
@@ -3390,7 +3397,10 @@ function renderUsersList() {
   items.forEach(u => {
     const item = document.createElement('div'); item.className = 'list-group-item user-list-item';
     const left = document.createElement('div');
-    left.innerHTML = `<strong>${u.username}</strong> <span class="user-meta">• ${u.role} • ${u.active ? 'active' : 'disabled'}</span>`;
+    const roleList = (u.roles || [u.role]).map(r =>
+      `<span class="badge ${r==='admin'?'bg-danger':r==='developer'?'bg-info text-dark':'bg-secondary'} ms-1">${r}</span>`
+    ).join('');
+    left.innerHTML = `<strong>${u.username}</strong> ${roleList} <span class="user-meta ms-1">• ${u.active ? 'active' : 'disabled'}</span>`;
     const right   = document.createElement('div');
     const btnEdit = document.createElement('button');
     btnEdit.className = 'btn btn-outline-primary btn-sm'; btnEdit.textContent = 'Edit';
@@ -3403,12 +3413,21 @@ function renderUsersList() {
 function fillUserEditor(u) {
   document.getElementById('u-username').value = u.username;
   document.getElementById('u-password').value = '';
-  document.getElementById('u-role').value = u.role;
+  const userRoles = u.roles || (u.role ? u.role.split(',').map(r=>r.trim()) : ['teller']);
+  ['admin','teller','developer'].forEach(r => {
+    const cb = document.getElementById(`u-role-${r}`); if (cb) cb.checked = userRoles.includes(r);
+  });
   const act = document.getElementById('u-active'); if (act) act.checked = !!u.active;
 }
 
+function getSelectedRoles() {
+  return ['admin','teller','developer']
+    .filter(r => document.getElementById(`u-role-${r}`)?.checked)
+    .join(',') || 'teller';
+}
+
 async function loadUsers() {
-  if (STATE.user?.role !== 'admin') return;
+  if (!STATE.user?.roles?.includes('admin')) return;
   try { STATE.users = await api('/api/users') || []; renderUsersList(); }
   catch (e) { console.error('loadUsers', e); }
 }
@@ -3419,7 +3438,7 @@ document.getElementById('btn-refresh-users')?.addEventListener('click', loadUser
 document.getElementById('btn-add-user')?.addEventListener('click', async () => {
   const username = document.getElementById('u-username').value.trim();
   const password = document.getElementById('u-password').value;
-  const role     = document.getElementById('u-role').value;
+  const role     = getSelectedRoles();
   const active   = document.getElementById('u-active').checked;
   if (!username || !password) return toast('Username and password required', 'warning');
   try {
@@ -3433,7 +3452,7 @@ document.getElementById('btn-update-user')?.addEventListener('click', async () =
   const username = document.getElementById('u-username').value.trim();
   if (!username) return toast('Select a user first', 'warning');
   const password = document.getElementById('u-password').value;
-  const role     = document.getElementById('u-role').value;
+  const role     = getSelectedRoles();
   const active   = document.getElementById('u-active').checked;
   const payload  = { username, role, active };
   if (password) payload.password = password;
@@ -3448,7 +3467,7 @@ document.getElementById('btn-delete-user')?.addEventListener('click', async () =
   try {
     await api(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
     ['u-username','u-password'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    document.getElementById('u-role').value = 'teller';
+    ['admin','teller','developer'].forEach(r => { const cb = document.getElementById(`u-role-${r}`); if(cb) cb.checked = r==='teller'; });
     document.getElementById('u-active').checked = true;
     await loadUsers(); toast('User deleted');
   } catch (e) { toast(e.message, 'error'); }
@@ -6562,3 +6581,176 @@ function stopUpdatePolling() {
 }
 
 // Call startUpdatePolling after login - add to postLogin function manually
+
+// ═══════════════════════════════════════════════════════
+// DEVELOPER MONITOR
+// ═══════════════════════════════════════════════════════
+
+let _monitorInterval = null;
+
+function _fmtUptime(s) {
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), sec = s%60;
+  return h ? `${h}h ${m}m` : m ? `${m}m ${sec}s` : `${sec}s`;
+}
+
+async function refreshMonitor() {
+  try {
+    const d = await api('/api/recognition/status');
+    const dot = document.getElementById('monitor-status-dot');
+    const txt = document.getElementById('monitor-status-text');
+    if (dot) dot.style.background = '#22c55e';
+    if (txt) txt.textContent = 'live';
+
+    const set = (id, v) => { const el = document.getElementById(id); if(el) el.textContent = v; };
+    set('m-cpu',    d.cpu_pct + '%');
+    set('m-mem',    Math.round(d.mem_mb) + ' MB');
+    set('m-uptime', _fmtUptime(d.uptime_s));
+    set('m-onnx',   (d.onnx_providers||[]).find(p=>p.includes('OpenVINO')) ? '🟢 OpenVINO GPU' : '🟡 CPU');
+    set('m-sessions', d.sessions_total);
+    set('m-anon',   d.anon_total);
+    set('m-queue',  d.clip_queue_depth);
+    set('m-cache',  d.customer_cache_size);
+
+    // Sessions
+    const sl = document.getElementById('monitor-sessions-list');
+    const se = document.getElementById('monitor-sessions-empty');
+    if (sl) {
+      sl.innerHTML = '';
+      if (!d.sessions || d.sessions.length === 0) {
+        if(se) { se.classList.remove('hidden'); }
+      } else {
+        if(se) se.classList.add('hidden');
+        d.sessions.forEach(s => {
+          const color = s.status==='resolving'?'warning':s.candidate_cid?'success':'primary';
+          const badge = document.createElement('div');
+          badge.className = `card border-${color} p-2`;
+          badge.style.minWidth = '160px';
+          badge.innerHTML = `
+            <div class="small fw-bold text-${color}">${s.id}</div>
+            <div class="small text-muted">${s.status} · ${s.faces} faces</div>
+            <div class="small text-muted">age ${s.age_s}s · idle ${s.idle_s}s</div>
+            <div class="small text-muted">cams: ${s.cameras.join(', ')||'—'}</div>
+            ${s.candidate_cid ? `<div class="small text-success">→ cid=${s.candidate_cid} (${s.best_sim})</div>` : ''}
+          `;
+          sl.appendChild(badge);
+        });
+      }
+    }
+
+    // Clip queue
+    const ql = document.getElementById('monitor-queue-list');
+    if (ql) {
+      if (!d.clip_queue_depth) {
+        ql.innerHTML = '<span class="text-muted">Empty</span>';
+      } else {
+        ql.innerHTML = (d.clip_queue_items||[]).map(j =>
+          `<div>${j.event_id} → cid=${j.customer_id ?? '?'}</div>`
+        ).join('') + (d.clip_queue_depth > 10 ? `<div class="text-muted">… +${d.clip_queue_depth-10} more</div>` : '');
+      }
+    }
+
+    // Anon identities
+    const al = document.getElementById('monitor-anon-list');
+    const ae = document.getElementById('monitor-anon-empty');
+    if (al) {
+      al.innerHTML = '';
+      if (!d.anon_identities || d.anon_identities.length === 0) {
+        if(ae) ae.classList.remove('hidden');
+      } else {
+        if(ae) ae.classList.add('hidden');
+        d.anon_identities.forEach(a => {
+          const card = document.createElement('div');
+          card.className = 'card border-warning p-2';
+          card.style.minWidth = '140px';
+          card.innerHTML = `
+            <div class="small fw-bold text-warning">${a.id}</div>
+            <div class="small text-muted">${a.faces} faces</div>
+            <div class="small text-muted">age ${a.age_s}s</div>
+          `;
+          al.appendChild(card);
+        });
+      }
+    }
+  } catch(e) {
+    const dot = document.getElementById('monitor-status-dot');
+    const txt = document.getElementById('monitor-status-text');
+    if (dot) dot.style.background = '#ef4444';
+    if (txt) txt.textContent = 'offline: ' + e.message;
+  }
+}
+
+async function loadDevSettings() {
+  try {
+    const s = await api('/api/recognition/settings');
+    const setSliderDev = (id, valId, val) => {
+      const el = document.getElementById(id); if(el) el.value = val;
+      const vl = document.getElementById(valId); if(vl) vl.textContent = val;
+    };
+    setSliderDev('dev-face-threshold',  'dev-face-threshold-val',  s.face_threshold);
+    setSliderDev('dev-link-threshold',  'dev-link-threshold-val',  s.link_threshold);
+    setSliderDev('dev-face-quality-min','dev-face-quality-val',    s.face_quality_min);
+
+    ['dev-face-threshold','dev-link-threshold','dev-face-quality-min'].forEach(id => {
+      const el = document.getElementById(id); if(!el) return;
+      const vid = id === 'dev-face-threshold' ? 'dev-face-threshold-val'
+                : id === 'dev-link-threshold' ? 'dev-link-threshold-val'
+                : 'dev-face-quality-val';
+      el.addEventListener('input', () => { const v = document.getElementById(vid); if(v) v.textContent = el.value; });
+    });
+  } catch(e) { console.error('loadDevSettings', e); }
+}
+
+document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('shown.bs.tab', () => {
+  refreshMonitor();
+  loadDevSettings();
+  if (!_monitorInterval) _monitorInterval = setInterval(refreshMonitor, 4000);
+});
+
+document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('hidden.bs.tab', () => {
+  if (_monitorInterval) { clearInterval(_monitorInterval); _monitorInterval = null; }
+});
+
+document.getElementById('btn-monitor-refresh')?.addEventListener('click', refreshMonitor);
+
+document.getElementById('btn-dev-save-settings')?.addEventListener('click', async () => {
+  const msg = document.getElementById('dev-settings-msg');
+  try {
+    await api('/api/recognition/settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        face_threshold:   parseFloat(document.getElementById('dev-face-threshold')?.value),
+        link_threshold:   parseFloat(document.getElementById('dev-link-threshold')?.value),
+        face_quality_min: parseFloat(document.getElementById('dev-face-quality-min')?.value),
+      })
+    });
+    if(msg) { msg.textContent = 'Saved ✓'; msg.style.color='#22c55e'; setTimeout(()=>msg.textContent='',2000); }
+  } catch(e) {
+    if(msg) { msg.textContent = e.message; msg.style.color='#ef4444'; }
+  }
+});
+
+// ═══════════════════════════════════════════════════════
+// CHANGE PASSWORD
+// ═══════════════════════════════════════════════════════
+document.getElementById('btn-change-password')?.addEventListener('click', () => {
+  ['cp-current','cp-new','cp-confirm'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
+  const err = document.getElementById('cp-error'); if(err) err.classList.add('hidden');
+  const modal = bootstrap.Modal.getOrCreate(document.getElementById('changePasswordModal'));
+  modal.show();
+});
+
+document.getElementById('btn-cp-save')?.addEventListener('click', async () => {
+  const cur  = document.getElementById('cp-current')?.value;
+  const nw   = document.getElementById('cp-new')?.value;
+  const conf = document.getElementById('cp-confirm')?.value;
+  const err  = document.getElementById('cp-error');
+  const showErr = (msg) => { if(err) { err.textContent=msg; err.classList.remove('hidden'); } };
+  if (!cur || !nw) return showErr('All fields required');
+  if (nw !== conf) return showErr('New passwords do not match');
+  if (nw.length < 4) return showErr('Password must be at least 4 characters');
+  try {
+    await api('/api/users/change_password', { method:'POST', body: JSON.stringify({ current_password:cur, new_password:nw }) });
+    bootstrap.Modal.getInstance(document.getElementById('changePasswordModal'))?.hide();
+    toast('Password changed', 'success');
+  } catch(e) { showErr(e.message); }
+});

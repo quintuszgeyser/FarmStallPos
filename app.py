@@ -138,7 +138,14 @@ class User(db.Model):
     id            = db.Column(db.Integer, primary_key=True)
     username      = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(200), nullable=False)
-    role          = db.Column(db.String(20), nullable=False, default='teller')
+    role          = db.Column(db.String(60), nullable=False, default='teller')
+
+    @property
+    def roles(self):
+        return [r.strip() for r in self.role.split(',') if r.strip()]
+
+    def has_role(self, *roles):
+        return any(r in self.roles for r in roles)
     active        = db.Column(db.Boolean, nullable=False, default=True)
 
 
@@ -449,9 +456,10 @@ def current_user():
         return None
     return db.session.get(User, session.get('user_id'))
 
-def require_role(role):
+def require_role(*roles):
+    """Returns True if the current user has any of the given roles."""
     u = current_user()
-    return bool(u and u.role == role)
+    return bool(u and u.has_role(*roles))
 
 def seed_first_admin():
     if User.query.count() == 0:
@@ -1556,7 +1564,7 @@ def api_login():
     db.session.add(sess)
     db.session.commit()
     session['session_id'] = sess.id
-    return jsonify({'ok': True, 'username': user.username, 'role': user.role})
+    return jsonify({'ok': True, 'username': user.username, 'role': user.role, 'roles': user.roles})
 
 @app.route('/api/logout', methods=['POST'])
 def api_logout():
@@ -1574,7 +1582,7 @@ def api_me():
     u = current_user()
     if not u:
         return jsonify({'logged_in': False})
-    return jsonify({'logged_in': True, 'username': u.username, 'role': u.role})
+    return jsonify({'logged_in': True, 'username': u.username, 'role': u.role, 'roles': u.roles})
 
 @app.route('/api/db-migrate', methods=['POST'])
 def api_db_migrate():
@@ -1592,7 +1600,7 @@ def api_users_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     users = User.query.order_by(User.username.asc()).all()
-    return jsonify([{'username': u.username, 'role': u.role, 'active': u.active} for u in users])
+    return jsonify([{'username': u.username, 'role': u.role, 'roles': u.roles, 'active': u.active} for u in users])
 
 @app.route('/api/users', methods=['POST'])
 def api_users_post():
@@ -1604,8 +1612,11 @@ def api_users_post():
     password = data.get('password', '').strip()
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
-    if role not in ('admin', 'teller'):
-        return jsonify({'error': 'Invalid role'}), 400
+    valid_roles = {'admin', 'teller', 'developer'}
+    role_set = {r.strip() for r in role.split(',') if r.strip()}
+    if not role_set or not role_set.issubset(valid_roles):
+        return jsonify({'error': f'Invalid role(s). Valid: {", ".join(sorted(valid_roles))}'}), 400
+    role = ','.join(sorted(role_set))
     if User.query.filter_by(username=username).first():
         return jsonify({'error': 'Username exists'}), 409
     u = User(username=username, role=role, password_hash=generate_password_hash(password), active=True)
@@ -1625,8 +1636,11 @@ def api_users_update():
     u = User.query.filter_by(username=username).first()
     if not u:
         return jsonify({'error': 'User not found'}), 404
-    if role in ('admin', 'teller'):
-        u.role = role
+    if role:
+        valid_roles = {'admin', 'teller', 'developer'}
+        role_set = {r.strip() for r in role.split(',') if r.strip()}
+        if role_set and role_set.issubset(valid_roles):
+            u.role = ','.join(sorted(role_set))
     if isinstance(active, bool):
         u.active = active
     if password:
@@ -1642,6 +1656,24 @@ def api_users_delete(username):
     if not u:
         return jsonify({'error': 'User not found'}), 404
     db.session.delete(u)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/users/change_password', methods=['POST'])
+def api_users_change_password():
+    """Any logged-in user can change their own password."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    u = current_user()
+    data = request.json or {}
+    current_pw = data.get('current_password', '')
+    new_pw = data.get('new_password', '').strip()
+    if not check_password_hash(u.password_hash, current_pw):
+        return jsonify({'error': 'Current password is incorrect'}), 400
+    if len(new_pw) < 4:
+        return jsonify({'error': 'New password must be at least 4 characters'}), 400
+    u.password_hash = generate_password_hash(new_pw)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -5937,7 +5969,9 @@ def export_staff_csv():
 # -----------------------------
 @app.route('/api/settings', methods=['GET', 'POST'])
 def api_settings():
-    if not require_role('admin'):
+    if request.method == 'POST' and not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if request.method == 'GET' and not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
     if request.method == 'GET':
         return jsonify({
@@ -5957,6 +5991,54 @@ def api_settings():
         ('link_threshold', float), ('face_quality_min', float),
         ('merge_suggest_min_sim', float), ('auto_merge_min_sim', float),
         ('max_face_angles', int), ('min_angle_distance', float),
+    ]:
+        if key in data:
+            try:
+                set_setting(key, cast(data[key]))
+                saved[key] = cast(data[key])
+            except Exception:
+                return jsonify({'error': f'Invalid {key}'}), 400
+    return jsonify({'ok': True, 'saved': saved})
+
+
+# -----------------------------
+# Recognition Monitor (developer + admin)
+# -----------------------------
+RECOGNITION_SERVICE_URL = os.environ.get('RECOGNITION_URL', 'http://farmpos-recognition:8080')
+
+@app.route('/api/recognition/status', methods=['GET'])
+def api_recognition_status():
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        import requests as _req
+        r = _req.get(f'{RECOGNITION_SERVICE_URL}/status', timeout=3)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e), 'available': False}), 503
+
+@app.route('/api/recognition/settings', methods=['GET', 'POST'])
+def api_recognition_settings():
+    """Developer-accessible recognition settings — subset of /api/settings."""
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if request.method == 'GET':
+        return jsonify({
+            'face_threshold':        float(get_setting('face_threshold', 0.35) or 0.35),
+            'link_threshold':        float(get_setting('link_threshold', 0.55) or 0.55),
+            'face_quality_min':      float(get_setting('face_quality_min', 0.15) or 0.15),
+            'merge_suggest_min_sim': float(get_setting('merge_suggest_min_sim', 0.75) or 0.75),
+            'auto_merge_min_sim':    float(get_setting('auto_merge_min_sim', 0.95) or 0.95),
+            'max_face_angles':       int(float(get_setting('max_face_angles', 24) or 24)),
+            'min_angle_distance':    float(get_setting('min_angle_distance', 0.25) or 0.25),
+        })
+    data = request.json or {}
+    saved = {}
+    for key, cast in [
+        ('face_threshold', float), ('link_threshold', float),
+        ('face_quality_min', float), ('merge_suggest_min_sim', float),
+        ('auto_merge_min_sim', float), ('max_face_angles', int),
+        ('min_angle_distance', float),
     ]:
         if key in data:
             try:

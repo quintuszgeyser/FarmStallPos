@@ -264,8 +264,32 @@
   <!-- Auth bar -->
   <div id="auth-bar" class="d-flex justify-content-between align-items-center mb-2 hidden">
     <div id="auth-user" class="text-muted small"></div>
-    <a href="/guide" target="_blank" class="btn btn-sm btn-outline-secondary me-2">User Guide</a>
-    <button id="btn-logout-top" class="btn btn-sm btn-outline-secondary">Logout</button>
+    <div class="d-flex gap-2 align-items-center">
+      <button id="btn-change-password" class="btn btn-sm btn-outline-secondary">&#128274; Change Password</button>
+      <a href="/guide" target="_blank" class="btn btn-sm btn-outline-secondary">User Guide</a>
+      <button id="btn-logout-top" class="btn btn-sm btn-outline-secondary">Logout</button>
+    </div>
+  </div>
+
+  <!-- Change Password Modal -->
+  <div class="modal fade" id="changePasswordModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header"><h5 class="modal-title">Change Password</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="password" id="cp-current" class="form-control mb-2" placeholder="Current password">
+          <input type="password" id="cp-new" class="form-control mb-2" placeholder="New password">
+          <input type="password" id="cp-confirm" class="form-control" placeholder="Confirm new password">
+          <div id="cp-error" class="text-danger small mt-2 hidden"></div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" class="btn btn-primary" id="btn-cp-save">Save</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Tabs -->
@@ -277,8 +301,9 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#users">Users</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#suppliers">Suppliers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
-    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
+    <li class="nav-item admin-only dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Recognition</button></li>
+    <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>
   </ul>
 
   <div id="tab-contents" class="tab-content hidden mt-3">
@@ -426,10 +451,21 @@
             <div class="mb-2"><input id="u-username" class="form-control" placeholder="Username"></div>
             <div class="mb-2"><input id="u-password" class="form-control" placeholder="Password (leave blank to keep)"></div>
             <div class="mb-2">
-              <select id="u-role" class="form-select">
-                <option value="teller">teller</option>
-                <option value="admin">admin</option>
-              </select>
+              <label class="form-label small text-muted mb-1">Roles (select one or more)</label>
+              <div class="d-flex gap-3">
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="u-role-teller" checked>
+                  <label class="form-check-label" for="u-role-teller">Teller</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="u-role-admin">
+                  <label class="form-check-label" for="u-role-admin">Admin</label>
+                </div>
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" id="u-role-developer">
+                  <label class="form-check-label" for="u-role-developer">Developer</label>
+                </div>
+              </div>
             </div>
             <div class="form-check mb-2">
               <input class="form-check-input" type="checkbox" id="u-active" checked>
@@ -792,6 +828,85 @@
         <div class="col-12">
           <button class="btn btn-primary" id="btn-save-recognition-settings">Save Settings</button>
           <span class="text-muted small ms-2">Changes take effect within 60 seconds (no restart needed).</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══════════════ DEV MONITOR ═══════════════ -->
+    <div class="tab-pane fade" id="dev-monitor">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">Recognition Monitor</h5>
+        <div class="d-flex gap-2 align-items-center">
+          <span id="monitor-status-dot" class="rounded-circle d-inline-block" style="width:10px;height:10px;background:#ccc"></span>
+          <span id="monitor-status-text" class="small text-muted">connecting...</span>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-monitor-refresh">&#8635; Refresh</button>
+        </div>
+      </div>
+
+      <!-- System metrics row -->
+      <div class="row g-2 mb-3" id="monitor-metrics-row">
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">CPU</div><div class="fw-bold fs-5" id="m-cpu">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Memory</div><div class="fw-bold fs-5" id="m-mem">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Uptime</div><div class="fw-bold fs-5" id="m-uptime">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">ONNX Provider</div><div class="fw-bold small" id="m-onnx">—</div></div></div>
+      </div>
+
+      <!-- Pipeline state row -->
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3"><div class="card text-center py-2 border-primary"><div class="small text-muted">Active Sessions</div><div class="fw-bold fs-4 text-primary" id="m-sessions">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2 border-warning"><div class="small text-muted">Anon Identities</div><div class="fw-bold fs-4 text-warning" id="m-anon">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2 border-info"><div class="small text-muted">Clip Queue</div><div class="fw-bold fs-4 text-info" id="m-queue">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Customer Cache</div><div class="fw-bold fs-4" id="m-cache">—</div></div></div>
+      </div>
+
+      <!-- Active Sessions detail -->
+      <div class="mb-3">
+        <h6 class="text-muted mb-2">Active Sessions</h6>
+        <div id="monitor-sessions-list" class="d-flex flex-wrap gap-2"></div>
+        <div id="monitor-sessions-empty" class="text-muted small hidden">No active sessions</div>
+      </div>
+
+      <!-- Clip Queue -->
+      <div class="mb-3" id="monitor-queue-section">
+        <h6 class="text-muted mb-2">Clip Queue</h6>
+        <div id="monitor-queue-list" class="font-monospace small"></div>
+      </div>
+
+      <!-- Anon Identities -->
+      <div class="mb-3">
+        <h6 class="text-muted mb-2">Anonymous Identities <span class="small text-muted">(24h TTL)</span></h6>
+        <div id="monitor-anon-list" class="d-flex flex-wrap gap-2"></div>
+        <div id="monitor-anon-empty" class="text-muted small hidden">None</div>
+      </div>
+
+      <!-- Recognition settings (editable by developer) -->
+      <hr>
+      <h6 class="text-muted mb-3">Recognition Settings</h6>
+      <div class="row g-3" style="max-width:520px" id="dev-settings-panel">
+        <div class="col-12">
+          <label class="form-label fw-semibold">Face match threshold <span class="text-muted fw-normal small">(min sim to count as a match)</span></label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="dev-face-threshold" min="0.1" max="0.9" step="0.05">
+            <span id="dev-face-threshold-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Identity link threshold</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="dev-link-threshold" min="0.1" max="0.95" step="0.05">
+            <span id="dev-link-threshold-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Face quality minimum</label>
+          <div class="d-flex align-items-center gap-2">
+            <input type="range" class="form-range flex-grow-1" id="dev-face-quality-min" min="0.05" max="0.5" step="0.05">
+            <span id="dev-face-quality-val" class="text-muted small" style="min-width:40px"></span>
+          </div>
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-primary btn-sm" id="btn-dev-save-settings">Save Settings</button>
+          <span id="dev-settings-msg" class="small align-self-center"></span>
         </div>
       </div>
     </div>
