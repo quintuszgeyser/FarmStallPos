@@ -1249,6 +1249,10 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
                 os.unlink(tmp.name)
             except Exception:
                 pass
+        # Throttle clip inference — yield 0.2s per frame so 25 frames takes ~5s
+        # instead of hammering all cores. Real-time events are unaffected.
+        import time as _clip_time
+        _clip_time.sleep(0.2)
 
     cap.release()
 
@@ -2680,6 +2684,7 @@ ACTIVE_EVENT_REPROCESS_INTERVAL = 90  # seconds between re-runs for the same act
 _clip_analysis_queue = collections.deque()  # [(event_id, customer_id, person_box)]
 _clip_queue_lock = threading.Lock()
 MAX_CLIP_QUEUE = 50
+_clips_enriched = set()  # (event_id, customer_id) pairs already processed — prevents re-queue spam
 
 def _clip_analysis_loop():
     """Background thread: post-event clip enrichment. Multiple workers share the queue."""
@@ -2698,6 +2703,18 @@ def _clip_analysis_loop():
         _t.sleep(1)  # brief yield between jobs to keep CPU below saturation
 
         for event_id, customer_id, person_box in [(event_id, customer_id, person_box)]:
+            # Skip if this (event, customer) pair was already fully processed
+            dedup_key = (event_id, customer_id)
+            if dedup_key in _clips_enriched:
+                logger.debug(f'Clip skip (already enriched): {event_id[:12]} cid={customer_id}')
+                continue
+            _clips_enriched.add(dedup_key)
+            if len(_clips_enriched) > 1000:
+                # Evict oldest half — set has no order so just clear the excess
+                excess = list(_clips_enriched)[:500]
+                for k in excess:
+                    _clips_enriched.discard(k)
+
             clip_path = fetch_frigate_clip(event_id)
             if not clip_path:
                 logger.debug(f'Clip not available for {event_id[:12]}')
@@ -2705,7 +2722,7 @@ def _clip_analysis_loop():
             try:
                 # For known customers, check if further enrichment is worth the CPU cost.
                 # Skip entirely if already at max angles AND has gait stored.
-                _n_sample = 50  # full sampling for unknown sessions
+                _n_sample = 25  # reduced from 50 — enough for multi-angle coverage
                 _need_gait = True
                 if customer_id is not None:
                     cust_sigs = _signals_cache.get(customer_id, {})
@@ -2715,7 +2732,7 @@ def _clip_analysis_loop():
                         logger.debug(f'Clip skip: cid={customer_id} already at max angles+gait')
                         continue
                     # Partial enrichment: fewer frames, skip gait if already stored
-                    _n_sample = 20
+                    _n_sample = 10
                     _need_gait = not has_gait
 
                 signals = analyze_clip_for_best_signals(clip_path, person_box, n_sample=_n_sample)
