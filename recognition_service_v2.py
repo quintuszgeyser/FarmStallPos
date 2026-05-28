@@ -210,17 +210,24 @@ def get_face_app():
                 _providers = ['CPUExecutionProvider']
                 logger.info('ONNX using CPU provider (OpenVINO not available)')
 
+            # Cap threads per inference session — ONNX defaults to all cores which
+            # causes 800%+ CPU spikes when multiple calls overlap. 4 threads gives
+            # fast inference without saturating a 12-thread CPU.
+            _sess_opts = _ort.SessionOptions()
+            _sess_opts.intra_op_num_threads = 4
+            _sess_opts.inter_op_num_threads = 1
+
             detector = SCRFD(model_file=det_model)
             detector.prepare(ctx_id=-1, input_size=(640, 640), det_thresh=0.3)
             if hasattr(detector, 'session') and detector.session is not None:
                 import onnxruntime as _ort2
-                detector.session = _ort2.InferenceSession(det_model, providers=_providers)
+                detector.session = _ort2.InferenceSession(det_model, providers=_providers, sess_options=_sess_opts)
 
             recognizer = ArcFaceONNX(model_file=rec_model)
             recognizer.prepare(ctx_id=-1)
             if hasattr(recognizer, 'session') and recognizer.session is not None:
                 import onnxruntime as _ort3
-                recognizer.session = _ort3.InferenceSession(rec_model, providers=_providers)
+                recognizer.session = _ort3.InferenceSession(rec_model, providers=_providers, sess_options=_sess_opts)
 
             class FaceApp:
                 def __init__(self, det, rec):
@@ -321,7 +328,8 @@ def get_pose():
             base_options = python.BaseOptions(model_asset_path=model_path)
             options = vision.PoseLandmarkerOptions(
                 base_options=base_options,
-                running_mode=vision.RunningMode.IMAGE)
+                running_mode=vision.RunningMode.IMAGE,
+                num_poses=1)
             _mp_pose_inst = vision.PoseLandmarker.create_from_options(options)
             logger.info('MediaPipe Pose loaded')
         except Exception as e:
@@ -896,7 +904,8 @@ def extract_physical_attributes(image_path, person_box=None):
                 img = img[py1:py2, px1:px2]
 
         # Get face detection on the (cropped) image
-        faces = face_app.detector.detect(img, input_size=(640, 640))
+        with _inference_lock:
+            faces = face_app.detector.detect(img, input_size=(640, 640))
         if len(faces[0]) == 0:
             return None
 
