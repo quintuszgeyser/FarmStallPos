@@ -2065,8 +2065,13 @@ def _assign_to_session(face_emb, camera, event_id, ts):
             time_gap = ts - sess.last_evidence_at
 
             # Face similarity gate — primary assignment criterion
+            # Both face_emb and stored embeddings are raw bytes; decode before cosine_sim
             if face_emb and sess.face_embeddings:
-                sim = max(cosine_sim(face_emb, e[0]) for e in sess.face_embeddings)
+                face_arr = np.frombuffer(face_emb, dtype=np.float32)
+                sim = max(
+                    cosine_sim(face_arr, np.frombuffer(e[0], dtype=np.float32))
+                    for e in sess.face_embeddings
+                )
                 if sim > SESSION_JOIN_FACE_SIM and sim > best_sim:
                     best_sim, best_session = sim, sid
 
@@ -2102,7 +2107,8 @@ def _merge_overlapping_sessions():
             if not (a.face_embeddings and b.face_embeddings):
                 continue
             sim = max(
-                cosine_sim(e1[0], e2[0])
+                cosine_sim(np.frombuffer(e1[0], dtype=np.float32),
+                           np.frombuffer(e2[0], dtype=np.float32))
                 for e1 in a.face_embeddings
                 for e2 in b.face_embeddings
             )
