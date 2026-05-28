@@ -1812,13 +1812,16 @@ class VisitorSession:
         self.source_event_ids = set()
         self.best_face_sim    = 0.0    # highest sim seen against any existing customer
         self.candidate_customer_id = None
+        self.best_snapshot    = None   # (snapshot_bytes, face_quality) — for body photo
+        self.best_face_photo  = None   # (face_photo_bytes, quality) — for face photo on card
         # accumulating → resolving (transitional lock) → resolved | expired
         self.status = 'accumulating'
 
     def add_evidence(self, face_emb=None, quality=0.0, camera=None,
                      gait=None, gait_quality=0.0, event_id=None,
                      candidate_cid=None, candidate_sim=0.0,
-                     face_embeddings_list=None):
+                     face_embeddings_list=None,
+                     snapshot_photo=None, face_photo=None):
         """Add biometric evidence from a track observation or clip analysis."""
         self.last_evidence_at = time.time()
         if camera:
@@ -1845,6 +1848,14 @@ class VisitorSession:
         if candidate_cid and candidate_sim > self.best_face_sim:
             self.best_face_sim = candidate_sim
             self.candidate_customer_id = candidate_cid
+
+        # Keep best body snapshot (highest associated face quality)
+        if snapshot_photo and quality > (self.best_snapshot[1] if self.best_snapshot else -1):
+            self.best_snapshot = (snapshot_photo, quality)
+
+        # Keep best face photo (highest quality)
+        if face_photo and quality > (self.best_face_photo[1] if self.best_face_photo else -1):
+            self.best_face_photo = (face_photo, quality)
 
     @property
     def best_face_embedding(self):
@@ -2127,12 +2138,18 @@ def _merge_overlapping_sessions():
                         a.best_face_sim = b.best_face_sim
                         a.candidate_customer_id = b.candidate_customer_id
                     a.last_evidence_at = max(a.last_evidence_at, b.last_evidence_at)
+                    # Merge snapshot/face photo — keep best quality
+                    if b.best_snapshot and (not a.best_snapshot or b.best_snapshot[1] > a.best_snapshot[1]):
+                        a.best_snapshot = b.best_snapshot
+                    if b.best_face_photo and (not a.best_face_photo or b.best_face_photo[1] > a.best_face_photo[1]):
+                        a.best_face_photo = b.best_face_photo
                     b.status = 'expired'
                 logger.debug(f'Sessions merged: {b.session_id[:8]} → {a.session_id[:8]} '
                              f'(sim={sim:.3f})')
 
 
-def _create_customer_from_embeddings(face_embeddings, gait_features, session_id):
+def _create_customer_from_embeddings(face_embeddings, gait_features, session_id,
+                                     snapshot_photo=None, face_photo=None):
     """Create a new customer in POS, enroll all face embeddings and gait.
     Returns customer_id or None on failure."""
     if session_id in _created_from_session_ids:
@@ -2172,6 +2189,19 @@ def _create_customer_from_embeddings(face_embeddings, gait_features, session_id)
             'features_b64': base64.b64encode(gait_bytes).decode(),
             'quality': float(gait_qual),
         })
+
+    # Enroll body snapshot so the customer card has a visual
+    if snapshot_photo:
+        snap_payload = {
+            'embedding_b64': base64.b64encode(bytes(512 * 4)).decode(),
+            'quality': 0.0,
+            'body_photo_b64': base64.b64encode(snapshot_photo).decode(),
+            'snapshot_only': True,
+        }
+        if face_photo:
+            snap_payload['photo_b64'] = base64.b64encode(face_photo).decode()
+        pos_post(f'/api/customers/{cid}/enroll/face', snap_payload)
+        logger.debug(f'Session {session_id[:8]} → body snapshot stored for cid={cid}')
 
     # Cache for anti-clone gate
     emb_b64_list = [base64.b64encode(e[0]).decode() for e in face_embeddings]
@@ -2303,8 +2333,11 @@ def _resolve_session(session):
                 if (len(anon['face_embeddings']) >= MIN_FACES_TO_CREATE
                         and len(high_q) >= MIN_HIGH_QUALITY_FACES
                         and session.best_face_sim < CLEARLY_NOT_EXISTING):
+                    snap = anon.get('best_snapshot') or (session.best_snapshot[0] if session.best_snapshot else None)
+                    fp   = anon.get('best_face_photo') or (session.best_face_photo[0] if session.best_face_photo else None)
                     cid = _create_customer_from_embeddings(
-                        anon['face_embeddings'], anon.get('gait'), session.session_id)
+                        anon['face_embeddings'], anon.get('gait'), session.session_id,
+                        snapshot_photo=snap, face_photo=fp)
                     if cid:
                         _log_session_visit(cid, session)
                         del _anonymous_identities[best_anon_id]
@@ -2327,8 +2360,11 @@ def _resolve_session(session):
             and session.best_face_sim < CLEARLY_NOT_EXISTING
         )
         if safe_to_create:
+            snap = session.best_snapshot[0] if session.best_snapshot else None
+            fp   = session.best_face_photo[0] if session.best_face_photo else None
             cid = _create_customer_from_embeddings(
-                session.face_embeddings, session.gait_features, session.session_id)
+                session.face_embeddings, session.gait_features, session.session_id,
+                snapshot_photo=snap, face_photo=fp)
             if cid:
                 _log_session_visit(cid, session, dwell_seconds=session.duration())
                 session.status = 'resolved'
@@ -2547,6 +2583,8 @@ def process_event(event):
                 event_id=event_id,
                 candidate_cid=_candidate_cid,
                 candidate_sim=_candidate_sim,
+                snapshot_photo=signals.get('snapshot_photo'),
+                face_photo=signals.get('face_photo'),
             )
 
         # Queue clip analysis for ended events (enrichment path)
