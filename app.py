@@ -2461,6 +2461,16 @@ def api_customers_get():
     customers = Customer.query.filter_by(active=True).order_by(Customer.name.asc()).all()
     return jsonify([_customer_dict(c) for c in customers])
 
+@app.route('/api/customers/<int:cid>', methods=['GET'])
+def api_customer_get_single(cid):
+    """Return a single customer by id — used by recognition service for merge-chain resolution."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    c = db.session.get(Customer, cid)
+    if not c:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify(_customer_dict(c))
+
 @app.route('/api/customers', methods=['POST'])
 def api_customers_post():
     if not require_role('admin'):
