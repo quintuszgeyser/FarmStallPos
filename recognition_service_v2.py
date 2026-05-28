@@ -295,7 +295,9 @@ def extract_temporal_gait_from_clip(frames_seq):
     instance across clips would fail when clip 2's timestamps restart from 0.
     """
     if len(frames_seq) < 20:
+        logger.debug(f'Temporal gait: only {len(frames_seq)} frames, need ≥20, skipping')
         return None, 0.0
+    logger.debug(f'Temporal gait: attempting extraction on {len(frames_seq)} frames')
     try:
         import cv2
         import mediapipe as mp
@@ -365,7 +367,8 @@ def extract_temporal_gait_from_clip(frames_seq):
         return features.tobytes(), quality
 
     except Exception as e:
-        logger.debug(f'Temporal gait extraction failed: {e}')
+        import traceback
+        logger.debug(f'Temporal gait extraction failed: {e}\n{traceback.format_exc()}')
         return None, 0.0
 
 
