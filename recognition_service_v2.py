@@ -1789,7 +1789,7 @@ class TrackIdentity:
 _active_tracks = {}
 _tracks_lock = threading.Lock()
 # Limit concurrent event-processing threads to avoid fan-out at shop scale.
-_event_semaphore = threading.Semaphore(20)
+_event_semaphore = threading.Semaphore(3)
 
 # ─── Daily embedding replacement cap ────────────────────────────────────────
 _daily_replacements = defaultdict(int)  # customer_id → replacements today
@@ -2675,6 +2675,8 @@ def process_event(event):
 # ─── Frigate Integration ────────────────────────────────────────────────────
 
 _seen_events = {}  # event_id -> timestamp; insertion-ordered for FIFO eviction
+_active_event_last_processed = {}  # event_id -> timestamp; throttles re-processing of still-active events
+ACTIVE_EVENT_REPROCESS_INTERVAL = 90  # seconds between re-runs for the same active event
 _clip_analysis_queue = collections.deque()  # [(event_id, customer_id, person_box)]
 _clip_queue_lock = threading.Lock()
 MAX_CLIP_QUEUE = 50
@@ -2947,9 +2949,19 @@ def poll_frigate_events():
                     if label not in ('person', 'car'):
                         continue
 
-                    # Active event (no end_time yet) — process every poll.
+                    # Active event (no end_time yet) — throttle re-processing to avoid
+                    # running SCRFD inference on every 30s poll for someone standing still.
                     if not end_time:
                         recent_count += 1
+                        last = _active_event_last_processed.get(eid, 0)
+                        if (now - last) < ACTIVE_EVENT_REPROCESS_INTERVAL:
+                            continue
+                        _active_event_last_processed[eid] = now
+                        # Evict old entries to prevent unbounded growth
+                        if len(_active_event_last_processed) > 200:
+                            oldest_keys = list(_active_event_last_processed.keys())[:50]
+                            for k in oldest_keys:
+                                _active_event_last_processed.pop(k, None)
                         new_count += 1
                         logger.info(f'Processing active event {eid[:20]} (label={label} camera={ev.get("camera")})')
                         def _run_active(e=ev):
