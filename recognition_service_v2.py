@@ -2522,21 +2522,25 @@ def process_event(event):
 
         # ── Feed evidence into VisitorSession (all tracks, regardless of link status) ──
         # The session resolver is the sole authority for customer creation.
-        face_emb_for_session = signals.get('face_embedding') if signals.get('face_quality', 0) >= FACE_QUALITY_MIN_CREATE else None
+        # Use FACE_QUALITY_MIN (global) not FACE_QUALITY_MIN_CREATE — sessions accumulate
+        # all usable evidence; the creation gate is applied only at resolve time.
+        _face_qual_now = float(signals.get('face_quality', 0))
+        face_emb_for_session = signals.get('face_embedding') if _face_qual_now >= FACE_QUALITY_MIN else None
         session_id = _assign_to_session(face_emb_for_session, camera, event_id, time.time())
         sess = _active_sessions.get(session_id)
         if sess:
-            # Pass candidate hint if track has a confirmed identity
-            candidate_cid = resolved_id if (track.customer_id and track.confidence >= RESOLVER_LINK_THRESHOLD) else None
+            # Pass candidate hint only if track has a confirmed linked identity
+            _candidate_cid = track.customer_id if (track.customer_id and track.confidence >= RESOLVER_LINK_THRESHOLD) else None
+            _candidate_sim = best_face_sim if track.customer_id else 0.0  # best_face_sim only set when linked
             sess.add_evidence(
                 face_emb=face_emb_for_session,
-                quality=float(signals.get('face_quality', 0)),
+                quality=_face_qual_now,
                 camera=camera,
                 gait=signals.get('gait_features'),
                 gait_quality=float(signals.get('gait_quality', 0)),
                 event_id=event_id,
-                candidate_cid=candidate_cid,
-                candidate_sim=best_face_sim,
+                candidate_cid=_candidate_cid,
+                candidate_sim=_candidate_sim,
             )
 
         # Queue clip analysis for ended events (enrichment path)
