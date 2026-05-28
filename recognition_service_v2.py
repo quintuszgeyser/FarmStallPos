@@ -37,7 +37,7 @@ WEBHOOK_PORT    = int(os.environ.get('WEBHOOK_PORT', '8080'))
 
 # Model thresholds — overridden at startup from POS settings (GET /api/settings)
 FACE_THRESHOLD  = 0.35  # Minimum cosine similarity for face match
-GAIT_THRESHOLD  = 0.25  # Maximum euclidean distance for gait match
+GAIT_THRESHOLD  = 0.40  # Euclidean distance for gait match — 0.40 for 12-dim L2-normalized temporal vector
 
 # Quality gates
 FACE_QUALITY_MIN = 0.15  # Minimum face quality — recalibrated for head crops
@@ -123,13 +123,24 @@ def get_face_app():
             import cv2
             from skimage import transform as trans
 
-            model_dir = os.environ.get('INSIGHTFACE_HOME', os.path.expanduser('~/.insightface/models'))
-            det_model = os.path.join(model_dir, 'buffalo_l', 'det_10g.onnx')
-            rec_model = os.path.join(model_dir, 'buffalo_l', 'w600k_r50.onnx')
+            model_dir  = os.environ.get('INSIGHTFACE_HOME', os.path.expanduser('~/.insightface/models'))
+            MODEL_NAME = os.environ.get('INSIGHTFACE_MODEL', 'antelopev2')
+            model_base = os.path.join(model_dir, MODEL_NAME)
 
-            if not os.path.exists(det_model) or not os.path.exists(rec_model):
-                logger.error('Face models not found. Run: python download_face_models.py')
+            # Auto-discover detector and recognizer — prefer antelopev2 files, fall back to buffalo_l
+            det_model = next(
+                (os.path.join(model_base, f) for f in ['scrfd_10g_bnkps.onnx', 'det_10g.onnx']
+                 if os.path.exists(os.path.join(model_base, f))), None)
+            rec_model = next(
+                (os.path.join(model_base, f) for f in ['glintr100.onnx', 'w600k_r50.onnx']
+                 if os.path.exists(os.path.join(model_base, f))), None)
+
+            if not det_model or not rec_model:
+                logger.error(f'Face models not found in {model_base}. '
+                             f'Available: {os.listdir(model_base) if os.path.isdir(model_base) else "dir missing"}')
                 return None
+
+            logger.info(f'Face models: det={os.path.basename(det_model)} rec={os.path.basename(rec_model)}')
 
             detector = SCRFD(model_file=det_model)
             detector.prepare(ctx_id=-1, input_size=(640, 640), det_thresh=0.3)
@@ -243,6 +254,108 @@ def get_pose():
             logger.error(f'MediaPipe Pose unavailable: {e}')
             _mp_pose_inst = None
     return _mp_pose_inst
+
+# Second MediaPipe instance in VIDEO mode — for temporal gait from clips
+_mp_pose_video = None
+_mp_pose_model_path = None  # cached after first get_pose() call
+
+def get_pose_video():
+    """Returns a MediaPipe PoseLandmarker in VIDEO mode for temporal clip analysis."""
+    global _mp_pose_video, _mp_pose_model_path
+    if _mp_pose_video is None:
+        try:
+            from mediapipe.tasks import python
+            from mediapipe.tasks.python import vision
+
+            model_dir = os.path.expanduser('~/.mediapipe/models')
+            model_path = os.path.join(model_dir, 'pose_landmarker_lite.task')
+            if not os.path.exists(model_path):
+                get_pose()  # ensure the model file is downloaded first
+            if not os.path.exists(model_path):
+                return None
+
+            options = vision.PoseLandmarkerOptions(
+                base_options=python.BaseOptions(model_asset_path=model_path),
+                running_mode=vision.RunningMode.VIDEO)
+            _mp_pose_video = vision.PoseLandmarker.create_from_options(options)
+            logger.info('MediaPipe Pose (VIDEO mode) loaded for temporal gait')
+        except Exception as e:
+            logger.error(f'MediaPipe Pose (VIDEO) unavailable: {e}')
+            _mp_pose_video = None
+    return _mp_pose_video
+
+
+def extract_temporal_gait_from_clip(frames_seq):
+    """Extract temporal gait features from a sequence of (frame, timestamp_ms) pairs.
+    Uses zero-crossing cadence analysis — no FFT, stable on noisy real-world clips.
+    Returns (features_bytes, quality) or (None, 0.0).
+    Feature vector: 12 × float32, L2-normalized. Incompatible with old 6-float gait.
+    """
+    if len(frames_seq) < 20:
+        return None, 0.0
+    try:
+        import cv2
+        import mediapipe as mp
+
+        pose = get_pose_video()
+        if not pose:
+            return None, 0.0
+
+        from mediapipe.tasks.python import vision
+
+        ankle_y_l, ankle_y_r, shoulder_w, hip_w = [], [], [], []
+
+        for frame, ts_ms in frames_seq:
+            mp_img = mp.Image(image_format=mp.ImageFormat.SRGB,
+                              data=cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            result = pose.detect_for_video(mp_img, int(ts_ms))
+            if not result.pose_landmarks:
+                continue
+            lm = result.pose_landmarks[0]
+            if lm[27].visibility > 0.5:
+                ankle_y_l.append(lm[27].y)
+            if lm[28].visibility > 0.5:
+                ankle_y_r.append(lm[28].y)
+            shoulder_w.append(abs(lm[11].x - lm[12].x))
+            hip_w.append(abs(lm[23].x - lm[24].x))
+
+        if len(ankle_y_l) < 15 or len(ankle_y_r) < 15:
+            return None, 0.0
+
+        def zcr(s):
+            """Zero-crossing rate — proxy for stride cadence."""
+            d = np.array(s) - np.mean(s)
+            return float(len(np.where(np.diff(np.sign(d)))[0])) / len(d)
+
+        cl  = zcr(ankle_y_l)
+        cr  = zcr(ankle_y_r)
+        sym = 1.0 - abs(cl - cr) / max(cl + cr, 1e-6)
+        s_st = 1.0 - np.std(shoulder_w) / (np.mean(shoulder_w) + 1e-6)
+        h_st = 1.0 - np.std(hip_w)      / (np.mean(hip_w)      + 1e-6)
+
+        features = np.array([
+            cl, cr, sym,
+            np.mean(shoulder_w), float(np.std(shoulder_w)),
+            np.mean(hip_w),      float(np.std(hip_w)),
+            s_st, h_st,
+            np.mean(shoulder_w) / (np.mean(hip_w) + 1e-6),
+            np.mean(ankle_y_l),  np.mean(ankle_y_r),
+        ], dtype=np.float32)
+
+        # L2-normalize so euclidean distance isn't dominated by large-scale features
+        norm = np.linalg.norm(features)
+        if norm > 0:
+            features = features / norm
+
+        quality = float(sym * 0.5 + max(0.0, s_st) * 0.25 + max(0.0, h_st) * 0.25)
+        logger.debug(f'Temporal gait: cadence_l={cl:.3f} cadence_r={cr:.3f} '
+                     f'sym={sym:.3f} quality={quality:.3f}')
+        return features.tobytes(), quality
+
+    except Exception as e:
+        logger.debug(f'Temporal gait extraction failed: {e}')
+        return None, 0.0
+
 
 # ─── POS API session ────────────────────────────────────────────────────────
 import urllib3
@@ -938,12 +1051,15 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
     step = max(1, frame_count // 50)
     indices = list(range(0, frame_count, step))
     face_candidates = []   # (quality, embedding_bytes, photo_bytes, attrs_or_None)
-    gait_candidates = []   # (quality, features_bytes)
+    gait_candidates = []   # (quality, features_bytes) — single-frame fallback
+    frames_seq      = []   # [(frame_original, timestamp_ms)] — for temporal gait
     best_body_snapshot = None
-    best_body_best_face_qual = 0.0  # body frame chosen by face quality, not box area
+    best_body_best_face_qual = 0.0
 
     # Track distinct angles found so far for early exit
     distinct_seen = []
+
+    fps = cap.get(cv2.CAP_PROP_FPS) or 5.0  # assume 5fps if not reported
 
     for idx in indices:
         # Early exit: if we already have MAX_FACE_EMBEDDINGS distinct angles, stop
@@ -955,6 +1071,11 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         ret, frame = cap.read()
         if not ret or frame is None:
             continue
+
+        # Collect full-res frame + timestamp for temporal gait BEFORE downscaling
+        # (temporal gait needs consistent proportions; downscale ruins that)
+        ts_ms = int(idx / fps * 1000)
+        frames_seq.append((frame.copy(), ts_ms))
 
         # Downscale to 640px longest edge before writing to disk.
         # SCRFD's input is 640×640 anyway — processing 2304×1296 frames adds
@@ -1068,12 +1189,20 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         if best_attrs:
             result['physical_attrs'] = best_attrs
 
-    if gait_candidates:
+    # Temporal gait — preferred over averaged single-frame gait
+    temporal_gait_feats, temporal_gait_qual = extract_temporal_gait_from_clip(frames_seq)
+    if temporal_gait_feats and temporal_gait_qual >= 0.35:
+        result['gait_features'] = temporal_gait_feats
+        result['gait_quality']  = temporal_gait_qual
+        logger.debug(f'Clip temporal gait: quality={temporal_gait_qual:.3f} '
+                     f'from {len(frames_seq)} frames')
+    elif gait_candidates:
+        # Fall back to averaged single-frame gait if temporal gait fails
         gait_arrays = [np.frombuffer(f, dtype=np.float32) for _, f in gait_candidates]
         avg_gait = np.mean(gait_arrays, axis=0).astype(np.float32)
         result['gait_features'] = avg_gait.tobytes()
         result['gait_quality']  = float(max(q for q, _ in gait_candidates))
-        logger.debug(f'Clip gait: {len(gait_candidates)} frames averaged')
+        logger.debug(f'Clip gait (single-frame avg): {len(gait_candidates)} frames')
 
     if best_body_snapshot:
         result['snapshot_photo'] = best_body_snapshot

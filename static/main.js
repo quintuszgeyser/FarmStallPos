@@ -5310,9 +5310,23 @@ function startCustomerVisitPoll() {
       for (const v of visits) {
         if (_acknowledgedVisits.has(v.id)) continue;
         _acknowledgedVisits.add(v.id);
-        const visitNote = v.visit_count === 1 ? ' — first visit!' : ` · ${v.visit_count} visits`;
-        toast(`Welcome back, ${v.customer_name || 'customer'}${visitNote}`, 'info', 8000);
         api(`/api/customers/visits/${v.id}/acknowledge`, { method: 'POST' }).catch(() => {});
+
+        const visitNote = v.visit_count === 1 ? ' — first visit!' : ` · ${v.visit_count} visits`;
+        const name = v.customer_name || 'customer';
+
+        // Fetch purchase history hint for returning customers
+        let hint = '';
+        if (v.visit_count > 1 && v.customer_id) {
+          try {
+            const profile = await api(`/api/customers/${v.customer_id}/profile`);
+            const top = (profile.top_products || []).slice(0, 2).map(p => p.name);
+            if (top.length && profile.total_spent > 0) {
+              hint = ` — usually buys ${top.join(' & ')}`;
+            }
+          } catch {}
+        }
+        toast(`Welcome back, ${name}${visitNote}${hint}`, 'info', 8000);
       }
     } catch {}
   }, 5000);
