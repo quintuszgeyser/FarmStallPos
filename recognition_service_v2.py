@@ -160,6 +160,11 @@ _anpr_model   = None
 _face_app     = None
 _mp_pose_inst = None
 
+# Serialise all ONNX inference calls — SCRFD/ArcFace/MediaPipe are CPU-only and
+# running them from multiple threads simultaneously causes CPU spikes to 600%+.
+# One inference at a time is faster overall due to cache locality.
+_inference_lock = threading.Lock()
+
 def get_anpr():
     global _anpr_model
     if _anpr_model is None:
@@ -724,7 +729,8 @@ def extract_face_with_quality(image_path, person_box=None):
         except Exception:
             pass  # fall through with original image if CLAHE fails
 
-        results = face_app.get_with_quality(img)
+        with _inference_lock:
+            results = face_app.get_with_quality(img)
         if not results:
             return None, 0.0, None
 
@@ -752,7 +758,8 @@ def extract_gait_with_quality(image_path):
 
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        result = pose_landmarker.detect(mp_image)
+        with _inference_lock:
+            result = pose_landmarker.detect(mp_image)
 
         if not result.pose_landmarks or len(result.pose_landmarks) == 0:
             return None, 0.0
@@ -810,7 +817,8 @@ def extract_plate_with_quality(image_path):
     """Returns (plate_str, quality_score) or (None, 0.0)"""
     try:
         model = get_anpr()
-        results = model.run(image_path)
+        with _inference_lock:
+            results = model.run(image_path)
         if not results:
             return None, 0.0
 
