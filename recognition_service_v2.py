@@ -2279,12 +2279,19 @@ def _resolve_session(session):
         # ── Step 1: Link to existing customer ────────────────────────────────
         if (session.best_face_sim >= RESOLVER_LINK_THRESHOLD
                 and session.candidate_customer_id):
-            _log_session_visit(session.candidate_customer_id, session,
-                               dwell_seconds=session.duration())
+            linked_cid = session.candidate_customer_id
+            _log_session_visit(linked_cid, session, dwell_seconds=session.duration())
             session.status = 'resolved'
             logger.info(f'Resolver: session {session.session_id[:8]} → '
-                        f'linked cid={session.candidate_customer_id} '
+                        f'linked cid={linked_cid} '
                         f'face_sim={session.best_face_sim:.3f}')
+            # Re-queue session source events for clip enrichment to build more angles
+            with _clip_queue_lock:
+                for eid in session.source_event_ids:
+                    if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
+                            and not any(j[0] == eid for j in _clip_analysis_queue)):
+                        _clip_analysis_queue.append((eid, linked_cid, None))
+                        logger.debug(f'Re-queued clip {eid[:12]} for enrichment of linked cid={linked_cid}')
             return
 
         # ── Step 2: Anti-clone — recent customer suppression ─────────────────
