@@ -333,7 +333,10 @@ def extract_temporal_gait_from_clip(frames_seq):
             shoulder_w.append(abs(lm[11].x - lm[12].x))
             hip_w.append(abs(lm[23].x - lm[24].x))
 
+        logger.debug(f'Temporal gait landmarks: ankle_l={len(ankle_y_l)} ankle_r={len(ankle_y_r)} '
+                     f'shoulder={len(shoulder_w)} from {len(frames_seq)} frames')
         if len(ankle_y_l) < 15 or len(ankle_y_r) < 15:
+            logger.debug(f'Temporal gait: insufficient ankle detections (need ≥15 each)')
             return None, 0.0
 
         def zcr(s):
@@ -1208,6 +1211,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
 
     # Temporal gait — preferred over averaged single-frame gait
     temporal_gait_feats, temporal_gait_qual = extract_temporal_gait_from_clip(frames_seq)
+    logger.debug(f'Temporal gait result: feats={temporal_gait_feats is not None} quality={temporal_gait_qual:.3f}')
     if temporal_gait_feats and temporal_gait_qual >= 0.35:
         result['gait_features'] = temporal_gait_feats
         result['gait_quality']  = temporal_gait_qual
