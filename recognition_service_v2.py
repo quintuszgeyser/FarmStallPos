@@ -2347,6 +2347,12 @@ def _resolve_session(session):
                         session.status = 'resolved'
                         logger.info(f'Resolver: session {session.session_id[:8]} → '
                                     f'anon {best_anon_id[:8]} promoted to cid={cid}')
+                        with _clip_queue_lock:
+                            for eid in session.source_event_ids:
+                                if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
+                                        and not any(j[0] == eid for j in _clip_analysis_queue)):
+                                    _clip_analysis_queue.append((eid, cid, None))
+                                    logger.debug(f'Re-queued clip {eid[:12]} for enrichment of promoted cid={cid}')
                         return
                 # Not yet promotable — keep anon, expire this session
                 session.status = 'expired'
@@ -2375,6 +2381,14 @@ def _resolve_session(session):
                             f'new customer cid={cid} '
                             f'(faces={len(session.face_embeddings)} '
                             f'hq={len(high_q)} dur={session.duration():.0f}s)')
+                # Re-queue session's source events for clip enrichment now that customer exists.
+                # The clip loop will match them to this new customer and enroll more angles.
+                with _clip_queue_lock:
+                    for eid in session.source_event_ids:
+                        if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
+                                and not any(j[0] == eid for j in _clip_analysis_queue)):
+                            _clip_analysis_queue.append((eid, cid, None))
+                            logger.debug(f'Re-queued clip {eid[:12]} for enrichment of new cid={cid}')
                 return
 
         # ── Step 5: Insufficient evidence ─────────────────────────────────────
@@ -2636,17 +2650,18 @@ def _clip_analysis_loop():
                 clip_camera = signals.get('camera') or signals.get('source')
 
                 # --- If clip matched an existing customer: enrich their profile ---
+                # Use RESOLVER_LINK_THRESHOLD (not the stricter real-time link threshold)
+                # so clips can enrich customers even with moderate face similarity.
                 if customer_id is None and signals.get('face_embedding'):
                     all_sigs = get_all_customer_signals()
                     best_match_id = None
                     best_match_score = 0.0
-                    link_thresh = _threshold_manager.global_thresholds.get('link', 0.55)
                     for cid_cand, cust_sigs in all_sigs.items():
                         score, _, _, safe, _ = calculate_match_score_safe(signals, cust_sigs)
                         if safe and score > best_match_score:
                             best_match_score = score
                             best_match_id = cid_cand
-                    if best_match_id and best_match_score >= link_thresh:
+                    if best_match_id and best_match_score >= RESOLVER_LINK_THRESHOLD:
                         customer_id = best_match_id
                         logger.info(f'Clip matched existing customer={customer_id} '
                                     f'(score={best_match_score:.3f}) for event {event_id[:12]}')
