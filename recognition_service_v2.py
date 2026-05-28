@@ -335,8 +335,15 @@ def extract_temporal_gait_from_clip(frames_seq):
 
         logger.debug(f'Temporal gait landmarks: ankle_l={len(ankle_y_l)} ankle_r={len(ankle_y_r)} '
                      f'shoulder={len(shoulder_w)} from {len(frames_seq)} frames')
-        if len(ankle_y_l) < 15 or len(ankle_y_r) < 15:
-            logger.debug(f'Temporal gait: insufficient ankle detections (need ≥15 each)')
+
+        # Need at least one ankle with enough samples to compute cadence.
+        # Both ankles preferred for symmetry score, but cameras often only show one.
+        best_ankle = ankle_y_l if len(ankle_y_l) >= len(ankle_y_r) else ankle_y_r
+        if len(best_ankle) < 10:
+            logger.debug(f'Temporal gait: insufficient ankle detections (best={len(best_ankle)}, need ≥10)')
+            return None, 0.0
+        if len(shoulder_w) < 10:
+            logger.debug(f'Temporal gait: insufficient shoulder detections ({len(shoulder_w)}, need ≥10)')
             return None, 0.0
 
         def zcr(s):
@@ -344,9 +351,16 @@ def extract_temporal_gait_from_clip(frames_seq):
             d = np.array(s) - np.mean(s)
             return float(len(np.where(np.diff(np.sign(d)))[0])) / len(d)
 
-        cl  = zcr(ankle_y_l)
-        cr  = zcr(ankle_y_r)
-        sym = 1.0 - abs(cl - cr) / max(cl + cr, 1e-6)
+        cl = zcr(ankle_y_l) if len(ankle_y_l) >= 5 else 0.0
+        cr = zcr(ankle_y_r) if len(ankle_y_r) >= 5 else 0.0
+        # If only one ankle visible, symmetry is unknown — use neutral 0.5
+        if len(ankle_y_l) < 5 or len(ankle_y_r) < 5:
+            sym = 0.5
+        else:
+            sym = 1.0 - abs(cl - cr) / max(cl + cr, 1e-6)
+        # Use best-ankle cadence as the primary cadence signal
+        cl = zcr(best_ankle)
+        cr = cl  # single-ankle: assume symmetric
         s_st = 1.0 - np.std(shoulder_w) / (np.mean(shoulder_w) + 1e-6)
         h_st = 1.0 - np.std(hip_w)      / (np.mean(hip_w)      + 1e-6)
 
