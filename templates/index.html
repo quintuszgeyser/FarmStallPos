@@ -879,6 +879,37 @@
         <div id="monitor-anon-empty" class="text-muted small hidden">None</div>
       </div>
 
+      <!-- Service Controls -->
+      <hr>
+      <h6 class="text-muted mb-2">Service Controls</h6>
+      <div class="d-flex flex-wrap gap-2 mb-3">
+        <button class="btn btn-sm btn-warning" id="btn-ctrl-clear-queue">&#128465; Clear Clip Queue</button>
+        <button class="btn btn-sm btn-warning" id="btn-ctrl-flush-sessions">&#128465; Flush Sessions</button>
+        <button class="btn btn-sm btn-warning" id="btn-ctrl-clear-anon">&#128465; Clear Anon Identities</button>
+        <button class="btn btn-sm btn-info" id="btn-ctrl-sync-cache">&#8635; Sync Customer Cache</button>
+      </div>
+      <div id="monitor-ctrl-msg" class="small text-muted mb-3"></div>
+
+      <!-- Log Viewer -->
+      <hr>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h6 class="text-muted mb-0">Live Logs</h6>
+        <div class="d-flex gap-2">
+          <input type="text" id="log-search" class="form-control form-control-sm" style="width:160px" placeholder="Filter logs...">
+          <select id="log-level" class="form-select form-select-sm" style="width:100px">
+            <option value="">All</option>
+            <option value="INFO">INFO</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="DEBUG">DEBUG</option>
+          </select>
+          <button class="btn btn-sm btn-outline-secondary" id="btn-log-refresh">&#8635;</button>
+        </div>
+      </div>
+      <div id="monitor-log-container" style="height:300px;overflow-y:auto;background:#1e1e1e;border-radius:6px;padding:8px;font-family:monospace;font-size:0.75rem">
+        <div class="text-muted">Loading...</div>
+      </div>
+
     </div>
 
     <!-- ═══════════════ CUSTOMERS ═══════════════ -->

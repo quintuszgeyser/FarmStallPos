@@ -6049,6 +6049,35 @@ def api_recognition_settings():
     return jsonify({'ok': True, 'saved': saved})
 
 
+@app.route('/api/recognition/logs', methods=['GET'])
+def api_recognition_logs():
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        import requests as _req
+        params = {k: request.args[k] for k in request.args}
+        r = _req.get(f'{RECOGNITION_SERVICE_URL}/logs', params=params, timeout=3)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e), 'available': False}), 503
+
+
+@app.route('/api/recognition/control/<action>', methods=['POST'])
+def api_recognition_control(action):
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    allowed = {'clear_queue', 'flush_sessions', 'clear_anon', 'sync_cache', 'requeue_clip', 'resync_customer'}
+    if action not in allowed:
+        return jsonify({'error': 'Unknown action'}), 400
+    try:
+        import requests as _req
+        r = _req.post(f'{RECOGNITION_SERVICE_URL}/control/{action}',
+                      json=request.json or {}, timeout=5)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e), 'available': False}), 503
+
+
 # -----------------------------
 # System Updates (admin)
 # -----------------------------

@@ -6679,16 +6679,11 @@ async function refreshMonitor() {
   }
 }
 
-document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('shown.bs.tab', () => {
-  refreshMonitor();
-  if (!_monitorInterval) _monitorInterval = setInterval(refreshMonitor, 4000);
-});
-
 document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('hidden.bs.tab', () => {
   if (_monitorInterval) { clearInterval(_monitorInterval); _monitorInterval = null; }
 });
 
-document.getElementById('btn-monitor-refresh')?.addEventListener('click', refreshMonitor);
+document.getElementById('btn-monitor-refresh')?.addEventListener('click', () => { refreshMonitor(); refreshLogs(); });
 
 
 // ═══════════════════════════════════════════════════════
@@ -6715,4 +6710,66 @@ document.getElementById('btn-cp-save')?.addEventListener('click', async () => {
     bootstrap.Modal.getInstance(document.getElementById('changePasswordModal'))?.hide();
     toast('Password changed', 'success');
   } catch(e) { showErr(e.message); }
+});
+
+// ═══════════════════════════════════════════════════════
+// MONITOR: LOGS + CONTROLS
+// ═══════════════════════════════════════════════════════
+
+async function refreshLogs() {
+  const search = document.getElementById('log-search')?.value || '';
+  const level  = document.getElementById('log-level')?.value || '';
+  const container = document.getElementById('monitor-log-container');
+  if (!container) return;
+  try {
+    const params = new URLSearchParams({ n: 200 });
+    if (level)  params.set('level', level);
+    if (search) params.set('q', search);
+    const d = await api('/api/recognition/logs?' + params);
+    const logColors = { ERROR:'#f87171', WARNING:'#fbbf24', INFO:'#86efac', DEBUG:'#94a3b8' };
+    const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 20;
+    container.innerHTML = (d.logs || []).map(r => {
+      const color = logColors[r.lvl] || '#94a3b8';
+      const lvlBadge = `<span style="color:${color};min-width:60px;display:inline-block">[${r.lvl}]</span>`;
+      const escapedMsg = r.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      return `<div style="color:#e2e8f0;line-height:1.4"><span style="color:#64748b">${r.ts}</span> ${lvlBadge} ${escapedMsg}</div>`;
+    }).join('') || '<div style="color:#64748b">No logs</div>';
+    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+  } catch(e) {
+    container.innerHTML = `<div style="color:#f87171">Error: ${e.message}</div>`;
+  }
+}
+
+async function monitorControl(action, payload, confirmMsg) {
+  if (confirmMsg && !confirm(confirmMsg)) return;
+  const msg = document.getElementById('monitor-ctrl-msg');
+  try {
+    const d = await api(`/api/recognition/control/${action}`, { method:'POST', body: JSON.stringify(payload||{}) });
+    const text = d.ok ? `✓ ${action.replace(/_/g,' ')} done` + (d.cleared !== undefined ? ` (${d.cleared} items)` : '') + (d.flushed !== undefined ? ` (${d.flushed} sessions)` : '') : `✗ ${d.error}`;
+    if(msg) { msg.textContent = text; msg.style.color = d.ok ? '#22c55e' : '#ef4444'; setTimeout(()=>{if(msg) msg.textContent='';}, 4000); }
+    await refreshMonitor();
+  } catch(e) {
+    if(msg) { msg.textContent = '✗ ' + e.message; msg.style.color='#ef4444'; }
+  }
+}
+
+document.getElementById('btn-ctrl-clear-queue')?.addEventListener('click',
+  () => monitorControl('clear_queue', {}, 'Clear all pending clip analysis jobs?'));
+document.getElementById('btn-ctrl-flush-sessions')?.addEventListener('click',
+  () => monitorControl('flush_sessions', {}, 'Expire all active sessions? (they will not create customers)'));
+document.getElementById('btn-ctrl-clear-anon')?.addEventListener('click',
+  () => monitorControl('clear_anon', {}, 'Delete all anonymous identities?'));
+document.getElementById('btn-ctrl-sync-cache')?.addEventListener('click',
+  () => monitorControl('sync_cache', {}));
+
+document.getElementById('btn-log-refresh')?.addEventListener('click', refreshLogs);
+document.getElementById('log-search')?.addEventListener('input', refreshLogs);
+document.getElementById('log-level')?.addEventListener('change', refreshLogs);
+
+document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('shown.bs.tab', () => {
+  refreshMonitor();
+  refreshLogs();
+  if (!_monitorInterval) {
+    _monitorInterval = setInterval(() => { refreshMonitor(); refreshLogs(); }, 5000);
+  }
 });

@@ -19,12 +19,37 @@ import numpy as np
 LOG_PATH = os.path.join(os.path.dirname(__file__), 'logs', 'recognition_service_v2.log')
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
+class _CircularLogHandler(logging.Handler):
+    """Keeps the last N log records in memory for the monitor."""
+    MAX = 500
+    def __init__(self):
+        super().__init__()
+        self._records = collections.deque(maxlen=self.MAX)
+        self._lock = threading.Lock()
+    def emit(self, record):
+        with self._lock:
+            self._records.append({
+                'ts':  self.formatter.formatTime(record, '%H:%M:%S') if self.formatter else '',
+                'lvl': record.levelname,
+                'msg': record.getMessage(),
+            })
+    def get(self, n=200, level=None):
+        with self._lock:
+            recs = list(self._records)
+        if level:
+            recs = [r for r in recs if r['lvl'] == level.upper()]
+        return recs[-n:]
+
+_log_buffer = _CircularLogHandler()
+_log_buffer.setFormatter(logging.Formatter('%(asctime)s'))
+
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.FileHandler(LOG_PATH, encoding='utf-8'),
         logging.StreamHandler(),
+        _log_buffer,
     ]
 )
 logger = logging.getLogger('recognition_v2')
@@ -2963,37 +2988,193 @@ class ThreadedHTTPServer(socketserver.ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
 
+def _get_status_snapshot():
+    """Return a live snapshot of the recognition service state for the monitor."""
+    import psutil, os as _os
+    proc = psutil.Process(_os.getpid())
+    mem_mb = proc.memory_info().rss / 1024 / 1024
+    cpu_pct = proc.cpu_percent(interval=0.1)
+
+    with _sessions_lock:
+        sessions = [
+            {
+                'id': s.session_id[:8],
+                'status': s.status,
+                'faces': len(s.face_embeddings),
+                'cameras': list(s.cameras_seen),
+                'age_s': round(time.time() - s.created_at),
+                'idle_s': round(time.time() - s.last_evidence_at),
+                'best_sim': round(s.best_face_sim, 3),
+                'candidate_cid': s.candidate_customer_id,
+                'events': len(s.source_event_ids),
+            }
+            for s in _active_sessions.values()
+        ]
+
+    anon_list = [
+        {
+            'id': aid[:8],
+            'faces': len(a['face_embeddings']),
+            'cameras': list(a.get('cameras', set())),
+            'age_s': round(time.time() - a['created_at']),
+            'last_seen_s': round(time.time() - a.get('last_seen_at', a['created_at'])),
+        }
+        for aid, a in list(_anonymous_identities.items())
+    ]
+
+    with _clip_queue_lock:
+        queue_depth = len(_clip_analysis_queue)
+        queue_items = [
+            {'event_id': j[0][:12], 'customer_id': j[1]}
+            for j in list(_clip_analysis_queue)[:10]
+        ]
+
+    cache_size = len(_signals_cache)
+
+    return {
+        'ok': True,
+        'uptime_s': round(time.time() - _startup_time_epoch),
+        'cpu_pct': round(cpu_pct, 1),
+        'mem_mb': round(mem_mb, 1),
+        'onnx_providers': [],  # filled below
+        'sessions': sessions,
+        'sessions_total': len(sessions),
+        'anon_identities': anon_list,
+        'anon_total': len(anon_list),
+        'clip_queue_depth': queue_depth,
+        'clip_queue_items': queue_items,
+        'customer_cache_size': cache_size,
+        'active_tracks': len(_active_tracks),
+        'created_from_sessions': len(_created_from_session_ids),
+    }
+
+
+_startup_time_epoch = time.time()
+
+
 class WebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass
 
-    def do_POST(self):
-        if self.path != '/webhook/frigate':
+    def _send_json(self, data, status=200):
+        body = json.dumps(data).encode()
+        self.send_response(status)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        from urllib.parse import urlparse, parse_qs
+        parsed = urlparse(self.path)
+        qs = parse_qs(parsed.query)
+
+        if parsed.path == '/status':
+            try:
+                data = _get_status_snapshot()
+                try:
+                    import onnxruntime as _ort
+                    data['onnx_providers'] = _ort.get_available_providers()
+                except Exception:
+                    pass
+                self._send_json(data)
+            except Exception as e:
+                self._send_json({'error': str(e)}, 500)
+
+        elif parsed.path == '/logs':
+            n     = int(qs.get('n', ['200'])[0])
+            level = qs.get('level', [None])[0]
+            search = qs.get('q', [None])[0]
+            recs = _log_buffer.get(n=n, level=level)
+            if search:
+                recs = [r for r in recs if search.lower() in r['msg'].lower()]
+            self._send_json({'logs': recs, 'total': len(recs)})
+
+        else:
             self.send_response(404)
             self.end_headers()
+
+    def do_POST(self):
+        from urllib.parse import urlparse
+        parsed = urlparse(self.path)
+        length = int(self.headers.get('Content-Length', 0))
+        body_raw = self.rfile.read(length)
+        try:
+            body_data = json.loads(body_raw) if body_raw else {}
+        except Exception:
+            body_data = {}
+
+        if parsed.path == '/webhook/frigate':
+            self.send_response(200)
+            self.end_headers()
+            try:
+                payload = body_data
+                event_type = payload.get('type')
+                after = payload.get('after') or payload.get('before') or {}
+                if event_type in ('update', 'end') and after.get('label') in ('person', 'car'):
+                    if event_type == 'end':
+                        after['_is_ended'] = True
+                    def _run_webhook(e=after):
+                        with _event_semaphore:
+                            process_event(e)
+                    threading.Thread(target=_run_webhook, daemon=True).start()
+            except Exception as e:
+                logger.warning(f'Webhook parse error: {e}')
             return
 
-        length = int(self.headers.get('Content-Length', 0))
-        body = self.rfile.read(length)
-        self.send_response(200)
-        self.end_headers()
+        elif parsed.path == '/control/clear_queue':
+            with _clip_queue_lock:
+                cleared = len(_clip_analysis_queue)
+                _clip_analysis_queue.clear()
+            logger.info(f'Monitor: clip queue cleared ({cleared} items)')
+            self._send_json({'ok': True, 'cleared': cleared})
 
-        try:
-            payload = json.loads(body)
-            event_type = payload.get('type')
-            after = payload.get('after') or payload.get('before') or {}
+        elif parsed.path == '/control/flush_sessions':
+            with _sessions_lock:
+                n = len(_active_sessions)
+                for s in _active_sessions.values():
+                    s.status = 'expired'
+            logger.info(f'Monitor: flushed {n} active sessions')
+            self._send_json({'ok': True, 'flushed': n})
 
-            # Process both updates (track building) and end events (final snapshot)
-            # Accept 'person' for recognition and 'car' for ANPR plate reading
-            if event_type in ('update', 'end') and after.get('label') in ('person', 'car'):
-                if event_type == 'end':
-                    after['_is_ended'] = True
-                def _run_webhook(e=after):
-                    with _event_semaphore:
-                        process_event(e)
-                threading.Thread(target=_run_webhook, daemon=True).start()
-        except Exception as e:
-            logger.warning(f'Webhook parse error: {e}')
+        elif parsed.path == '/control/clear_anon':
+            n = len(_anonymous_identities)
+            _anonymous_identities.clear()
+            logger.info(f'Monitor: cleared {n} anonymous identities')
+            self._send_json({'ok': True, 'cleared': n})
+
+        elif parsed.path == '/control/sync_cache':
+            _signals_cache_ids.clear()
+            logger.info('Monitor: customer cache invalidated — will rebuild on next poll')
+            self._send_json({'ok': True})
+
+        elif parsed.path == '/control/requeue_clip':
+            event_id = body_data.get('event_id')
+            customer_id = body_data.get('customer_id')
+            if not event_id:
+                self._send_json({'error': 'event_id required'}, 400)
+                return
+            with _clip_queue_lock:
+                _clip_analysis_queue.append((event_id, customer_id, None))
+            logger.info(f'Monitor: re-queued clip {event_id[:12]} for cid={customer_id}')
+            self._send_json({'ok': True})
+
+        elif parsed.path == '/control/resync_customer':
+            cid = body_data.get('customer_id')
+            if not cid:
+                self._send_json({'error': 'customer_id required'}, 400)
+                return
+            if cid in _signals_cache:
+                del _signals_cache[cid]
+            _signals_cache_ids.discard(cid)
+            logger.info(f'Monitor: evicted cid={cid} from signals cache')
+            self._send_json({'ok': True})
+
+        else:
+            self._send_json({'error': 'Not found'}, 404)
+            return
+
 
 def _reindex_customer_embeddings(cid):
     """Re-run ArcFace on stored face photos for a customer and re-enroll fresh embeddings.
