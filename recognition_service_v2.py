@@ -1962,8 +1962,9 @@ def _improve_customer_profile(customer_id, signals):
                     'quality': new_face_quality,
                     'camera_source': cam_src,
                 }
-                if has_face_photo:
-                    payload['photo_b64'] = base64.b64encode(signals['face_photo']).decode()
+                face_photo = signals.get('face_photo')
+                if has_face_photo and face_photo and len(face_photo) >= 4000:
+                    payload['photo_b64'] = base64.b64encode(face_photo).decode()
                 if has_snapshot:
                     payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
                 pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
@@ -1982,10 +1983,13 @@ def _improve_customer_profile(customer_id, signals):
                         _profile_upgrade_times[customer_id] = time.time()
                 if due_upgrade:
                     logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
+                    _fp = signals.get('face_photo', b'')
+                    if len(_fp) < 4000:
+                        continue  # photo too small to be a real face — skip upgrade
                     payload = {
                         'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
                         'quality': new_face_quality,
-                        'photo_b64': base64.b64encode(signals['face_photo']).decode(),
+                        'photo_b64': base64.b64encode(_fp).decode(),
                         'camera_source': cam_src,
                     }
                     if has_snapshot:
@@ -2713,7 +2717,9 @@ def _clip_analysis_loop():
                         'quality': float(qual),
                         'camera_source': clip_camera,
                     }
-                    if photo_bytes:
+                    # Only attach face photo if it's large enough to be a real face.
+                    # ArcFace-aligned 112×112 crops: hands/objects ~2-3KB, real faces ≥4KB.
+                    if photo_bytes and len(photo_bytes) >= 4000:
                         payload['photo_b64'] = base64.b64encode(photo_bytes).decode()
                     if can_replace:
                         payload['replace_if_better'] = True

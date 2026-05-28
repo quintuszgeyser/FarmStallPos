@@ -3654,28 +3654,47 @@ def api_customers_enroll_face(cid):
 
 @app.route('/api/customers/<int:cid>/photo', methods=['GET'])
 def api_customer_photo(cid):
-    """Returns face photo (or body snapshot fallback) as JPEG."""
+    """Returns face photo (or body snapshot fallback) as JPEG.
+    Selects by quality DESC so the sharpest, most reliable face wins.
+    Skips tiny photos (< 4KB) that are likely non-face crops (hands, objects)."""
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
-    # Try active face photo first
-    row = CustomerFace.query.filter_by(customer_id=cid, active=True).order_by(CustomerFace.enrolled_at.desc()).first()
+    from flask import Response
+    from sqlalchemy import text as _t2
+
+    # Best quality active face photo — must be a real face (≥4KB, quality set)
+    rows = (CustomerFace.query
+            .filter_by(customer_id=cid, active=True)
+            .filter(CustomerFace.photo != None)
+            .filter(CustomerFace.quality != None)
+            .order_by(CustomerFace.quality.desc())
+            .all())
+    for row in rows:
+        if row.photo and len(row.photo) >= 4000:
+            return Response(row.photo, mimetype='image/jpeg')
+
+    # Fall back: any active face photo regardless of size
+    for row in rows:
+        if row.photo:
+            return Response(row.photo, mimetype='image/jpeg')
+
+    # Fall back: any active face photo without quality metadata (older enrollments)
+    row = (CustomerFace.query
+           .filter_by(customer_id=cid, active=True)
+           .filter(CustomerFace.photo != None)
+           .filter(CustomerFace.quality == None)
+           .order_by(CustomerFace.enrolled_at.desc())
+           .first())
     if row and row.photo:
-        from flask import Response
         return Response(row.photo, mimetype='image/jpeg')
-    # Fall back to any body snapshot stored for this customer
+
+    # Last resort: body snapshot as profile picture
     snap_row = (CustomerFace.query.filter_by(customer_id=cid)
                 .filter(CustomerFace.body_photo != None)
                 .order_by(CustomerFace.enrolled_at.desc()).first())
     if snap_row and snap_row.body_photo:
-        from flask import Response
         return Response(snap_row.body_photo, mimetype='image/jpeg')
-    # Fall back to any inactive face photo (e.g. snapshot_only row)
-    any_row = (CustomerFace.query.filter_by(customer_id=cid)
-               .filter(CustomerFace.photo != None)
-               .order_by(CustomerFace.enrolled_at.desc()).first())
-    if any_row and any_row.photo:
-        from flask import Response
-        return Response(any_row.photo, mimetype='image/jpeg')
+
     return '', 404
 
 @app.route('/api/customers/<int:cid>/body_photo', methods=['GET'])
