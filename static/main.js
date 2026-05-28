@@ -6679,30 +6679,8 @@ async function refreshMonitor() {
   }
 }
 
-async function loadDevSettings() {
-  try {
-    const s = await api('/api/recognition/settings');
-    const setSliderDev = (id, valId, val) => {
-      const el = document.getElementById(id); if(el) el.value = val;
-      const vl = document.getElementById(valId); if(vl) vl.textContent = val;
-    };
-    setSliderDev('dev-face-threshold',  'dev-face-threshold-val',  s.face_threshold);
-    setSliderDev('dev-link-threshold',  'dev-link-threshold-val',  s.link_threshold);
-    setSliderDev('dev-face-quality-min','dev-face-quality-val',    s.face_quality_min);
-
-    ['dev-face-threshold','dev-link-threshold','dev-face-quality-min'].forEach(id => {
-      const el = document.getElementById(id); if(!el) return;
-      const vid = id === 'dev-face-threshold' ? 'dev-face-threshold-val'
-                : id === 'dev-link-threshold' ? 'dev-link-threshold-val'
-                : 'dev-face-quality-val';
-      el.addEventListener('input', () => { const v = document.getElementById(vid); if(v) v.textContent = el.value; });
-    });
-  } catch(e) { console.error('loadDevSettings', e); }
-}
-
 document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('shown.bs.tab', () => {
   refreshMonitor();
-  loadDevSettings();
   if (!_monitorInterval) _monitorInterval = setInterval(refreshMonitor, 4000);
 });
 
@@ -6712,22 +6690,6 @@ document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('hid
 
 document.getElementById('btn-monitor-refresh')?.addEventListener('click', refreshMonitor);
 
-document.getElementById('btn-dev-save-settings')?.addEventListener('click', async () => {
-  const msg = document.getElementById('dev-settings-msg');
-  try {
-    await api('/api/recognition/settings', {
-      method: 'POST',
-      body: JSON.stringify({
-        face_threshold:   parseFloat(document.getElementById('dev-face-threshold')?.value),
-        link_threshold:   parseFloat(document.getElementById('dev-link-threshold')?.value),
-        face_quality_min: parseFloat(document.getElementById('dev-face-quality-min')?.value),
-      })
-    });
-    if(msg) { msg.textContent = 'Saved ✓'; msg.style.color='#22c55e'; setTimeout(()=>msg.textContent='',2000); }
-  } catch(e) {
-    if(msg) { msg.textContent = e.message; msg.style.color='#ef4444'; }
-  }
-});
 
 // ═══════════════════════════════════════════════════════
 // CHANGE PASSWORD
