@@ -326,10 +326,16 @@ def extract_temporal_gait_from_clip(frames_seq):
             if not result.pose_landmarks:
                 continue
             lm = result.pose_landmarks[0]
-            if lm[27].visibility > 0.5:
-                ankle_y_l.append(lm[27].y)
-            if lm[28].visibility > 0.5:
-                ankle_y_r.append(lm[28].y)
+            # Prefer ankles (27/28), fall back to knees (25/26) when ankles not visible.
+            # Knees oscillate at same frequency as ankles during walking and are
+            # more visible from mounted cameras looking down at an angle.
+            VIS = 0.3  # lowered from 0.5 — partial visibility is acceptable
+            l_leg = lm[27] if lm[27].visibility > VIS else (lm[25] if lm[25].visibility > VIS else None)
+            r_leg = lm[28] if lm[28].visibility > VIS else (lm[26] if lm[26].visibility > VIS else None)
+            if l_leg:
+                ankle_y_l.append(l_leg.y)
+            if r_leg:
+                ankle_y_r.append(r_leg.y)
             shoulder_w.append(abs(lm[11].x - lm[12].x))
             hip_w.append(abs(lm[23].x - lm[24].x))
 
