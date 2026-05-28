@@ -5324,6 +5324,8 @@ function startCustomerVisitPoll() {
 async function loadCustomers() {
   STATE.customers = await api('/api/customers');
   renderCustomersList();
+  // Run merge suggestions on every refresh — auto-merges fire inline, panel updates live
+  loadMergeSuggestions().catch(() => {});
 }
 
 function renderCustomersList() {
@@ -5434,42 +5436,63 @@ async function openMergeModal() {
   const ids = checked.map(cb => parseInt(cb.dataset.id));
   const customers = ids.map(id => STATE.customers.find(c => c.id === id));
 
-  // Build a modal asking which is primary
-  const opts = customers.map(c => `
-    <div class="form-check mb-2">
-      <input class="form-check-input" type="radio" name="primary_pick" value="${c.id}" id="pp_${c.id}">
-      <label class="form-check-label" for="pp_${c.id}">
-        <strong>${c.customer_number}</strong> — ${c.name || 'Unnamed'}
-        <span class="text-muted small ms-1">${c.visit_count} visits · ${c.has_face ? 'Face ✓' : 'No face'} · ${c.has_gait ? 'Body ✓' : 'No body'}</span>
-      </label>
-    </div>`).join('');
-
   const body = document.getElementById('customerDetailBody');
   const title = document.getElementById('customerDetailTitle');
-  title.textContent = 'Merge Customers — Pick Primary';
+  title.textContent = 'Merge Customers';
+  body.innerHTML = '<div class="text-center text-muted py-4">Selecting primary...</div>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
 
-  // Load radars for all selected customers
-  const radars = await Promise.all(
-    customers.map(c => api(`/api/customers/${c.id}/radar`).catch(() => null))
-  );
+  // Auto-select primary from server
+  let suggestResult = null;
+  try {
+    suggestResult = await api('/api/customers/merge_suggest_primary', {
+      method: 'POST', body: JSON.stringify({ ids })
+    });
+  } catch(e) {}
+  let selectedPrimaryId = suggestResult?.primary_id ?? ids[0];
+  const primaryReason = suggestResult?.reason ?? 'auto-selected';
+
+  // Load radars for comparison
+  const [radars] = await Promise.all([
+    Promise.all(customers.map(c => api(`/api/customers/${c.id}/radar`).catch(() => null)))
+  ]);
 
   const radarComparison = radars.some(Boolean) ? `
     <div class="d-flex gap-3 justify-content-center mb-3 flex-wrap">
       ${customers.map((c, i) => radars[i] ? `
-        <div class="text-center border rounded p-2">
-          <div class="small fw-semibold mb-1">${c.name || c.customer_number}</div>
-          <div class="d-flex gap-1">
-            <div><div class="text-muted" style="font-size:.6rem">Biometric</div><canvas id="merge-bio-${c.id}" width="200" height="200"></canvas></div>
-            <div><div class="text-muted" style="font-size:.6rem">Behavioural</div><canvas id="merge-beh-${c.id}" width="200" height="200"></canvas></div>
+        <div class="text-center border rounded p-2 ${c.id === selectedPrimaryId ? 'border-warning' : ''}">
+          <img src="/api/customers/${c.id}/photo" style="width:52px;height:52px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;margin-bottom:4px" onerror="this.style.display='none'">
+          <div class="small fw-semibold">${c.name || c.customer_number}</div>
+          <div class="d-flex gap-1 mt-1">
+            <div><div class="text-muted" style="font-size:.6rem">Biometric</div><canvas id="merge-bio-${c.id}" width="160" height="160"></canvas></div>
+            <div><div class="text-muted" style="font-size:.6rem">Behavioural</div><canvas id="merge-beh-${c.id}" width="160" height="160"></canvas></div>
           </div>
-          <div class="text-muted mt-1" style="font-size:.65rem">${radars[i].details.face_angles} angles · ID ${radars[i].details.best_face_sim}% · ${radars[i].details.purchase_count} purchases</div>
+          <div class="text-muted mt-1" style="font-size:.65rem">${c.visit_count} visits · ${radars[i].details.face_angles} angles · ${radars[i].details.purchase_count} purchases</div>
         </div>` : '').join('')}
     </div>` : '';
 
+  // Override selector (collapsed by default)
+  const overrideOpts = customers.map(c => `
+    <option value="${c.id}" ${c.id === selectedPrimaryId ? 'selected' : ''}>
+      ${c.customer_number} — ${c.name || 'Unnamed'} (${c.visit_count} visits${c.has_face ? ', face ✓' : ''})
+    </option>`).join('');
+
   body.innerHTML = `
-    <p class="text-muted small">The primary customer keeps their number, name and details. All biometrics, visits and purchases from the others will be moved to them.</p>
+    <div class="alert alert-warning py-2 mb-3 d-flex align-items-center gap-2">
+      <img src="/api/customers/${selectedPrimaryId}/photo"
+        style="width:36px;height:36px;object-fit:cover;border-radius:50%"
+        onerror="this.style.display='none'">
+      <div>
+        <div class="fw-semibold small">Primary: ${customers.find(c=>c.id===selectedPrimaryId)?.name || customers.find(c=>c.id===selectedPrimaryId)?.customer_number}</div>
+        <div class="text-muted" style="font-size:.7rem">Auto-selected — ${primaryReason}. Their name, number and details are kept.</div>
+      </div>
+    </div>
     ${radarComparison}
-    <div class="mb-3">${opts}</div>
+    <details class="mb-3">
+      <summary class="text-muted small" style="cursor:pointer">Override primary selection</summary>
+      <select class="form-select form-select-sm mt-2" id="merge-primary-override">${overrideOpts}</select>
+    </details>
+    <p class="text-muted small mb-3">All biometrics, visits and purchases from the other customer(s) will be merged in. This can be undone from the customer's profile.</p>
     <div class="d-flex justify-content-end gap-2">
       <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
       <button class="btn btn-warning" id="btn-confirm-merge">Merge</button>
@@ -5484,18 +5507,17 @@ async function openMergeModal() {
     }
   });
 
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
-
   document.getElementById('btn-confirm-merge').onclick = async () => {
-    const primaryRadio = document.querySelector('input[name="primary_pick"]:checked');
-    if (!primaryRadio) { toast('Select the primary customer', 'danger'); return; }
-    const primaryId = parseInt(primaryRadio.value);
-    const mergeIds = ids.filter(id => id !== primaryId);
+    const primaryId = parseInt(document.getElementById('merge-primary-override')?.value ?? selectedPrimaryId);
+    const mergeIds  = ids.filter(id => id !== primaryId);
     try {
-      await api('/api/customers/merge', { method: 'POST', body: JSON.stringify({ primary_id: primaryId, merge_ids: mergeIds }) });
+      await api('/api/customers/merge', {
+        method: 'POST',
+        body: JSON.stringify({ primary_id: primaryId, merge_ids: mergeIds, auto_merged: false })
+      });
       bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).hide();
       clearMergeSelection();
-      toast('Customers merged', 'success');
+      toast('Customers merged — undo available from their profile', 'success', 6000);
       await loadCustomers();
     } catch(e) {
       toast(e.message, 'danger');
@@ -5622,11 +5644,12 @@ async function openCustomerDetail(customerId) {
     '<div class="text-center text-muted py-4">Loading...</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
 
-  const [attrs, visits, profile, radar] = await Promise.all([
+  const [attrs, visits, profile, radar, mergeHistory] = await Promise.all([
     api(`/api/customers/${c.id}/attributes`).catch(() => null),
     api(`/api/customers/${c.id}/visits`).catch(() => []),
     api(`/api/customers/${c.id}/profile`).catch(() => null),
     api(`/api/customers/${c.id}/radar`).catch(() => null),
+    api(`/api/customers/${c.id}/merge_history`).catch(() => null),
   ]);
 
   // ── Photo + identity signals ──────────────────────────────────
@@ -5834,6 +5857,67 @@ async function openCustomerDetail(customerId) {
     }
   }
 
+  // ── Merge history ─────────────────────────────────────────────
+  let mergeHistoryHtml = '';
+  if (mergeHistory) {
+    const absorbed  = mergeHistory.absorbed || [];
+    const mergedInto = mergeHistory.merged_into;
+
+    if (mergedInto) {
+      // This customer was merged into another
+      mergeHistoryHtml = `
+        <div class="mt-3 pt-2 border-top">
+          <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.05em">Merge Status</div>
+          <div class="alert alert-secondary py-2 d-flex align-items-center gap-2">
+            <div class="flex-grow-1 small">
+              Merged into <strong>${mergedInto.primary_name || mergedInto.primary_number}</strong>
+              on ${new Date(mergedInto.merged_at).toLocaleDateString('en-ZA')}
+            </div>
+            <button class="btn btn-outline-secondary btn-sm"
+              onclick="unmergeCustomer(${mergedInto.log_id}, '${(mergedInto.primary_name || mergedInto.primary_number || '').replace(/'/g,'')}')">
+              Unmerge
+            </button>
+          </div>
+        </div>`;
+    }
+
+    if (absorbed.length) {
+      const rows = absorbed.map(m => {
+        const dateStr = new Date(m.merged_at).toLocaleDateString('en-ZA');
+        const simBadge = m.similarity != null
+          ? `<span class="badge ${m.similarity >= 0.95 ? 'bg-success' : 'bg-warning text-dark'} ms-1">${Math.round(m.similarity*100)}%</span>` : '';
+        const autoBadge = m.auto_merged ? `<span class="badge bg-info text-dark ms-1" style="font-size:.6rem">Auto</span>` : '';
+        const unmergedNote = m.unmerged_at
+          ? `<div class="text-muted" style="font-size:.65rem">Unmerged ${new Date(m.unmerged_at).toLocaleDateString('en-ZA')}</div>` : '';
+        const unmergeBtn = !m.unmerged_at
+          ? `<button class="btn btn-outline-secondary btn-sm flex-shrink-0"
+               onclick="unmergeCustomer(${m.log_id}, '${(m.source_name || m.source_customer_number || '').replace(/'/g,'')}')">Unmerge</button>` : '';
+
+        return `
+          <div class="d-flex align-items-center gap-2 py-2 border-bottom">
+            ${m.source_face_photo
+              ? `<img src="${m.source_face_photo}" style="width:44px;height:44px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;flex-shrink:0">`
+              : `<div style="width:44px;height:44px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;flex-shrink:0">👤</div>`}
+            <div class="flex-grow-1 min-width-0">
+              <div class="small fw-semibold">${m.source_name || '<span class="text-muted fst-italic">Unnamed</span>'}
+                ${m.source_customer_number ? `<span class="text-muted ms-1">${m.source_customer_number}</span>` : ''}
+                ${simBadge}${autoBadge}
+              </div>
+              <div class="text-muted" style="font-size:.7rem">${m.source_visit_count || 0} visits · merged ${dateStr}</div>
+              ${unmergedNote}
+            </div>
+            ${unmergeBtn}
+          </div>`;
+      }).join('');
+
+      mergeHistoryHtml += `
+        <div class="mt-3 pt-2 border-top">
+          <div class="fw-semibold small text-uppercase text-muted mb-2" style="letter-spacing:.05em">Merged Customers (${absorbed.length})</div>
+          ${rows}
+        </div>`;
+    }
+  }
+
   // ── Delete button ─────────────────────────────────────────────
   const deleteBtn = `<div class="mt-3 pt-2 border-top">
     <button class="btn btn-outline-danger btn-sm" onclick="deleteCustomer(${c.id}, '${(c.name || c.customer_number || 'this customer').replace(/'/g, '')}')">
@@ -5883,12 +5967,37 @@ async function openCustomerDetail(customerId) {
     ${attrsHtml ? '<hr class="my-2">' + attrsHtml : ''}
     <hr class="my-2">
     ${visitsHtml}
+    ${mergeHistoryHtml}
     ${deleteBtn}`;
 
   // Draw both radars after DOM is ready
   if (radar) {
     if (radar.biometric)   drawRadarChart(`customer-radar-bio-${c.id}`, radar.biometric,   '#2a6f3e');
     if (radar.behavioural) drawRadarChart(`customer-radar-beh-${c.id}`, radar.behavioural, '#0d6efd');
+  }
+}
+
+async function unmergeCustomer(logId, sourceName) {
+  const label = sourceName || 'this customer';
+  if (!confirm(
+    `Unmerge "${label}"?\n\n` +
+    `• Their profile will be reactivated as a separate customer\n` +
+    `• Their biometric data will be restored (if this merge was done with the current system)\n` +
+    `• Visit and sales history will remain on the primary profile\n\n` +
+    `Continue?`
+  )) return;
+
+  try {
+    const result = await api(`/api/customers/merge_log/${logId}/unmerge`, { method: 'POST' });
+    if (result.soft_unmerge) {
+      toast(`${label} reactivated. Biometric data will rebuild automatically on next sighting.`, 'info', 7000);
+    } else {
+      toast(`${label} unmerged — biometric data restored.`, 'success', 5000);
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).hide();
+    await loadCustomers();
+  } catch(e) {
+    toast(e.message, 'danger');
   }
 }
 
@@ -6065,8 +6174,7 @@ document.getElementById('customer-sort')?.addEventListener('change', renderCusto
 // Also run duplicate check automatically on open
 let _customerTabRefreshTimer = null;
 document.querySelector('[data-bs-target="#customers"]')?.addEventListener('shown.bs.tab', () => {
-  loadCustomers();
-  loadMergeSuggestions();
+  loadCustomers();  // includes loadMergeSuggestions() via loadCustomers
   if (_customerTabRefreshTimer) clearInterval(_customerTabRefreshTimer);
   _customerTabRefreshTimer = setInterval(loadCustomers, 5000);
 });
@@ -6094,19 +6202,16 @@ async function loadMergeSuggestions() {
     const manual    = suggestions.filter(s => s.similarity <  AUTO_MERGE_THRESHOLD);
 
     for (const s of autoMerge) {
-      // Primary = more visits (or customer_a if tied)
-      const primary = s.customer_a.visit_count >= s.customer_b.visit_count
-        ? s.customer_a : s.customer_b;
-      const duplicate = primary.id === s.customer_a.id ? s.customer_b : s.customer_a;
       try {
+        // Let server auto-select primary by score; pass both ids with no primary_id
+        const allIds = [s.customer_a.id, s.customer_b.id];
         await api('/api/customers/merge', {
           method: 'POST',
-          body: JSON.stringify({ primary_id: primary.id, merge_ids: [duplicate.id] })
+          body: JSON.stringify({ merge_ids: allIds, auto_merged: true, similarity: s.similarity })
         });
-        toast(
-          `Auto-merged ${duplicate.name || duplicate.customer_number} → ${primary.name || primary.customer_number} (${Math.round(s.similarity * 100)}% match)`,
-          'success', 5000
-        );
+        const nameA = s.customer_a.name || s.customer_a.customer_number;
+        const nameB = s.customer_b.name || s.customer_b.customer_number;
+        toast(`Auto-merged ${nameA} ↔ ${nameB} (${Math.round(s.similarity * 100)}% match)`, 'success', 5000);
       } catch(e) {
         toast(`Auto-merge failed: ${e.message}`, 'danger');
       }

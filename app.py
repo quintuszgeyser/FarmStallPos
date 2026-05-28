@@ -1465,6 +1465,29 @@ def strong_migrate():
                 created_at TIMESTAMP DEFAULT NOW()
             )""")
 
+            # Merge audit log — one row per merge operation, survives unmerge
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customer_merge_log (
+                id SERIAL PRIMARY KEY,
+                primary_id INTEGER NOT NULL REFERENCES customers(id),
+                source_id  INTEGER NOT NULL REFERENCES customers(id),
+                merged_at  TIMESTAMP NOT NULL DEFAULT NOW(),
+                auto_merged BOOLEAN NOT NULL DEFAULT FALSE,
+                similarity  NUMERIC(5,3),
+                source_name            VARCHAR(200),
+                source_customer_number VARCHAR(20),
+                source_visit_count     INTEGER,
+                source_face_photo      BYTEA,
+                unmerged_at            TIMESTAMP
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_merge_log_primary ON customer_merge_log(primary_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_merge_log_source  ON customer_merge_log(source_id)")
+
+            # Track which customer originally owned each face/gait row — needed for unmerge
+            pg_try("ALTER TABLE customer_faces ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
+            pg_try("ALTER TABLE customer_gaits ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
+            pg_try("ALTER TABLE customer_physical_attributes ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
+
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
         if sales_count == 0:
@@ -2949,23 +2972,111 @@ def api_customer_name(cid):
     db.session.commit()
     return jsonify({'ok': True})
 
+def _merge_primary_score(row):
+    """Score a customer row to determine who should be primary on merge.
+    Higher score = more established customer = keep as primary.
+    Columns: id, name, visit_count, has_face, has_gait, first_seen
+    """
+    score = 0
+    score += (row[2] or 0) * 10       # visit_count × 10
+    if row[1]:      score += 100       # has name
+    if row[3]:      score += 50        # has face
+    if row[4]:      score += 30        # has gait
+    if row[5]:                         # older first_seen = more established
+        from datetime import timezone
+        try:
+            fs = row[5]
+            if hasattr(fs, 'replace'):
+                age_days = (datetime.utcnow() - fs.replace(tzinfo=None)).days
+                score += min(age_days, 365)
+        except Exception:
+            pass
+    return score
+
+@app.route('/api/customers/merge_suggest_primary', methods=['POST'])
+def api_merge_suggest_primary():
+    """Given a list of customer ids, return which one should be primary and the score breakdown."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    data = request.json or {}
+    ids = data.get('ids', [])
+    if len(ids) < 2:
+        return jsonify({'error': 'Need at least 2 ids'}), 400
+
+    from sqlalchemy import text as _text
+    rows = []
+    for cid in ids:
+        row = db.session.execute(_text('''
+            SELECT c.id, c.name, c.visit_count,
+                   EXISTS(SELECT 1 FROM customer_faces WHERE customer_id=c.id AND active=TRUE) has_face,
+                   EXISTS(SELECT 1 FROM customer_gaits WHERE customer_id=c.id AND active=TRUE) has_gait,
+                   c.first_seen
+            FROM customers c WHERE c.id = :id
+        '''), {'id': cid}).fetchone()
+        if row:
+            rows.append(row)
+
+    if not rows:
+        return jsonify({'error': 'No valid customers'}), 404
+
+    scored = [(r, _merge_primary_score(r)) for r in rows]
+    scored.sort(key=lambda x: x[1], reverse=True)
+    primary_row, primary_score = scored[0]
+
+    reasons = []
+    if primary_row[1]: reasons.append('named')
+    if primary_row[2]: reasons.append(f'{primary_row[2]} visits')
+    if primary_row[3]: reasons.append('face enrolled')
+    if primary_row[4]: reasons.append('gait enrolled')
+
+    return jsonify({
+        'primary_id': primary_row[0],
+        'reason': ', '.join(reasons) if reasons else 'best candidate',
+        'scores': [{'id': r[0], 'score': s} for r, s in scored],
+    })
+
 @app.route('/api/customers/merge', methods=['POST'])
 def api_customers_merge():
     """Merge multiple customers into one primary customer.
+    primary_id is optional — if omitted, auto-selected by score.
     Moves all faces, gaits, plates, visits, physical_attributes, visit_sessions, and sales to the primary.
-    Fills in missing fields (name, phone, email, notes, is_employee) on primary from source.
-    Marks merged customers as inactive with merged_into set.
-    Uses raw SQL throughout to avoid ORM autoflush issues.
+    Tags each face/gait row with original_customer_id for future unmerge.
+    Writes a customer_merge_log entry per source customer.
     """
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     data = request.json or {}
     primary_id = data.get('primary_id')
     merge_ids = data.get('merge_ids', [])
-    if not primary_id or not merge_ids:
-        return jsonify({'error': 'primary_id and merge_ids required'}), 400
+    auto_merged = data.get('auto_merged', False)
+    similarity = data.get('similarity')
+
+    all_ids = ([primary_id] if primary_id else []) + list(merge_ids)
+    if len(all_ids) < 2:
+        return jsonify({'error': 'Need at least 2 customer ids'}), 400
 
     from sqlalchemy import text as _text
+
+    # Auto-select primary if not provided
+    if not primary_id:
+        rows = []
+        for cid in all_ids:
+            row = db.session.execute(_text('''
+                SELECT c.id, c.name, c.visit_count,
+                       EXISTS(SELECT 1 FROM customer_faces WHERE customer_id=c.id AND active=TRUE),
+                       EXISTS(SELECT 1 FROM customer_gaits WHERE customer_id=c.id AND active=TRUE),
+                       c.first_seen
+                FROM customers c WHERE c.id = :id
+            '''), {'id': cid}).fetchone()
+            if row:
+                rows.append(row)
+        rows.sort(key=_merge_primary_score, reverse=True)
+        primary_id = rows[0][0]
+        merge_ids = [r[0] for r in rows[1:]]
+    else:
+        if not merge_ids:
+            return jsonify({'error': 'merge_ids required when primary_id provided'}), 400
+
     try:
         # Verify primary exists
         row = db.session.execute(_text('SELECT id FROM customers WHERE id = :id'), {'id': primary_id}).fetchone()
@@ -2976,11 +3087,37 @@ def api_customers_merge():
         for mid in merge_ids:
             if mid == primary_id:
                 continue
-            src_row = db.session.execute(_text('SELECT id, visit_count, last_visit, first_seen, name, phone, email, notes, is_employee FROM customers WHERE id = :id'), {'id': mid}).fetchone()
+            src_row = db.session.execute(_text('''
+                SELECT id, visit_count, last_visit, first_seen, name, phone, email, notes, is_employee
+                FROM customers WHERE id = :id
+            '''), {'id': mid}).fetchone()
             if not src_row:
                 continue
 
-            # Move biometrics and visits (no unique constraint issues)
+            # Capture source face photo for merge log (best = largest JPEG)
+            src_photo_row = db.session.execute(_text('''
+                SELECT photo FROM customer_faces
+                WHERE customer_id = :sid AND active = TRUE AND photo IS NOT NULL
+                ORDER BY LENGTH(photo) DESC LIMIT 1
+            '''), {'sid': mid}).fetchone()
+            src_face_photo = src_photo_row[0] if src_photo_row else None
+
+            # TAG face/gait/attrs rows with their origin before moving — enables unmerge
+            # Only set original_customer_id if not already set (preserves deeper merge chains)
+            db.session.execute(_text('''
+                UPDATE customer_faces SET original_customer_id = :sid
+                WHERE customer_id = :sid AND original_customer_id IS NULL
+            '''), {'sid': mid})
+            db.session.execute(_text('''
+                UPDATE customer_gaits SET original_customer_id = :sid
+                WHERE customer_id = :sid AND original_customer_id IS NULL
+            '''), {'sid': mid})
+            db.session.execute(_text('''
+                UPDATE customer_physical_attributes SET original_customer_id = :sid
+                WHERE customer_id = :sid AND original_customer_id IS NULL
+            '''), {'sid': mid})
+
+            # Move biometrics and visits
             db.session.execute(_text('UPDATE customer_faces              SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
             db.session.execute(_text('UPDATE customer_gaits              SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
             db.session.execute(_text('UPDATE customer_visits             SET customer_id = :pid WHERE customer_id = :sid'), {'pid': primary_id, 'sid': mid})
@@ -3030,6 +3167,24 @@ def api_customers_merge():
 
             # Deactivate source and set merged_into
             db.session.execute(_text('UPDATE customers SET active = FALSE, merged_into = :pid WHERE id = :sid'), {'pid': primary_id, 'sid': mid})
+
+            # Write merge audit log
+            db.session.execute(_text('''
+                INSERT INTO customer_merge_log
+                    (primary_id, source_id, merged_at, auto_merged, similarity,
+                     source_name, source_customer_number, source_visit_count, source_face_photo)
+                VALUES (:pid, :sid, NOW(), :auto, :sim, :name, :cnum, :vc, :photo)
+            '''), {
+                'pid':   primary_id,
+                'sid':   mid,
+                'auto':  auto_merged,
+                'sim':   float(similarity) if similarity is not None else None,
+                'name':  src_row[4],
+                'cnum':  db.session.execute(_text('SELECT customer_number FROM customers WHERE id=:id'), {'id': mid}).scalar(),
+                'vc':    src_row[1],
+                'photo': src_face_photo,
+            })
+
             merged_count += 1
 
         # After all merges: compute a centroid embedding from all active face rows,
@@ -3107,12 +3262,195 @@ def api_customers_merge():
                 )
 
         db.session.commit()
-        return jsonify({'ok': True, 'merged': merged_count})
+        return jsonify({'ok': True, 'merged': merged_count, 'primary_id': primary_id})
 
     except Exception as e:
         db.session.rollback()
         app.logger.error(f'Merge error: {e}')
         return jsonify({'error': str(e)}), 500
+
+
+def _recompute_customer_embeddings(customer_id, _text_fn):
+    """Reselect distinct-angle embeddings from all face rows for a customer.
+    Deactivates all existing rows, re-inserts only the selected distinct angles.
+    """
+    import numpy as _np
+    MAX_EMBEDDINGS = int(float(get_setting('max_face_angles', 24) or 24))
+    MIN_DISTANCE   = float(get_setting('min_angle_distance', 0.25) or 0.25)
+
+    face_rows = db.session.execute(_text_fn('''
+        SELECT id, embedding, photo, original_customer_id FROM customer_faces
+        WHERE customer_id = :cid AND active = TRUE
+    '''), {'cid': customer_id}).fetchall()
+
+    if not face_rows:
+        return 0
+
+    normed = []
+    for row in face_rows:
+        emb = _np.frombuffer(row[1], dtype=_np.float32)
+        if emb.shape == (512,):
+            n = _np.linalg.norm(emb)
+            if n > 0:
+                normed.append((emb / n, bytes(emb.tobytes()), row[2], row[3]))
+
+    selected = []
+    for normed_emb, raw_bytes, photo, orig_cid in normed:
+        is_new = all(float(_np.dot(normed_emb, s[0])) < (1.0 - MIN_DISTANCE) for s in selected)
+        if is_new:
+            selected.append((normed_emb, raw_bytes, photo, orig_cid))
+        if len(selected) >= MAX_EMBEDDINGS:
+            break
+
+    db.session.execute(_text_fn('UPDATE customer_faces SET active = FALSE WHERE customer_id = :cid'), {'cid': customer_id})
+    for _, raw_bytes, photo, orig_cid in selected:
+        db.session.execute(_text_fn('''
+            INSERT INTO customer_faces (customer_id, embedding, photo, enrolled_at, active, original_customer_id)
+            VALUES (:cid, :emb, :photo, NOW(), TRUE, :orig)
+        '''), {'cid': customer_id, 'emb': raw_bytes, 'photo': photo, 'orig': orig_cid})
+
+    return len(selected)
+
+
+@app.route('/api/customers/merge_log/<int:log_id>/unmerge', methods=['POST'])
+def api_customers_unmerge(log_id):
+    """Reverse a merge. Reactivates the source customer and moves their face/gait/attrs back.
+    For merges done after the original_customer_id tracking was added, biometrics are fully restored.
+    For older merges (no tags), the source is reactivated with no biometrics — they re-enroll naturally.
+    Visit and sales history stay on the primary (cannot be reliably split).
+    """
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    from sqlalchemy import text as _text
+    try:
+        log = db.session.execute(_text('''
+            SELECT id, primary_id, source_id, unmerged_at FROM customer_merge_log WHERE id = :id
+        '''), {'id': log_id}).fetchone()
+
+        if not log:
+            return jsonify({'error': 'Merge log entry not found'}), 404
+        if log[3] is not None:
+            return jsonify({'error': 'Already unmerged'}), 400
+
+        primary_id = log[1]
+        source_id  = log[2]
+
+        # Check source still points to this primary (guard against re-merges)
+        src = db.session.execute(_text(
+            'SELECT id, merged_into FROM customers WHERE id = :id'
+        ), {'id': source_id}).fetchone()
+        if not src:
+            return jsonify({'error': 'Source customer not found'}), 404
+
+        # Move face rows back to source
+        moved_faces = db.session.execute(_text('''
+            UPDATE customer_faces SET customer_id = :sid
+            WHERE customer_id = :pid AND original_customer_id = :sid
+        '''), {'pid': primary_id, 'sid': source_id}).rowcount
+
+        # Move gait rows back
+        db.session.execute(_text('''
+            UPDATE customer_gaits SET customer_id = :sid
+            WHERE customer_id = :pid AND original_customer_id = :sid
+        '''), {'pid': primary_id, 'sid': source_id})
+
+        # Move physical attributes back
+        db.session.execute(_text('''
+            UPDATE customer_physical_attributes SET customer_id = :sid
+            WHERE customer_id = :pid AND original_customer_id = :sid
+        '''), {'pid': primary_id, 'sid': source_id})
+
+        # Reactivate source customer
+        db.session.execute(_text('''
+            UPDATE customers SET active = TRUE, merged_into = NULL WHERE id = :sid
+        '''), {'sid': source_id})
+
+        # Recompute embeddings for both customers from their own rows
+        _recompute_customer_embeddings(source_id,  _text)
+        _recompute_customer_embeddings(primary_id, _text)
+
+        # Stamp unmerge time on log
+        db.session.execute(_text('''
+            UPDATE customer_merge_log SET unmerged_at = NOW() WHERE id = :id
+        '''), {'id': log_id})
+
+        soft = moved_faces == 0
+        db.session.commit()
+        return jsonify({'ok': True, 'soft_unmerge': soft,
+                        'message': 'Customer reactivated. Biometric data will rebuild automatically.' if soft
+                                   else 'Customer reactivated with their original biometric data.'})
+
+    except Exception as e:
+        db.session.rollback()
+        app.logger.error(f'Unmerge error: {e}')
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/customers/<int:cid>/merge_history', methods=['GET'])
+def api_customer_merge_history(cid):
+    """Returns full merge history for a customer — both as primary and as source."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    import base64 as _b64
+    from sqlalchemy import text as _text
+
+    # Merges where this customer is the PRIMARY (absorbed others)
+    absorbed = db.session.execute(_text('''
+        SELECT ml.id, ml.source_id, ml.merged_at, ml.auto_merged, ml.similarity,
+               ml.source_name, ml.source_customer_number, ml.source_visit_count,
+               ml.source_face_photo, ml.unmerged_at,
+               c.active as source_active
+        FROM customer_merge_log ml
+        LEFT JOIN customers c ON c.id = ml.source_id
+        WHERE ml.primary_id = :cid
+        ORDER BY ml.merged_at DESC
+    '''), {'cid': cid}).fetchall()
+
+    # Merge where this customer IS the source (was merged into another)
+    is_source = db.session.execute(_text('''
+        SELECT ml.id, ml.primary_id, ml.merged_at, ml.auto_merged, ml.similarity,
+               ml.unmerged_at,
+               c.name as primary_name, c.customer_number as primary_number
+        FROM customer_merge_log ml
+        JOIN customers c ON c.id = ml.primary_id
+        WHERE ml.source_id = :cid
+        ORDER BY ml.merged_at DESC
+        LIMIT 1
+    '''), {'cid': cid}).fetchone()
+
+    def fmt_photo(photo_bytes):
+        if not photo_bytes:
+            return None
+        try:
+            return 'data:image/jpeg;base64,' + _b64.b64encode(bytes(photo_bytes)).decode()
+        except Exception:
+            return None
+
+    return jsonify({
+        'absorbed': [{
+            'log_id':                row[0],
+            'source_id':             row[1],
+            'merged_at':             row[2].isoformat() if row[2] else None,
+            'auto_merged':           row[3],
+            'similarity':            float(row[4]) if row[4] is not None else None,
+            'source_name':           row[5],
+            'source_customer_number': row[6],
+            'source_visit_count':    row[7],
+            'source_face_photo':     fmt_photo(row[8]),
+            'unmerged_at':           row[9].isoformat() if row[9] else None,
+            'source_active':         row[10],
+        } for row in absorbed],
+        'merged_into': {
+            'log_id':           is_source[0],
+            'primary_id':       is_source[1],
+            'merged_at':        is_source[2].isoformat() if is_source[2] else None,
+            'unmerged_at':      is_source[5].isoformat() if is_source[5] else None,
+            'primary_name':     is_source[6],
+            'primary_number':   is_source[7],
+        } if is_source and not is_source[5] else None,
+    })
+
 
 @app.route('/api/customers/<int:cid>/enroll/plate', methods=['POST'])
 def api_customers_enroll_plate(cid):
