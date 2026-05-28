@@ -344,6 +344,14 @@ class Customer(db.Model):
     is_employee     = db.Column(db.Boolean,     nullable=False, default=False)
     merged_into     = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
 
+    # Relationships used by profile/delete endpoints
+    plates  = db.relationship('CustomerPlate', backref='customer', lazy='dynamic',
+                              foreign_keys='CustomerPlate.customer_id')
+    faces   = db.relationship('CustomerFace', backref='customer', lazy='dynamic',
+                              foreign_keys='CustomerFace.customer_id')
+    gaits   = db.relationship('CustomerGait', backref='customer', lazy='dynamic',
+                              foreign_keys='CustomerGait.customer_id')
+
 
 class CustomerPlate(db.Model):
     __tablename__ = 'customer_plates'
