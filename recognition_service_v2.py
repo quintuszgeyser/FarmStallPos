@@ -781,9 +781,18 @@ def extract_all_signals_with_quality(event):
         if label == 'person':
             person_box = (event.get('data') or {}).get('box')
 
-            # Skip edge-of-frame crops: if person box is narrower than 8% of frame
-            # width, the face will be ~20-30px after upscale — too noisy for ArcFace.
             if person_box and len(person_box) == 4:
+                # Frigate can send box as [x,y,w,h] (MQTT/webhook format) or
+                # [x1,y1,x2,y2] (API format). Detect [x,y,w,h] by checking if
+                # x2 < x1 or y2 < y1 which is impossible in corner format.
+                px, py, pw, ph = person_box
+                if pw < px or ph < py:
+                    # It's [x,y,w,h] — convert to [x1,y1,x2,y2]
+                    person_box = [px, py, px + pw, py + ph]
+                    logger.debug(f'Converted person_box [x,y,w,h]→[x1,y1,x2,y2]: {person_box}')
+
+                # Skip edge-of-frame crops: narrower than 8% of frame width
+                # produces ~20-30px face after upscale — too noisy for ArcFace.
                 box_width = person_box[2] - person_box[0]
                 if box_width < 0.08:
                     logger.debug(f'Skipping face extraction: person_box too narrow ({box_width:.3f} < 0.08)')
@@ -913,6 +922,15 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         ret, frame = cap.read()
         if not ret or frame is None:
             continue
+
+        # Downscale to 640px longest edge before writing to disk.
+        # SCRFD's input is 640×640 anyway — processing 2304×1296 frames adds
+        # ~120ms of decode+resize inside SCRFD with no quality benefit.
+        fh, fw = frame.shape[:2]
+        if max(fh, fw) > 640:
+            scale = 640.0 / max(fh, fw)
+            frame = cv2.resize(frame, (int(fw * scale), int(fh * scale)),
+                               interpolation=cv2.INTER_AREA)
 
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
         cv2.imwrite(tmp.name, frame)
@@ -1539,8 +1557,7 @@ def _improve_customer_profile(customer_id, signals):
             # Only invalidate signals cache when a genuinely new angle embedding was stored.
             # Photo-only upgrades don't change embeddings so no cache invalidation needed.
             if enrolled_new_angle:
-                global _signals_cache_ids
-                _signals_cache_ids = set()
+                _signals_cache_ids.clear()
 
         # --- Body snapshot: update at most once per PROFILE_UPGRADE_INTERVAL ---
         if has_snapshot:
@@ -1697,8 +1714,6 @@ def process_event(event):
                         conf_scores['face_similarity'] = float(breakdown_m['face_similarity'])
                     if 'gait_distance' in breakdown_m:
                         conf_scores['gait_distance'] = float(breakdown_m['gait_distance'])
-                    if 'face' in breakdown_m:
-                        conf_scores['face_score'] = float(breakdown_m['face'])
                     break
 
             # Log visit — at most once per VISIT_LOG_INTERVAL per track
@@ -1820,17 +1835,22 @@ def process_event(event):
                         }
                         with _cache_lock:
                             _customers_cache.append(new_entry)
+                        new_signals_entry = {
+                            'id': customer_id,
+                            'face_embeddings': [],
+                            'gait_features': [],
+                            'plates': [],
+                            'height_category': None,
+                            'build': None,
+                            'hair_color': None,
+                            'facial_hair': None,
+                        }
                         with _cache_rebuild_lock:
-                            _signals_cache[customer_id] = {
-                                'id': customer_id,
-                                'face_embeddings': [],
-                                'gait_features': [],
-                                'plates': [],
-                                'height_category': None,
-                                'build': None,
-                                'hair_color': None,
-                                'facial_hair': None,
-                            }
+                            _signals_cache[customer_id] = new_signals_entry
+                            # MUST update _signals_cache_ids to include the new customer.
+                            # Without this, get_all_customer_signals() sees current_ids ≠
+                            # _signals_cache_ids on next event and triggers a full rebuild.
+                            _signals_cache_ids.add(customer_id)
 
                         # Log visit
                         enroll_identify = {
@@ -1928,7 +1948,16 @@ def _clip_analysis_loop():
                         if new_customer and new_customer.get('id'):
                             customer_id = new_customer['id']
                             logger.info(f'Clip enrolled new customer {customer_number_str} (id={customer_id})')
-                            refresh_customers()
+                            # Direct cache insert — avoids O(N×3) rebuild from refresh_customers()
+                            with _cache_lock:
+                                _customers_cache.append({'id': customer_id, 'auto_enrolled': True,
+                                                         'customer_number': customer_number_str, 'name': None, 'plates': []})
+                            with _cache_rebuild_lock:
+                                _signals_cache[customer_id] = {'id': customer_id, 'face_embeddings': [],
+                                                               'gait_features': [], 'plates': [],
+                                                               'height_category': None, 'build': None,
+                                                               'hair_color': None, 'facial_hair': None}
+                                _signals_cache_ids.add(customer_id)
                         else:
                             logger.warning(f'Clip enrollment failed for {event_id[:12]}')
                             continue
@@ -1955,8 +1984,7 @@ def _clip_analysis_loop():
 
                 # Invalidate cache: new angles were just added
                 if angles_added > 0:
-                    global _signals_cache_ids
-                    _signals_cache_ids = set()
+                    _signals_cache_ids.clear()
 
                 # Gait — enroll once from averaged clip gait
                 if signals.get('gait_features'):
