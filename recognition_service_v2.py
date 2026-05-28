@@ -1061,25 +1061,33 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 5.0  # assume 5fps if not reported
 
-    for idx in indices:
+    # Read the clip sequentially (not by random-seeking) so that:
+    # 1. Timestamps are strictly monotonically increasing for MediaPipe VIDEO mode
+    # 2. We avoid seek overhead on large clips
+    frame_pos = 0
+    step_set = set(indices)  # O(1) lookup
+
+    while True:
+        ret, frame = cap.read()
+        if not ret or frame is None:
+            break
+
+        if frame_pos not in step_set:
+            frame_pos += 1
+            continue
+
+        # Collect full-res frame + timestamp for temporal gait BEFORE downscaling
+        ts_ms = int(frame_pos / fps * 1000)
+        frames_seq.append((frame.copy(), ts_ms))
+
+        frame_pos += 1
+
         # Early exit: if we already have MAX_FACE_EMBEDDINGS distinct angles, stop
         if len(distinct_seen) >= MAX_FACE_EMBEDDINGS:
             logger.debug(f'Clip: reached {MAX_FACE_EMBEDDINGS} distinct angles, stopping early')
             break
 
-        cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
-        ret, frame = cap.read()
-        if not ret or frame is None:
-            continue
-
-        # Collect full-res frame + timestamp for temporal gait BEFORE downscaling
-        # (temporal gait needs consistent proportions; downscale ruins that)
-        ts_ms = int(idx / fps * 1000)
-        frames_seq.append((frame.copy(), ts_ms))
-
-        # Downscale to 640px longest edge before writing to disk.
-        # SCRFD's input is 640×640 anyway — processing 2304×1296 frames adds
-        # ~120ms of decode+resize inside SCRFD with no quality benefit.
+        # Downscale for face/gait/snapshot processing (full-res already saved in frames_seq)
         fh, fw = frame.shape[:2]
         if max(fh, fw) > 640:
             scale = 640.0 / max(fh, fw)
@@ -1090,12 +1098,8 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         cv2.imwrite(tmp.name, frame)
         tmp.close()
         try:
-            # Face — do NOT pass person_box for clips: the trigger-frame box is stale
-            # as the person moves through the clip. Let SCRFD find the face freely.
-            # We pick the best-quality face found in each frame regardless of position.
             face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, None)
             if face_emb and face_qual >= FACE_QUALITY_MIN:
-                # Check if this is a genuinely new angle vs what we've already found
                 new_emb = np.frombuffer(face_emb, dtype=np.float32).copy()
                 n = np.linalg.norm(new_emb)
                 if n > 0:
@@ -1109,14 +1113,12 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
                 attrs = extract_physical_attributes(tmp.name)
                 face_candidates.append((face_qual, face_emb, face_photo, attrs))
 
-            # Gait
+            # Single-frame gait (fallback if temporal gait fails)
             gait_feat, gait_qual = extract_gait_with_quality(tmp.name)
             if gait_feat and gait_qual >= GAIT_QUALITY_MIN:
                 gait_candidates.append((gait_qual, gait_feat))
 
-            # Body snapshot — only take this frame's body crop when a face was also
-            # confirmed in the SAME frame. This guarantees face and body always match,
-            # and skips frames where the person has walked out of shot.
+            # Body snapshot — only when face confirmed in same frame
             if person_box and len(person_box) == 4 and face_emb and face_qual > best_body_best_face_qual:
                 h, w = frame.shape[:2]
                 bx1, by1, bx2, by2 = person_box
