@@ -12,6 +12,7 @@ Production-grade multi-biometric identification with:
 import os, sys, time, json, logging, base64, threading, requests, hashlib, uuid
 from datetime import datetime
 from pathlib import Path
+import collections
 from collections import defaultdict
 import numpy as np
 
@@ -81,8 +82,8 @@ SESSION_IDLE_EXPIRY      = 60     # seconds idle → resolver fires
 MAX_SESSION_LIFETIME     = 300    # seconds hard cap regardless of activity
 
 # Session clustering thresholds
-SESSION_JOIN_FACE_SIM    = 0.40   # min face_sim to join an existing session
-SESSION_MERGE_FACE_SIM   = 0.50   # min face_sim to merge two sessions (stricter than join)
+SESSION_JOIN_FACE_SIM    = 0.50   # min face_sim to join an existing session — 0.40 too loose on indoor camera
+SESSION_MERGE_FACE_SIM   = 0.62   # min face_sim to merge two sessions — 0.50 too loose on indoor camera
 
 # Resolver thresholds
 RESOLVER_LINK_THRESHOLD  = 0.50   # resolver links to existing customer
@@ -90,12 +91,12 @@ RECENT_CUSTOMER_SIM      = 0.40   # anti-clone: link to recently-created custome
 ANON_IDENTITY_SIM        = 0.45   # sim to anonymous identity → merge evidence into it
 
 # Customer creation gates (all must pass)
-MIN_FACES_TO_CREATE      = 3      # face embedding count required
+MIN_FACES_TO_CREATE      = 5      # face embedding count required
 MIN_HIGH_QUALITY_FACES   = 2      # of those, must be quality ≥ FACE_QUALITY_MIN_CREATE
-FACE_QUALITY_MIN_CREATE  = 0.40   # quality floor for "high quality" face
+FACE_QUALITY_MIN_CREATE  = 0.25   # quality floor — indoor camera clips score 0.22–0.35
 MIN_SESSION_DURATION     = 30     # seconds session must exist before creation
-CLEARLY_NOT_EXISTING     = 0.30   # best_face_sim must be BELOW this to create
-                                   # 0.30–0.50 band → anonymous identity, not new customer
+CLEARLY_NOT_EXISTING     = 0.35   # best_face_sim must be BELOW this to create
+                                   # 0.35–0.50 band → anonymous identity, not new customer
 
 ANON_IDENTITY_TTL        = 86400  # 24 hours
 
@@ -169,11 +170,27 @@ def get_face_app():
 
             logger.info(f'Face models: det={os.path.basename(det_model)} rec={os.path.basename(rec_model)}')
 
+            # Use OpenVINO GPU if available (Intel iGPU), fall back to CPU
+            import onnxruntime as _ort
+            _avail = _ort.get_available_providers()
+            if 'OpenVINOExecutionProvider' in _avail:
+                _providers = [('OpenVINOExecutionProvider', {'device_type': 'GPU'}), 'CPUExecutionProvider']
+                logger.info('ONNX using OpenVINO GPU provider')
+            else:
+                _providers = ['CPUExecutionProvider']
+                logger.info('ONNX using CPU provider (OpenVINO not available)')
+
             detector = SCRFD(model_file=det_model)
             detector.prepare(ctx_id=-1, input_size=(640, 640), det_thresh=0.3)
+            if hasattr(detector, 'session') and detector.session is not None:
+                import onnxruntime as _ort2
+                detector.session = _ort2.InferenceSession(det_model, providers=_providers)
 
             recognizer = ArcFaceONNX(model_file=rec_model)
             recognizer.prepare(ctx_id=-1)
+            if hasattr(recognizer, 'session') and recognizer.session is not None:
+                import onnxruntime as _ort3
+                recognizer.session = _ort3.InferenceSession(rec_model, providers=_providers)
 
             class FaceApp:
                 def __init__(self, det, rec):
@@ -1112,8 +1129,9 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         cap.release()
         return None
 
-    # Sample densely — every 2nd frame up to 50 samples
-    step = max(1, frame_count // 50)
+    # Sample densely — up to n_sample frames (default 50 for new sessions, 20 for enrichment)
+    max_frames = n_sample if n_sample is not None else 50
+    step = max(1, frame_count // max_frames)
     indices = list(range(0, frame_count, step))
     face_candidates = []   # (quality, embedding_bytes, photo_bytes, attrs_or_None)
     gait_candidates = []   # (quality, features_bytes) — single-frame fallback
@@ -2632,27 +2650,48 @@ def process_event(event):
 # ─── Frigate Integration ────────────────────────────────────────────────────
 
 _seen_events = {}  # event_id -> timestamp; insertion-ordered for FIFO eviction
-_clip_analysis_queue = []      # [(event_id, customer_id, person_box)]
+_clip_analysis_queue = collections.deque()  # [(event_id, customer_id, person_box)]
 _clip_queue_lock = threading.Lock()
 MAX_CLIP_QUEUE = 50
 
 def _clip_analysis_loop():
-    """Background thread: post-event clip enrichment."""
+    """Background thread: post-event clip enrichment. Multiple workers share the queue."""
     import time as _t
     while True:
-        _t.sleep(10)
         _check_daily_reset()  # reset per-customer replacement cap at midnight
         with _clip_queue_lock:
-            jobs = list(_clip_analysis_queue)
-            _clip_analysis_queue.clear()
+            if _clip_analysis_queue:
+                event_id, customer_id, person_box = _clip_analysis_queue.popleft()
+            else:
+                event_id = None
+        if event_id is None:
+            _t.sleep(5)  # idle — no work available
+            continue
 
-        for event_id, customer_id, person_box in jobs:
+        _t.sleep(1)  # brief yield between jobs to keep CPU below saturation
+
+        for event_id, customer_id, person_box in [(event_id, customer_id, person_box)]:
             clip_path = fetch_frigate_clip(event_id)
             if not clip_path:
                 logger.debug(f'Clip not available for {event_id[:12]}')
                 continue
             try:
-                signals = analyze_clip_for_best_signals(clip_path, person_box)
+                # For known customers, check if further enrichment is worth the CPU cost.
+                # Skip entirely if already at max angles AND has gait stored.
+                _n_sample = 50  # full sampling for unknown sessions
+                _need_gait = True
+                if customer_id is not None:
+                    cust_sigs = _signals_cache.get(customer_id, {})
+                    stored_angles = len(cust_sigs.get('face_embeddings', []))
+                    has_gait = bool(cust_sigs.get('gait_features'))
+                    if stored_angles >= MAX_FACE_EMBEDDINGS and has_gait:
+                        logger.debug(f'Clip skip: cid={customer_id} already at max angles+gait')
+                        continue
+                    # Partial enrichment: fewer frames, skip gait if already stored
+                    _n_sample = 20
+                    _need_gait = not has_gait
+
+                signals = analyze_clip_for_best_signals(clip_path, person_box, n_sample=_n_sample)
                 if not signals:
                     continue
 
@@ -2708,9 +2747,33 @@ def _clip_analysis_loop():
 
                 angles_added = 0
                 best_attrs = None
-                # Clip camera source: clips come from Frigate events which have a camera field
                 clip_camera = signals.get('camera') or signals.get('source')
+
+                # Verify each clip face actually matches this customer before storing.
+                # Clips can contain multiple people — don't enrich with wrong-person faces.
+                cust_sigs = _signals_cache.get(customer_id, {})
+                cust_stored_embs = []
+                for fe in cust_sigs.get('face_embeddings', [])[:10]:  # top 10 stored
+                    emb_b64 = fe['embedding_b64'] if isinstance(fe, dict) else fe
+                    try:
+                        e = np.frombuffer(base64.b64decode(emb_b64), dtype=np.float32)
+                        n = np.linalg.norm(e)
+                        if n > 0:
+                            cust_stored_embs.append(e / n)
+                    except Exception:
+                        pass
+
                 for qual, emb_bytes, photo_bytes, attrs in distinct_faces:
+                    # Gate: face must match customer at ≥FACE_THRESHOLD before enrolling
+                    if cust_stored_embs:
+                        clip_emb = np.frombuffer(emb_bytes, dtype=np.float32)
+                        cn = np.linalg.norm(clip_emb)
+                        if cn > 0:
+                            clip_emb = clip_emb / cn
+                        best_match = max(float(np.dot(clip_emb, se)) for se in cust_stored_embs)
+                        if best_match < FACE_THRESHOLD:
+                            logger.debug(f'Clip face rejected for cid={customer_id}: sim={best_match:.3f} < {FACE_THRESHOLD}')
+                            continue
                     payload = {
                         'embedding_b64': base64.b64encode(emb_bytes).decode(),
                         'quality': float(qual),
@@ -2735,8 +2798,8 @@ def _clip_analysis_loop():
                 if angles_added > 0:
                     _signals_cache_ids.clear()
 
-                # Gait — enroll once from averaged clip gait
-                if signals.get('gait_features'):
+                # Gait — enroll only if customer doesn't have one yet
+                if _need_gait and signals.get('gait_features'):
                     existing_gaits = pos_get(f'/api/customers/{customer_id}/gaits_raw') or []
                     if not existing_gaits:
                         pos_post(f'/api/customers/{customer_id}/enroll/gait', {
@@ -3062,8 +3125,9 @@ if __name__ == '__main__':
     # Background Frigate poller
     threading.Thread(target=poll_frigate_events, daemon=True).start()
 
-    # Background clip enrichment (post-event quality improvement)
-    threading.Thread(target=_clip_analysis_loop, daemon=True).start()
+    # Background clip enrichment — 2 workers drain the queue without saturating the CPU
+    for _i in range(2):
+        threading.Thread(target=_clip_analysis_loop, daemon=True, name=f'clip-worker-{_i}').start()
 
     # Background track cleanup (prevents _active_tracks memory growth)
     threading.Thread(target=_track_cleanup_loop, daemon=True).start()

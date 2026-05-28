@@ -2988,27 +2988,35 @@ def api_customers_merge_suggestions():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     import numpy as np, base64 as _b64
-    min_sim = float(get_setting('merge_suggest_min_sim', 0.55) or 0.55)
+    min_sim = float(get_setting('merge_suggest_min_sim', 0.75) or 0.75)
 
-    # Load one embedding per active customer (the active face row)
+    # Load ALL embeddings per customer and take the best pairwise sim.
+    # Single-embedding comparison produces noisy matches for multi-angle customers.
     customers = Customer.query.filter_by(active=True).all()
     embeddings = {}
     for c in customers:
-        row = CustomerFace.query.filter_by(customer_id=c.id, active=True).first()
-        if row and len(row.embedding) == 2048:
-            emb = np.frombuffer(row.embedding, dtype=np.float32)
-            norm = np.linalg.norm(emb)
-            if norm > 0:
-                embeddings[c.id] = (emb / norm, c)
+        rows = CustomerFace.query.filter_by(customer_id=c.id, active=True).all()
+        embs = []
+        for row in rows:
+            if row.embedding and len(row.embedding) == 2048:
+                emb = np.frombuffer(row.embedding, dtype=np.float32)
+                norm = np.linalg.norm(emb)
+                if norm > 0:
+                    embs.append(emb / norm)
+        if embs:
+            embeddings[c.id] = (embs, c)
 
     cids = list(embeddings.keys())
     suggestions = []
     for i in range(len(cids)):
         for j in range(i + 1, len(cids)):
             a_id, b_id = cids[i], cids[j]
-            a_emb, a_c = embeddings[a_id]
-            b_emb, b_c = embeddings[b_id]
-            sim = float(np.dot(a_emb, b_emb))
+            a_embs, a_c = embeddings[a_id]
+            b_embs, b_c = embeddings[b_id]
+            # Best-of-N comparison: use top 5 embeddings per customer to limit O(n²)
+            a_top = sorted(a_embs, key=lambda e: np.linalg.norm(e), reverse=True)[:5]
+            b_top = sorted(b_embs, key=lambda e: np.linalg.norm(e), reverse=True)[:5]
+            sim = max(float(np.dot(a, b)) for a in a_top for b in b_top)
             if sim >= min_sim:
                 suggestions.append({
                     'similarity': round(sim, 3),
@@ -5937,7 +5945,7 @@ def api_settings():
             'face_threshold':        float(get_setting('face_threshold', 0.35) or 0.35),
             'link_threshold':        float(get_setting('link_threshold', 0.55) or 0.55),
             'face_quality_min':      float(get_setting('face_quality_min', 0.15) or 0.15),
-            'merge_suggest_min_sim': float(get_setting('merge_suggest_min_sim', 0.55) or 0.55),
+            'merge_suggest_min_sim': float(get_setting('merge_suggest_min_sim', 0.75) or 0.75),
             'auto_merge_min_sim':    float(get_setting('auto_merge_min_sim',    0.95) or 0.95),
             'max_face_angles':       int(float(get_setting('max_face_angles',   24) or 24)),
             'min_angle_distance':    float(get_setting('min_angle_distance',    0.25) or 0.25),
