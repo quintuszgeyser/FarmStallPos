@@ -1982,20 +1982,19 @@ def _improve_customer_profile(customer_id, signals):
                     if due_upgrade:
                         _profile_upgrade_times[customer_id] = time.time()
                 if due_upgrade:
-                    logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
                     _fp = signals.get('face_photo', b'')
-                    if len(_fp) < 4000:
-                        continue  # photo too small to be a real face — skip upgrade
-                    payload = {
-                        'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
-                        'quality': new_face_quality,
-                        'photo_b64': base64.b64encode(_fp).decode(),
-                        'camera_source': cam_src,
-                    }
-                    if has_snapshot:
-                        payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
-                    pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
-                    upgraded_photo_only = True
+                    if _fp and len(_fp) >= 4000:
+                        logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
+                        payload = {
+                            'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
+                            'quality': new_face_quality,
+                            'photo_b64': base64.b64encode(_fp).decode(),
+                            'camera_source': cam_src,
+                        }
+                        if has_snapshot:
+                            payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
+                        pos_post(f'/api/customers/{customer_id}/enroll/face', payload)
+                        upgraded_photo_only = True
 
             # Only invalidate signals cache when a genuinely new angle embedding was stored.
             # Photo-only upgrades don't change embeddings so no cache invalidation needed.
