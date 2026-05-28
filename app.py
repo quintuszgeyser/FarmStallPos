@@ -2575,10 +2575,15 @@ def api_customers_delete_permanent(cid):
     try:
         # Delete all associated data
         for tbl in ['customer_physical_attributes', 'customer_faces', 'customer_gaits',
-                    'customer_visits', 'customer_plates']:
+                    'customer_visits', 'customer_plates', 'visit_sessions',
+                    'till_detections', 'customer_signal_history']:
             db.session.execute(_text(f'DELETE FROM {tbl} WHERE customer_id = :cid'), {'cid': cid})
+        # Remove merge log entries referencing this customer (as source or primary)
+        db.session.execute(_text('DELETE FROM customer_merge_log WHERE source_id = :cid OR primary_id = :cid'), {'cid': cid})
         # Unlink sales (keep the sale, just remove the customer link)
         db.session.execute(_text('UPDATE sales SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
+        # Unlink any customers that were merged into this one
+        db.session.execute(_text('UPDATE customers SET merged_into = NULL WHERE merged_into = :cid'), {'cid': cid})
         db.session.execute(_text('DELETE FROM customers WHERE id = :cid'), {'cid': cid})
         db.session.commit()
         return jsonify({'ok': True})
