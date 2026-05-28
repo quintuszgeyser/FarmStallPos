@@ -72,17 +72,27 @@ function hide(el) { el && el.classList.add('hidden'); }
 function fmt(n)   { return (Math.round(n * 100) / 100).toFixed(2); }
 function fmtQty(n) { return n % 1 === 0 ? String(n) : n.toFixed(3); }
 
-async function api(path, opts = {}) {
-  const res = await fetch(path, Object.assign({
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin'
-  }, opts));
-  if (!res.ok) {
-    let err = 'Request failed';
-    try { const j = await res.json(); err = j.error || JSON.stringify(j); } catch {}
-    throw new Error(err);
+async function api(path, opts = {}, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(path, Object.assign({
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      signal: controller.signal,
+    }, opts));
+    if (!res.ok) {
+      let err = 'Request failed';
+      try { const j = await res.json(); err = j.error || JSON.stringify(j); } catch {}
+      throw new Error(err);
+    }
+    try { return await res.json(); } catch { return {}; }
+  } catch(e) {
+    if (e.name === 'AbortError') throw new Error('Request timed out');
+    throw e;
+  } finally {
+    clearTimeout(timer);
   }
-  try { return await res.json(); } catch { return {}; }
 }
 
 function toast(msg, type = 'success', durationMs = 3000) {
@@ -5462,7 +5472,10 @@ async function openMergeModal() {
     suggestResult = await api('/api/customers/merge_suggest_primary', {
       method: 'POST', body: JSON.stringify({ ids })
     });
-  } catch(e) {}
+  } catch(e) {
+    // Fall back to first selected — don't block the modal on server error
+    console.warn('merge_suggest_primary failed:', e.message);
+  }
   let selectedPrimaryId = suggestResult?.primary_id ?? ids[0];
   const primaryReason = suggestResult?.reason ?? 'auto-selected';
 

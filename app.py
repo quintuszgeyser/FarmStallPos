@@ -2474,14 +2474,26 @@ def api_suppliers_purchase_run(sid):
 # -----------------------------
 import json as _json
 
-def _customer_dict(c):
-    from sqlalchemy import text as _txt
-    # Visit time pattern — average and std dev of hour-of-day across all visits
-    # Used by recognition service for temporal pattern scoring (no extra API call needed)
-    _hr_row = db.session.execute(_txt(
-        'SELECT AVG(EXTRACT(HOUR FROM detected_at)), STDDEV(EXTRACT(HOUR FROM detected_at)) '
-        'FROM customer_visits WHERE customer_id = :cid'
-    ), {'cid': c.id}).fetchone()
+def _customer_dict(c, _extra=None):
+    """Build customer dict. _extra is an optional pre-fetched row from _customer_extras_bulk."""
+    if _extra:
+        has_face, has_gait, has_photo, has_body, hr_avg, hr_std, plates_str = _extra
+        plates = plates_str.split(',') if plates_str else []
+    else:
+        from sqlalchemy import text as _txt
+        row = db.session.execute(_txt('''
+            SELECT
+              (SELECT COUNT(*) FROM customer_faces WHERE customer_id=:cid AND active=TRUE) > 0,
+              (SELECT COUNT(*) FROM customer_gaits WHERE customer_id=:cid AND active=TRUE) > 0,
+              (SELECT COUNT(*) FROM customer_faces WHERE customer_id=:cid AND photo IS NOT NULL) > 0,
+              (SELECT COUNT(*) FROM customer_faces WHERE customer_id=:cid AND body_photo IS NOT NULL) > 0,
+              (SELECT AVG(EXTRACT(HOUR FROM detected_at)) FROM customer_visits WHERE customer_id=:cid),
+              (SELECT STDDEV(EXTRACT(HOUR FROM detected_at)) FROM customer_visits WHERE customer_id=:cid),
+              (SELECT STRING_AGG(plate_number,',') FROM customer_plates WHERE customer_id=:cid AND active=TRUE)
+        '''), {'cid': c.id}).fetchone()
+        has_face, has_gait, has_photo, has_body = row[0], row[1], row[2], row[3]
+        hr_avg, hr_std = row[4], row[5]
+        plates = row[6].split(',') if row[6] else []
     return {
         'id': c.id, 'name': c.name, 'phone': c.phone, 'email': c.email,
         'notes': c.notes, 'visit_count': c.visit_count, 'active': c.active,
@@ -2492,21 +2504,44 @@ def _customer_dict(c):
         'first_seen': c.first_seen.isoformat() if c.first_seen else None,
         'is_employee': c.is_employee,
         'merged_into': c.merged_into,
-        'plates': [p.plate_number for p in CustomerPlate.query.filter_by(customer_id=c.id, active=True).all()],
-        'has_face': CustomerFace.query.filter_by(customer_id=c.id, active=True).count() > 0,
-        'has_gait': CustomerGait.query.filter_by(customer_id=c.id, active=True).count() > 0,
-        'has_photo': CustomerFace.query.filter_by(customer_id=c.id).filter(CustomerFace.photo != None).count() > 0,
-        'has_body_photo': CustomerFace.query.filter_by(customer_id=c.id).filter(CustomerFace.body_photo != None).count() > 0,
-        'visit_hour_avg': float(_hr_row[0]) if _hr_row and _hr_row[0] is not None else None,
-        'visit_hour_std': float(_hr_row[1]) if _hr_row and _hr_row[1] is not None else None,
+        'plates': plates,
+        'has_face': bool(has_face),
+        'has_gait': bool(has_gait),
+        'has_photo': bool(has_photo),
+        'has_body_photo': bool(has_body),
+        'visit_hour_avg': float(hr_avg) if hr_avg is not None else None,
+        'visit_hour_std': float(hr_std) if hr_std is not None else None,
     }
+
+
+def _build_customer_list(customers):
+    """Build list of customer dicts using a single bulk query instead of N×6 queries."""
+    if not customers:
+        return []
+    from sqlalchemy import text as _txt
+    cids = [c.id for c in customers]
+    # Single query for all extras — O(1) instead of O(N×6)
+    rows = db.session.execute(_txt('''
+        SELECT
+          c.id,
+          (SELECT COUNT(*) > 0 FROM customer_faces WHERE customer_id=c.id AND active=TRUE),
+          (SELECT COUNT(*) > 0 FROM customer_gaits WHERE customer_id=c.id AND active=TRUE),
+          (SELECT COUNT(*) > 0 FROM customer_faces WHERE customer_id=c.id AND photo IS NOT NULL),
+          (SELECT COUNT(*) > 0 FROM customer_faces WHERE customer_id=c.id AND body_photo IS NOT NULL),
+          (SELECT AVG(EXTRACT(HOUR FROM detected_at)) FROM customer_visits WHERE customer_id=c.id),
+          (SELECT STDDEV(EXTRACT(HOUR FROM detected_at)) FROM customer_visits WHERE customer_id=c.id),
+          (SELECT STRING_AGG(plate_number, ',') FROM customer_plates WHERE customer_id=c.id AND active=TRUE)
+        FROM customers c WHERE c.id = ANY(:cids)
+    '''), {'cids': cids}).fetchall()
+    extras = {row[0]: row[1:] for row in rows}
+    return [_customer_dict(c, extras.get(c.id)) for c in customers]
 
 @app.route('/api/customers', methods=['GET'])
 def api_customers_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
     customers = Customer.query.filter_by(active=True).order_by(Customer.name.asc()).all()
-    return jsonify([_customer_dict(c) for c in customers])
+    return jsonify(_build_customer_list(customers))
 
 @app.route('/api/customers/<int:cid>', methods=['GET'])
 def api_customer_get_single(cid):
