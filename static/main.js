@@ -163,12 +163,21 @@ function updateVisibility() {
   const roleLabels = roles.map(r => `<span class="badge ${r==='admin'?'bg-danger':r==='developer'?'bg-info text-dark':'bg-secondary'} ms-1">${r}</span>`).join('');
   if (au) au.innerHTML = `${STATE.user.username} ${roleLabels}`;
   show(tabs); show(contents);
+  // pos-only: Teller/Transactions/Kitchen — hidden for pure developer (no admin/teller)
+  const showPos = !isDev || isAdmin || isTeller;
+  document.querySelectorAll('.pos-only').forEach(el =>
+    showPos ? show(el) : hide(el));
   document.querySelectorAll('.admin-only').forEach(el =>
     isAdmin ? show(el) : hide(el));
   document.querySelectorAll('.teller-only').forEach(el =>
     (isTeller || (!isAdmin && !isDev)) ? show(el) : hide(el));
   document.querySelectorAll('.dev-only').forEach(el =>
-    (isDev || isAdmin) ? show(el) : hide(el));
+    isDev ? show(el) : hide(el));
+  // Developer-only users land on Recognition tab, not Teller
+  if (isDev && !isAdmin && !isTeller) {
+    const recTab = document.querySelector('[data-bs-target="#recognition-settings"]');
+    if (recTab) recTab.click();
+  }
 }
 
 async function refreshMe() {

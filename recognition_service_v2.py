@@ -160,10 +160,30 @@ _anpr_model   = None
 _face_app     = None
 _mp_pose_inst = None
 
-# Serialise all ONNX inference calls — SCRFD/ArcFace/MediaPipe are CPU-only and
-# running them from multiple threads simultaneously causes CPU spikes to 600%+.
-# One inference at a time is faster overall due to cache locality.
-_inference_lock = threading.Lock()
+# On Linux + Docker with OpenVINO GPU, ONNX (SCRFD/ArcFace/ANPR) runs on Iris Xe
+# while MediaPipe Pose runs on CPU — they use separate resources and can safely
+# overlap. Two separate semaphores replace the single lock to allow GPU+CPU
+# parallelism while still preventing individual model queue saturation.
+_onnx_semaphore      = threading.Semaphore(2)   # Iris Xe GPU: 2 parallel streams
+_mediapipe_semaphore = threading.Semaphore(3)   # CPU: 3 concurrent pose sessions
+
+# Hard ceiling on total active inference tasks — drop events if exceeded.
+MAX_ACTIVE_TASKS   = 6
+_active_tasks      = 0
+_active_tasks_lock = threading.Lock()
+
+def _acquire_task_slot():
+    global _active_tasks
+    with _active_tasks_lock:
+        if _active_tasks >= MAX_ACTIVE_TASKS:
+            return False
+        _active_tasks += 1
+        return True
+
+def _release_task_slot():
+    global _active_tasks
+    with _active_tasks_lock:
+        _active_tasks = max(0, _active_tasks - 1)
 
 def get_anpr():
     global _anpr_model
@@ -325,13 +345,25 @@ def get_pose():
             from mediapipe.tasks import python
             from mediapipe.tasks.python import vision
 
-            base_options = python.BaseOptions(model_asset_path=model_path)
-            options = vision.PoseLandmarkerOptions(
-                base_options=base_options,
-                running_mode=vision.RunningMode.IMAGE,
-                num_poses=1)
-            _mp_pose_inst = vision.PoseLandmarker.create_from_options(options)
-            logger.info('MediaPipe Pose loaded')
+            # Try GPU delegate first (OpenCL — works on Intel Iris Xe under Linux).
+            # MediaPipe falls back gracefully to CPU if the delegate is unavailable.
+            _mp_loaded = False
+            for _delegate in (python.BaseOptions.Delegate.GPU, python.BaseOptions.Delegate.CPU):
+                try:
+                    base_options = python.BaseOptions(model_asset_path=model_path, delegate=_delegate)
+                    options = vision.PoseLandmarkerOptions(
+                        base_options=base_options,
+                        running_mode=vision.RunningMode.IMAGE,
+                        num_poses=1)
+                    _mp_pose_inst = vision.PoseLandmarker.create_from_options(options)
+                    _delegate_name = 'GPU' if _delegate == python.BaseOptions.Delegate.GPU else 'CPU'
+                    logger.info(f'MediaPipe Pose loaded ({_delegate_name} delegate)')
+                    _mp_loaded = True
+                    break
+                except Exception as _e:
+                    logger.warning(f'MediaPipe Pose {_delegate} delegate failed: {_e}')
+            if not _mp_loaded:
+                raise RuntimeError('MediaPipe Pose: all delegates failed')
         except Exception as e:
             logger.error(f'MediaPipe Pose unavailable: {e}')
             _mp_pose_inst = None
@@ -356,11 +388,21 @@ def get_pose_video():
             if not os.path.exists(model_path):
                 return None
 
-            options = vision.PoseLandmarkerOptions(
-                base_options=python.BaseOptions(model_asset_path=model_path),
-                running_mode=vision.RunningMode.VIDEO)
-            _mp_pose_video = vision.PoseLandmarker.create_from_options(options)
-            logger.info('MediaPipe Pose (VIDEO mode) loaded for temporal gait')
+            _mp_loaded = False
+            for _delegate in (python.BaseOptions.Delegate.GPU, python.BaseOptions.Delegate.CPU):
+                try:
+                    options = vision.PoseLandmarkerOptions(
+                        base_options=python.BaseOptions(model_asset_path=model_path, delegate=_delegate),
+                        running_mode=vision.RunningMode.VIDEO)
+                    _mp_pose_video = vision.PoseLandmarker.create_from_options(options)
+                    _delegate_name = 'GPU' if _delegate == python.BaseOptions.Delegate.GPU else 'CPU'
+                    logger.info(f'MediaPipe Pose (VIDEO mode) loaded ({_delegate_name} delegate)')
+                    _mp_loaded = True
+                    break
+                except Exception as _e:
+                    logger.warning(f'MediaPipe Pose VIDEO {_delegate} delegate failed: {_e}')
+            if not _mp_loaded:
+                raise RuntimeError('MediaPipe Pose VIDEO: all delegates failed')
         except Exception as e:
             logger.error(f'MediaPipe Pose (VIDEO) unavailable: {e}')
             _mp_pose_video = None
@@ -737,7 +779,7 @@ def extract_face_with_quality(image_path, person_box=None):
         except Exception:
             pass  # fall through with original image if CLAHE fails
 
-        with _inference_lock:
+        with _onnx_semaphore:
             results = face_app.get_with_quality(img)
         if not results:
             return None, 0.0, None
@@ -766,7 +808,7 @@ def extract_gait_with_quality(image_path):
 
         rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-        with _inference_lock:
+        with _mediapipe_semaphore:
             result = pose_landmarker.detect(mp_image)
 
         if not result.pose_landmarks or len(result.pose_landmarks) == 0:
@@ -825,7 +867,7 @@ def extract_plate_with_quality(image_path):
     """Returns (plate_str, quality_score) or (None, 0.0)"""
     try:
         model = get_anpr()
-        with _inference_lock:
+        with _onnx_semaphore:
             results = model.run(image_path)
         if not results:
             return None, 0.0
@@ -904,7 +946,7 @@ def extract_physical_attributes(image_path, person_box=None):
                 img = img[py1:py2, px1:px2]
 
         # Get face detection on the (cropped) image
-        with _inference_lock:
+        with _onnx_semaphore:
             faces = face_app.detector.detect(img, input_size=(640, 640))
         if len(faces[0]) == 0:
             return None
@@ -1073,10 +1115,17 @@ def extract_all_signals_with_quality(event):
                 signals['face_quality'] = face_qual
                 signals['face_photo'] = face_photo
 
-            gait_feat, gait_qual = extract_gait_with_quality(snapshot_path)
-            if gait_feat:
-                signals['gait_features'] = gait_feat
-                signals['gait_quality'] = gait_qual
+            # Skip real-time gait when face quality is already strong enough to link
+            # on its own. Temporal gait from clip analysis still enriches the profile.
+            _skip_gait = face_emb and face_qual >= 0.65
+            if _skip_gait:
+                logger.debug(f'Skipping real-time gait: face_quality={face_qual:.2f} >= 0.65')
+                gait_feat, gait_qual = None, 0.0
+            else:
+                gait_feat, gait_qual = extract_gait_with_quality(snapshot_path)
+                if gait_feat:
+                    signals['gait_features'] = gait_feat
+                    signals['gait_quality'] = gait_qual
 
             # Skip second MediaPipe inference: only run physical_attributes
             # when gait did not already run pose on this same image.
@@ -2990,6 +3039,12 @@ def poll_frigate_events():
                         last = _active_event_last_processed.get(eid, 0)
                         if (now - last) < ACTIVE_EVENT_REPROCESS_INTERVAL:
                             continue
+                        # Skip re-processing if the track is already confidently linked.
+                        with _tracks_lock:
+                            _tr = _active_tracks.get(eid)
+                            if _tr and _tr.customer_id and getattr(_tr, 'confidence', 0) >= 0.75:
+                                logger.debug(f'Skipping active event {eid[:20]}: track already linked (conf={getattr(_tr,"confidence",0):.2f})')
+                                continue
                         _active_event_last_processed[eid] = now
                         # Evict old entries to prevent unbounded growth
                         if len(_active_event_last_processed) > 200:
@@ -2997,10 +3052,16 @@ def poll_frigate_events():
                             for k in oldest_keys:
                                 _active_event_last_processed.pop(k, None)
                         new_count += 1
+                        if not _acquire_task_slot():
+                            logger.debug(f'Dropping active event {eid[:20]}: MAX_ACTIVE_TASKS reached')
+                            continue
                         logger.info(f'Processing active event {eid[:20]} (label={label} camera={ev.get("camera")})')
                         def _run_active(e=ev):
-                            with _event_semaphore:
-                                process_event(e)
+                            try:
+                                with _event_semaphore:
+                                    process_event(e)
+                            finally:
+                                _release_task_slot()
                         threading.Thread(target=_run_active, daemon=True).start()
 
                     # Ended event within last 60 seconds — process once
@@ -3013,11 +3074,17 @@ def poll_frigate_events():
                                 oldest = list(_seen_events.keys())[:100]
                                 for o in oldest:
                                     _seen_events.pop(o, None)
+                            if not _acquire_task_slot():
+                                logger.debug(f'Dropping ended event {eid[:20]}: MAX_ACTIVE_TASKS reached')
+                                continue
                             logger.info(f'Processing ended event {eid[:20]} (label={label} camera={ev.get("camera")})')
                             ev['_is_ended'] = True  # signal process_event to queue clip analysis
                             def _run_ended(e=ev):
-                                with _event_semaphore:
-                                    process_event(e)
+                                try:
+                                    with _event_semaphore:
+                                        process_event(e)
+                                finally:
+                                    _release_task_slot()
                             threading.Thread(target=_run_ended, daemon=True).start()
 
                 logger.debug(f'Frigate poll complete: {len(events)} total, {recent_count} recent, {new_count} new')
@@ -3161,10 +3228,16 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 if event_type in ('update', 'end') and after.get('label') in ('person', 'car'):
                     if event_type == 'end':
                         after['_is_ended'] = True
-                    def _run_webhook(e=after):
-                        with _event_semaphore:
-                            process_event(e)
-                    threading.Thread(target=_run_webhook, daemon=True).start()
+                    if _acquire_task_slot():
+                        def _run_webhook(e=after):
+                            try:
+                                with _event_semaphore:
+                                    process_event(e)
+                            finally:
+                                _release_task_slot()
+                        threading.Thread(target=_run_webhook, daemon=True).start()
+                    else:
+                        logger.debug(f'Dropping webhook event: MAX_ACTIVE_TASKS reached')
             except Exception as e:
                 logger.warning(f'Webhook parse error: {e}')
             return
