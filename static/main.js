@@ -71,6 +71,7 @@ function show(el) { el && el.classList.remove('hidden'); }
 function hide(el) { el && el.classList.add('hidden'); }
 function fmt(n)   { return (Math.round(n * 100) / 100).toFixed(2); }
 function fmtQty(n) { return n % 1 === 0 ? String(n) : n.toFixed(3); }
+function isAdmin() { const r = STATE.user?.roles || [STATE.user?.role]; return r.includes('admin'); }
 
 async function api(path, opts = {}, timeoutMs = 10000) {
   const controller = new AbortController();
@@ -210,7 +211,8 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     await loadSpecials();
     startKitchenBadgePoll();  // badge visible to all users
     startCustomerVisitPoll(); // greet returning customers on teller screen
-    if (STATE.user?.role === 'admin') {
+    const _loginRoles = STATE.user?.roles || [STATE.user?.role];
+    if (_loginRoles.includes('admin')) {
       await loadSettings();
       _populateStatsProductFilter();
       await loadStats();
@@ -1555,7 +1557,7 @@ document.getElementById('btn-suggest-price')?.addEventListener('click', async ()
 // STOCK TAB
 // ═══════════════════════════════════════════════════════
 async function loadIngredients() {
-  if (STATE.user?.role !== 'admin') return;
+  if (!isAdmin()) return;
   try {
     const data = await api('/api/stock/ingredients');
     STATE._stockCostMap = {};
@@ -2076,7 +2078,8 @@ let _purchaseRunLines = [];
 let _currentSupplierProducts = [];
 
 async function loadSuppliers() {
-  if (STATE.user?.role !== 'admin') return;
+  const roles = STATE.user?.roles || [STATE.user?.role];
+  if (!roles.includes('admin')) return;
   try {
     _suppliers = await api('/api/suppliers');
     renderSuppliersList();
@@ -2592,7 +2595,7 @@ function renderCart() {
   const host = document.getElementById('cart'); if (!host) return;
   host.innerHTML = '';
   let total = 0;
-  const isAdmin = STATE.user?.role === 'admin';
+  const _admin = isAdmin();
 
   Object.values(STATE.cart).forEach(item => {
     const row = document.createElement('div');
@@ -2654,7 +2657,7 @@ function renderCart() {
     }
 
     // Per-item discount button — admin only
-    if (isAdmin) {
+    if (_admin) {
       const discBtn = document.createElement('button');
       discBtn.className = 'btn btn-sm ms-1 ' + (hasDiscount ? 'btn-success' : 'btn-outline-success');
       discBtn.textContent = hasDiscount ? '%✓' : '%';
@@ -2757,7 +2760,7 @@ document.getElementById('btn-undo-last')?.addEventListener('click', () => {
 let _discountTarget = null;
 
 function openDiscountModal(itemKey) {
-  if (STATE.user?.role !== 'admin') return;
+  if (!isAdmin()) return;
   _discountTarget = itemKey || null;
 
   const isCart  = _discountTarget === null;
@@ -3129,7 +3132,7 @@ async function loadTransactions(start, end) {
   if (!STATE.user) return;
   try {
     let url = '/api/transactions';
-    if (STATE.user.role === 'admin' && (start || end)) {
+    if (isAdmin() && (start || end)) {
       const p = new URLSearchParams();
       if (start) p.set('start', start);
       if (end)   p.set('end', end);
@@ -3166,7 +3169,7 @@ function renderTransactions(trs) {
     const right = document.createElement('div');
     right.className = 'd-flex align-items-center gap-2 flex-wrap';
     let summaryHTML = `<strong>R${fmt(t.total)}</strong>`;
-    if (STATE.user?.role === 'admin') {
+    if (isAdmin()) {
       if (t.cogs != null)       summaryHTML += ` <span class="small text-success">COGS R${fmt(t.cogs)}</span>`;
       if (t.margin_pct != null) summaryHTML += ` <span class="small text-success">${t.margin_pct}% margin</span>`;
     }
@@ -3183,7 +3186,7 @@ function renderTransactions(trs) {
     btnFlag.onclick = () => openFlagModal(t);
     right.appendChild(btnFlag);
 
-    if (STATE.user?.role === 'admin') {
+    if (isAdmin()) {
       const btnMgr = document.createElement('button');
       btnMgr.className = 'btn btn-outline-secondary btn-sm';
       btnMgr.textContent = 'Edit / Void';
@@ -3248,7 +3251,7 @@ function renderTransactions(trs) {
 }
 
 document.getElementById('btn-refresh-trans')?.addEventListener('click', () => {
-  if (STATE.user?.role === 'admin') {
+  if (isAdmin()) {
     loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
   } else {
     loadTransactions();
@@ -3389,7 +3392,7 @@ document.getElementById('btn-flag-submit')?.addEventListener('click', async () =
     toast('Transaction flagged for admin review', 'warning', 3000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('flagModal')).hide();
     // Refresh transactions
-    if (STATE.user?.role === 'admin') {
+    if (isAdmin()) {
       loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
     } else {
       loadTransactions();
@@ -3895,26 +3898,26 @@ async function openProfitDrilldown() {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No data found.</div>';
       return;
     }
-    const isAdmin     = STATE.user?.role === 'admin';
+    const _admin      = isAdmin();
     const totalRev    = items.reduce((s, i) => s + i.revenue, 0);
     const totalProfit = items.reduce((s, i) => s + i.profit, 0);
     const overallMargin = totalRev > 0 ? (totalProfit / totalRev * 100).toFixed(1) : '—';
     let html = `<div class="row g-2 mb-3">
-      <div class="${isAdmin ? 'col-4' : 'col-12'}"><div class="card border-success text-center py-2"><div class="small text-muted">Revenue</div><div class="fw-bold text-success">R${fmt(totalRev)}</div></div></div>
-      ${isAdmin ? `
+      <div class="${_admin ? 'col-4' : 'col-12'}"><div class="card border-success text-center py-2"><div class="small text-muted">Revenue</div><div class="fw-bold text-success">R${fmt(totalRev)}</div></div></div>
+      ${_admin ? `
       <div class="col-4"><div class="card border-success text-center py-2"><div class="small text-muted">Gross Profit</div><div class="fw-bold text-success">R${fmt(totalProfit)}</div></div></div>
       <div class="col-4"><div class="card border-warning text-center py-2"><div class="small text-muted">Margin</div><div class="fw-bold text-warning">${overallMargin}%</div></div></div>
       ` : ''}
     </div>`;
     html += `<table class="table table-sm table-hover">
-      <thead class="table-light"><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Revenue</th>${isAdmin ? '<th class="text-end">COGS</th><th class="text-end text-success">Profit</th><th class="text-end text-warning">Margin</th>' : ''}</tr></thead><tbody>`;
+      <thead class="table-light"><tr><th>Product</th><th class="text-end">Qty</th><th class="text-end">Revenue</th>${_admin ? '<th class="text-end">COGS</th><th class="text-end text-success">Profit</th><th class="text-end text-warning">Margin</th>' : ''}</tr></thead><tbody>`;
     items.forEach(i => {
       const profitColor = i.profit >= 0 ? 'text-success' : 'text-danger';
       html += `<tr>
         <td>${i.product}</td>
         <td class="text-end">${i.qty_sold}</td>
         <td class="text-end">R${fmt(i.revenue)}</td>
-        ${isAdmin ? `
+        ${_admin ? `
         <td class="text-end text-muted">R${fmt(i.cogs)}</td>
         <td class="text-end fw-semibold ${profitColor}">R${fmt(i.profit)}</td>
         <td class="text-end text-warning">${i.margin != null ? i.margin + '%' : '—'}</td>
@@ -4623,7 +4626,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
     await loadUsers();
   } else if (target === '#transactions') {
     initTxDatePickers();
-    if (STATE.user.role === 'admin') {
+    if (isAdmin()) {
       await loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
     } else {
       await loadTransactions();
@@ -4653,7 +4656,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
   if (STATE.user) {
     await loadProducts();
     await loadTransactions();
-    if (STATE.user.role === 'admin') {
+    if (isAdmin()) {
       await loadSettings();
       await loadStats();
       await loadUsers();
@@ -4670,7 +4673,7 @@ STATE.specials = [];
 async function loadSpecials() {
   try {
     STATE.specials = await api('/api/specials');
-    if (STATE.user?.role === 'admin') renderSpecialsList();
+    if (isAdmin()) renderSpecialsList();
     // Refresh badges now that specials count is known
     const setBadge = (id, n) => { const el = document.getElementById(id); if (el) { el.textContent = n; el.style.display = n > 0 ? '' : 'none'; } };
     setBadge('specials-count-badge', STATE.specials.length);
@@ -6637,7 +6640,7 @@ document.querySelector('[data-bs-target="#teller"]')?.addEventListener('hidden.b
 let updateCheckInterval = null;
 
 async function checkUpdateStatus() {
-  if (!STATE.user || STATE.user.role !== 'admin') return;
+  if (!STATE.user || !isAdmin()) return;
 
   try {
     const status = await api('/api/system/update-status');
@@ -6732,7 +6735,7 @@ async function triggerUpdateCheck() {
 
 // Start update polling when user is admin
 function startUpdatePolling() {
-  if (STATE.user && STATE.user.role === 'admin') {
+  if (STATE.user && isAdmin()) {
     if (!updateCheckInterval) {
       updateCheckInterval = setInterval(checkUpdateStatus, 5000); // 5 seconds
     }
