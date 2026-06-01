@@ -7011,7 +7011,7 @@ function renderInvoicesList() {
   host.innerHTML = `
     <table class="table table-sm table-hover">
       <thead class="table-light">
-        <tr><th>#</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th><th></th></tr>
+        <tr><th>#</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th><th></th><th></th></tr>
       </thead>
       <tbody>
         ${_invoices.map(i => `
@@ -7029,9 +7029,19 @@ function renderInvoicesList() {
                   : '<span class="text-muted small">—</span>')}
             </td>
             <td><a href="/invoices/${i.id}/print" target="_blank" class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation()">Print</a></td>
+            <td><button class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();_invDeleteFromList(${i.id}, '${i.invoice_number}')">Delete</button></td>
           </tr>`).join('')}
       </tbody>
     </table>`;
+}
+
+async function _invDeleteFromList(invId, invNum) {
+  if (!confirm(`Delete invoice ${invNum}? This does not affect stock.`)) return;
+  try {
+    await api(`/api/invoices/${invId}/delete`, { method: 'POST' });
+    toast('Invoice deleted', 'warning');
+    await loadInvoices();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 async function _invFinaliseFromList(invId) {
