@@ -6814,7 +6814,7 @@ document.getElementById('btn-monitor-refresh')?.addEventListener('click', () => 
 document.getElementById('btn-change-password')?.addEventListener('click', () => {
   ['cp-current','cp-new','cp-confirm'].forEach(id => { const el=document.getElementById(id); if(el) el.value=''; });
   const err = document.getElementById('cp-error'); if(err) err.classList.add('hidden');
-  const modal = bootstrap.Modal.getOrCreate(document.getElementById('changePasswordModal'));
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('changePasswordModal'));
   modal.show();
 });
 
