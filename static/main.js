@@ -7034,4 +7034,43 @@ document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
     customer_email:   document.getElementById('inv-customer-email').value.trim() || null,
     customer_address: document.getElementById('inv-customer-address').value.trim() || null,
     due_date:         document.getElementById('inv-due-date').value || null,
-    notes:            document.getElementById('inv-notes
+    notes:            document.getElementById('inv-notes').value.trim() || null,
+    discount_pct:     parseFloat(document.getElementById('inv-discount-pct').value || 0) || null,
+    status:           document.getElementById('inv-status').value,
+    lines: _invLines.map(l => ({
+      name: l.name, qty: parseFloat(l.qty) || 1,
+      unit_price: parseFloat(l.unit_price) || 0,
+      subtotal: parseFloat(l.subtotal) || 0,
+    })),
+  };
+  try {
+    let id = invId ? parseInt(invId) : null;
+    if (id) {
+      await api(`/api/invoices/${id}`, { method: 'POST', body: JSON.stringify(payload) });
+      toast('Invoice updated', 'success');
+    } else {
+      const res = await api('/api/invoices', { method: 'POST', body: JSON.stringify(payload) });
+      id = res.id;
+      toast(`Invoice ${res.invoice_number} created`, 'success');
+      document.getElementById('inv-id').value = id;
+      document.getElementById('invoiceEditorTitle').textContent = 'Edit Invoice';
+      const printBtn = document.getElementById('btn-inv-print');
+      if (printBtn) { printBtn.disabled = false; printBtn.onclick = () => window.open(`/invoices/${id}/print`, '_blank'); }
+      show(document.getElementById('btn-inv-delete'));
+    }
+    await loadInvoices();
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('btn-inv-delete')?.addEventListener('click', async () => {
+  const invId = document.getElementById('inv-id').value;
+  if (!invId || !confirm('Delete this invoice?')) return;
+  try {
+    await api(`/api/invoices/${invId}/delete`, { method: 'POST' });
+    bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
+    await loadInvoices();
+    toast('Invoice deleted', 'warning');
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.querySelector('[data-bs-target="#invoices"]')?.addEventListener('shown.bs.tab', loadInvoices);
