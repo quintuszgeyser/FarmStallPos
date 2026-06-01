@@ -4058,8 +4058,8 @@ async function loadStats() {
       chipArea.appendChild(chip);
     };
     if (userId) {
-      const uname = `Employee: ${_statsData?.filtered_user_name || 'Loading…'}`;
-      addChip(uname, () => {
+      const empName = STATE.users.find(u => String(u.id) === String(userId))?.username || `#${userId}`;
+      addChip(`Employee: ${empName}`, () => {
         const el = document.getElementById('stats-user-filter');
         if (el) el.value = '';
         loadStats();
