@@ -1668,7 +1668,7 @@ def api_users_change_password():
     u = current_user()
     data = request.json or {}
     current_pw = data.get('current_password', '')
-    new_pw = data.get('new_password', '').strip()
+    new_pw = data.get('new_password', '')
     if not check_password_hash(u.password_hash, current_pw):
         return jsonify({'error': 'Current password is incorrect'}), 400
     if len(new_pw) < 1:
