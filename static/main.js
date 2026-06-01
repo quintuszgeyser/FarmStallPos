@@ -5353,12 +5353,31 @@ document.getElementById('btn-subs-confirm')?.addEventListener('click', () => {
   const allLabels    = [...swapLabels, ...removeLabels, ...extraLabels];
 
   if (_subsCartKey && STATE.cart[_subsCartKey]) {
-    // Editing an existing cart entry — update it in place
     const entry = STATE.cart[_subsCartKey];
-    entry.name       = allLabels.length ? `${p.name} (${allLabels.join(', ')})` : p.name;
-    entry.unit_price = finalPrice;
-    entry.subs       = hasCustomisation ? subs   : undefined;
-    entry.extras     = hasCustomisation ? extras : undefined;
+    if (!hasCustomisation) {
+      // No actual change — just update name/price in place
+      entry.name       = p.name;
+      entry.unit_price = finalPrice * entry.qty;
+      entry.subs       = undefined;
+      entry.extras     = undefined;
+    } else if (entry.qty > 1) {
+      // Split: subtract 1 from original, create a new customised entry
+      entry.qty       -= 1;
+      entry.unit_price = parseFloat(p.price || 0) * entry.qty;
+      const newKey = `${p.id}__${Date.now()}`;
+      STATE.cart[newKey] = {
+        _key: newKey, product_id: p.id,
+        name: allLabels.length ? `${p.name} (${allLabels.join(', ')})` : p.name,
+        unit_price: finalPrice, qty: 1, is_weight: false,
+        subs, extras,
+      };
+    } else {
+      // qty === 1 — update in place as before
+      entry.name       = allLabels.length ? `${p.name} (${allLabels.join(', ')})` : p.name;
+      entry.unit_price = finalPrice;
+      entry.subs       = subs;
+      entry.extras     = extras;
+    }
   } else {
     // New entry — use unique key if customised so multiple versions can coexist
     const cartKey = hasCustomisation ? `${p.id}__${Date.now()}` : String(p.id);
