@@ -2520,6 +2520,7 @@ def _resolve_session(session):
             anon_id = str(uuid.uuid4())
             _anonymous_identities[anon_id] = {
                 'face_embeddings': list(session.face_embeddings),
+                'best_photo': session.best_face_photo[0] if session.best_face_photo else None,
                 'gait': session.gait_features,
                 'cameras': set(session.cameras_seen),
                 'created_at': session.created_at,
@@ -3127,12 +3128,15 @@ def _get_status_snapshot():
 
     anon_list = [
         {
-            'id': aid[:8],
-            'faces': len(a['face_embeddings']),
-            'cameras': list(a.get('cameras', set())),
-            'age_s': round(time.time() - a['created_at']),
-            'last_seen_s': round(time.time() - a.get('last_seen_at', a['created_at'])),
-        }
+            {
+                'id': aid[:8],
+                'faces': len(a['face_embeddings']),
+                'cameras': list(a.get('cameras', set())),
+                'age_s': round(time.time() - a['created_at']),
+                'last_seen_s': round(time.time() - a.get('last_seen_at', a['created_at'])),
+                'ttl_s': max(0, round(86400 - (time.time() - a['created_at']))),
+                'photo_b64': base64.b64encode(a['best_photo']).decode() if a.get('best_photo') else None,
+            }
         for aid, a in list(_anonymous_identities.items())
     ]
 

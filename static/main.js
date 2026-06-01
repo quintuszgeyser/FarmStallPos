@@ -5478,15 +5478,19 @@ function renderCustomersList() {
 
   // Apply sort
   const sort = document.getElementById('customer-sort')?.value || 'last_visit';
-  const sorted = [...filtered].sort((a, b) => {
+  let sortedPool = sort === 'unnamed'
+    ? filtered.filter(c => !c.name && c.auto_enrolled)
+    : filtered;
+
+  const sorted = [...sortedPool].sort((a, b) => {
     if (sort === 'last_visit')    return (b.last_visit || '') .localeCompare(a.last_visit || '');
     if (sort === 'visit_count')   return (b.visit_count || 0) - (a.visit_count || 0);
     if (sort === 'name')          return (a.name || 'zzz').localeCompare(b.name || 'zzz');
-    if (sort === 'no_purchase')   return (a.visit_count || 0) - (b.visit_count || 0); // fewest visits first
+    if (sort === 'no_purchase')   return (a.visit_count || 0) - (b.visit_count || 0);
+    if (sort === 'unnamed')       return (b.visit_count || 0) - (a.visit_count || 0);
     return 0;
   });
-  // For no_purchase: only show customers with visits but no linked sales (we approximate by showing all, sorted by fewest visits)
-  STATE._sortedCustomers = sort === 'no_purchase' ? sorted : sorted;
+  STATE._sortedCustomers = sorted;
 
   // Merge toolbar — shown when ≥2 checked
   const toolbarHtml = `
@@ -5496,6 +5500,17 @@ function renderCustomersList() {
       <button class="btn btn-warning btn-sm" onclick="openMergeModal()">Merge Selected</button>
       <button class="btn btn-outline-secondary btn-sm" onclick="clearMergeSelection()">Cancel</button>
     </div>`;
+
+  const _attrChips = attrs => {
+    if (!attrs) return '';
+    const chips = [];
+    const gMap = { male: '♂', female: '♀', 'm': '♂', 'f': '♀' };
+    if (attrs.gender)     chips.push(`<span class="badge bg-light text-dark border" title="Gender">${gMap[attrs.gender.toLowerCase()] || attrs.gender}</span>`);
+    if (attrs.age_range)  chips.push(`<span class="badge bg-light text-dark border" title="Age">${attrs.age_range}</span>`);
+    if (attrs.build)      chips.push(`<span class="badge bg-light text-dark border" title="Build">${attrs.build}</span>`);
+    if (attrs.hair_color) chips.push(`<span class="badge bg-light text-dark border" title="Hair">${attrs.hair_color} hair</span>`);
+    return chips.join('');
+  };
 
   const cardsHtml = sorted.map(c => `
     <div class="card mb-2 ${c.active ? '' : 'opacity-50'}" data-customer-id="${c.id}">
@@ -5525,8 +5540,15 @@ function renderCustomersList() {
             ${c.plates.length ? c.plates.map(p => `<span class="badge bg-light text-dark border">${p}</span>`).join('') : ''}
             ${c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face —</span>'}
             ${c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body —</span>'}
+            ${_attrChips(c.physical_attributes)}
             <span class="text-muted">${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}${c.last_visit ? ` · last ${new Date(c.last_visit).toLocaleDateString()}` : ''}</span>
           </div>
+          ${!c.name ? `
+          <div class="d-flex gap-1 mt-2 quick-name-row" id="qn-row-${c.id}">
+            <input class="form-control form-control-sm" style="max-width:200px" placeholder="Name this person…"
+              id="qn-input-${c.id}" onkeydown="if(event.key==='Enter')quickNameCustomer(${c.id});if(event.key==='Escape')document.getElementById('qn-row-${c.id}').style.display='none'">
+            <button class="btn btn-success btn-sm" onclick="quickNameCustomer(${c.id})">Save</button>
+          </div>` : ''}
         </div>
         <div class="d-flex flex-column gap-1 flex-shrink-0">
           <button class="btn btn-outline-primary btn-sm" onclick="openCustomerDetail(${c.id})">Details</button>
@@ -6306,6 +6328,32 @@ document.getElementById('btn-deactivate-customer')?.addEventListener('click', as
   }
 });
 
+async function quickNameCustomer(cid) {
+  const input = document.getElementById(`qn-input-${cid}`);
+  const name  = (input?.value || '').trim();
+  if (!name) return toast('Enter a name', 'warning');
+  try {
+    await api(`/api/customers/${cid}/name`, { method: 'POST', body: JSON.stringify({ name }) });
+    const c = STATE.customers.find(x => x.id === cid);
+    if (c) c.name = name;
+    toast(`Named: ${name}`, 'success', 2000);
+    renderCustomersList();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+document.getElementById('btn-cleanup-empty')?.addEventListener('click', async () => {
+  try {
+    const preview = await api('/api/customers/cleanup_empty', { method: 'POST' });
+    if (preview.deleted === 0) {
+      toast('No empty records to clean up', 'info');
+    } else {
+      if (!confirm(`Delete ${preview.deleted} auto-enrolled customer${preview.deleted !== 1 ? 's' : ''} with no face data and no recent visits? This cannot be undone.`)) return;
+      toast(`Deleted ${preview.deleted} empty records`, 'warning', 4000);
+      await loadCustomers();
+    }
+  } catch(e) { toast(e.message, 'error'); }
+});
+
 // Sort/search change re-renders without reloading
 document.getElementById('customer-sort')?.addEventListener('change', renderCustomersList);
 document.getElementById('customer-search')?.addEventListener('input', renderCustomersList);
@@ -6781,13 +6829,17 @@ async function refreshMonitor() {
       } else {
         if(ae) ae.classList.add('hidden');
         d.anon_identities.forEach(a => {
+          const ttlMin = Math.round((a.ttl_s || 0) / 60);
           const card = document.createElement('div');
-          card.className = 'card border-warning p-2';
-          card.style.minWidth = '140px';
+          card.className = 'card border-warning p-2 text-center';
+          card.style.minWidth = '120px';
           card.innerHTML = `
+            ${a.photo_b64
+              ? `<img src="data:image/jpeg;base64,${a.photo_b64}" style="width:60px;height:60px;object-fit:cover;border-radius:50%;margin:0 auto 4px;display:block;border:2px solid #ffc107">`
+              : `<div style="width:60px;height:60px;border-radius:50%;background:#fff3cd;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin:0 auto 4px">👤</div>`}
             <div class="small fw-bold text-warning">${a.id}</div>
-            <div class="small text-muted">${a.faces} faces</div>
-            <div class="small text-muted">age ${a.age_s}s</div>
+            <div class="small text-muted">${a.faces} face${a.faces !== 1 ? 's' : ''} · ${a.cameras.join(',')}</div>
+            <div class="small text-muted">TTL ${ttlMin}m · seen ${Math.round(a.last_seen_s)}s ago</div>
           `;
           al.appendChild(card);
         });

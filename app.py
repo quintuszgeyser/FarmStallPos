@@ -2609,7 +2609,44 @@ def _build_customer_list(customers):
         FROM customers c WHERE c.id = ANY(:cids)
     '''), {'cids': cids}).fetchall()
     extras = {row[0]: row[1:] for row in rows}
-    return [_customer_dict(c, extras.get(c.id)) for c in customers]
+
+    # Voted physical attributes for all customers in one query
+    attr_rows = db.session.execute(_txt('''
+        SELECT customer_id, height_cm, hair_color, skin_tone, build, eye_color,
+               age_range, gender, wearing_glasses, facial_hair, detected_at,
+               camera_source, confidence, height_category
+        FROM customer_physical_attributes
+        WHERE customer_id = ANY(:cids)
+        ORDER BY customer_id, detected_at DESC
+    '''), {'cids': cids}).fetchall()
+
+    from collections import defaultdict
+    attr_by_cid = defaultdict(list)
+    for r in attr_rows:
+        attr_by_cid[r[0]].append(r[1:])  # strip cid from front
+
+    def _quick_vote(rows):
+        if not rows:
+            return None
+        from collections import Counter
+        def mode_of(vals):
+            counts = Counter(v for v in vals if v is not None and v != '')
+            return counts.most_common(1)[0][0] if counts else None
+        return {
+            'gender':     mode_of([r[6]  for r in rows]),
+            'build':      mode_of([r[3]  for r in rows]),
+            'hair_color': mode_of([r[1]  for r in rows]),
+            'age_range':  mode_of([r[5]  for r in rows]),
+        }
+
+    voted_attrs = {cid: _quick_vote(attr_by_cid[cid]) for cid in cids}
+
+    result = []
+    for c in customers:
+        d = _customer_dict(c, extras.get(c.id))
+        d['physical_attributes'] = voted_attrs.get(c.id)
+        result.append(d)
+    return result
 
 @app.route('/api/customers', methods=['GET'])
 def api_customers_get():
@@ -2691,6 +2728,33 @@ def api_customers_delete(cid):
     c.active = False
     db.session.commit()
     return jsonify({'ok': True})
+
+@app.route('/api/customers/cleanup_empty', methods=['POST'])
+def api_customers_cleanup_empty():
+    """Delete auto-enrolled customers with no face embeddings, no name, and no visits in 30 days."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    from sqlalchemy import text as _txt
+    from datetime import timedelta
+    cutoff = datetime.utcnow() - timedelta(days=30)
+    rows = db.session.execute(_txt('''
+        SELECT c.id FROM customers c
+        WHERE c.auto_enrolled = TRUE
+          AND c.name IS NULL
+          AND c.active = TRUE
+          AND NOT EXISTS (SELECT 1 FROM customer_faces WHERE customer_id=c.id AND active=TRUE)
+          AND (c.last_visit IS NULL OR c.last_visit < :cutoff)
+    '''), {'cutoff': cutoff}).fetchall()
+    ids = [r[0] for r in rows]
+    if not ids:
+        return jsonify({'ok': True, 'deleted': 0})
+    for cid in ids:
+        c = db.session.get(Customer, cid)
+        if c:
+            db.session.delete(c)
+    db.session.commit()
+    return jsonify({'ok': True, 'deleted': len(ids)})
+
 
 @app.route('/api/customers/<int:cid>/delete_permanent', methods=['POST'])
 def api_customers_delete_permanent(cid):

@@ -975,8 +975,10 @@
             <option value="visit_count">Most visits</option>
             <option value="name">Name</option>
             <option value="no_purchase">Never purchased</option>
+            <option value="unnamed">Unnamed only</option>
           </select>
           <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-customers" title="Refresh">↻ Refresh</button>
+          <button class="btn btn-outline-danger btn-sm admin-only hidden" id="btn-cleanup-empty" title="Delete auto-enrolled customers with no face and no recent visits">🗑 Clean up empty</button>
         </div>
       </div>
       <div id="merge-suggestions-panel" class="hidden mb-3"></div>
@@ -1878,6 +1880,6 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260601u"></script>
+<script src="/static/main.js?v=20260601v"></script>
 </body>
 </html>
