@@ -7011,7 +7011,7 @@ function renderInvoicesList() {
   host.innerHTML = `
     <table class="table table-sm table-hover">
       <thead class="table-light">
-        <tr><th>#</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th></tr>
+        <tr><th>#</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th><th></th></tr>
       </thead>
       <tbody>
         ${_invoices.map(i => `
@@ -7021,10 +7021,35 @@ function renderInvoicesList() {
             <td>${i.customer_name || '<span class="text-muted">—</span>'}</td>
             <td class="fw-semibold">R${fmt(i.total)}</td>
             <td>${statusBadge(i.status)}</td>
+            <td>
+              ${i.sale_id
+                ? `<button class="btn btn-outline-warning btn-sm" onclick="event.stopPropagation();_invUndoFromList(${i.id})">Undo</button>`
+                : (i.status !== 'draft'
+                  ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`
+                  : '<span class="text-muted small">—</span>')}
+            </td>
             <td><a href="/invoices/${i.id}/print" target="_blank" class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation()">Print</a></td>
           </tr>`).join('')}
       </tbody>
     </table>`;
+}
+
+async function _invFinaliseFromList(invId) {
+  if (!confirm('Finalise this invoice? Stock will be deducted from inventory.')) return;
+  try {
+    await api(`/api/invoices/${invId}/finalise`, { method: 'POST' });
+    toast('Invoice finalised — stock deducted', 'success');
+    await loadInvoices();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function _invUndoFromList(invId) {
+  if (!confirm('Undo this sale? Stock will be restored to inventory.')) return;
+  try {
+    await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
+    toast('Sale undone — stock restored', 'warning');
+    await loadInvoices();
+  } catch(e) { toast(e.message, 'error'); }
 }
 
 function _invRecalc() {
