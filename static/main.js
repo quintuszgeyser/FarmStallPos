@@ -4275,6 +4275,7 @@ document.querySelectorAll('[data-chart-tab]').forEach(btn => {
   btn.addEventListener('click', () => _showChartTab(btn.dataset.chartTab));
 });
 document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
+document.getElementById('stats-product-filter')?.addEventListener('change', loadStats);
 _initStatsPresets();
 
 // ── Exports — all use the active stats filters ──
