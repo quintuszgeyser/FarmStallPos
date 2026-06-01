@@ -337,6 +337,7 @@ class Invoice(db.Model):
     notes        = db.Column(db.Text, nullable=True)
     bank_details = db.Column(db.Text, nullable=True)
     lines_json   = db.Column(db.Text, nullable=False, default='[]')
+    sale_id      = db.Column(db.String(64), nullable=True)  # set when finalised
     subtotal     = db.Column(Numeric(10, 2), nullable=False, default=0)
     discount_pct = db.Column(Numeric(5, 2), nullable=True)
     total        = db.Column(Numeric(10, 2), nullable=False, default=0)
@@ -1270,6 +1271,7 @@ def strong_migrate():
 
             # ---- invoices ----
             pg_try("ALTER TABLE invoices ADD COLUMN bank_details TEXT")
+            pg_try("ALTER TABLE invoices ADD COLUMN sale_id VARCHAR(64)")
             pg_try("""
             CREATE TABLE invoices (
               id               SERIAL PRIMARY KEY,
@@ -7029,7 +7031,7 @@ def api_invoices_get(inv_id):
         'customer_address': inv.customer_address, 'notes': inv.notes, 'bank_details': inv.bank_details,
         'lines': _json.loads(inv.lines_json or '[]'),
         'subtotal': float(inv.subtotal), 'discount_pct': float(inv.discount_pct or 0),
-        'total': float(inv.total), 'status': inv.status,
+        'total': float(inv.total), 'status': inv.status, 'sale_id': inv.sale_id,
     })
 
 
@@ -7066,6 +7068,112 @@ def api_invoices_delete(inv_id):
     if not inv:
         return jsonify({'error': 'Not found'}), 404
     db.session.delete(inv)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+_UNIT_TO_BASE = {
+    'weight': {'g': 1, 'kg': 1000},
+    'volume': {'ml': 1, 'L': 1000},
+    'count':  {'unit': 1},
+}
+
+@app.route('/api/invoices/<int:inv_id>/finalise', methods=['POST'])
+def api_invoices_finalise(inv_id):
+    """Create a real sale from the invoice lines, deducting stock via FIFO."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    inv = db.session.get(Invoice, inv_id)
+    if not inv:
+        return jsonify({'error': 'Not found'}), 404
+    if inv.sale_id:
+        return jsonify({'error': 'Already finalised'}), 409
+
+    lines = _json.loads(inv.lines_json or '[]')
+    if not lines:
+        return jsonify({'error': 'Invoice has no items'}), 400
+
+    sale_uuid = str(uuid.uuid4())
+    now       = datetime.utcnow()
+    u         = current_user()
+
+    for line in lines:
+        name       = (line.get('name') or '').strip()
+        qty_disp   = Decimal(str(line.get('qty', 1)))
+        unit_price = Decimal(str(line.get('unit_price', 0)))
+        unit       = line.get('unit', 'unit')
+
+        # Try to match product by exact name, then by prefix (strip unit suffix)
+        base_name = name.split('(')[0].strip() if '(' in name else name
+        p = Product.query.filter(
+            Product.name.ilike(base_name),
+            Product.is_archived == False
+        ).first()
+
+        if p:
+            # Convert display qty to base units for FIFO
+            if p.product_type == 'stock_item' and p.unit_type in ('weight', 'volume'):
+                conv    = _UNIT_TO_BASE.get(p.unit_type, {}).get(unit, 1) if unit else 1
+                qty_base = qty_disp * Decimal(str(conv))
+                consume_fifo(p.id, qty_base, sale_uuid, now)
+            elif p.product_type == 'simple':
+                p.stock_qty = max(0, (p.stock_qty or 0) - int(qty_disp))
+            elif p.product_type == 'recipe':
+                rl_rows = RecipeLine.query.filter_by(product_id=p.id).all()
+                for rl in rl_rows:
+                    consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * qty_disp, sale_uuid, now)
+
+        db.session.add(Sale(
+            sale_id=sale_uuid, date_time=now,
+            product_id=p.id if p else None,
+            qty=qty_disp, unit_price=unit_price,
+            user_id=u.id if u else None,
+        ))
+
+    inv.sale_id = sale_uuid
+    inv.status  = 'finalised'
+    db.session.commit()
+    return jsonify({'ok': True, 'sale_id': sale_uuid})
+
+
+@app.route('/api/invoices/<int:inv_id>/undo', methods=['POST'])
+def api_invoices_undo(inv_id):
+    """Reverse a finalised invoice: void the sale and restore stock."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    inv = db.session.get(Invoice, inv_id)
+    if not inv:
+        return jsonify({'error': 'Not found'}), 404
+    if not inv.sale_id:
+        return jsonify({'error': 'Not yet finalised'}), 400
+
+    sale_rows = Sale.query.filter_by(sale_id=inv.sale_id, voided=False).all()
+    u = current_user()
+    now = datetime.utcnow()
+
+    for s in sale_rows:
+        s.voided    = True
+        s.voided_by = u.id if u else None
+        s.voided_at = now
+        s.void_reason = f'Invoice {inv.invoice_number} undone'
+
+        # Restore stock
+        p = db.session.get(Product, s.product_id) if s.product_id else None
+        if not p:
+            continue
+        if p.product_type == 'simple':
+            p.stock_qty = (p.stock_qty or 0) + int(s.qty)
+        elif p.product_type in ('stock_item', 'recipe'):
+            # Restore consumed batches
+            consumed = StockConsumption.query.filter_by(sale_id=inv.sale_id).all()
+            for c in consumed:
+                batch = db.session.get(StockBatch, c.batch_id)
+                if batch:
+                    batch.qty_remaining_base = (batch.qty_remaining_base or 0) + c.qty_consumed_base
+            StockConsumption.query.filter_by(sale_id=inv.sale_id).delete()
+
+    inv.sale_id = None
+    inv.status  = 'sent'  # revert to sent
     db.session.commit()
     return jsonify({'ok': True})
 

@@ -7002,9 +7002,10 @@ function renderInvoicesList() {
     return;
   }
   const statusBadge = s => ({
-    draft: '<span class="badge bg-secondary">Draft</span>',
-    sent:  '<span class="badge bg-primary">Sent</span>',
-    paid:  '<span class="badge bg-success">Paid</span>',
+    draft:      '<span class="badge bg-secondary">Draft</span>',
+    sent:       '<span class="badge bg-primary">Sent</span>',
+    paid:       '<span class="badge bg-success">Paid</span>',
+    finalised:  '<span class="badge bg-dark">Finalised ✓</span>',
   }[s] || `<span class="badge bg-secondary">${s}</span>`);
 
   host.innerHTML = `
@@ -7117,8 +7118,11 @@ function openInvoiceEditor(invId) {
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('invoiceEditorModal'));
   document.getElementById('inv-id').value = invId || '';
   document.getElementById('invoiceEditorTitle').textContent = invId ? 'Edit Invoice' : 'New Invoice';
-  const printBtn = document.getElementById('btn-inv-print');
-  const delBtn   = document.getElementById('btn-inv-delete');
+  const printBtn    = document.getElementById('btn-inv-print');
+  const delBtn      = document.getElementById('btn-inv-delete');
+  const finaliseBtn = document.getElementById('btn-inv-finalise');
+  const undoBtn     = document.getElementById('btn-inv-undo');
+  [finaliseBtn, undoBtn].forEach(b => b && hide(b));
 
   // Populate dropdowns fresh
   _invPopulateCustomers();
@@ -7133,6 +7137,12 @@ function openInvoiceEditor(invId) {
       document.getElementById('inv-bank-details').value    = inv.bank_details || '';
       document.getElementById('inv-discount-pct').value    = inv.discount_pct || '';
       document.getElementById('inv-status').value          = inv.status || 'draft';
+      // Show finalise or undo based on current state
+      if (inv.sale_id) {
+        if (undoBtn) show(undoBtn);
+      } else if (inv.status !== 'draft') {
+        if (finaliseBtn) show(finaliseBtn);
+      }
       // Try to match customer by name to existing customer
       const matchedCust = STATE.customers.find(c => c.name === inv.customer_name);
       if (matchedCust) {
@@ -7325,6 +7335,30 @@ document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
       if (printBtn) { printBtn.disabled = false; printBtn.onclick = () => window.open(`/invoices/${id}/print`, '_blank'); }
       show(document.getElementById('btn-inv-delete'));
     }
+    await loadInvoices();
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('btn-inv-finalise')?.addEventListener('click', async () => {
+  const invId = document.getElementById('inv-id').value;
+  if (!invId) return;
+  if (!confirm('Finalise this invoice? Stock will be deducted from inventory.')) return;
+  try {
+    await api(`/api/invoices/${invId}/finalise`, { method: 'POST' });
+    toast('Invoice finalised — stock deducted', 'success');
+    bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
+    await loadInvoices();
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('btn-inv-undo')?.addEventListener('click', async () => {
+  const invId = document.getElementById('inv-id').value;
+  if (!invId) return;
+  if (!confirm('Undo this sale? Stock will be restored to inventory.')) return;
+  try {
+    await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
+    toast('Sale undone — stock restored', 'warning');
+    bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
 });
