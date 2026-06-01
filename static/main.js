@@ -7388,8 +7388,20 @@ document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
       if (printBtn) { printBtn.disabled = false; printBtn.onclick = () => window.open(`/invoices/${id}/print`, '_blank'); }
       show(document.getElementById('btn-inv-delete'));
     }
+    bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
+});
+
+// Prevent changing status away from finalised without undoing the sale
+document.getElementById('inv-status')?.addEventListener('change', e => {
+  const invId = document.getElementById('inv-id').value;
+  if (!invId) return;
+  const inv = _invoices.find(i => i.id === parseInt(invId));
+  if (inv?.sale_id && e.target.value !== 'finalised') {
+    e.target.value = 'finalised';
+    toast('Undo the sale first before changing the status', 'warning');
+  }
 });
 
 document.getElementById('btn-inv-finalise')?.addEventListener('click', async () => {
