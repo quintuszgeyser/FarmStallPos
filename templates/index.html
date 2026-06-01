@@ -254,7 +254,6 @@
         <div class="col-md-3"><input id="login-password" type="password" class="form-control" placeholder="Password"></div>
         <div class="col-md-3">
           <button id="btn-login" class="btn btn-success">Login</button>
-          <button id="btn-logout" class="btn btn-outline-secondary ms-2 hidden">Logout</button>
         </div>
         <div class="col-md-3"><span id="login-status" class="text-danger"></span></div>
       </div>
@@ -313,16 +312,13 @@
       <div id="teller-screen" class="container-fluid p-0">
         <div class="teller-toolbar">
           <div class="row g-2">
-            <div class="col-12">
-              <select id="product-select" class="form-select"><option value="">Select product…</option></select>
-            </div>
             <div class="col-7">
               <input id="search" class="form-control" placeholder="Search name, ID or barcode">
             </div>
             <div class="col-5 d-flex gap-1">
-              <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan">↩ Undo</button>
               <button id="btn-start-scan" class="btn btn-success btn-lg-touch">Scan</button>
               <button id="btn-stop-scan"  class="btn btn-outline-danger btn-lg-touch hidden">Stop</button>
+              <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan">↩ Undo</button>
             </div>
           </div>
           <div id="product-search-results" class="list-group mt-2"></div>
@@ -359,6 +355,8 @@
           <input type="date" id="tx-end" class="form-control form-control-sm" style="width:140px">
           <button id="btn-tx-filter" class="btn btn-outline-primary btn-sm">Filter</button>
           <button id="btn-tx-today" class="btn btn-outline-secondary btn-sm">Today</button>
+          <button id="btn-tx-yesterday" class="btn btn-outline-secondary btn-sm">Yesterday</button>
+          <button id="btn-tx-week" class="btn btn-outline-secondary btn-sm">This Week</button>
         </div>
         <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-trans">Refresh</button>
       </div>
@@ -471,12 +469,15 @@
               <input class="form-check-input" type="checkbox" id="u-active" checked>
               <label class="form-check-label" for="u-active">Active</label>
             </div>
-            <div class="d-grid gap-2">
+            <div id="user-add-actions" class="d-grid gap-2">
               <button id="btn-add-user" class="btn btn-success">Add User</button>
+            </div>
+            <div id="user-edit-actions" class="d-grid gap-2 hidden">
               <button id="btn-update-user" class="btn btn-primary">Update User</button>
               <button id="btn-delete-user" class="btn btn-danger">Delete User</button>
+              <button id="btn-clear-user-form" class="btn btn-outline-secondary btn-sm">+ New User</button>
             </div>
-            <div class="small text-muted mt-2">Click a user in the list to load it here.</div>
+            <div class="small text-muted mt-2" id="user-form-hint">Fill in the fields above to add a new user.</div>
           </div></div>
         </div>
       </div>
@@ -490,7 +491,7 @@
           <div class="d-flex align-items-center gap-2 mb-2">
             <h5 class="mb-0">Suppliers</h5>
             <button id="btn-new-supplier"     class="btn btn-success btn-sm ms-auto">+ New</button>
-            <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm">↺</button>
+            <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm">↺ Refresh</button>
           </div>
           <div id="suppliers-list" class="list-group"></div>
         </div>
@@ -827,7 +828,9 @@
         </div>
         <div class="col-12">
           <button class="btn btn-primary" id="btn-save-recognition-settings">Save Settings</button>
-          <span class="text-muted small ms-2">Changes take effect within 60 seconds (no restart needed).</span>
+          <span id="rec-settings-dirty" class="badge bg-warning text-dark ms-2 hidden">Unsaved changes</span>
+          <span id="rec-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+          <div class="text-muted small mt-1">Changes take effect within 60 seconds (no restart needed).</div>
         </div>
       </div>
     </div>
@@ -914,9 +917,10 @@
 
     <!-- ═══════════════ CUSTOMERS ═══════════════ -->
     <div class="tab-pane fade" id="customers">
-      <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
         <h5 class="mb-0">Customers</h5>
-        <div class="d-flex gap-2 align-items-center">
+        <div class="d-flex gap-2 align-items-center flex-wrap">
+          <input id="customer-search" class="form-control form-control-sm" placeholder="Search name or number…" style="width:190px">
           <select id="customer-sort" class="form-select form-select-sm" style="width:160px">
             <option value="last_visit">Last seen</option>
             <option value="visit_count">Most visits</option>
@@ -1658,6 +1662,6 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260529"></script>
+<script src="/static/main.js?v=20260601"></script>
 </body>
 </html>

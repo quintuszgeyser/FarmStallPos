@@ -185,12 +185,10 @@ async function refreshMe() {
   if (me.logged_in) {
     STATE.user = { username: me.username, role: me.role, roles: me.roles || [me.role] };
     hide(document.getElementById('btn-login'));
-    show(document.getElementById('btn-logout'));
     const s = document.getElementById('login-status'); if (s) s.textContent = '';
   } else {
     STATE.user = null;
     show(document.getElementById('btn-login'));
-    hide(document.getElementById('btn-logout'));
   }
   updateVisibility();
 }
@@ -245,7 +243,6 @@ async function doLogout() {
   });
   await refreshMe();
 }
-document.getElementById('btn-logout')?.addEventListener('click', doLogout);
 document.getElementById('btn-logout-top')?.addEventListener('click', doLogout);
 
 // ═══════════════════════════════════════════════════════
@@ -3267,6 +3264,25 @@ document.getElementById('btn-tx-today')?.addEventListener('click', () => {
   loadTransactions(t, t);
 });
 
+document.getElementById('btn-tx-yesterday')?.addEventListener('click', () => {
+  const d = new Date(); d.setDate(d.getDate() - 1);
+  const y = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const s = document.getElementById('tx-start'); if (s) s.value = y;
+  const e = document.getElementById('tx-end');   if (e) e.value = y;
+  loadTransactions(y, y);
+});
+
+document.getElementById('btn-tx-week')?.addEventListener('click', () => {
+  const now = new Date();
+  const day = now.getDay() || 7;
+  const mon = new Date(now); mon.setDate(now.getDate() - day + 1);
+  const start = `${mon.getFullYear()}-${String(mon.getMonth()+1).padStart(2,'0')}-${String(mon.getDate()).padStart(2,'0')}`;
+  const end   = todayISO();
+  const s = document.getElementById('tx-start'); if (s) s.value = start;
+  const e = document.getElementById('tx-end');   if (e) e.value = end;
+  loadTransactions(start, end);
+});
+
 // ── Transaction Void/Edit Modal ──
 let _txModalLines = [];
 
@@ -3427,6 +3443,27 @@ function fillUserEditor(u) {
     const cb = document.getElementById(`u-role-${r}`); if (cb) cb.checked = userRoles.includes(r);
   });
   const act = document.getElementById('u-active'); if (act) act.checked = !!u.active;
+  _setUserFormMode('edit');
+}
+
+function _setUserFormMode(mode) {
+  const addActions  = document.getElementById('user-add-actions');
+  const editActions = document.getElementById('user-edit-actions');
+  const hint        = document.getElementById('user-form-hint');
+  if (mode === 'edit') {
+    hide(addActions); show(editActions);
+    if (hint) hint.textContent = 'Editing user — click "+ New User" to create a new one.';
+  } else {
+    show(addActions); hide(editActions);
+    if (hint) hint.textContent = 'Fill in the fields above to add a new user.';
+  }
+}
+
+function _clearUserForm() {
+  ['u-username','u-password'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['admin','teller','developer'].forEach(r => { const cb = document.getElementById(`u-role-${r}`); if(cb) cb.checked = r==='teller'; });
+  const act = document.getElementById('u-active'); if (act) act.checked = true;
+  _setUserFormMode('add');
 }
 
 function getSelectedRoles() {
@@ -3443,6 +3480,7 @@ async function loadUsers() {
 
 document.getElementById('users-filter')?.addEventListener('input', renderUsersList);
 document.getElementById('btn-refresh-users')?.addEventListener('click', loadUsers);
+document.getElementById('btn-clear-user-form')?.addEventListener('click', _clearUserForm);
 
 document.getElementById('btn-add-user')?.addEventListener('click', async () => {
   const username = document.getElementById('u-username').value.trim();
@@ -3453,6 +3491,7 @@ document.getElementById('btn-add-user')?.addEventListener('click', async () => {
   try {
     await api('/api/users', { method: 'POST', body: JSON.stringify({ username, password, role }) });
     if (!active) await api('/api/users/update', { method: 'POST', body: JSON.stringify({ username, active }) });
+    _clearUserForm();
     await loadUsers(); toast('User added');
   } catch (e) { toast(e.message, 'error'); }
 });
@@ -3475,9 +3514,7 @@ document.getElementById('btn-delete-user')?.addEventListener('click', async () =
   if (!confirm(`Delete user "${username}"?`)) return;
   try {
     await api(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
-    ['u-username','u-password'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    ['admin','teller','developer'].forEach(r => { const cb = document.getElementById(`u-role-${r}`); if(cb) cb.checked = r==='teller'; });
-    document.getElementById('u-active').checked = true;
+    _clearUserForm();
     await loadUsers(); toast('User deleted');
   } catch (e) { toast(e.message, 'error'); }
 });
@@ -5392,9 +5429,23 @@ function renderCustomersList() {
     return;
   }
 
+  // Apply search filter
+  const q = (document.getElementById('customer-search')?.value || '').trim().toLowerCase();
+  const filtered = q
+    ? STATE.customers.filter(c =>
+        (c.name || '').toLowerCase().includes(q) ||
+        (c.customer_number || '').toLowerCase().includes(q) ||
+        (c.phone || '').includes(q))
+    : STATE.customers;
+
+  if (!filtered.length) {
+    container.innerHTML = `<div class="text-muted">No customers match "${q}".</div>`;
+    return;
+  }
+
   // Apply sort
   const sort = document.getElementById('customer-sort')?.value || 'last_visit';
-  const sorted = [...STATE.customers].sort((a, b) => {
+  const sorted = [...filtered].sort((a, b) => {
     if (sort === 'last_visit')    return (b.last_visit || '') .localeCompare(a.last_visit || '');
     if (sort === 'visit_count')   return (b.visit_count || 0) - (a.visit_count || 0);
     if (sort === 'name')          return (a.name || 'zzz').localeCompare(b.name || 'zzz');
@@ -6222,8 +6273,9 @@ document.getElementById('btn-deactivate-customer')?.addEventListener('click', as
   }
 });
 
-// Sort change re-renders without reloading
+// Sort/search change re-renders without reloading
 document.getElementById('customer-sort')?.addEventListener('change', renderCustomersList);
+document.getElementById('customer-search')?.addEventListener('input', renderCustomersList);
 
 // Auto-refresh customers tab every 5 seconds while visible
 // Also run duplicate check automatically on open
@@ -6347,11 +6399,13 @@ function initMergeSlider(reviewPct, autoPct) {
     if (parseInt(reviewEl.value) > parseInt(autoEl.value))
       reviewEl.value = autoEl.value;
     updateTrack();
+    _markRecSettingsDirty();
   });
   autoEl.addEventListener('input', () => {
     if (parseInt(autoEl.value) < parseInt(reviewEl.value))
       autoEl.value = reviewEl.value;
     updateTrack();
+    _markRecSettingsDirty();
   });
 
   // Allow both thumbs to be dragged by detecting which is closer to click
@@ -6371,6 +6425,22 @@ function initMergeSlider(reviewPct, autoPct) {
 }
 
 // ─── Recognition Settings Tab ────────────────────────────────
+let _recSettingsDirty = false;
+
+function _markRecSettingsDirty() {
+  _recSettingsDirty = true;
+  show(document.getElementById('rec-settings-dirty'));
+  hide(document.getElementById('rec-settings-saved'));
+}
+
+function _markRecSettingsClean() {
+  _recSettingsDirty = false;
+  hide(document.getElementById('rec-settings-dirty'));
+  const saved = document.getElementById('rec-settings-saved');
+  show(saved);
+  setTimeout(() => hide(saved), 3000);
+}
+
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', async () => {
   try {
     const s = await api('/api/settings');
@@ -6378,7 +6448,13 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
       const el  = document.getElementById(id);
       const vEl = document.getElementById(valId);
       const display = fmt ? fmt(val) : parseFloat(val).toFixed(2);
-      if (el)  { el.value = val; el.oninput = () => { if (vEl) vEl.textContent = fmt ? fmt(parseFloat(el.value)) : parseFloat(el.value).toFixed(2); }; }
+      if (el)  {
+        el.value = val;
+        el.oninput = () => {
+          if (vEl) vEl.textContent = fmt ? fmt(parseFloat(el.value)) : parseFloat(el.value).toFixed(2);
+          _markRecSettingsDirty();
+        };
+      }
       if (vEl) vEl.textContent = display;
     };
     setSlider('set-face-threshold',   'set-face-threshold-val',  s.face_threshold);
@@ -6388,6 +6464,9 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     setSlider('set-min-angle-dist',   'set-min-angle-dist-val',  s.min_angle_distance, v => parseFloat(v).toFixed(2));
     // Merge dual slider
     initMergeSlider(s.merge_suggest_min_sim, s.auto_merge_min_sim ?? 0.95);
+    _recSettingsDirty = false;
+    hide(document.getElementById('rec-settings-dirty'));
+    hide(document.getElementById('rec-settings-saved'));
   } catch(e) { console.error('loadSettings', e); }
 });
 
@@ -6404,8 +6483,9 @@ document.getElementById('btn-save-recognition-settings')?.addEventListener('clic
       max_face_angles:       parseInt(document.getElementById('set-max-face-angles')?.value || 24),
       min_angle_distance:    parseFloat(document.getElementById('set-min-angle-dist')?.value || 0.25),
     })});
-    toast('Settings saved', 'success', 3000);
-  } catch(e) { toast(e.message, 'danger'); }
+    _markRecSettingsClean();
+    toast('Settings saved — takes effect within 60s', 'success', 3000);
+  } catch(e) { toast(e.message, 'error'); }
 });
 
 // ═══════════════════════════════════════════════════════
