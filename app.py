@@ -1268,8 +1268,8 @@ def strong_migrate():
             pg_try("ALTER TABLE specials ADD COLUMN schedule TEXT")
 
             # ---- invoices ----
-            conn.exec_driver_sql("""
-            CREATE TABLE IF NOT EXISTS invoices (
+            pg_try("""
+            CREATE TABLE invoices (
               id               SERIAL PRIMARY KEY,
               invoice_number   VARCHAR(20) UNIQUE NOT NULL,
               created_at       TIMESTAMP NOT NULL DEFAULT NOW(),

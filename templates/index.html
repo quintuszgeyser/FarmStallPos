@@ -32,13 +32,22 @@
     /* Kitchen urgent timer stays red */
     /* Page title area */
     .lc-brand {
-      display: flex; align-items: center; gap: 10px;
-      padding: 10px 0 6px;
+      display: flex; align-items: center; gap: 12px;
+      padding: 8px 0 6px;
       border-bottom: 2px solid var(--lc-gold);
       margin-bottom: 10px;
     }
-    .lc-brand img { height: 44px; width: auto; }
-    .lc-brand span { font-size: 18px; font-weight: 600; color: var(--lc-gold); letter-spacing: 1px; }
+    /* SVG is A4-sized but artwork sits roughly in the centre third — crop with overflow hidden */
+    .lc-logo-wrap {
+      width: 110px; height: 80px;
+      overflow: hidden; flex-shrink: 0; position: relative;
+    }
+    .lc-logo-wrap img {
+      position: absolute;
+      width: 340px; height: auto;
+      top: -115px; left: -75px;
+    }
+    .lc-brand span { font-size: 20px; font-weight: 600; color: var(--lc-gold); letter-spacing: 1px; }
   </style>
   <style>
     html, body { height: 100%; }
@@ -280,7 +289,9 @@
 
   <!-- Brand header -->
   <div class="lc-brand">
-    <img src="/static/logo.svg" alt="Lady Coleen">
+    <div class="lc-logo-wrap">
+      <img src="/static/logo.svg" alt="Lady Coleen">
+    </div>
     <span>Lady Coleen Farm Stall</span>
   </div>
 
@@ -1801,6 +1812,6 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260601i"></script>
+<script src="/static/main.js?v=20260601j"></script>
 </body>
 </html>
