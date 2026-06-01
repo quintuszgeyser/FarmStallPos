@@ -1762,10 +1762,12 @@
         <!-- Product picker -->
         <div class="mb-2">
           <label class="form-label small fw-bold">Add from inventory</label>
-          <div class="d-flex gap-2 flex-wrap">
-            <select id="inv-product-select" class="form-select form-select-sm" style="flex:2;min-width:160px">
-              <option value="">— Pick a product —</option>
-            </select>
+          <div class="d-flex gap-2 flex-wrap align-items-start">
+            <div style="flex:2;min-width:160px;position:relative">
+              <input id="inv-product-search" class="form-control form-control-sm" placeholder="Search product…" autocomplete="off">
+              <div id="inv-product-results" class="list-group" style="position:absolute;z-index:1000;width:100%;display:none;max-height:200px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15)"></div>
+              <input type="hidden" id="inv-product-select">
+            </div>
             <input type="number" id="inv-product-qty" class="form-control form-control-sm" style="width:75px" value="1" min="0.001" step="any" placeholder="Qty">
             <select id="inv-product-unit" class="form-select form-select-sm" style="width:90px">
               <option value="unit">unit</option>
@@ -1845,6 +1847,6 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260601r"></script>
+<script src="/static/main.js?v=20260601s"></script>
 </body>
 </html>

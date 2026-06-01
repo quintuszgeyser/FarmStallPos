@@ -6920,37 +6920,83 @@ function _invPopulateCustomers() {
   if (prev) sel.value = prev;
 }
 
-// ── Populate product dropdown from STATE.products ──
-function _invPopulateProducts() {
-  const sel = document.getElementById('inv-product-select');
-  if (!sel) return;
-  sel.innerHTML = '<option value="">— Pick a product —</option>';
-  STATE.products
-    .filter(p => p.is_for_sale !== false && !p.is_archived)
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.id;
-      const isByWeight = p.sold_by_weight;
-      const bigUnit    = p.unit_type === 'volume' ? 'L' : 'kg';
-      const baseUnit   = p.unit_type === 'volume' ? 'ml' : 'g';
-      // price_per_unit is per-base-unit (per g or per ml); convert to per kg/L for display
-      const pricePerBig = isByWeight ? parseFloat(p.price_per_unit || 0) * 1000 : 0;
-      const flatPrice   = isByWeight ? 0 : parseFloat(p.price || 0);
-      const priceLabel  = isByWeight
-        ? `R${fmt(pricePerBig)}/${bigUnit}`
-        : `R${fmt(flatPrice)}`;
-      opt.textContent = `${p.name} — ${priceLabel}`;
-      // Store everything needed for line creation
-      opt.dataset.name       = p.name;
-      opt.dataset.isByWeight = isByWeight ? '1' : '0';
-      opt.dataset.price      = isByWeight ? pricePerBig : flatPrice;  // always per display-unit
-      opt.dataset.baseUnit   = isByWeight ? baseUnit : 'unit';
-      opt.dataset.bigUnit    = isByWeight ? bigUnit : '';
-      opt.dataset.unitType   = p.unit_type || 'count';
-      sel.appendChild(opt);
+// ── Product search / typeahead ──
+let _invSelectedProduct = null;
+
+function _invPopulateProducts() { /* no-op — replaced by live search */ }
+
+function _invUpdateUnitDropdown(p) {
+  const unitSel = document.getElementById('inv-product-unit');
+  const qtyEl   = document.getElementById('inv-product-qty');
+  if (!unitSel) return;
+  unitSel.innerHTML = '';
+  if (p && p.sold_by_weight) {
+    const unitOpts = buildUnitOptions(p.unit_type || 'weight', p.package_size, p.package_unit);
+    unitOpts.forEach(o => {
+      const el = document.createElement('option');
+      el.value = o.value; el.textContent = o.label; el.dataset.conv = o.conv;
+      unitSel.appendChild(el);
     });
+    const bigUnit = p.unit_type === 'volume' ? 'L' : 'kg';
+    if ([...unitSel.options].some(o => o.value === bigUnit)) unitSel.value = bigUnit;
+    if (qtyEl) { qtyEl.placeholder = unitSel.value; qtyEl.step = '0.001'; }
+  } else {
+    const el = document.createElement('option'); el.value = 'unit'; el.textContent = 'unit'; el.dataset.conv = 1;
+    unitSel.appendChild(el);
+    if (qtyEl) { qtyEl.placeholder = 'Qty'; qtyEl.step = '1'; }
+  }
 }
+
+// Wire up product search (runs once at page load, reacts to STATE.products at call time)
+document.getElementById('inv-product-search')?.addEventListener('input', function() {
+  const q         = this.value.trim().toLowerCase();
+  const resultsEl = document.getElementById('inv-product-results');
+  _invSelectedProduct = null;
+  const hiddenSel = document.getElementById('inv-product-select');
+  if (hiddenSel) hiddenSel.value = '';
+  if (!resultsEl) return;
+  resultsEl.innerHTML = '';
+  if (!q) { resultsEl.style.display = 'none'; return; }
+
+  const matches = STATE.products
+    .filter(p => p.is_for_sale !== false && !p.is_archived &&
+      (p.name.toLowerCase().includes(q) || (p.barcode || '').includes(q)))
+    .slice(0, 20);
+
+  if (!matches.length) { resultsEl.style.display = 'none'; return; }
+
+  matches.forEach(p => {
+    const isByWeight  = p.sold_by_weight;
+    const bigUnit     = p.unit_type === 'volume' ? 'L' : 'kg';
+    const pricePerBig = isByWeight ? parseFloat(p.price_per_unit || 0) * 1000 : 0;
+    const flatPrice   = isByWeight ? 0 : parseFloat(p.price || 0);
+    const priceLabel  = isByWeight ? `R${fmt(pricePerBig)}/${bigUnit}` : `R${fmt(flatPrice)}`;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'list-group-item list-group-item-action py-1 px-2';
+    btn.style.fontSize = '14px';
+    btn.innerHTML = `<span class="fw-semibold">${p.name}</span> <span class="text-muted small ms-1">${priceLabel}</span>`;
+    btn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      _invSelectedProduct = p;
+      if (hiddenSel) hiddenSel.value = p.id;
+      document.getElementById('inv-product-search').value = p.name;
+      resultsEl.style.display = 'none';
+      _invUpdateUnitDropdown(p);
+      document.getElementById('inv-product-qty')?.focus();
+    });
+    resultsEl.appendChild(btn);
+  });
+  resultsEl.style.display = 'block';
+});
+
+document.getElementById('inv-product-search')?.addEventListener('blur', () => {
+  setTimeout(() => {
+    const resultsEl = document.getElementById('inv-product-results');
+    if (resultsEl) resultsEl.style.display = 'none';
+  }, 150);
+});
 
 function _invSetCustomerMode(newMode) {
   _invNewCustomerMode = newMode;
@@ -7203,6 +7249,9 @@ function openInvoiceEditor(invId) {
     const preview = document.getElementById('inv-customer-preview'); if (preview) hide(preview);
     ['inv-due-date','inv-notes','inv-discount-pct'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     _invLoadBankDetails();
+    _invSelectedProduct = null;
+    const searchEl = document.getElementById('inv-product-search'); if (searchEl) searchEl.value = '';
+    _invUpdateUnitDropdown(null);
     document.getElementById('inv-status').value = 'draft';
     if (printBtn) printBtn.disabled = true;
     if (delBtn) hide(delBtn);
@@ -7214,32 +7263,7 @@ function openInvoiceEditor(invId) {
 
 document.getElementById('btn-new-invoice')?.addEventListener('click', () => openInvoiceEditor(null));
 
-// Update unit dropdown and qty step when a product is selected
-document.getElementById('inv-product-select')?.addEventListener('change', e => {
-  const opt     = e.target.options[e.target.selectedIndex];
-  const unitSel = document.getElementById('inv-product-unit');
-  const qtyEl   = document.getElementById('inv-product-qty');
-  if (!unitSel) return;
-  unitSel.innerHTML = '';
-  if (opt?.dataset.isByWeight === '1') {
-    const pid = parseInt(opt.value);
-    const p   = STATE.products.find(x => x.id === pid);
-    const unitOpts = buildUnitOptions(p?.unit_type || 'weight', p?.package_size, p?.package_unit);
-    unitOpts.forEach(o => {
-      const el = document.createElement('option');
-      el.value = o.value; el.textContent = o.label; el.dataset.conv = o.conv;
-      unitSel.appendChild(el);
-    });
-    // Auto-select the best display unit (kg/L by default)
-    const bigUnit = p?.unit_type === 'volume' ? 'L' : 'kg';
-    if ([...unitSel.options].some(o => o.value === bigUnit)) unitSel.value = bigUnit;
-    if (qtyEl) { qtyEl.placeholder = unitSel.value; qtyEl.step = '0.001'; }
-  } else {
-    const el = document.createElement('option'); el.value = 'unit'; el.textContent = 'unit'; el.dataset.conv = 1;
-    unitSel.appendChild(el);
-    if (qtyEl) { qtyEl.placeholder = 'Qty'; qtyEl.step = '1'; }
-  }
-});
+// Unit dropdown is now updated by _invUpdateUnitDropdown() when a product is selected via search
 
 document.getElementById('btn-inv-add-line')?.addEventListener('click', () => {
   _invLines.push({ name: '', qty: 1, unit_price: 0, subtotal: 0 });
@@ -7247,52 +7271,46 @@ document.getElementById('btn-inv-add-line')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-inv-add-product')?.addEventListener('click', () => {
-  const sel     = document.getElementById('inv-product-select');
-  const unitSel = document.getElementById('inv-product-unit');
-  const opt     = sel?.options[sel.selectedIndex];
-  if (!opt?.value) return toast('Select a product first', 'warning');
+  const p = _invSelectedProduct;
+  if (!p) return toast('Search and select a product first', 'warning');
 
-  const qtyDisplay  = parseFloat(document.getElementById('inv-product-qty')?.value || 1) || 1;
-  const isByWeight  = opt.dataset.isByWeight === '1';
-  const unitVal     = unitSel?.value || 'unit';
-  const conv        = parseFloat(unitSel?.options[unitSel?.selectedIndex]?.dataset?.conv || 1);
-  const pid         = parseInt(opt.value);
-  const p           = STATE.products.find(x => x.id === pid);
+  const unitSel    = document.getElementById('inv-product-unit');
+  const qtyDisplay = parseFloat(document.getElementById('inv-product-qty')?.value || 1) || 1;
+  const isByWeight = p.sold_by_weight;
+  const unitVal    = unitSel?.value || 'unit';
+  const conv       = parseFloat(unitSel?.options[unitSel?.selectedIndex]?.dataset?.conv || 1);
 
-  let name, qtyBase, unitPrice, subtotal;
-
+  let name, unitPrice, subtotal;
   if (isByWeight) {
-    // price_per_base is per g or ml; opt.dataset.price is already per kg/L (×1000)
-    const pricePerBase = parseFloat(p?.price_per_unit || 0);  // per g or ml
-    qtyBase  = qtyDisplay * conv;                              // convert to base (g/ml)
-    unitPrice = pricePerBase * conv;                           // price per selected unit
-    subtotal  = pricePerBase * qtyBase;
-    name      = `${opt.dataset.name}`;
+    const pricePerBase = parseFloat(p.price_per_unit || 0);
+    unitPrice = pricePerBase * conv;
+    subtotal  = pricePerBase * qtyDisplay * conv;
+    name      = p.name;
   } else {
-    qtyBase   = qtyDisplay;
-    unitPrice = parseFloat(opt.dataset.price) || 0;
+    unitPrice = parseFloat(p.price || 0);
     subtotal  = qtyDisplay * unitPrice;
-    name      = opt.dataset.name;
+    name      = p.name;
   }
 
   _invLines.push({
     name,
-    qty:           qtyDisplay,
-    unit:          unitVal,
-    unit_price:    parseFloat(unitPrice.toFixed(4)),
-    subtotal:      parseFloat(subtotal.toFixed(2)),
-    // stored for recalc when unit changes in the line editor
-    _price_per_base: isByWeight ? parseFloat(p?.price_per_unit || 0) : null,
-    _unit_type:      isByWeight ? (p?.unit_type || 'weight') : null,
-    _pkg_size:       p?.package_size || null,
-    _pkg_unit:       p?.package_unit || null,
+    qty:             qtyDisplay,
+    unit:            unitVal,
+    unit_price:      parseFloat(unitPrice.toFixed(4)),
+    subtotal:        parseFloat(subtotal.toFixed(2)),
+    _price_per_base: isByWeight ? parseFloat(p.price_per_unit || 0) : null,
+    _unit_type:      isByWeight ? (p.unit_type || 'weight') : null,
+    _pkg_size:       p.package_size || null,
+    _pkg_unit:       p.package_unit || null,
     _is_weight:      isByWeight,
   });
   _renderInvLines();
-  sel.value = '';
+  // Reset picker
+  _invSelectedProduct = null;
+  const searchEl = document.getElementById('inv-product-search'); if (searchEl) searchEl.value = '';
+  const hiddenSel = document.getElementById('inv-product-select'); if (hiddenSel) hiddenSel.value = '';
   const qtyEl = document.getElementById('inv-product-qty'); if (qtyEl) qtyEl.value = '1';
-  // Reset unit dropdown
-  if (unitSel) { unitSel.innerHTML = ''; const el = document.createElement('option'); el.value='unit'; el.textContent='unit'; el.dataset.conv=1; unitSel.appendChild(el); }
+  _invUpdateUnitDropdown(null);
 });
 
 document.getElementById('inv-discount-pct')?.addEventListener('input', _invRecalc);
