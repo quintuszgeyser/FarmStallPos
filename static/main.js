@@ -7023,7 +7023,7 @@ function renderInvoicesList() {
             <td>${statusBadge(i.status)}</td>
             <td>
               ${i.sale_id
-                ? `<button class="btn btn-outline-warning btn-sm" onclick="event.stopPropagation();_invUndoFromList(${i.id})">Undo</button>`
+                ? `<button class="btn btn-secondary btn-sm" disabled>Finalised ✓</button>`
                 : (i.status !== 'draft'
                   ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`
                   : '<span class="text-muted small">—</span>')}
