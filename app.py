@@ -1671,8 +1671,8 @@ def api_users_change_password():
     new_pw = data.get('new_password', '').strip()
     if not check_password_hash(u.password_hash, current_pw):
         return jsonify({'error': 'Current password is incorrect'}), 400
-    if len(new_pw) < 4:
-        return jsonify({'error': 'New password must be at least 4 characters'}), 400
+    if len(new_pw) < 1:
+        return jsonify({'error': 'New password cannot be empty'}), 400
     u.password_hash = generate_password_hash(new_pw)
     db.session.commit()
     return jsonify({'ok': True})

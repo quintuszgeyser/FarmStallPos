@@ -6824,9 +6824,9 @@ document.getElementById('btn-cp-save')?.addEventListener('click', async () => {
   const conf = document.getElementById('cp-confirm')?.value;
   const err  = document.getElementById('cp-error');
   const showErr = (msg) => { if(err) { err.textContent=msg; err.classList.remove('hidden'); } };
-  if (!cur || !nw) return showErr('All fields required');
+  if (!cur) return showErr('Current password required');
+  if (!nw) return showErr('New password required');
   if (nw !== conf) return showErr('New passwords do not match');
-  if (nw.length < 4) return showErr('Password must be at least 4 characters');
   try {
     await api('/api/users/change_password', { method:'POST', body: JSON.stringify({ current_password:cur, new_password:nw }) });
     bootstrap.Modal.getInstance(document.getElementById('changePasswordModal'))?.hide();
