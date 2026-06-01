@@ -6931,12 +6931,23 @@ function _invPopulateProducts() {
     .forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id;
-      const price = p.sold_by_weight
-        ? `R${fmt(parseFloat(p.price_per_unit || 0) * 1000)}/${p.unit_type === 'volume' ? 'L' : 'kg'}`
-        : `R${fmt(p.price || 0)}`;
-      opt.textContent = `${p.name} — ${price}`;
-      opt.dataset.price = p.sold_by_weight ? '' : (p.price || 0);
-      opt.dataset.name  = p.name;
+      const isByWeight = p.sold_by_weight;
+      const bigUnit    = p.unit_type === 'volume' ? 'L' : 'kg';
+      const baseUnit   = p.unit_type === 'volume' ? 'ml' : 'g';
+      // price_per_unit is per-base-unit (per g or per ml); convert to per kg/L for display
+      const pricePerBig = isByWeight ? parseFloat(p.price_per_unit || 0) * 1000 : 0;
+      const flatPrice   = isByWeight ? 0 : parseFloat(p.price || 0);
+      const priceLabel  = isByWeight
+        ? `R${fmt(pricePerBig)}/${bigUnit}`
+        : `R${fmt(flatPrice)}`;
+      opt.textContent = `${p.name} — ${priceLabel}`;
+      // Store everything needed for line creation
+      opt.dataset.name       = p.name;
+      opt.dataset.isByWeight = isByWeight ? '1' : '0';
+      opt.dataset.price      = isByWeight ? pricePerBig : flatPrice;  // always per display-unit
+      opt.dataset.baseUnit   = isByWeight ? baseUnit : 'unit';
+      opt.dataset.bigUnit    = isByWeight ? bigUnit : '';
+      opt.dataset.unitType   = p.unit_type || 'count';
       sel.appendChild(opt);
     });
 }
@@ -7113,6 +7124,20 @@ function openInvoiceEditor(invId) {
 
 document.getElementById('btn-new-invoice')?.addEventListener('click', () => openInvoiceEditor(null));
 
+// Update qty placeholder to show unit when a weight/volume product is selected
+document.getElementById('inv-product-select')?.addEventListener('change', e => {
+  const opt     = e.target.options[e.target.selectedIndex];
+  const qtyEl   = document.getElementById('inv-product-qty');
+  if (!qtyEl) return;
+  if (opt?.dataset.isByWeight === '1') {
+    qtyEl.placeholder = opt.dataset.bigUnit || 'qty';
+    qtyEl.step = '0.01';
+  } else {
+    qtyEl.placeholder = 'Qty';
+    qtyEl.step = '1';
+  }
+});
+
 document.getElementById('btn-inv-add-line')?.addEventListener('click', () => {
   _invLines.push({ name: '', qty: 1, unit_price: 0, subtotal: 0 });
   _renderInvLines();
@@ -7122,13 +7147,20 @@ document.getElementById('btn-inv-add-product')?.addEventListener('click', () => 
   const sel = document.getElementById('inv-product-select');
   const opt = sel?.options[sel.selectedIndex];
   if (!opt?.value) return toast('Select a product first', 'warning');
-  const qty       = parseFloat(document.getElementById('inv-product-qty')?.value || 1) || 1;
-  const unitPrice = parseFloat(opt.dataset.price) || 0;
+
+  const qty        = parseFloat(document.getElementById('inv-product-qty')?.value || 1) || 1;
+  const isByWeight = opt.dataset.isByWeight === '1';
+  const unitPrice  = parseFloat(opt.dataset.price) || 0;  // per kg/L or per unit
+  const bigUnit    = opt.dataset.bigUnit || '';
+  const name       = isByWeight
+    ? `${opt.dataset.name} (${qty}${bigUnit})`  // e.g. "Biltong (0.5kg)"
+    : opt.dataset.name;
+
   _invLines.push({
-    name:       opt.dataset.name,
-    qty:        qty,
-    unit_price: unitPrice,
-    subtotal:   qty * unitPrice,
+    name:       name,
+    qty:        isByWeight ? 1 : qty,          // weight items: qty=1, price already accounts for weight
+    unit_price: isByWeight ? unitPrice * qty : unitPrice,  // e.g. R150/kg × 0.5kg = R75
+    subtotal:   isByWeight ? unitPrice * qty : qty * unitPrice,
   });
   _renderInvLines();
   sel.value = '';
