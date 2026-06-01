@@ -3550,12 +3550,25 @@ function _initStatsPresets() {
         const y = new Date(now); y.setDate(y.getDate() - 1);
         start = end = iso(y);
       } else if (preset === 'week') {
-        const d = new Date(now); d.setDate(d.getDate() - d.getDay());
+        const day = now.getDay() || 7;
+        const d = new Date(now); d.setDate(now.getDate() - day + 1);
         start = iso(d);
+      } else if (preset === 'last-week') {
+        const day = now.getDay() || 7;
+        const mon = new Date(now); mon.setDate(now.getDate() - day + 1 - 7);
+        const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+        start = iso(mon); end = iso(sun);
       } else if (preset === 'month') {
         start = `${now.getFullYear()}-${pad(now.getMonth()+1)}-01`;
+      } else if (preset === 'last-month') {
+        const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+        const lme = new Date(now.getFullYear(), now.getMonth(), 0);
+        start = iso(lm); end = iso(lme);
       } else if (preset === 'year') {
         start = `${now.getFullYear()}-01-01`;
+      } else if (preset === 'last-year') {
+        const y = now.getFullYear() - 1;
+        start = `${y}-01-01`; end = `${y}-12-31`;
       }
       _statsSetDates(start, end);
       loadStats();
