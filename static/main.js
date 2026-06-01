@@ -6901,6 +6901,80 @@ document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('sho
 // ═══════════════════════════════════════════════════════
 let _invoices = [];
 let _invLines = [];
+let _invNewCustomerMode = false;  // true = showing new customer form
+
+// ── Populate customer dropdown from STATE.customers ──
+function _invPopulateCustomers() {
+  const sel = document.getElementById('inv-customer-select');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">— Search or select a customer —</option>';
+  [...STATE.customers]
+    .sort((a, b) => (a.name || 'zzz').localeCompare(b.name || 'zzz'))
+    .forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = (c.name || c.customer_number || `#${c.id}`) + (c.phone ? ` · ${c.phone}` : '');
+      sel.appendChild(opt);
+    });
+  if (prev) sel.value = prev;
+}
+
+// ── Populate product dropdown from STATE.products ──
+function _invPopulateProducts() {
+  const sel = document.getElementById('inv-product-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— Pick a product —</option>';
+  STATE.products
+    .filter(p => p.is_for_sale !== false && !p.is_archived)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id;
+      const price = p.sold_by_weight
+        ? `R${fmt(parseFloat(p.price_per_unit || 0) * 1000)}/${p.unit_type === 'volume' ? 'L' : 'kg'}`
+        : `R${fmt(p.price || 0)}`;
+      opt.textContent = `${p.name} — ${price}`;
+      opt.dataset.price = p.sold_by_weight ? '' : (p.price || 0);
+      opt.dataset.name  = p.name;
+      sel.appendChild(opt);
+    });
+}
+
+function _invSetCustomerMode(newMode) {
+  _invNewCustomerMode = newMode;
+  const picker  = document.getElementById('inv-customer-picker');
+  const form    = document.getElementById('inv-new-customer-form');
+  const btn     = document.getElementById('btn-inv-new-customer');
+  if (newMode) {
+    hide(picker); show(form);
+    btn.textContent = '← Back to customer list';
+  } else {
+    show(picker); hide(form);
+    btn.textContent = '+ New customer';
+    // clear new-customer fields
+    ['inv-customer-name','inv-customer-phone','inv-customer-email','inv-customer-address']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  }
+}
+
+document.getElementById('btn-inv-new-customer')?.addEventListener('click', () => {
+  _invSetCustomerMode(!_invNewCustomerMode);
+});
+
+// Show selected customer details
+document.getElementById('inv-customer-select')?.addEventListener('change', e => {
+  const preview = document.getElementById('inv-customer-preview');
+  const cid = parseInt(e.target.value);
+  const c = STATE.customers.find(x => x.id === cid);
+  if (c && preview) {
+    const parts = [c.phone, c.email].filter(Boolean);
+    preview.textContent = parts.length ? parts.join(' · ') : '';
+    show(preview);
+  } else if (preview) {
+    hide(preview);
+  }
+});
 
 async function loadInvoices() {
   try {
@@ -6991,27 +7065,47 @@ function openInvoiceEditor(invId) {
   document.getElementById('invoiceEditorTitle').textContent = invId ? 'Edit Invoice' : 'New Invoice';
   const printBtn = document.getElementById('btn-inv-print');
   const delBtn   = document.getElementById('btn-inv-delete');
+
+  // Populate dropdowns fresh
+  _invPopulateCustomers();
+  _invPopulateProducts();
+
   if (invId) {
     if (printBtn) { printBtn.disabled = false; printBtn.onclick = () => window.open(`/invoices/${invId}/print`, '_blank'); }
     if (delBtn) show(delBtn);
     api(`/api/invoices/${invId}`).then(inv => {
-      document.getElementById('inv-customer-name').value    = inv.customer_name || '';
-      document.getElementById('inv-customer-phone').value   = inv.customer_phone || '';
-      document.getElementById('inv-customer-email').value   = inv.customer_email || '';
-      document.getElementById('inv-customer-address').value = inv.customer_address || '';
-      document.getElementById('inv-due-date').value         = inv.due_date || '';
-      document.getElementById('inv-notes').value            = inv.notes || '';
-      document.getElementById('inv-discount-pct').value     = inv.discount_pct || '';
-      document.getElementById('inv-status').value           = inv.status || 'draft';
+      document.getElementById('inv-due-date').value   = inv.due_date || '';
+      document.getElementById('inv-notes').value      = inv.notes || '';
+      document.getElementById('inv-discount-pct').value = inv.discount_pct || '';
+      document.getElementById('inv-status').value     = inv.status || 'draft';
+      // Try to match customer by name to existing customer
+      const matchedCust = STATE.customers.find(c => c.name === inv.customer_name);
+      if (matchedCust) {
+        _invSetCustomerMode(false);
+        const sel = document.getElementById('inv-customer-select');
+        if (sel) sel.value = matchedCust.id;
+        sel?.dispatchEvent(new Event('change'));
+      } else if (inv.customer_name) {
+        _invSetCustomerMode(true);
+        document.getElementById('inv-customer-name').value    = inv.customer_name || '';
+        document.getElementById('inv-customer-phone').value   = inv.customer_phone || '';
+        document.getElementById('inv-customer-email').value   = inv.customer_email || '';
+        document.getElementById('inv-customer-address').value = inv.customer_address || '';
+      } else {
+        _invSetCustomerMode(false);
+      }
       _invLines = (inv.lines || []).map(l => ({ ...l }));
       _renderInvLines();
     }).catch(e => toast(e.message, 'error'));
   } else {
-    ['inv-customer-name','inv-customer-phone','inv-customer-email','inv-customer-address','inv-due-date','inv-notes','inv-discount-pct'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    _invSetCustomerMode(false);
+    const sel = document.getElementById('inv-customer-select'); if (sel) sel.value = '';
+    const preview = document.getElementById('inv-customer-preview'); if (preview) hide(preview);
+    ['inv-due-date','inv-notes','inv-discount-pct'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
     document.getElementById('inv-status').value = 'draft';
     if (printBtn) printBtn.disabled = true;
     if (delBtn) hide(delBtn);
-    _invLines = [{ name: '', qty: 1, unit_price: 0, subtotal: 0 }];
+    _invLines = [];
     _renderInvLines();
   }
   modal.show();
@@ -7024,15 +7118,71 @@ document.getElementById('btn-inv-add-line')?.addEventListener('click', () => {
   _renderInvLines();
 });
 
+document.getElementById('btn-inv-add-product')?.addEventListener('click', () => {
+  const sel = document.getElementById('inv-product-select');
+  const opt = sel?.options[sel.selectedIndex];
+  if (!opt?.value) return toast('Select a product first', 'warning');
+  const qty       = parseFloat(document.getElementById('inv-product-qty')?.value || 1) || 1;
+  const unitPrice = parseFloat(opt.dataset.price) || 0;
+  _invLines.push({
+    name:       opt.dataset.name,
+    qty:        qty,
+    unit_price: unitPrice,
+    subtotal:   qty * unitPrice,
+  });
+  _renderInvLines();
+  sel.value = '';
+  const qtyEl = document.getElementById('inv-product-qty'); if (qtyEl) qtyEl.value = '1';
+});
+
 document.getElementById('inv-discount-pct')?.addEventListener('input', _invRecalc);
 
 document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
   const invId = document.getElementById('inv-id').value;
+
+  // Resolve customer details
+  let custName = null, custPhone = null, custEmail = null, custAddress = null;
+  if (_invNewCustomerMode) {
+    custName    = document.getElementById('inv-customer-name')?.value.trim() || null;
+    custPhone   = document.getElementById('inv-customer-phone')?.value.trim() || null;
+    custEmail   = document.getElementById('inv-customer-email')?.value.trim() || null;
+    custAddress = document.getElementById('inv-customer-address')?.value.trim() || null;
+    if (!custName) return toast('Enter a customer name', 'warning');
+    // Create the customer in the system so they can be merged later
+    try {
+      const res = await api('/api/customers', { method: 'POST', body: JSON.stringify({
+        name: custName, phone: custPhone, email: custEmail, notes: custAddress ? `Address: ${custAddress}` : null
+      })});
+      // Switch to picker mode pointing at new customer
+      if (res?.id) {
+        STATE.customers.push({ id: res.id, name: custName, phone: custPhone, email: custEmail, customer_number: res.customer_number, plates: [], has_face: false, has_gait: false, visit_count: 0 });
+        _invSetCustomerMode(false);
+        _invPopulateCustomers();
+        const sel = document.getElementById('inv-customer-select');
+        if (sel) sel.value = res.id;
+        toast(`Customer "${custName}" added`, 'success', 2000);
+      }
+    } catch(e) {
+      if (!e.message?.includes('exists')) return toast(e.message, 'error');
+    }
+  } else {
+    const sel = document.getElementById('inv-customer-select');
+    const cid = parseInt(sel?.value || 0);
+    const c = STATE.customers.find(x => x.id === cid);
+    if (c) {
+      custName    = c.name;
+      custPhone   = c.phone;
+      custEmail   = c.email;
+    }
+  }
+
+  if (!_invLines.length) return toast('Add at least one item', 'warning');
+
   const payload = {
-    customer_name:    document.getElementById('inv-customer-name').value.trim() || null,
-    customer_phone:   document.getElementById('inv-customer-phone').value.trim() || null,
-    customer_email:   document.getElementById('inv-customer-email').value.trim() || null,
-    customer_address: document.getElementById('inv-customer-address').value.trim() || null,
+    customer_name:    custName,
+    customer_phone:   custPhone,
+    customer_email:   custEmail,
+    customer_address: custAddress,
     due_date:         document.getElementById('inv-due-date').value || null,
     notes:            document.getElementById('inv-notes').value.trim() || null,
     discount_pct:     parseFloat(document.getElementById('inv-discount-pct').value || 0) || null,
@@ -7043,6 +7193,7 @@ document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
       subtotal: parseFloat(l.subtotal) || 0,
     })),
   };
+
   try {
     let id = invId ? parseInt(invId) : null;
     if (id) {
@@ -7073,4 +7224,7 @@ document.getElementById('btn-inv-delete')?.addEventListener('click', async () =>
   } catch(e) { toast(e.message, 'error'); }
 });
 
-document.querySelector('[data-bs-target="#invoices"]')?.addEventListener('shown.bs.tab', loadInvoices);
+document.querySelector('[data-bs-target="#invoices"]')?.addEventListener('shown.bs.tab', async () => {
+  if (!STATE.customers.length) await loadCustomers();
+  await loadInvoices();
+});
