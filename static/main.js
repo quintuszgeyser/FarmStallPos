@@ -7047,6 +7047,24 @@ function renderInvoicesList() {
     host.innerHTML = '<div class="text-muted">No invoices yet. Click "+ New Invoice" to create one.</div>';
     return;
   }
+
+  // Apply filters
+  const fCustomer  = (document.getElementById('inv-filter-customer')?.value || '').trim().toLowerCase();
+  const fStatus    = document.getElementById('inv-filter-status')?.value || '';
+  const fDateFrom  = document.getElementById('inv-filter-date-from')?.value || '';
+  const fDateTo    = document.getElementById('inv-filter-date-to')?.value || '';
+  const fMin       = parseFloat(document.getElementById('inv-filter-min')?.value || '') || null;
+  const fMax       = parseFloat(document.getElementById('inv-filter-max')?.value || '') || null;
+
+  const filtered = _invoices.filter(i => {
+    if (fCustomer && !(i.customer_name || '').toLowerCase().includes(fCustomer)) return false;
+    if (fStatus   && i.status !== fStatus) return false;
+    if (fDateFrom && i.created_at && i.created_at.slice(0,10) < fDateFrom) return false;
+    if (fDateTo   && i.created_at && i.created_at.slice(0,10) > fDateTo)   return false;
+    if (fMin !== null && i.total < fMin) return false;
+    if (fMax !== null && i.total > fMax) return false;
+    return true;
+  });
   const statusBadge = s => ({
     draft:      '<span class="badge bg-secondary">Draft</span>',
     sent:       '<span class="badge bg-primary">Sent</span>',
@@ -7054,13 +7072,18 @@ function renderInvoicesList() {
     finalised:  '<span class="badge bg-dark">Finalised ✓</span>',
   }[s] || `<span class="badge bg-secondary">${s}</span>`);
 
+  if (!filtered.length) {
+    host.innerHTML = '<div class="text-muted small">No invoices match the current filters.</div>';
+    return;
+  }
+
   host.innerHTML = `
     <table class="table table-sm table-hover">
       <thead class="table-light">
         <tr><th>#</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th><th></th><th></th></tr>
       </thead>
       <tbody>
-        ${_invoices.map(i => `
+        ${filtered.map(i => `
           <tr style="cursor:pointer" onclick="openInvoiceEditor(${i.id})">
             <td class="fw-semibold">${i.invoice_number}</td>
             <td class="text-muted small">${i.created_at ? new Date(i.created_at).toLocaleDateString() : ''}</td>
@@ -7220,9 +7243,12 @@ function openInvoiceEditor(invId) {
       document.getElementById('inv-status').value          = inv.status || 'draft';
       // Show finalise or undo based on current state
       if (inv.sale_id) {
+        // Already finalised — show greyed-out button and undo
+        if (finaliseBtn) { finaliseBtn.disabled = true; finaliseBtn.textContent = 'Finalised ✓'; finaliseBtn.className = 'btn btn-secondary btn-sm'; show(finaliseBtn); }
         if (undoBtn) show(undoBtn);
       } else if (inv.status !== 'draft') {
-        if (finaliseBtn) show(finaliseBtn);
+        // Ready to finalise
+        if (finaliseBtn) { finaliseBtn.disabled = false; finaliseBtn.textContent = 'Finalise Sale'; finaliseBtn.className = 'btn btn-success btn-sm'; show(finaliseBtn); }
       }
       // Try to match customer by name to existing customer
       const matchedCust = STATE.customers.find(c => c.name === inv.customer_name);
@@ -7454,6 +7480,17 @@ document.getElementById('inv-bank-details')?.addEventListener('blur', async () =
   try {
     await api('/api/settings', { method: 'POST', body: JSON.stringify({ invoice_bank_details: val }) });
   } catch {}
+});
+
+['inv-filter-customer','inv-filter-status','inv-filter-date-from','inv-filter-date-to','inv-filter-min','inv-filter-max']
+  .forEach(id => document.getElementById(id)?.addEventListener('input', renderInvoicesList));
+document.getElementById('inv-filter-status')?.addEventListener('change', renderInvoicesList);
+
+document.getElementById('btn-inv-filter-clear')?.addEventListener('click', () => {
+  ['inv-filter-customer','inv-filter-date-from','inv-filter-date-to','inv-filter-min','inv-filter-max']
+    .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const statusEl = document.getElementById('inv-filter-status'); if (statusEl) statusEl.value = '';
+  renderInvoicesList();
 });
 
 document.querySelector('[data-bs-target="#invoices"]')?.addEventListener('shown.bs.tab', async () => {

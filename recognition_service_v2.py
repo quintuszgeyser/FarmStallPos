@@ -568,7 +568,7 @@ def _check_pos_sustained_outage():
         logger.error(f'POS has been unreachable for >5 minutes — visits and enrollments are not being recorded')
         _pos_down_warned = True
 
-def pos_post(path, payload, retries=2):
+def pos_post(path, payload, retries=3):
     global _pos_logged_in, _pos_last_success, _pos_down_warned
     if not _pos_logged_in:
         pos_login()
@@ -586,7 +586,8 @@ def pos_post(path, payload, retries=2):
             return r.json() if r.ok else None
         except (requests.Timeout, requests.ConnectionError) as e:
             if attempt < retries:
-                time.sleep(0.5)
+                # Exponential backoff: 2s, 4s, 8s — covers Docker DNS settling after POS restart
+                time.sleep(2 ** (attempt + 1))
                 continue
             logger.warning(f'POS POST {path} failed after {retries} retries: {e}')
             _check_pos_sustained_outage()
@@ -595,7 +596,7 @@ def pos_post(path, payload, retries=2):
             logger.warning(f'POS POST {path} error: {e}')
             return None
 
-def pos_get(path, retries=2):
+def pos_get(path, retries=3):
     global _pos_logged_in, _pos_last_success, _pos_down_warned
     if not _pos_logged_in:
         pos_login()
@@ -612,7 +613,7 @@ def pos_get(path, retries=2):
             return r.json() if r.ok else []
         except (requests.Timeout, requests.ConnectionError) as e:
             if attempt < retries:
-                time.sleep(0.5)
+                time.sleep(2 ** (attempt + 1))
                 continue
             logger.warning(f'POS GET {path} failed after {retries} retries: {e}')
             _check_pos_sustained_outage()
@@ -3329,6 +3330,72 @@ def _reindex_customer_embeddings(cid):
         })
 
 
+def _photo_backfill_loop():
+    """Startup job: find customers with face embeddings but no photo, pull their
+    latest Frigate snapshot and attempt face/body extraction to fill the gap.
+    Runs once 60s after startup, then every 6h to catch newly affected customers."""
+    import tempfile, time as _t
+    _t.sleep(60)  # let everything settle first
+    while True:
+        try:
+            customers = pos_get('/api/customers') or []
+            missing = [c for c in customers if c.get('has_face') and not c.get('has_photo')]
+            if missing:
+                logger.info(f'Photo backfill: {len(missing)} customers with embeddings but no photo')
+            for c in missing:
+                cid = c['id']
+                try:
+                    # Find the most recent Frigate event for this customer from visit history
+                    visits = pos_get(f'/api/customers/{cid}/visits') or []
+                    cam_src = None
+                    for v in visits:
+                        src = v.get('camera_source')
+                        if src:
+                            cam_src = src
+                            break
+
+                    if not cam_src:
+                        logger.debug(f'Photo backfill cid={cid}: no camera source in visits, skipping')
+                        continue
+
+                    # Pull latest snapshot from Frigate for this camera
+                    r = requests.get(f'{FRIGATE_URL}/api/{cam_src}/latest.jpg', timeout=10)
+                    if not r.ok:
+                        logger.debug(f'Photo backfill cid={cid}: no latest snapshot from {cam_src}')
+                        continue
+
+                    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.jpg')
+                    tmp.write(r.content)
+                    tmp.close()
+                    try:
+                        face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, None)
+                        if face_photo and len(face_photo) >= 4000:
+                            payload = {
+                                'embedding_b64': base64.b64encode(face_emb).decode() if face_emb else None,
+                                'quality': face_qual,
+                                'photo_b64': base64.b64encode(face_photo).decode(),
+                                'camera_source': cam_src,
+                                'photo_only': True,
+                            }
+                            # Remove None values
+                            payload = {k: v for k, v in payload.items() if v is not None}
+                            pos_post(f'/api/customers/{cid}/enroll/face', payload)
+                            logger.info(f'Photo backfill cid={cid}: face photo saved from {cam_src} snapshot')
+                        else:
+                            logger.debug(f'Photo backfill cid={cid}: no face detected in latest snapshot')
+                    finally:
+                        try:
+                            os.unlink(tmp.name)
+                        except Exception:
+                            pass
+                    _t.sleep(2)  # throttle between customers
+                except Exception as e:
+                    logger.warning(f'Photo backfill cid={cid} error: {e}')
+        except Exception as e:
+            logger.warning(f'Photo backfill loop error: {e}')
+        _t.sleep(6 * 3600)  # run again every 6h
+
+
 def _nightly_reindex_loop():
     """Nightly background job: re-select best embeddings for stale customers (>90 days absent).
     Runs at 02:00, processes max 50 customers per night with 2s throttle between each."""
@@ -3438,6 +3505,9 @@ if __name__ == '__main__':
 
     # Nightly reindex — refreshes embeddings for customers not seen in >90 days
     threading.Thread(target=_nightly_reindex_loop, daemon=True).start()
+
+    # Startup photo backfill — fixes customers with embeddings but no face/body photo
+    threading.Thread(target=_photo_backfill_loop, daemon=True).start()
 
     # Webhook server (blocking)
     run_webhook_server()
