@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Invoice {{ inv.invoice_number }}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --gold:       #927f57;
+      --gold-light: #c4a96d;
+      --gold-dark:  #6b5c3e;
+      --cream:      #faf7f2;
+      --text:       #2c2416;
+    }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      color: var(--text);
+      background: #fff;
+      padding: 0;
+    }
+
+    .page {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 48px 56px 56px;
+      background: #fff;
+    }
+
+    /* ── Header ── */
+    .header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      border-bottom: 2px solid var(--gold);
+      padding-bottom: 24px;
+      margin-bottom: 32px;
+      gap: 24px;
+    }
+    .header-logo { width: 160px; flex-shrink: 0; }
+    .header-logo img { width: 100%; height: auto; }
+    .header-right { text-align: right; }
+    .invoice-title {
+      font-size: 32px;
+      font-weight: normal;
+      letter-spacing: 4px;
+      color: var(--gold);
+      text-transform: uppercase;
+    }
+    .invoice-meta { margin-top: 8px; font-size: 13px; color: #666; line-height: 1.8; }
+    .invoice-meta strong { color: var(--text); }
+    .status-badge {
+      display: inline-block;
+      margin-top: 10px;
+      padding: 3px 14px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .status-draft  { background: #f0ece4; color: var(--gold-dark); border: 1px solid var(--gold); }
+    .status-sent   { background: #e8f0fe; color: #1a56db; border: 1px solid #1a56db; }
+    .status-paid   { background: #e6f4ea; color: #1e7e34; border: 1px solid #1e7e34; }
+
+    /* ── Addresses ── */
+    .addresses {
+      display: flex;
+      justify-content: space-between;
+      gap: 32px;
+      margin-bottom: 36px;
+    }
+    .address-block { flex: 1; }
+    .address-label {
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--gold);
+      font-family: 'Arial', sans-serif;
+      margin-bottom: 8px;
+      font-weight: bold;
+    }
+    .address-block h3 { font-size: 15px; font-weight: bold; margin-bottom: 4px; }
+    .address-block p  { font-size: 13px; color: #555; line-height: 1.7; }
+
+    .from-block { text-align: left; }
+
+    /* ── Line items table ── */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+    }
+    thead tr {
+      background: var(--gold);
+      color: #fff;
+    }
+    thead th {
+      padding: 10px 14px;
+      font-family: 'Arial', sans-serif;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    thead th.right { text-align: right; }
+    tbody tr { border-bottom: 1px solid #ede8df; }
+    tbody tr:last-child { border-bottom: 2px solid var(--gold); }
+    tbody tr:nth-child(even) { background: var(--cream); }
+    tbody td { padding: 10px 14px; font-size: 14px; }
+    tbody td.right { text-align: right; font-variant-numeric: tabular-nums; }
+    tbody td.qty   { text-align: center; }
+
+    /* ── Totals ── */
+    .totals {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 40px;
+    }
+    .totals-table { width: 280px; }
+    .totals-table td { padding: 6px 12px; font-size: 14px; }
+    .totals-table td:first-child { color: #666; }
+    .totals-table td:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    .totals-table .total-row td {
+      font-size: 17px;
+      font-weight: bold;
+      color: var(--gold-dark);
+      border-top: 2px solid var(--gold);
+      padding-top: 10px;
+    }
+
+    /* ── Notes ── */
+    .notes-section {
+      background: var(--cream);
+      border-left: 3px solid var(--gold);
+      padding: 14px 18px;
+      margin-bottom: 40px;
+      border-radius: 0 4px 4px 0;
+    }
+    .notes-section .notes-label {
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: var(--gold);
+      font-family: 'Arial', sans-serif;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    .notes-section p { font-size: 13px; color: #555; line-height: 1.7; }
+
+    /* ── Footer ── */
+    .footer {
+      border-top: 1px solid #ede8df;
+      padding-top: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: #999;
+      font-family: 'Arial', sans-serif;
+    }
+    .footer .gold { color: var(--gold); font-weight: bold; }
+
+    /* ── Print button (screen only) ── */
+    .print-btn {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: var(--gold);
+      color: #fff;
+      border: none;
+      padding: 10px 24px;
+      border-radius: 4px;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: 'Arial', sans-serif;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .print-btn:hover { background: var(--gold-dark); }
+
+    @media print {
+      .print-btn { display: none; }
+      body { padding: 0; }
+      .page { padding: 24px 32px; }
+    }
+  </style>
+</head>
+<body>
+
+<button class="print-btn" onclick="window.print()">Print / Save PDF</button>
+
+<div class="page">
+
+  <!-- Header -->
+  <div class="header">
+    <div class="header-logo">
+      <img src="/static/logo.svg" alt="Lady Coleen">
+    </div>
+    <div class="header-right">
+      <div class="invoice-title">Invoice</div>
+      <div class="invoice-meta">
+        <div><strong>Invoice #</strong> {{ inv.invoice_number }}</div>
+        <div><strong>Date</strong> {{ inv.created_at.strftime('%d %B %Y') if inv.created_at else '' }}</div>
+        {% if inv.due_date %}<div><strong>Due</strong> {{ inv.due_date }}</div>{% endif %}
+      </div>
+      <span class="status-badge status-{{ inv.status }}">{{ inv.status }}</span>
+    </div>
+  </div>
+
+  <!-- Addresses -->
+  <div class="addresses">
+    <div class="address-block from-block">
+      <div class="address-label">From</div>
+      <h3>Lady Coleen Farm Stall</h3>
+      <p>Fresh Farm Produce &amp; Deli</p>
+    </div>
+    {% if inv.customer_name or inv.customer_phone or inv.customer_email or inv.customer_address %}
+    <div class="address-block">
+      <div class="address-label">To</div>
+      {% if inv.customer_name %}<h3>{{ inv.customer_name }}</h3>{% endif %}
+      {% if inv.customer_phone %}<p>{{ inv.customer_phone }}</p>{% endif %}
+      {% if inv.customer_email %}<p>{{ inv.customer_email }}</p>{% endif %}
+      {% if inv.customer_address %}<p style="white-space:pre-line">{{ inv.customer_address }}</p>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Line items -->
+  <table>
+    <thead>
+      <tr>
+        <th style="width:45%">Description</th>
+        <th class="right" style="width:15%">Qty</th>
+        <th class="right" style="width:20%">Unit Price</th>
+        <th class="right" style="width:20%">Subtotal</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for line in lines %}
+      <tr>
+        <td>{{ line.name }}</td>
+        <td class="right">{{ line.qty }}</td>
+        <td class="right">R{{ '%.2f'|format(line.unit_price|float) }}</td>
+        <td class="right">R{{ '%.2f'|format(line.subtotal|float) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Totals -->
+  <div class="totals">
+    <table class="totals-table">
+      <tbody>
+        <tr>
+          <td>Subtotal</td>
+          <td>R{{ '%.2f'|format(inv.subtotal|float) }}</td>
+        </tr>
+        {% if inv.discount_pct and inv.discount_pct > 0 %}
+        <tr>
+          <td>Discount ({{ '%.0f'|format(inv.discount_pct|float) }}%)</td>
+          <td style="color:#dc3545">-R{{ '%.2f'|format((inv.subtotal|float * inv.discount_pct|float / 100)) }}</td>
+        </tr>
+        {% endif %}
+        <tr class="total-row">
+          <td>Total</td>
+          <td>R{{ '%.2f'|format(inv.total|float) }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  {% if inv.notes %}
+  <div class="notes-section">
+    <div class="notes-label">Notes</div>
+    <p>{{ inv.notes }}</p>
+  </div>
+  {% endif %}
+
+  <!-- Footer -->
+  <div class="footer">
+    <span class="gold">Lady Coleen Farm Stall</span> &nbsp;·&nbsp; Thank you for your business
+  </div>
+
+</div>
+</body>
+</html>

@@ -6895,3 +6895,143 @@ document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('sho
     _monitorInterval = setInterval(() => { refreshMonitor(); refreshLogs(); }, 5000);
   }
 });
+
+// ═══════════════════════════════════════════════════════
+// INVOICES
+// ═══════════════════════════════════════════════════════
+let _invoices = [];
+let _invLines = [];
+
+async function loadInvoices() {
+  try {
+    _invoices = await api('/api/invoices');
+    renderInvoicesList();
+  } catch(e) { console.error('loadInvoices', e); }
+}
+
+function renderInvoicesList() {
+  const host = document.getElementById('invoices-list');
+  if (!host) return;
+  if (!_invoices.length) {
+    host.innerHTML = '<div class="text-muted">No invoices yet. Click "+ New Invoice" to create one.</div>';
+    return;
+  }
+  const statusBadge = s => ({
+    draft: '<span class="badge bg-secondary">Draft</span>',
+    sent:  '<span class="badge bg-primary">Sent</span>',
+    paid:  '<span class="badge bg-success">Paid</span>',
+  }[s] || `<span class="badge bg-secondary">${s}</span>`);
+
+  host.innerHTML = `
+    <table class="table table-sm table-hover">
+      <thead class="table-light">
+        <tr><th>#</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+        ${_invoices.map(i => `
+          <tr style="cursor:pointer" onclick="openInvoiceEditor(${i.id})">
+            <td class="fw-semibold">${i.invoice_number}</td>
+            <td class="text-muted small">${i.created_at ? new Date(i.created_at).toLocaleDateString() : ''}</td>
+            <td>${i.customer_name || '<span class="text-muted">—</span>'}</td>
+            <td class="fw-semibold">R${fmt(i.total)}</td>
+            <td>${statusBadge(i.status)}</td>
+            <td><a href="/invoices/${i.id}/print" target="_blank" class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation()">Print</a></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+}
+
+function _invRecalc() {
+  const disc = parseFloat(document.getElementById('inv-discount-pct')?.value || 0) || 0;
+  const subtotal = _invLines.reduce((s, l) => s + (parseFloat(l.subtotal) || 0), 0);
+  const total = disc > 0 ? subtotal * (1 - disc / 100) : subtotal;
+  const subEl = document.getElementById('inv-subtotal-display');
+  const totEl = document.getElementById('inv-total-display');
+  if (subEl) subEl.textContent = `R${fmt(subtotal)}`;
+  if (totEl) totEl.textContent = `R${fmt(total)}`;
+}
+
+function _renderInvLines() {
+  const body = document.getElementById('inv-lines-body');
+  if (!body) return;
+  body.innerHTML = '';
+  _invLines.forEach((line, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><input class="form-control form-control-sm" value="${line.name || ''}" data-inv-name="${i}"></td>
+      <td><input type="number" step="0.01" min="0.01" class="form-control form-control-sm" value="${line.qty || 1}" data-inv-qty="${i}"></td>
+      <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.01" min="0" class="form-control" value="${line.unit_price || ''}" data-inv-price="${i}"></div></td>
+      <td class="text-end align-middle fw-semibold" id="inv-line-sub-${i}">R${fmt(line.subtotal || 0)}</td>
+      <td><button class="btn btn-outline-danger btn-sm" data-inv-remove="${i}">✕</button></td>`;
+    body.appendChild(tr);
+
+    tr.querySelector(`[data-inv-name="${i}"]`).addEventListener('input', e => { _invLines[i].name = e.target.value; });
+    tr.querySelector(`[data-inv-qty="${i}"]`).addEventListener('input', e => {
+      _invLines[i].qty = parseFloat(e.target.value) || 0;
+      _invLines[i].subtotal = _invLines[i].qty * (_invLines[i].unit_price || 0);
+      const sub = document.getElementById(`inv-line-sub-${i}`); if (sub) sub.textContent = `R${fmt(_invLines[i].subtotal)}`;
+      _invRecalc();
+    });
+    tr.querySelector(`[data-inv-price="${i}"]`).addEventListener('input', e => {
+      _invLines[i].unit_price = parseFloat(e.target.value) || 0;
+      _invLines[i].subtotal = (_invLines[i].qty || 1) * _invLines[i].unit_price;
+      const sub = document.getElementById(`inv-line-sub-${i}`); if (sub) sub.textContent = `R${fmt(_invLines[i].subtotal)}`;
+      _invRecalc();
+    });
+    tr.querySelector(`[data-inv-remove="${i}"]`).addEventListener('click', () => {
+      _invLines.splice(i, 1); _renderInvLines(); _invRecalc();
+    });
+  });
+  _invRecalc();
+}
+
+function openInvoiceEditor(invId) {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('invoiceEditorModal'));
+  document.getElementById('inv-id').value = invId || '';
+  document.getElementById('invoiceEditorTitle').textContent = invId ? 'Edit Invoice' : 'New Invoice';
+  const printBtn = document.getElementById('btn-inv-print');
+  const delBtn   = document.getElementById('btn-inv-delete');
+  if (invId) {
+    if (printBtn) { printBtn.disabled = false; printBtn.onclick = () => window.open(`/invoices/${invId}/print`, '_blank'); }
+    if (delBtn) show(delBtn);
+    api(`/api/invoices/${invId}`).then(inv => {
+      document.getElementById('inv-customer-name').value    = inv.customer_name || '';
+      document.getElementById('inv-customer-phone').value   = inv.customer_phone || '';
+      document.getElementById('inv-customer-email').value   = inv.customer_email || '';
+      document.getElementById('inv-customer-address').value = inv.customer_address || '';
+      document.getElementById('inv-due-date').value         = inv.due_date || '';
+      document.getElementById('inv-notes').value            = inv.notes || '';
+      document.getElementById('inv-discount-pct').value     = inv.discount_pct || '';
+      document.getElementById('inv-status').value           = inv.status || 'draft';
+      _invLines = (inv.lines || []).map(l => ({ ...l }));
+      _renderInvLines();
+    }).catch(e => toast(e.message, 'error'));
+  } else {
+    ['inv-customer-name','inv-customer-phone','inv-customer-email','inv-customer-address','inv-due-date','inv-notes','inv-discount-pct'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    document.getElementById('inv-status').value = 'draft';
+    if (printBtn) printBtn.disabled = true;
+    if (delBtn) hide(delBtn);
+    _invLines = [{ name: '', qty: 1, unit_price: 0, subtotal: 0 }];
+    _renderInvLines();
+  }
+  modal.show();
+}
+
+document.getElementById('btn-new-invoice')?.addEventListener('click', () => openInvoiceEditor(null));
+
+document.getElementById('btn-inv-add-line')?.addEventListener('click', () => {
+  _invLines.push({ name: '', qty: 1, unit_price: 0, subtotal: 0 });
+  _renderInvLines();
+});
+
+document.getElementById('inv-discount-pct')?.addEventListener('input', _invRecalc);
+
+document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
+  const invId = document.getElementById('inv-id').value;
+  const payload = {
+    customer_name:    document.getElementById('inv-customer-name').value.trim() || null,
+    customer_phone:   document.getElementById('inv-customer-phone').value.trim() || null,
+    customer_email:   document.getElementById('inv-customer-email').value.trim() || null,
+    customer_address: document.getElementById('inv-customer-address').value.trim() || null,
+    due_date:         document.getElementById('inv-due-date').value || null,
+    notes:            document.getElementById('inv-notes

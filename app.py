@@ -324,6 +324,25 @@ class Special(db.Model):
     schedule      = db.Column(db.Text, nullable=True)
 
 
+class Invoice(db.Model):
+    __tablename__ = 'invoices'
+    id           = db.Column(db.Integer, primary_key=True)
+    invoice_number = db.Column(db.String(20), unique=True, nullable=False)
+    created_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    due_date     = db.Column(db.String(20), nullable=True)
+    customer_name = db.Column(db.String(120), nullable=True)
+    customer_phone = db.Column(db.String(50), nullable=True)
+    customer_email = db.Column(db.String(120), nullable=True)
+    customer_address = db.Column(db.Text, nullable=True)
+    notes        = db.Column(db.Text, nullable=True)
+    lines_json   = db.Column(db.Text, nullable=False, default='[]')  # JSON list of {name, qty, unit_price, subtotal}
+    subtotal     = db.Column(Numeric(10, 2), nullable=False, default=0)
+    discount_pct = db.Column(Numeric(5, 2), nullable=True)
+    total        = db.Column(Numeric(10, 2), nullable=False, default=0)
+    status       = db.Column(db.String(20), nullable=False, default='draft')  # draft | sent | paid
+    created_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
 class SpecialLine(db.Model):
     __tablename__ = 'special_lines'
     id         = db.Column(db.Integer, primary_key=True)
@@ -1247,6 +1266,26 @@ def strong_migrate():
             )""")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_special_lines_special ON special_lines (special_id)")
             pg_try("ALTER TABLE specials ADD COLUMN schedule TEXT")
+
+            # ---- invoices ----
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS invoices (
+              id               SERIAL PRIMARY KEY,
+              invoice_number   VARCHAR(20) UNIQUE NOT NULL,
+              created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+              due_date         VARCHAR(20),
+              customer_name    VARCHAR(120),
+              customer_phone   VARCHAR(50),
+              customer_email   VARCHAR(120),
+              customer_address TEXT,
+              notes            TEXT,
+              lines_json       TEXT NOT NULL DEFAULT '[]',
+              subtotal         NUMERIC(10,2) NOT NULL DEFAULT 0,
+              discount_pct     NUMERIC(5,2),
+              total            NUMERIC(10,2) NOT NULL DEFAULT 0,
+              status           VARCHAR(20) NOT NULL DEFAULT 'draft',
+              created_by       INTEGER REFERENCES users(id)
+            )""")
 
             # ---- customer identification tables (PostgreSQL) ----
             conn.exec_driver_sql("""
@@ -6912,6 +6951,131 @@ def api_db_health():
 @app.route('/__version')
 def version():
     return jsonify({'version': APP_VERSION})
+
+
+# -----------------------------
+# Invoices
+# -----------------------------
+def _next_invoice_number():
+    last = db.session.query(Invoice).order_by(Invoice.id.desc()).first()
+    if last:
+        try:
+            num = int(last.invoice_number.split('-')[-1]) + 1
+        except Exception:
+            num = last.id + 1
+    else:
+        num = 1
+    return f'INV-{num:04d}'
+
+
+@app.route('/api/invoices', methods=['GET'])
+def api_invoices_list():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    invs = db.session.query(Invoice).order_by(Invoice.created_at.desc()).all()
+    return jsonify([{
+        'id': i.id, 'invoice_number': i.invoice_number,
+        'created_at': i.created_at.isoformat() if i.created_at else None,
+        'due_date': i.due_date, 'customer_name': i.customer_name,
+        'customer_phone': i.customer_phone, 'customer_email': i.customer_email,
+        'total': float(i.total), 'status': i.status,
+    } for i in invs])
+
+
+@app.route('/api/invoices', methods=['POST'])
+def api_invoices_create():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    lines = data.get('lines', [])
+    subtotal = sum(float(l.get('subtotal', 0)) for l in lines)
+    disc = float(data.get('discount_pct') or 0)
+    total = subtotal * (1 - disc / 100) if disc else subtotal
+    inv = Invoice(
+        invoice_number=_next_invoice_number(),
+        due_date=data.get('due_date') or None,
+        customer_name=data.get('customer_name') or None,
+        customer_phone=data.get('customer_phone') or None,
+        customer_email=data.get('customer_email') or None,
+        customer_address=data.get('customer_address') or None,
+        notes=data.get('notes') or None,
+        lines_json=_json.dumps(lines),
+        subtotal=round(subtotal, 2),
+        discount_pct=disc or None,
+        total=round(total, 2),
+        status='draft',
+        created_by=current_user().id if current_user() else None,
+    )
+    db.session.add(inv)
+    db.session.commit()
+    return jsonify({'id': inv.id, 'invoice_number': inv.invoice_number})
+
+
+@app.route('/api/invoices/<int:inv_id>', methods=['GET'])
+def api_invoices_get(inv_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    inv = db.session.get(Invoice, inv_id)
+    if not inv:
+        return jsonify({'error': 'Not found'}), 404
+    return jsonify({
+        'id': inv.id, 'invoice_number': inv.invoice_number,
+        'created_at': inv.created_at.isoformat() if inv.created_at else None,
+        'due_date': inv.due_date, 'customer_name': inv.customer_name,
+        'customer_phone': inv.customer_phone, 'customer_email': inv.customer_email,
+        'customer_address': inv.customer_address, 'notes': inv.notes,
+        'lines': _json.loads(inv.lines_json or '[]'),
+        'subtotal': float(inv.subtotal), 'discount_pct': float(inv.discount_pct or 0),
+        'total': float(inv.total), 'status': inv.status,
+    })
+
+
+@app.route('/api/invoices/<int:inv_id>', methods=['POST'])
+def api_invoices_update(inv_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    inv = db.session.get(Invoice, inv_id)
+    if not inv:
+        return jsonify({'error': 'Not found'}), 404
+    data = request.json or {}
+    for field in ('due_date', 'customer_name', 'customer_phone', 'customer_email',
+                  'customer_address', 'notes', 'status'):
+        if field in data:
+            setattr(inv, field, data[field] or None)
+    if 'lines' in data:
+        lines = data['lines']
+        subtotal = sum(float(l.get('subtotal', 0)) for l in lines)
+        disc = float(data.get('discount_pct') or inv.discount_pct or 0)
+        total = subtotal * (1 - disc / 100) if disc else subtotal
+        inv.lines_json = _json.dumps(lines)
+        inv.subtotal = round(subtotal, 2)
+        inv.discount_pct = disc or None
+        inv.total = round(total, 2)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/invoices/<int:inv_id>/delete', methods=['POST'])
+def api_invoices_delete(inv_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    inv = db.session.get(Invoice, inv_id)
+    if not inv:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(inv)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/invoices/<int:inv_id>/print')
+def invoice_print(inv_id):
+    if not require_login():
+        return 'Unauthorized', 401
+    inv = db.session.get(Invoice, inv_id)
+    if not inv:
+        return 'Not found', 404
+    lines = _json.loads(inv.lines_json or '[]')
+    return render_template('invoice.html', inv=inv, lines=lines)
 
 if __name__ == '__main__':
     # Look for certificates in config directory (production) or same directory (dev)
