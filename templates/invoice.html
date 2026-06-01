@@ -268,6 +268,13 @@
     </table>
   </div>
 
+  {% if inv.bank_details %}
+  <div class="notes-section" style="margin-bottom:16px">
+    <div class="notes-label">Banking Details</div>
+    <p style="white-space:pre-line;font-family:'Arial',sans-serif;font-size:13px">{{ inv.bank_details }}</p>
+  </div>
+  {% endif %}
+
   {% if inv.notes %}
   <div class="notes-section">
     <div class="notes-label">Notes</div>

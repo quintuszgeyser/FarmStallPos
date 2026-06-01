@@ -335,7 +335,8 @@ class Invoice(db.Model):
     customer_email = db.Column(db.String(120), nullable=True)
     customer_address = db.Column(db.Text, nullable=True)
     notes        = db.Column(db.Text, nullable=True)
-    lines_json   = db.Column(db.Text, nullable=False, default='[]')  # JSON list of {name, qty, unit_price, subtotal}
+    bank_details = db.Column(db.Text, nullable=True)
+    lines_json   = db.Column(db.Text, nullable=False, default='[]')
     subtotal     = db.Column(Numeric(10, 2), nullable=False, default=0)
     discount_pct = db.Column(Numeric(5, 2), nullable=True)
     total        = db.Column(Numeric(10, 2), nullable=False, default=0)
@@ -1268,6 +1269,7 @@ def strong_migrate():
             pg_try("ALTER TABLE specials ADD COLUMN schedule TEXT")
 
             # ---- invoices ----
+            pg_try("ALTER TABLE invoices ADD COLUMN bank_details TEXT")
             pg_try("""
             CREATE TABLE invoices (
               id               SERIAL PRIMARY KEY,
@@ -6999,6 +7001,7 @@ def api_invoices_create():
         customer_email=data.get('customer_email') or None,
         customer_address=data.get('customer_address') or None,
         notes=data.get('notes') or None,
+        bank_details=data.get('bank_details') or None,
         lines_json=_json.dumps(lines),
         subtotal=round(subtotal, 2),
         discount_pct=disc or None,
@@ -7023,7 +7026,7 @@ def api_invoices_get(inv_id):
         'created_at': inv.created_at.isoformat() if inv.created_at else None,
         'due_date': inv.due_date, 'customer_name': inv.customer_name,
         'customer_phone': inv.customer_phone, 'customer_email': inv.customer_email,
-        'customer_address': inv.customer_address, 'notes': inv.notes,
+        'customer_address': inv.customer_address, 'notes': inv.notes, 'bank_details': inv.bank_details,
         'lines': _json.loads(inv.lines_json or '[]'),
         'subtotal': float(inv.subtotal), 'discount_pct': float(inv.discount_pct or 0),
         'total': float(inv.total), 'status': inv.status,
@@ -7039,7 +7042,7 @@ def api_invoices_update(inv_id):
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
     for field in ('due_date', 'customer_name', 'customer_phone', 'customer_email',
-                  'customer_address', 'notes', 'status'):
+                  'customer_address', 'notes', 'bank_details', 'status'):
         if field in data:
             setattr(inv, field, data[field] or None)
     if 'lines' in data:

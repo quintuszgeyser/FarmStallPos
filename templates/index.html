@@ -1762,11 +1762,14 @@
         <!-- Product picker -->
         <div class="mb-2">
           <label class="form-label small fw-bold">Add from inventory</label>
-          <div class="d-flex gap-2">
-            <select id="inv-product-select" class="form-select form-select-sm">
+          <div class="d-flex gap-2 flex-wrap">
+            <select id="inv-product-select" class="form-select form-select-sm" style="flex:2;min-width:160px">
               <option value="">— Pick a product —</option>
             </select>
-            <input type="number" id="inv-product-qty" class="form-control form-control-sm" style="width:80px" value="1" min="0.01" step="0.01" placeholder="Qty">
+            <input type="number" id="inv-product-qty" class="form-control form-control-sm" style="width:75px" value="1" min="0.001" step="any" placeholder="Qty">
+            <select id="inv-product-unit" class="form-select form-select-sm" style="width:90px">
+              <option value="unit">unit</option>
+            </select>
             <button class="btn btn-outline-primary btn-sm" id="btn-inv-add-product">Add</button>
           </div>
         </div>
@@ -1778,7 +1781,7 @@
         </div>
         <table class="table table-sm" id="inv-lines-table">
           <thead class="table-light">
-            <tr><th>Description</th><th style="width:80px">Qty</th><th style="width:110px">Unit Price</th><th style="width:100px">Subtotal</th><th style="width:36px"></th></tr>
+            <tr><th>Description</th><th style="width:72px">Qty</th><th style="width:88px">Unit</th><th style="width:100px">Unit Price</th><th style="width:95px">Subtotal</th><th style="width:36px"></th></tr>
           </thead>
           <tbody id="inv-lines-body"></tbody>
         </table>
@@ -1795,10 +1798,16 @@
           </div>
         </div>
 
+        <!-- Bank details -->
+        <div class="mb-2">
+          <label class="form-label small fw-bold">Bank Details <span class="text-muted fw-normal">(saved automatically — shown on every invoice)</span></label>
+          <textarea id="inv-bank-details" class="form-control form-control-sm" rows="3" placeholder="e.g. FNB Cheque&#10;Account: 12345678&#10;Branch: 250655&#10;Reference: Invoice number"></textarea>
+        </div>
+
         <!-- Notes -->
         <div class="mb-2">
           <label class="form-label small fw-bold">Notes <span class="text-muted fw-normal">(optional — shown on invoice)</span></label>
-          <textarea id="inv-notes" class="form-control" rows="2" placeholder="e.g. Payment due on delivery, EFT to FNB acc 12345678"></textarea>
+          <textarea id="inv-notes" class="form-control form-control-sm" rows="2" placeholder="e.g. Payment due on delivery"></textarea>
         </div>
       </div>
       <div class="modal-footer d-flex justify-content-between">
@@ -1833,6 +1842,6 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260601m"></script>
+<script src="/static/main.js?v=20260601n"></script>
 </body>
 </html>

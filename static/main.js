@@ -7041,28 +7041,71 @@ function _renderInvLines() {
   if (!body) return;
   body.innerHTML = '';
   _invLines.forEach((line, i) => {
+    // Build unit options for weight lines
+    let unitCell = '';
+    if (line._is_weight && line._unit_type) {
+      const unitOpts = buildUnitOptions(line._unit_type, line._pkg_size, line._pkg_unit);
+      const optHtml = unitOpts.map(o =>
+        `<option value="${o.value}" data-conv="${o.conv}"${o.value === line.unit ? ' selected' : ''}>${o.label}</option>`
+      ).join('');
+      unitCell = `<td><select class="form-select form-select-sm" data-inv-unit="${i}">${optHtml}</select></td>`;
+    } else {
+      unitCell = `<td class="align-middle text-muted small">${line.unit || 'unit'}</td>`;
+    }
+
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><input class="form-control form-control-sm" value="${line.name || ''}" data-inv-name="${i}"></td>
-      <td><input type="number" step="0.01" min="0.01" class="form-control form-control-sm" value="${line.qty || 1}" data-inv-qty="${i}"></td>
-      <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.01" min="0" class="form-control" value="${line.unit_price || ''}" data-inv-price="${i}"></div></td>
+      <td><input type="number" step="any" min="0.001" class="form-control form-control-sm" value="${line.qty || 1}" data-inv-qty="${i}"></td>
+      ${unitCell}
+      <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.0001" min="0" class="form-control" value="${line.unit_price != null ? +parseFloat(line.unit_price).toFixed(4) : ''}" data-inv-price="${i}"></div></td>
       <td class="text-end align-middle fw-semibold" id="inv-line-sub-${i}">R${fmt(line.subtotal || 0)}</td>
       <td><button class="btn btn-outline-danger btn-sm" data-inv-remove="${i}">✕</button></td>`;
     body.appendChild(tr);
 
     tr.querySelector(`[data-inv-name="${i}"]`).addEventListener('input', e => { _invLines[i].name = e.target.value; });
+
     tr.querySelector(`[data-inv-qty="${i}"]`).addEventListener('input', e => {
-      _invLines[i].qty = parseFloat(e.target.value) || 0;
-      _invLines[i].subtotal = _invLines[i].qty * (_invLines[i].unit_price || 0);
+      const qty = parseFloat(e.target.value) || 0;
+      _invLines[i].qty = qty;
+      if (_invLines[i]._is_weight && _invLines[i]._price_per_base != null) {
+        const unitEl = tr.querySelector(`[data-inv-unit="${i}"]`);
+        const conv   = parseFloat(unitEl?.options[unitEl?.selectedIndex]?.dataset?.conv || 1);
+        _invLines[i].unit_price = _invLines[i]._price_per_base * conv;
+        _invLines[i].subtotal   = _invLines[i]._price_per_base * qty * conv;
+        const priceEl = tr.querySelector(`[data-inv-price="${i}"]`);
+        if (priceEl) priceEl.value = +_invLines[i].unit_price.toFixed(4);
+      } else {
+        _invLines[i].subtotal = qty * (_invLines[i].unit_price || 0);
+      }
       const sub = document.getElementById(`inv-line-sub-${i}`); if (sub) sub.textContent = `R${fmt(_invLines[i].subtotal)}`;
       _invRecalc();
     });
+
+    // Unit dropdown change — recalc price per selected unit and subtotal
+    const unitSel = tr.querySelector(`[data-inv-unit="${i}"]`);
+    if (unitSel) {
+      unitSel.addEventListener('change', e => {
+        const conv = parseFloat(e.target.options[e.target.selectedIndex]?.dataset?.conv || 1);
+        _invLines[i].unit      = e.target.value;
+        if (_invLines[i]._price_per_base != null) {
+          _invLines[i].unit_price = _invLines[i]._price_per_base * conv;
+          _invLines[i].subtotal   = _invLines[i]._price_per_base * (_invLines[i].qty || 1) * conv;
+          const priceEl = tr.querySelector(`[data-inv-price="${i}"]`);
+          if (priceEl) priceEl.value = +_invLines[i].unit_price.toFixed(4);
+          const sub = document.getElementById(`inv-line-sub-${i}`); if (sub) sub.textContent = `R${fmt(_invLines[i].subtotal)}`;
+          _invRecalc();
+        }
+      });
+    }
+
     tr.querySelector(`[data-inv-price="${i}"]`).addEventListener('input', e => {
       _invLines[i].unit_price = parseFloat(e.target.value) || 0;
-      _invLines[i].subtotal = (_invLines[i].qty || 1) * _invLines[i].unit_price;
+      _invLines[i].subtotal   = (_invLines[i].qty || 1) * _invLines[i].unit_price;
       const sub = document.getElementById(`inv-line-sub-${i}`); if (sub) sub.textContent = `R${fmt(_invLines[i].subtotal)}`;
       _invRecalc();
     });
+
     tr.querySelector(`[data-inv-remove="${i}"]`).addEventListener('click', () => {
       _invLines.splice(i, 1); _renderInvLines(); _invRecalc();
     });
@@ -7085,10 +7128,11 @@ function openInvoiceEditor(invId) {
     if (printBtn) { printBtn.disabled = false; printBtn.onclick = () => window.open(`/invoices/${invId}/print`, '_blank'); }
     if (delBtn) show(delBtn);
     api(`/api/invoices/${invId}`).then(inv => {
-      document.getElementById('inv-due-date').value   = inv.due_date || '';
-      document.getElementById('inv-notes').value      = inv.notes || '';
-      document.getElementById('inv-discount-pct').value = inv.discount_pct || '';
-      document.getElementById('inv-status').value     = inv.status || 'draft';
+      document.getElementById('inv-due-date').value        = inv.due_date || '';
+      document.getElementById('inv-notes').value           = inv.notes || '';
+      document.getElementById('inv-bank-details').value    = inv.bank_details || '';
+      document.getElementById('inv-discount-pct').value    = inv.discount_pct || '';
+      document.getElementById('inv-status').value          = inv.status || 'draft';
       // Try to match customer by name to existing customer
       const matchedCust = STATE.customers.find(c => c.name === inv.customer_name);
       if (matchedCust) {
@@ -7113,6 +7157,7 @@ function openInvoiceEditor(invId) {
     const sel = document.getElementById('inv-customer-select'); if (sel) sel.value = '';
     const preview = document.getElementById('inv-customer-preview'); if (preview) hide(preview);
     ['inv-due-date','inv-notes','inv-discount-pct'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+    _invLoadBankDetails();
     document.getElementById('inv-status').value = 'draft';
     if (printBtn) printBtn.disabled = true;
     if (delBtn) hide(delBtn);
@@ -7124,17 +7169,30 @@ function openInvoiceEditor(invId) {
 
 document.getElementById('btn-new-invoice')?.addEventListener('click', () => openInvoiceEditor(null));
 
-// Update qty placeholder to show unit when a weight/volume product is selected
+// Update unit dropdown and qty step when a product is selected
 document.getElementById('inv-product-select')?.addEventListener('change', e => {
   const opt     = e.target.options[e.target.selectedIndex];
+  const unitSel = document.getElementById('inv-product-unit');
   const qtyEl   = document.getElementById('inv-product-qty');
-  if (!qtyEl) return;
+  if (!unitSel) return;
+  unitSel.innerHTML = '';
   if (opt?.dataset.isByWeight === '1') {
-    qtyEl.placeholder = opt.dataset.bigUnit || 'qty';
-    qtyEl.step = '0.01';
+    const pid = parseInt(opt.value);
+    const p   = STATE.products.find(x => x.id === pid);
+    const unitOpts = buildUnitOptions(p?.unit_type || 'weight', p?.package_size, p?.package_unit);
+    unitOpts.forEach(o => {
+      const el = document.createElement('option');
+      el.value = o.value; el.textContent = o.label; el.dataset.conv = o.conv;
+      unitSel.appendChild(el);
+    });
+    // Auto-select the best display unit (kg/L by default)
+    const bigUnit = p?.unit_type === 'volume' ? 'L' : 'kg';
+    if ([...unitSel.options].some(o => o.value === bigUnit)) unitSel.value = bigUnit;
+    if (qtyEl) { qtyEl.placeholder = unitSel.value; qtyEl.step = '0.001'; }
   } else {
-    qtyEl.placeholder = 'Qty';
-    qtyEl.step = '1';
+    const el = document.createElement('option'); el.value = 'unit'; el.textContent = 'unit'; el.dataset.conv = 1;
+    unitSel.appendChild(el);
+    if (qtyEl) { qtyEl.placeholder = 'Qty'; qtyEl.step = '1'; }
   }
 });
 
@@ -7144,27 +7202,52 @@ document.getElementById('btn-inv-add-line')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-inv-add-product')?.addEventListener('click', () => {
-  const sel = document.getElementById('inv-product-select');
-  const opt = sel?.options[sel.selectedIndex];
+  const sel     = document.getElementById('inv-product-select');
+  const unitSel = document.getElementById('inv-product-unit');
+  const opt     = sel?.options[sel.selectedIndex];
   if (!opt?.value) return toast('Select a product first', 'warning');
 
-  const qty        = parseFloat(document.getElementById('inv-product-qty')?.value || 1) || 1;
-  const isByWeight = opt.dataset.isByWeight === '1';
-  const unitPrice  = parseFloat(opt.dataset.price) || 0;  // per kg/L or per unit
-  const bigUnit    = opt.dataset.bigUnit || '';
-  const name       = isByWeight
-    ? `${opt.dataset.name} (${qty}${bigUnit})`  // e.g. "Biltong (0.5kg)"
-    : opt.dataset.name;
+  const qtyDisplay  = parseFloat(document.getElementById('inv-product-qty')?.value || 1) || 1;
+  const isByWeight  = opt.dataset.isByWeight === '1';
+  const unitVal     = unitSel?.value || 'unit';
+  const conv        = parseFloat(unitSel?.options[unitSel?.selectedIndex]?.dataset?.conv || 1);
+  const pid         = parseInt(opt.value);
+  const p           = STATE.products.find(x => x.id === pid);
+
+  let name, qtyBase, unitPrice, subtotal;
+
+  if (isByWeight) {
+    // price_per_base is per g or ml; opt.dataset.price is already per kg/L (×1000)
+    const pricePerBase = parseFloat(p?.price_per_unit || 0);  // per g or ml
+    qtyBase  = qtyDisplay * conv;                              // convert to base (g/ml)
+    unitPrice = pricePerBase * conv;                           // price per selected unit
+    subtotal  = pricePerBase * qtyBase;
+    name      = `${opt.dataset.name}`;
+  } else {
+    qtyBase   = qtyDisplay;
+    unitPrice = parseFloat(opt.dataset.price) || 0;
+    subtotal  = qtyDisplay * unitPrice;
+    name      = opt.dataset.name;
+  }
 
   _invLines.push({
-    name:       name,
-    qty:        isByWeight ? 1 : qty,          // weight items: qty=1, price already accounts for weight
-    unit_price: isByWeight ? unitPrice * qty : unitPrice,  // e.g. R150/kg × 0.5kg = R75
-    subtotal:   isByWeight ? unitPrice * qty : qty * unitPrice,
+    name,
+    qty:           qtyDisplay,
+    unit:          unitVal,
+    unit_price:    parseFloat(unitPrice.toFixed(4)),
+    subtotal:      parseFloat(subtotal.toFixed(2)),
+    // stored for recalc when unit changes in the line editor
+    _price_per_base: isByWeight ? parseFloat(p?.price_per_unit || 0) : null,
+    _unit_type:      isByWeight ? (p?.unit_type || 'weight') : null,
+    _pkg_size:       p?.package_size || null,
+    _pkg_unit:       p?.package_unit || null,
+    _is_weight:      isByWeight,
   });
   _renderInvLines();
   sel.value = '';
   const qtyEl = document.getElementById('inv-product-qty'); if (qtyEl) qtyEl.value = '1';
+  // Reset unit dropdown
+  if (unitSel) { unitSel.innerHTML = ''; const el = document.createElement('option'); el.value='unit'; el.textContent='unit'; el.dataset.conv=1; unitSel.appendChild(el); }
 });
 
 document.getElementById('inv-discount-pct')?.addEventListener('input', _invRecalc);
@@ -7217,6 +7300,7 @@ document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
     customer_address: custAddress,
     due_date:         document.getElementById('inv-due-date').value || null,
     notes:            document.getElementById('inv-notes').value.trim() || null,
+    bank_details:     document.getElementById('inv-bank-details').value.trim() || null,
     discount_pct:     parseFloat(document.getElementById('inv-discount-pct').value || 0) || null,
     status:           document.getElementById('inv-status').value,
     lines: _invLines.map(l => ({
@@ -7254,6 +7338,23 @@ document.getElementById('btn-inv-delete')?.addEventListener('click', async () =>
     await loadInvoices();
     toast('Invoice deleted', 'warning');
   } catch(e) { toast(e.message, 'error'); }
+});
+
+// ── Bank details: auto-load from settings, auto-save on blur ──
+async function _invLoadBankDetails() {
+  try {
+    const s = await api('/api/settings');
+    const val = s.invoice_bank_details || '';
+    const el = document.getElementById('inv-bank-details');
+    if (el && val) el.value = val;
+  } catch {}
+}
+
+document.getElementById('inv-bank-details')?.addEventListener('blur', async () => {
+  const val = document.getElementById('inv-bank-details')?.value || '';
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ invoice_bank_details: val }) });
+  } catch {}
 });
 
 document.querySelector('[data-bs-target="#invoices"]')?.addEventListener('shown.bs.tab', async () => {
