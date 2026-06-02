@@ -125,6 +125,242 @@ CLEARLY_NOT_EXISTING     = 0.35   # best_face_sim must be BELOW this to create
 
 ANON_IDENTITY_TTL        = 86400  # 24 hours
 
+# ─── Stable Track Layer constants ────────────────────────────────────────────
+# Track reuse / continuity
+TRACK_REUSE_WINDOW        = 3.0    # seconds — max gap to attempt reuse of same track
+TRACK_REUSE_HARD_MIN      = 0.25   # face_sim below this → NEVER reuse (different person)
+TRACK_REUSE_THRESHOLD     = 0.55   # weighted score must exceed this to reuse
+CROSS_CAMERA_FACE_MIN     = 0.55   # stricter — no bbox anchor when crossing cameras
+CROSS_CAMERA_REUSE_WINDOW = 10.0   # seconds — person can move between cameras
+MIN_TRACK_REUSE_CONFIDENCE = 0.20  # skip closed tracks weaker than this
+
+# Track lifecycle
+STABLE_TRACK_TTL           = 3600  # seconds after CLOSED before fully removed
+TRACK_GRACE_PERIOD         = 5.0   # seconds to hold session open after track disappears
+REENTRY_WINDOW             = 120.0 # seconds — try re-id against recently closed tracks
+MAX_ACTIVE_TRACKS_PER_CAMERA = 10  # soft cap per camera
+
+# Frame buffer
+MAX_FRAMES_PER_TRACK       = 60    # hard cap (deque maxlen) — ~2min at 0.5Hz
+FRAME_SAMPLE_HZ            = 0.5   # 1 frame per 2 seconds per track
+EVIDENCE_FLUSH_INTERVAL    = 15.0  # seconds between evidence extractions from buffer
+
+# Stable-track rebind window (early correction of wrong binding)
+REBIND_WINDOW              = 5.0   # seconds from track creation — rebind allowed
+REBIND_MIN_SIM             = 0.75  # must be significantly stronger to rebind
+
+# Confidence decay
+CONFIDENCE_DECAY_RATE      = 0.95  # multiply per cycle
+CONFIDENCE_DECAY_INTERVAL  = 30.0  # seconds between decay ticks
+CONFIDENCE_DECAY_FLOOR     = 0.10  # never decay below this
+
+# Promotion scoring
+PROMOTION_MIN_SCORE        = 0.65  # promotion fires when score exceeds this
+PROFILE_QUALITY_MIN        = 0.40  # quality floor for profile-worthy embeddings
+MIN_TIME_SPAN_FOR_PROMOTION = 5.0  # seconds — block single-burst promotions
+
+# Anon identity reconciliation
+ANON_MERGE_THRESHOLD       = 0.55  # bidirectional — both directions must clear this
+ANON_MERGE_COOLDOWN        = 60.0  # seconds before re-attempting same pair
+
+# ─── Stable Track Data Structures ────────────────────────────────────────────
+import enum
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Tuple
+
+class PersonState(enum.Enum):
+    DETECTED       = "detected"       # first bbox seen, no qualifying face yet
+    TRACKING       = "tracking"       # face embedding obtained
+    SESSION_ACTIVE = "session_active" # hard-bound to a VisitorSession
+    BUILDING       = "building"       # periodic clips accumulating evidence
+    READY          = "ready"          # meets promotion score threshold
+    PROMOTED       = "promoted"       # linked to a known Customer
+    GRACE          = "grace"          # left frame, session held open briefly
+    CLOSED         = "closed"         # session ended, identity preserved in anon pool
+
+# Valid state transitions — any transition not in this set is rejected
+_VALID_TRANSITIONS: set = {
+    (PersonState.DETECTED,       PersonState.TRACKING),
+    (PersonState.DETECTED,       PersonState.CLOSED),      # never got a face
+    (PersonState.TRACKING,       PersonState.SESSION_ACTIVE),
+    (PersonState.TRACKING,       PersonState.GRACE),
+    (PersonState.TRACKING,       PersonState.CLOSED),
+    (PersonState.SESSION_ACTIVE, PersonState.BUILDING),
+    (PersonState.SESSION_ACTIVE, PersonState.READY),
+    (PersonState.SESSION_ACTIVE, PersonState.GRACE),
+    (PersonState.SESSION_ACTIVE, PersonState.PROMOTED),    # fast-path (already known customer)
+    (PersonState.BUILDING,       PersonState.READY),
+    (PersonState.BUILDING,       PersonState.GRACE),
+    (PersonState.BUILDING,       PersonState.PROMOTED),
+    (PersonState.READY,          PersonState.PROMOTED),
+    (PersonState.READY,          PersonState.GRACE),
+    (PersonState.PROMOTED,       PersonState.GRACE),
+    (PersonState.GRACE,          PersonState.SESSION_ACTIVE),  # resumed
+    (PersonState.GRACE,          PersonState.CLOSED),
+}
+
+@dataclass
+class StabilityRecord:
+    """Tracks how many times identity components were reassigned — high counts indicate instability."""
+    session_reassignments: int = 0
+    anon_reassignments:    int = 0
+    cross_camera_hops:     int = 0
+    merge_events:          int = 0
+    identity_flips:        int = 0   # customer_id changes
+
+    @property
+    def summary(self) -> str:
+        total = (self.session_reassignments + self.anon_reassignments + self.identity_flips)
+        return '✅' if total == 0 else f'⚠️ {total}'
+
+    def to_dict(self) -> dict:
+        return {
+            'session_reassignments': self.session_reassignments,
+            'anon_reassignments':    self.anon_reassignments,
+            'cross_camera_hops':     self.cross_camera_hops,
+            'merge_events':          self.merge_events,
+            'identity_flips':        self.identity_flips,
+            'summary':               self.summary,
+        }
+
+@dataclass
+class StableTrack:
+    """
+    A stable identity anchor that persists through Frigate event_id flickers.
+    One StableTrack = one continuous physical presence of one person.
+    Multiple raw Frigate event_ids may map to the same StableTrack.
+    """
+    stable_id:      str
+    created_at:     float
+    state:          PersonState = PersonState.DETECTED
+    locked:         bool        = False   # True during promotion — blocks evidence + merges
+
+    # Camera tracking — origin_camera never changes; current_camera updates on handoff
+    origin_camera:   str        = ''
+    current_camera:  str        = ''
+    camera_history:  List[str]  = field(default_factory=list)
+
+    # Frigate linkage — one stable track can absorb multiple flickering event_ids
+    raw_event_ids:  List[str]   = field(default_factory=list)
+    last_bbox:      Optional[Tuple[float,float,float,float]] = None
+
+    # Hard identity bindings — set once, never changed (except within REBIND_WINDOW)
+    session_id:     Optional[str] = None
+    anon_id:        Optional[str] = None
+    customer_id:    Optional[int] = None
+
+    # Best face embedding seen on this track (for reuse matching + cross-camera)
+    best_embedding:   Optional[bytes] = None
+    best_emb_quality: float           = 0.0
+
+    # Frame buffer for periodic evidence extraction
+    # deque(maxlen=MAX_FRAMES_PER_TRACK) handles eviction automatically
+    last_frame_at:  float = 0.0
+    last_flush_at:  float = 0.0
+    flush_count:    int   = 0
+
+    # Scoring
+    confidence:       float = 0.0
+    promotion_score:  float = 0.0
+
+    # Timing
+    last_seen:       float = 0.0
+    grace_started_at: Optional[float] = None
+
+    # Observability
+    stability: StabilityRecord = field(default_factory=StabilityRecord)
+
+    def __post_init__(self):
+        # frame_buffer cannot be in field() because deque(maxlen=...) needs a runtime constant
+        self._frame_buffer = collections.deque(maxlen=MAX_FRAMES_PER_TRACK)
+
+    @property
+    def frame_buffer(self):
+        return self._frame_buffer
+
+    def transition(self, new_state: PersonState) -> bool:
+        """Attempt a state transition. Returns True if successful, False if invalid."""
+        if (self.state, new_state) not in _VALID_TRANSITIONS:
+            logger.warning(f'StableTrack {self.stable_id[:8]}: invalid transition '
+                           f'{self.state.value} → {new_state.value}, ignoring')
+            return False
+        log_identity_event('STATE_TRANSITION', self.stable_id,
+                           from_state=self.state.value, to_state=new_state.value)
+        self.state = new_state
+        return True
+
+    def can_accept_evidence(self) -> bool:
+        """Guards all evidence ingestion — CLOSED/PROMOTED/locked tracks reject new data."""
+        if self.state in (PersonState.CLOSED, PersonState.PROMOTED):
+            return False
+        if self.locked:
+            return False
+        return True
+
+    def maybe_add_frame(self, snapshot_bytes: bytes, quality: float, ts: float):
+        """Rate-limited frame ingestion for the rolling buffer."""
+        if not self.can_accept_evidence():
+            return
+        if (ts - self.last_frame_at) < (1.0 / FRAME_SAMPLE_HZ):
+            return
+        self._frame_buffer.append((snapshot_bytes, quality, ts))
+        self.last_frame_at = ts
+
+    def update_best_embedding(self, emb_bytes: bytes, quality: float):
+        """Replace best_embedding if this observation is higher quality."""
+        if not self.can_accept_evidence():
+            return
+        if quality > self.best_emb_quality and emb_bytes:
+            self.best_embedding  = emb_bytes
+            self.best_emb_quality = quality
+
+    def to_monitor_dict(self) -> dict:
+        """Serialise for the Monitor API."""
+        return {
+            'stable_id':       self.stable_id,
+            'state':           self.state.value,
+            'origin_camera':   self.origin_camera,
+            'current_camera':  self.current_camera,
+            'camera_history':  self.camera_history,
+            'session_id':      self.session_id,
+            'anon_id':         self.anon_id,
+            'customer_id':     self.customer_id,
+            'confidence':      round(self.confidence, 3),
+            'promotion_score': round(self.promotion_score, 3),
+            'flush_count':     self.flush_count,
+            'frames_buffered': len(self._frame_buffer),
+            'locked':          self.locked,
+            'last_seen_ago':   round(time.time() - self.last_seen, 1),
+            'raw_event_count': len(self.raw_event_ids),
+            'stability':       self.stability.to_dict(),
+        }
+
+# Module-level stable track state (populated in Tasks 4+)
+_stable_tracks:      Dict[str, StableTrack] = {}   # stable_id → StableTrack
+_event_to_stable:    Dict[str, str]         = {}   # frigate_event_id → stable_id
+_recently_closed:    Dict[str, dict]        = {}   # stable_id → {track, closed_at}
+_anon_merge_history: Dict[Tuple[str,str], float] = {}   # (min_id, max_id) → last_merge_ts
+_stable_tracks_lock = threading.Lock()
+
+# Identity event ring-buffer — populated by log_identity_event() below (Task 3)
+_identity_events: collections.deque = collections.deque(maxlen=500)
+
+def log_identity_event(event_type: str, stable_id: Optional[str], **kwargs):
+    """Append a structured identity event to the ring buffer for the Monitor API."""
+    _identity_events.append({
+        'ts':          time.time(),
+        'event':       event_type,
+        'stable_id':   stable_id,
+        'session_id':  kwargs.get('session_id'),
+        'anon_id':     kwargs.get('anon_id'),
+        'customer_id': kwargs.get('customer_id'),
+        'sim':         kwargs.get('sim'),
+        'score':       kwargs.get('score'),
+        'detail':      kwargs.get('detail'),
+        **{k: v for k, v in kwargs.items()
+           if k not in ('session_id','anon_id','customer_id','sim','score','detail')},
+    })
+
 # Versioning
 WEIGHTS_VERSION = "v2.0_production"
 THRESHOLD_VERSION = "v1.0_initial"
@@ -154,6 +390,58 @@ BIOMETRIC_FEATURES = {'face', 'gait'}
 SUPPORT_FEATURES = {'plate', 'height_cat', 'build', 'hair_color', 'facial_hair'}
 CONTEXT_FEATURES = {'time_pattern', 'zone_pattern', 'plate_person_assoc'}
 MAX_CONTEXT_CONTRIBUTION = 0.25  # hard cap — context signals can never dominate biometrics
+
+# ─── Embedding & quality validation helpers ──────────────────────────────────
+
+_VALID_EMB_SHAPES = {512, 2048}
+
+def _validate_embedding(emb_bytes: Optional[bytes], source: str) -> bool:
+    """
+    Validate a raw face embedding before it enters any identity structure.
+    Rejects None, wrong shape, NaN/Inf values, and zero vectors.
+    Returns True if the embedding is safe to use.
+    """
+    if not emb_bytes:
+        log_identity_event('BAD_EMBEDDING', None, detail=f'{source}: None or empty')
+        return False
+    try:
+        arr = np.frombuffer(emb_bytes, dtype=np.float32)
+        if arr.shape[0] not in _VALID_EMB_SHAPES:
+            log_identity_event('BAD_EMBEDDING', None,
+                               detail=f'{source}: wrong shape {arr.shape[0]} (expected {_VALID_EMB_SHAPES})')
+            return False
+        if np.any(np.isnan(arr)) or np.any(np.isinf(arr)):
+            log_identity_event('BAD_EMBEDDING', None,
+                               detail=f'{source}: contains NaN or Inf values')
+            return False
+        norm = float(np.linalg.norm(arr))
+        if norm < 1e-6:
+            log_identity_event('BAD_EMBEDDING', None,
+                               detail=f'{source}: zero vector (norm={norm:.2e})')
+            return False
+        return True
+    except Exception as e:
+        log_identity_event('BAD_EMBEDDING', None, detail=f'{source}: exception {e}')
+        return False
+
+
+def _normalize_quality(raw: float, source: str) -> float:
+    """
+    Clamp a quality score to [0.0, 1.0].
+    Logs a warning if the raw value was out of range — useful for catching
+    model output drift or mis-scaled scores in production.
+    """
+    try:
+        q = float(raw)
+    except (TypeError, ValueError):
+        log_identity_event('QUALITY_CLAMPED', None, raw=raw, clamped=0.0, source=source)
+        return 0.0
+    if q < 0.0 or q > 1.0:
+        clamped = min(max(q, 0.0), 1.0)
+        log_identity_event('QUALITY_CLAMPED', None, raw=round(q, 4),
+                           clamped=round(clamped, 4), source=source)
+        return clamped
+    return q
 
 # ─── Lazy model loading ─────────────────────────────────────────────────────
 _anpr_model   = None
@@ -662,6 +950,346 @@ def _compute_per_customer_thresholds(link_threshold):
     return result
 
 _employee_ids: set = set()  # customer IDs marked is_employee=True — refreshed with customer cache
+
+# ─── Stable Track helpers ─────────────────────────────────────────────────────
+
+def _bbox_iou(a: Optional[tuple], b: Optional[tuple]) -> float:
+    """Compute Intersection-over-Union of two bounding boxes (x1,y1,x2,y2) in [0,1] space."""
+    if not a or not b or len(a) < 4 or len(b) < 4:
+        return 0.0
+    x1 = max(a[0], b[0]); y1 = max(a[1], b[1])
+    x2 = min(a[2], b[2]); y2 = min(a[3], b[3])
+    inter = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    if inter == 0.0:
+        return 0.0
+    area_a = max(0.0, a[2]-a[0]) * max(0.0, a[3]-a[1])
+    area_b = max(0.0, b[2]-b[0]) * max(0.0, b[3]-b[1])
+    union = area_a + area_b - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _should_reuse_stable_track(new_emb: Optional[bytes],
+                                existing: 'StableTrack',
+                                bbox: Optional[tuple],
+                                now: float,
+                                same_camera: bool = True) -> bool:
+    """
+    Weighted decision on whether a new Frigate event belongs to an existing stable track.
+    Uses: 0.6×face_sim + 0.3×bbox_iou + 0.1×temporal_proximity
+    Hard floor: face_sim < TRACK_REUSE_HARD_MIN → always False (different person).
+    """
+    # Hard temporal gate — don't reuse tracks that are too old
+    window = TRACK_REUSE_WINDOW if same_camera else CROSS_CAMERA_REUSE_WINDOW
+    if (now - existing.last_seen) > window:
+        return False
+
+    # Compute face similarity
+    face_sim = 0.0
+    if new_emb and existing.best_embedding:
+        try:
+            a = np.frombuffer(new_emb, dtype=np.float32)
+            b = np.frombuffer(existing.best_embedding, dtype=np.float32)
+            na, nb = np.linalg.norm(a), np.linalg.norm(b)
+            if na > 0 and nb > 0:
+                face_sim = float(np.dot(a / na, b / nb))
+        except Exception:
+            face_sim = 0.0
+
+    # Hard floor — below this we NEVER merge (definitely different person)
+    if face_sim < TRACK_REUSE_HARD_MIN:
+        return False
+
+    # Confidence floor — skip weak/stale closed tracks
+    if existing.state == PersonState.CLOSED and existing.confidence < MIN_TRACK_REUSE_CONFIDENCE:
+        return False
+
+    # Cross-camera: no bbox anchor, use higher face threshold only
+    if not same_camera:
+        return face_sim >= CROSS_CAMERA_FACE_MIN
+
+    # Same-camera: weighted composite score
+    iou        = _bbox_iou(bbox, existing.last_bbox)
+    time_score = max(0.0, 1.0 - (now - existing.last_seen) / window)
+    score = 0.6 * face_sim + 0.3 * iou + 0.1 * time_score
+    return score >= TRACK_REUSE_THRESHOLD
+
+
+def _find_existing_stable_track(new_emb: Optional[bytes],
+                                 camera: str,
+                                 bbox: Optional[tuple],
+                                 now: float) -> Tuple[Optional['StableTrack'], str]:
+    """
+    Search for an existing StableTrack that this new Frigate event belongs to.
+    Priority order:
+      1. Active tracks (same camera)
+      2. Grace-period tracks (same camera — resume)
+      3. Closed/recently-closed tracks (same camera — re-entry)
+      4. Cross-camera tracks (face-only, tighter threshold)
+
+    Returns (stable_track, reason) or (None, '') if no match.
+    """
+    _active_states = {PersonState.TRACKING, PersonState.SESSION_ACTIVE,
+                      PersonState.BUILDING, PersonState.READY, PersonState.PROMOTED}
+    _grace_states  = {PersonState.GRACE}
+    _closed_states = {PersonState.CLOSED}
+
+    best_track:  Optional[StableTrack] = None
+    best_reason: str = ''
+    best_score:  float = -1.0
+
+    with _stable_tracks_lock:
+        for st in _stable_tracks.values():
+            same_cam = (st.current_camera == camera)
+
+            if st.state in _active_states and same_cam:
+                if _should_reuse_stable_track(new_emb, st, bbox, now, same_camera=True):
+                    # Pick highest composite score among candidates
+                    if new_emb and st.best_embedding:
+                        try:
+                            a = np.frombuffer(new_emb, dtype=np.float32)
+                            b = np.frombuffer(st.best_embedding, dtype=np.float32)
+                            na, nb = np.linalg.norm(a), np.linalg.norm(b)
+                            s = float(np.dot(a/na, b/nb)) if na > 0 and nb > 0 else 0.0
+                        except Exception:
+                            s = 0.5
+                    else:
+                        s = 0.5
+                    if s > best_score:
+                        best_score = s; best_track = st; best_reason = 'active'
+
+            elif st.state in _grace_states and same_cam:
+                if _should_reuse_stable_track(new_emb, st, bbox, now, same_camera=True):
+                    if best_reason not in ('active',):
+                        best_track = st; best_reason = 'grace_resume'
+
+            elif st.state in _closed_states and same_cam:
+                if (now - st.last_seen) <= REENTRY_WINDOW:
+                    if _should_reuse_stable_track(new_emb, st, bbox, now, same_camera=True):
+                        if best_reason not in ('active', 'grace_resume'):
+                            best_track = st; best_reason = 'reentry'
+
+        # Cross-camera pass — only if nothing found on same camera
+        if best_track is None and new_emb:
+            for st in _stable_tracks.values():
+                if st.current_camera == camera:
+                    continue   # already checked
+                if st.state in _closed_states:
+                    continue   # don't cross-camera to closed tracks
+                if _should_reuse_stable_track(new_emb, st, bbox, now, same_camera=False):
+                    best_track = st; best_reason = 'cross_camera'; break
+
+    return best_track, best_reason
+
+
+def _can_create_track(camera: str) -> bool:
+    """Soft cap — log and refuse if camera already has too many active tracks."""
+    with _stable_tracks_lock:
+        active = sum(
+            1 for st in _stable_tracks.values()
+            if st.current_camera == camera
+            and st.state not in (PersonState.CLOSED, PersonState.GRACE)
+        )
+    if active >= MAX_ACTIVE_TRACKS_PER_CAMERA:
+        log_identity_event('TRACK_CAP_REACHED', None,
+                           detail=f'camera={camera} active={active}')
+        return False
+    return True
+
+
+def _get_or_create_stable_track(event_id: str,
+                                 new_emb: Optional[bytes],
+                                 camera: str,
+                                 bbox: Optional[tuple],
+                                 now: float) -> Tuple[Optional['StableTrack'], str]:
+    """
+    Main entry point for stable track resolution.
+    Returns (stable_track, action) where action is one of:
+      'existing_event'  — event_id already mapped to a stable track
+      'reused_active'   — matched to an active track
+      'grace_resume'    — resumed a grace-period track
+      'reentry'         — re-entered frame, matched to recently-closed track
+      'cross_camera'    — matched track from another camera
+      'created'         — new stable track
+      'capped'          — per-camera cap reached, track not created
+    """
+    # Fast path: event already known
+    with _stable_tracks_lock:
+        if event_id in _event_to_stable:
+            stable_id = _event_to_stable[event_id]
+            st = _stable_tracks.get(stable_id)
+            if st:
+                st.last_seen = now
+                if bbox:
+                    st.last_bbox = bbox
+                return st, 'existing_event'
+
+    # Search for a matching existing track
+    existing, reason = _find_existing_stable_track(new_emb, camera, bbox, now)
+
+    if existing:
+        with _stable_tracks_lock:
+            existing.raw_event_ids.append(event_id)
+            _event_to_stable[event_id] = existing.stable_id
+            existing.last_seen = now
+            if bbox:
+                existing.last_bbox = bbox
+
+        if reason == 'grace_resume':
+            existing.transition(PersonState.SESSION_ACTIVE)
+            log_identity_event('SESSION_RESUMED', existing.stable_id,
+                               session_id=existing.session_id, detail='grace period resume')
+        elif reason == 'reentry':
+            log_identity_event('REENTRY_MATCHED', existing.stable_id,
+                               detail=f'matched after {now - existing.last_seen:.1f}s gap')
+        elif reason == 'cross_camera':
+            old_cam = existing.current_camera
+            with _stable_tracks_lock:
+                existing.current_camera = camera
+                existing.camera_history.append(camera)
+                existing.stability.cross_camera_hops += 1
+            log_identity_event('CAMERA_HANDOFF', existing.stable_id,
+                               from_camera=old_cam, to_camera=camera)
+
+        return existing, reason
+
+    # No match — create new stable track
+    if not _can_create_track(camera):
+        return None, 'capped'
+
+    stable_id = str(uuid.uuid4())
+    st = StableTrack(
+        stable_id      = stable_id,
+        created_at     = now,
+        last_seen      = now,
+        origin_camera  = camera,
+        current_camera = camera,
+        camera_history = [camera],
+    )
+    if bbox:
+        st.last_bbox = bbox
+
+    with _stable_tracks_lock:
+        _stable_tracks[stable_id]  = st
+        _event_to_stable[event_id] = stable_id
+        st.raw_event_ids.append(event_id)
+
+    log_identity_event('TRACK_CREATED', stable_id,
+                       detail=f'camera={camera} event={event_id[:12]}')
+    return st, 'created'
+
+
+def _flush_evidence(st: StableTrack):
+    """
+    Extract face embeddings + gait from the best frames in the stable track's
+    rolling buffer and feed them directly into the bound VisitorSession.
+    No clip download — uses snapshots already in memory.
+    """
+    if not st.session_id:
+        return
+    sess = _active_sessions.get(st.session_id)
+    if not sess:
+        return
+    if not st.frame_buffer:
+        return
+
+    frames = list(st.frame_buffer)
+    if not frames:
+        return
+
+    # Select best-quality frames (up to 5)
+    frames_sorted = sorted(frames, key=lambda x: x[1], reverse=True)[:5]
+
+    new_embeddings = 0
+    for snapshot_bytes, quality, ts in frames_sorted:
+        if quality < FACE_QUALITY_MIN:
+            continue
+        try:
+            import tempfile, cv2 as _cv2
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp:
+                tmp.write(snapshot_bytes)
+                tmp_path = tmp.name
+            try:
+                emb_bytes, face_qual, face_photo = extract_face_with_quality(tmp_path, None)
+                if emb_bytes and _validate_embedding(emb_bytes, '_flush_evidence'):
+                    face_qual_norm = _normalize_quality(face_qual, '_flush_evidence')
+                    sess.add_evidence(
+                        face_emb=emb_bytes,
+                        quality=face_qual_norm,
+                        camera=st.current_camera,
+                        gait=None,
+                        gait_quality=0.0,
+                        event_id=st.raw_event_ids[-1] if st.raw_event_ids else '',
+                        face_embeddings_list=[(face_qual_norm, emb_bytes, face_photo, None)],
+                    )
+                    st.update_best_embedding(emb_bytes, face_qual_norm)
+                    new_embeddings += 1
+                    # Transition to BUILDING_PROFILE when actively accumulating
+                    if st.state == PersonState.SESSION_ACTIVE:
+                        st.transition(PersonState.BUILDING)
+            finally:
+                try:
+                    import os as _os
+                    _os.unlink(tmp_path)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f'StableTrack {st.stable_id[:8]}: flush frame error: {e}')
+
+    if new_embeddings > 0:
+        log_identity_event('EVIDENCE_FLUSH', st.stable_id,
+                           session_id=st.session_id,
+                           detail=f'flush#{st.flush_count} new_embeddings={new_embeddings} '
+                                  f'buffer_size={len(st.frame_buffer)}')
+
+
+def _maybe_flush_evidence(st: StableTrack, now: float):
+    """Trigger a flush if EVIDENCE_FLUSH_INTERVAL has elapsed since last flush."""
+    if not st.can_accept_evidence():
+        return
+    if (now - st.last_flush_at) < EVIDENCE_FLUSH_INTERVAL:
+        return
+    # Set timestamp BEFORE flush so a crash doesn't cause double-processing
+    st.last_flush_at = now
+    st.flush_count  += 1
+    _flush_evidence(st)
+
+
+def _apply_confidence_decay(st: StableTrack, now: float):
+    """Decay track confidence when idle — stale evidence should not dominate matching."""
+    if st.state in (PersonState.CLOSED, PersonState.PROMOTED):
+        return
+    idle = now - st.last_seen
+    cycles = int(idle / CONFIDENCE_DECAY_INTERVAL)
+    if cycles > 0 and st.confidence > CONFIDENCE_DECAY_FLOOR:
+        st.confidence = max(
+            st.confidence * (CONFIDENCE_DECAY_RATE ** cycles),
+            CONFIDENCE_DECAY_FLOOR
+        )
+
+
+def _maybe_rebind_session(stable_track: StableTrack,
+                           candidate_session_id: str,
+                           candidate_sim: float,
+                           now: float) -> bool:
+    """
+    Allow early correction of a wrong session binding within REBIND_WINDOW seconds.
+    Returns True if the rebind happened.
+    """
+    age = now - stable_track.created_at
+    if age > REBIND_WINDOW:
+        return False
+    if candidate_sim < REBIND_MIN_SIM:
+        return False
+    if stable_track.session_id == candidate_session_id:
+        return False
+    old_session = stable_track.session_id
+    stable_track.session_id = candidate_session_id
+    stable_track.stability.session_reassignments += 1
+    log_identity_event('TRACK_REBOUND', stable_track.stable_id,
+                       session_id=candidate_session_id,
+                       detail=f'old={old_session} sim={candidate_sim:.3f} age={age:.1f}s')
+    return True
+
 
 def refresh_customers():
     global _signals_cache_ids, _customers_cache_map, _threshold_cache_time, _employee_ids
@@ -1940,6 +2568,7 @@ class VisitorSession:
         self.best_face_photo  = None   # (face_photo_bytes, quality) — for face photo on card
         # accumulating → resolving (transitional lock) → resolved | expired
         self.status = 'accumulating'
+        self.locked = False   # set True during promotion to block concurrent evidence/merges
 
     def add_evidence(self, face_emb=None, quality=0.0, camera=None,
                      gait=None, gait_quality=0.0, event_id=None,
@@ -2233,6 +2862,220 @@ def _assign_to_session(face_emb, camera, event_id, ts):
         return sess.session_id
 
 
+def _compute_promotion_score(session) -> float:
+    """
+    Scored promotion model replacing the old binary gate checklist.
+    Returns a score in [0.0, 1.0] — promotion fires when score >= PROMOTION_MIN_SCORE.
+
+    Positive signals: embedding count, angle diversity, average quality, internal consistency, gait.
+    Negative signals: proportion of low-quality frames, embedding instability.
+    Temporal gate: all frames within 5s = burst noise → hard block (returns 0.0).
+    """
+    embs = session.face_embeddings  # list of (bytes, quality, camera)
+    if not embs:
+        return 0.0
+
+    qualities   = [_normalize_quality(float(e[1]), '_compute_promotion_score') for e in embs]
+    timestamps  = [e[2] if len(e) > 2 and isinstance(e[2], (int, float)) else 0.0 for e in embs]
+
+    # Hard temporal gate — burst of frames from a single moment is not diverse
+    if len(timestamps) > 1:
+        time_span = max(timestamps) - min(timestamps)
+        if time_span < MIN_TIME_SPAN_FOR_PROMOTION:
+            return 0.0
+
+    # Hard minimum count
+    if len(embs) < MIN_FACES_TO_CREATE:
+        return 0.0
+
+    # --- Positive signals ---
+    # 1. Count score (normalised to 15 as "enough")
+    count_score = min(len(embs) / 15.0, 1.0)
+
+    # 2. Angle diversity — average pairwise cosine distance
+    diversity = 0.0
+    if len(embs) >= 2:
+        vecs = []
+        for e_bytes, _, *_ in embs[:10]:
+            if not _validate_embedding(e_bytes, '_promotion_diversity'):
+                continue
+            arr = np.frombuffer(e_bytes, dtype=np.float32)
+            n = np.linalg.norm(arr)
+            if n > 0:
+                vecs.append(arr / n)
+        if len(vecs) >= 2:
+            dists = []
+            for vi in range(len(vecs)):
+                for vj in range(vi+1, len(vecs)):
+                    dists.append(1.0 - float(np.dot(vecs[vi], vecs[vj])))
+            diversity = float(np.mean(dists)) if dists else 0.0
+    diversity_score = min(diversity / 0.25, 1.0)
+
+    # 3. Average quality (profile-worthy embeddings only)
+    profile_q = [q for q in qualities if q >= PROFILE_QUALITY_MIN]
+    quality_score = float(np.mean(profile_q)) if profile_q else 0.0
+
+    # 4. Internal consistency — average cosine similarity within embedding set
+    consistency = 0.0
+    if len(embs) >= 2:
+        valid_vecs = []
+        for e_bytes, _, *_ in embs[:10]:
+            if not _validate_embedding(e_bytes, '_promotion_consistency'):
+                continue
+            arr = np.frombuffer(e_bytes, dtype=np.float32)
+            n = np.linalg.norm(arr)
+            if n > 0:
+                valid_vecs.append(arr / n)
+        if len(valid_vecs) >= 2:
+            sims = []
+            for vi in range(len(valid_vecs)):
+                for vj in range(vi+1, len(valid_vecs)):
+                    sims.append(float(np.dot(valid_vecs[vi], valid_vecs[vj])))
+            consistency = float(np.mean(sims)) if sims else 0.0
+    consistency_score = min(consistency / 0.75, 1.0)
+
+    # 5. Gait bonus
+    gait_bonus = 0.10 if session.gait_features else 0.0
+
+    base = (0.25 * count_score +
+            0.25 * diversity_score +
+            0.20 * quality_score +
+            0.20 * consistency_score +
+            gait_bonus)
+
+    # --- Negative signals ---
+    low_quality_ratio   = sum(1 for q in qualities if q < PROFILE_QUALITY_MIN) / len(qualities)
+    noise_penalty       = 0.15 * low_quality_ratio
+
+    # Instability: variance in quality scores (high variance = noisy identity)
+    q_variance          = float(np.var(qualities)) if len(qualities) > 1 else 0.0
+    instability_penalty = 0.10 * min(q_variance * 10, 1.0)
+
+    score = max(0.0, base - noise_penalty - instability_penalty)
+    return round(score, 4)
+
+
+def _compute_promotion_score_from_list(face_embeddings: list) -> float:
+    """Wrapper for _compute_promotion_score that accepts a raw embedding list.
+    Used for anon identity promotion checks."""
+    class _FakeSession:
+        def __init__(self, embs):
+            self.face_embeddings = embs
+            self.gait_features   = None
+    return _compute_promotion_score(_FakeSession(face_embeddings))
+
+
+def _best_pairwise_sim(embs_a: list, embs_b: list) -> float:
+    """Compute the best cosine similarity between any pair of embeddings from two lists."""
+    best = 0.0
+    for ea in embs_a[:8]:   # limit to 8 each to keep O(n²) bounded
+        try:
+            a_b64 = ea['embedding_b64'] if isinstance(ea, dict) else ea
+            a = np.frombuffer(base64.b64decode(a_b64), dtype=np.float32)
+            na = np.linalg.norm(a)
+            if na < 1e-6: continue
+            a = a / na
+        except Exception:
+            continue
+        for eb in embs_b[:8]:
+            try:
+                b_b64 = eb['embedding_b64'] if isinstance(eb, dict) else eb
+                b = np.frombuffer(base64.b64decode(b_b64), dtype=np.float32)
+                nb = np.linalg.norm(b)
+                if nb < 1e-6: continue
+                best = max(best, float(np.dot(a, b / nb)))
+            except Exception:
+                continue
+    return best
+
+
+def _reconcile_anon_identities(now: float):
+    """
+    Periodically check all anonymous identities for cross-identity fragmentation.
+    If two anons are actually the same person (both directions ≥ ANON_MERGE_THRESHOLD),
+    merge the weaker one into the stronger.
+    Includes cooldown to prevent oscillation on borderline pairs.
+    """
+    anons = list(_anonymous_identities.items())
+    if len(anons) < 2:
+        return
+
+    for i, (id_a, anon_a) in enumerate(anons):
+        if anon_a.get('locked'):
+            continue
+        embs_a = anon_a.get('face_embeddings', [])
+        if not embs_a:
+            continue
+
+        for id_b, anon_b in anons[i+1:]:
+            if anon_b.get('locked'):
+                continue
+            embs_b = anon_b.get('face_embeddings', [])
+            if not embs_b:
+                continue
+
+            # Cooldown check — skip recently-attempted pairs
+            pair_key = (min(id_a, id_b), max(id_a, id_b))
+            last_merge = _anon_merge_history.get(pair_key, 0.0)
+            if (now - last_merge) < ANON_MERGE_COOLDOWN:
+                continue
+
+            # Bidirectional consistency — both directions must clear threshold
+            sim_ab = _best_pairwise_sim(embs_a, embs_b)
+            if sim_ab < ANON_MERGE_THRESHOLD:
+                continue
+            sim_ba = _best_pairwise_sim(embs_b, embs_a)
+            if sim_ba < ANON_MERGE_THRESHOLD:
+                continue
+
+            avg_sim = (sim_ab + sim_ba) / 2.0
+
+            # Merge weaker (fewer embeddings) into stronger
+            if len(embs_a) >= len(embs_b):
+                primary_id, secondary_id = id_a, id_b
+                primary_anon, secondary_anon = anon_a, anon_b
+            else:
+                primary_id, secondary_id = id_b, id_a
+                primary_anon, secondary_anon = anon_b, anon_a
+
+            # Transfer embeddings and evidence
+            primary_anon['face_embeddings'] = (
+                primary_anon.get('face_embeddings', []) +
+                secondary_anon.get('face_embeddings', [])
+            )
+            for field in ('gait_features', 'gait_quality', 'physical_attrs'):
+                if secondary_anon.get(field) and not primary_anon.get(field):
+                    primary_anon[field] = secondary_anon[field]
+            primary_anon['cameras'] = list(set(
+                primary_anon.get('cameras', []) + secondary_anon.get('cameras', [])
+            ))
+            primary_anon['last_seen_at'] = max(
+                primary_anon.get('last_seen_at', 0),
+                secondary_anon.get('last_seen_at', 0),
+            )
+
+            # Remove secondary
+            _anonymous_identities.pop(secondary_id, None)
+            _anon_merge_history[pair_key] = now
+
+            # Update stable tracks pointing to secondary → primary
+            with _stable_tracks_lock:
+                for st in _stable_tracks.values():
+                    if st.anon_id == secondary_id:
+                        st.anon_id = primary_id
+                        st.stability.anon_reassignments += 1
+
+            log_identity_event('ANON_MERGE', secondary_id,
+                               anon_id=primary_id,
+                               sim=round(avg_sim, 3),
+                               detail=f'{secondary_id[:8]}→{primary_id[:8]}')
+            logger.info(f'Anon merge: {secondary_id[:8]} → {primary_id[:8]} '
+                        f'(sim_ab={sim_ab:.3f} sim_ba={sim_ba:.3f})')
+
+            # Only one merge per call to avoid cascading within one cycle
+            return
+
+
 def _merge_overlapping_sessions():
     """Merge sessions with very similar face embeddings into one.
     Runs before the resolver so it always sees consolidated evidence.
@@ -2467,10 +3310,12 @@ def _resolve_session(session):
                 anon['cameras'].update(session.cameras_seen)
                 anon['last_seen_at'] = now
 
-                # Re-evaluate combined evidence against creation gates
-                high_q = [e for e in anon['face_embeddings'] if e[1] >= FACE_QUALITY_MIN_CREATE]
-                if (len(anon['face_embeddings']) >= MIN_FACES_TO_CREATE
-                        and len(high_q) >= MIN_HIGH_QUALITY_FACES
+                # Re-evaluate combined evidence using promotion score model
+                if anon.get('locked'):
+                    logger.debug(f'Anon {best_anon_id[:8]} locked during promotion, skipping re-eval')
+                    return
+                anon_promo_score = _compute_promotion_score_from_list(anon['face_embeddings'])
+                if (anon_promo_score >= PROMOTION_MIN_SCORE
                         and session.best_face_sim < CLEARLY_NOT_EXISTING):
                     snap = anon.get('best_snapshot') or (session.best_snapshot[0] if session.best_snapshot else None)
                     fp   = anon.get('best_face_photo') or (session.best_face_photo[0] if session.best_face_photo else None)
@@ -2496,29 +3341,53 @@ def _resolve_session(session):
                              f'merged into anon {best_anon_id[:8]}, not yet promotable')
                 return
 
-        # ── Step 4: Safe to create new customer? ──────────────────────────────
-        high_q = [e for e in session.face_embeddings if e[1] >= FACE_QUALITY_MIN_CREATE]
+        # ── Step 4: Safe to create new customer? (scored promotion model) ────────
+        promo_score = _compute_promotion_score(session)
+        # Store on stable track for Monitor visibility
+        _st_for_promo = None
+        for _st_c in _stable_tracks.values():
+            if _st_c.session_id == session.session_id:
+                _st_c.promotion_score = promo_score
+                _st_for_promo = _st_c
+                break
+
         safe_to_create = (
-            len(session.face_embeddings) >= MIN_FACES_TO_CREATE
-            and len(high_q) >= MIN_HIGH_QUALITY_FACES
-            and session.duration() >= MIN_SESSION_DURATION
+            promo_score >= PROMOTION_MIN_SCORE
             and session.best_face_sim < CLEARLY_NOT_EXISTING
         )
         if safe_to_create:
+            # Lock stable track + session to prevent concurrent evidence additions
+            if _st_for_promo:
+                _st_for_promo.locked = True
+                _st_for_promo.transition(PersonState.READY)
+            session.locked = True
             snap = session.best_snapshot[0] if session.best_snapshot else None
             fp   = session.best_face_photo[0] if session.best_face_photo else None
-            cid = _create_customer_from_embeddings(
-                session.face_embeddings, session.gait_features, session.session_id,
-                snapshot_photo=snap, face_photo=fp)
+            try:
+                cid = _create_customer_from_embeddings(
+                    session.face_embeddings, session.gait_features, session.session_id,
+                    snapshot_photo=snap, face_photo=fp)
+            finally:
+                if _st_for_promo:
+                    _st_for_promo.locked = False
+                session.locked = False
             if cid:
                 _log_session_visit(cid, session, dwell_seconds=session.duration())
                 session.status = 'resolved'
+                high_q = [e for e in session.face_embeddings if e[1] >= FACE_QUALITY_MIN_CREATE]
                 logger.info(f'Resolver: session {session.session_id[:8]} → '
                             f'new customer cid={cid} '
-                            f'(faces={len(session.face_embeddings)} '
+                            f'(score={promo_score:.3f} faces={len(session.face_embeddings)} '
                             f'hq={len(high_q)} dur={session.duration():.0f}s)')
+                if _st_for_promo:
+                    _st_for_promo.customer_id = cid
+                    _st_for_promo.transition(PersonState.PROMOTED)
+                log_identity_event('PROMOTED',
+                                   _st_for_promo.stable_id if _st_for_promo else None,
+                                   session_id=session.session_id,
+                                   customer_id=cid,
+                                   score=round(promo_score, 3))
                 # Re-queue session's source events for clip enrichment now that customer exists.
-                # The clip loop will match them to this new customer and enroll more angles.
                 with _clip_queue_lock:
                     for eid in session.source_event_ids:
                         if (len(_clip_analysis_queue) < MAX_CLIP_QUEUE
@@ -2561,15 +3430,56 @@ def process_event(event):
         signals = extract_all_signals_with_quality(event)
         if not signals:
             return
+
+        camera   = signals.get('camera', 'unknown')
+        event_id = event.get('id', str(uuid.uuid4()))
+        now      = time.time()
+
+        # ── Stable Track Layer ─────────────────────────────────────────────────
+        # Resolve or create a StableTrack for this Frigate event.
+        # This is the root identity anchor — one physical person = one StableTrack
+        # regardless of how many Frigate event_ids they generate.
+        face_emb_for_stable = signals.get('face_embedding') if _validate_embedding(
+            signals.get('face_embedding'), 'process_event/stable_lookup') else None
+        person_bbox = (event.get('data') or {}).get('box')
+
+        stable_track, st_action = _get_or_create_stable_track(
+            event_id, face_emb_for_stable, camera, person_bbox, now)
+
+        if stable_track is None:
+            logger.debug(f'Event {event_id[:12]} dropped: {st_action}')
+            return   # per-camera cap reached
+
+        # Transition DETECTED → TRACKING on first face embedding
+        if (stable_track.state == PersonState.DETECTED
+                and face_emb_for_stable is not None):
+            face_qual = _normalize_quality(
+                float(signals.get('face_quality', 0)), 'process_event/initial_face')
+            stable_track.transition(PersonState.TRACKING)
+            stable_track.update_best_embedding(face_emb_for_stable, face_qual)
+
+        # Update best embedding if this observation is better
+        elif face_emb_for_stable is not None:
+            face_qual = _normalize_quality(
+                float(signals.get('face_quality', 0)), 'process_event/face_update')
+            stable_track.update_best_embedding(face_emb_for_stable, face_qual)
+
+        # Feed snapshot into rolling frame buffer for periodic evidence flush
+        snapshot = signals.get('snapshot_photo')
+        if snapshot:
+            snap_quality = _normalize_quality(
+                float(signals.get('face_quality', 0)), 'process_event/snapshot')
+            stable_track.maybe_add_frame(snapshot, snap_quality, now)
+
+        # Apply confidence decay to stale tracks
+        _apply_confidence_decay(stable_track, now)
+
+        # Rebind window: if track is very new and a much stronger session match exists,
+        # allow early correction (handled inside _assign_to_session via stable_track ref)
+        # ── End Stable Track Layer ─────────────────────────────────────────────
+
         # event_id is Frigate's stable identifier for one person detection session.
         # Using it as track_id directly supports multiple simultaneous people per camera.
-        # multiple Frigate event IDs for the same physical person in frame.
-        camera = signals.get('camera', 'unknown')
-        event_id = event.get('id', str(uuid.uuid4()))
-
-        # Each Frigate event_id is stable for the lifetime of one person detection.
-        # Use it directly as the track key — one track per person, no camera-level
-        # single-slot that would overwrite a second person entering the same camera.
         with _tracks_lock:
             if event_id not in _active_tracks:
                 _active_tracks[event_id] = TrackIdentity(event_id)
@@ -2735,7 +3645,31 @@ def process_event(event):
         # all usable evidence; the creation gate is applied only at resolve time.
         _face_qual_now = float(signals.get('face_quality', 0))
         face_emb_for_session = signals.get('face_embedding') if _face_qual_now >= FACE_QUALITY_MIN else None
-        session_id = _assign_to_session(face_emb_for_session, camera, event_id, time.time())
+
+        # Hard binding: if stable_track already has a session, skip similarity search
+        _st_ref = stable_track if 'stable_track' in dir() else None
+        if _st_ref and _st_ref.session_id and _active_sessions.get(_st_ref.session_id):
+            session_id = _st_ref.session_id
+        else:
+            session_id = _assign_to_session(face_emb_for_session, camera, event_id, time.time())
+            # Record hard binding on stable track + update state
+            if _st_ref and session_id:
+                if _st_ref.session_id is None:
+                    _st_ref.session_id = session_id
+                    if _st_ref.state == PersonState.TRACKING:
+                        _st_ref.transition(PersonState.SESSION_ACTIVE)
+                elif _st_ref.session_id != session_id:
+                    # Attempt early rebind within REBIND_WINDOW
+                    if face_emb_for_session and _st_ref.best_embedding:
+                        try:
+                            a = np.frombuffer(face_emb_for_session, dtype=np.float32)
+                            b = np.frombuffer(_st_ref.best_embedding, dtype=np.float32)
+                            na, nb = np.linalg.norm(a), np.linalg.norm(b)
+                            _rebind_sim = float(np.dot(a/na, b/nb)) if na>0 and nb>0 else 0.0
+                        except Exception:
+                            _rebind_sim = 0.0
+                        _maybe_rebind_session(_st_ref, session_id, _rebind_sim, time.time())
+
         sess = _active_sessions.get(session_id)
         if sess:
             # Pass candidate hint only if track has a confirmed linked identity
@@ -2763,6 +3697,17 @@ def process_event(event):
                     _clip_analysis_queue.append((event_id, track.customer_id, person_box))
                     logger.debug(f'Queued clip analysis for event {event_id[:12]} '
                                  f'customer={track.customer_id} session={session_id[:8]}')
+
+            # ── Grace period: transition stable track to GRACE state ──────────
+            # The session resolver will fire after SESSION_IDLE_EXPIRY (60s).
+            # We hold the track in GRACE so a quick re-entry can resume it.
+            _st_ref_end = stable_track if 'stable_track' in dir() else None
+            if _st_ref_end and _st_ref_end.state not in (PersonState.CLOSED, PersonState.PROMOTED):
+                _st_ref_end.grace_started_at = now
+                _st_ref_end.transition(PersonState.GRACE)
+                log_identity_event('GRACE_STARTED', _st_ref_end.stable_id,
+                                   session_id=_st_ref_end.session_id,
+                                   detail=f'grace={TRACK_GRACE_PERIOD}s')
 
     except Exception as e:
         logger.error(f'Event processing error: {e}')
@@ -2972,10 +3917,63 @@ def _clip_analysis_loop():
                 except Exception:
                     pass
 
+def _cleanup_stable_tracks(now: float):
+    """
+    Remove CLOSED stable tracks older than STABLE_TRACK_TTL.
+    Cleans all reverse mappings in _event_to_stable (iterates raw_event_ids).
+    Moves freshly-closed tracks to _recently_closed for re-entry matching.
+    Also applies confidence decay and expires grace-period tracks.
+    """
+    to_remove = []
+    with _stable_tracks_lock:
+        for sid, st in list(_stable_tracks.items()):
+            # Apply confidence decay to idle tracks
+            _apply_confidence_decay(st, now)
+
+            # Grace period expiry — GRACE → CLOSED
+            if (st.state == PersonState.GRACE
+                    and st.grace_started_at is not None
+                    and (now - st.grace_started_at) > TRACK_GRACE_PERIOD):
+                st.transition(PersonState.CLOSED)
+                log_identity_event('GRACE_EXPIRED', st.stable_id,
+                                   session_id=st.session_id,
+                                   detail=f'grace={now - st.grace_started_at:.1f}s')
+
+            if st.state == PersonState.CLOSED:
+                # Move to recently_closed if not already there
+                if sid not in _recently_closed:
+                    _recently_closed[sid] = {'track': st, 'closed_at': now}
+
+                # Remove from active map if old enough
+                if (now - st.last_seen) > STABLE_TRACK_TTL:
+                    to_remove.append(sid)
+
+        for sid in to_remove:
+            st = _stable_tracks.pop(sid, None)
+            if st:
+                # Clean ALL reverse event_id mappings — one track can have many
+                for eid in st.raw_event_ids:
+                    _event_to_stable.pop(eid, None)
+            _recently_closed.pop(sid, None)
+
+    # Evict stale _recently_closed entries
+    stale_closed = [sid for sid, rec in list(_recently_closed.items())
+                    if (now - rec['closed_at']) > REENTRY_WINDOW]
+    for sid in stale_closed:
+        _recently_closed.pop(sid, None)
+
+    if to_remove:
+        logger.debug(f'Stable track cleanup: removed {len(to_remove)} expired, '
+                     f'{len(_stable_tracks)} active, {len(_recently_closed)} recently-closed')
+
+
 def _track_cleanup_loop():
     """Background thread: expire stale tracks to prevent memory growth."""
     while True:
         time.sleep(60)
+        now = time.time()
+
+        # Clean legacy TrackIdentity objects
         with _tracks_lock:
             expired = [tid for tid, t in list(_active_tracks.items())
                        if t.idle_time() > TRACK_IDLE_EXPIRY]
@@ -2983,6 +3981,9 @@ def _track_cleanup_loop():
                 del _active_tracks[tid]
             if expired:
                 logger.debug(f'Track cleanup: removed {len(expired)} stale tracks, {len(_active_tracks)} remaining')
+
+        # Clean stable tracks + reverse maps + confidence decay
+        _cleanup_stable_tracks(now)
 
 
 def _session_resolver_loop():
@@ -2997,6 +3998,9 @@ def _session_resolver_loop():
 
             # Step 1: consolidate sessions before resolving
             _merge_overlapping_sessions()
+
+            # Step 1b: reconcile fragmented anon identities
+            _reconcile_anon_identities(now)
 
             # Step 2: find sessions ready to resolve
             with _sessions_lock:
@@ -3066,6 +4070,13 @@ def poll_frigate_events():
                         recent_count += 1
                         last = _active_event_last_processed.get(eid, 0)
                         if (now - last) < ACTIVE_EVENT_REPROCESS_INTERVAL:
+                            # Even if we skip full reprocessing, still trigger periodic
+                            # evidence flush for any stable track bound to this event.
+                            with _stable_tracks_lock:
+                                _st_eid = _event_to_stable.get(eid)
+                                _st_flush = _stable_tracks.get(_st_eid) if _st_eid else None
+                            if _st_flush:
+                                _maybe_flush_evidence(_st_flush, now)
                             continue
                         # Skip re-processing if the track is already confidently linked.
                         with _tracks_lock:
@@ -3233,6 +4244,31 @@ class WebhookHandler(BaseHTTPRequestHandler):
             if search:
                 recs = [r for r in recs if search.lower() in r['msg'].lower()]
             self._send_json({'logs': recs, 'total': len(recs)})
+
+        elif parsed.path == '/identity_events':
+            n = int(qs.get('n', ['100'])[0])
+            events = list(_identity_events)[-n:]
+            # Serialise — timestamps as ISO strings for readability
+            out = []
+            for ev in events:
+                row = dict(ev)
+                row['ts_iso'] = datetime.utcfromtimestamp(row['ts']).strftime('%H:%M:%S.%f')[:-3]
+                out.append(row)
+            self._send_json({'events': out, 'total': len(out)})
+
+        elif parsed.path == '/tracks':
+            with _stable_tracks_lock:
+                tracks = [st.to_monitor_dict() for st in _stable_tracks.values()]
+            # Sort by last_seen_ago ascending (most recent first)
+            tracks.sort(key=lambda t: t['last_seen_ago'])
+            self._send_json({
+                'tracks': tracks,
+                'total':  len(tracks),
+                'by_state': {
+                    state.value: sum(1 for t in tracks if t['state'] == state.value)
+                    for state in PersonState
+                },
+            })
 
         else:
             self.send_response(404)

@@ -6213,6 +6213,35 @@ def api_recognition_logs():
         return jsonify({'error': str(e), 'available': False}), 503
 
 
+@app.route('/api/recognition/identity_events', methods=['GET'])
+def api_recognition_identity_events():
+    """Return the last N structured identity events from the recognition service.
+    Used by the Monitor tab to show the identity chain event log."""
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        import requests as _req
+        n = request.args.get('n', 100)
+        r = _req.get(f'{RECOGNITION_SERVICE_URL}/identity_events', params={'n': n}, timeout=3)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e), 'available': False}), 503
+
+
+@app.route('/api/recognition/tracks', methods=['GET'])
+def api_recognition_tracks():
+    """Return all active stable tracks with their full identity chain + stability breakdown.
+    Used by the Monitor tab to show the per-person pipeline state."""
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        import requests as _req
+        r = _req.get(f'{RECOGNITION_SERVICE_URL}/tracks', timeout=3)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e), 'available': False}), 503
+
+
 @app.route('/api/recognition/control/<action>', methods=['POST'])
 def api_recognition_control(action):
     if not require_role('admin', 'developer'):

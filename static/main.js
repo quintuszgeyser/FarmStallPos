@@ -6893,11 +6893,136 @@ async function refreshMonitor() {
   }
 }
 
+// ─── Identity Tracks panel ───────────────────────────────────────────────────
+const _STATE_COLORS = {
+  detected: 'secondary', tracking: 'info', session_active: 'primary',
+  building: 'warning', ready: 'success', promoted: 'success',
+  grace: 'warning', closed: 'secondary',
+};
+const _STATE_ICONS = {
+  detected: '👁', tracking: '🔍', session_active: '🔗',
+  building: '📦', ready: '⭐', promoted: '✅',
+  grace: '⏳', closed: '🔒',
+};
+
+async function refreshIdentityTracks() {
+  try {
+    const d = await api('/api/recognition/tracks');
+    const tracks = d.tracks || [];
+    const countEl = document.getElementById('m-tracks-count');
+    if (countEl) countEl.textContent = tracks.length;
+
+    const byStateEl = document.getElementById('m-tracks-bystate');
+    if (byStateEl && d.by_state) {
+      byStateEl.innerHTML = Object.entries(d.by_state)
+        .filter(([, n]) => n > 0)
+        .map(([s, n]) => `<span class="badge bg-${_STATE_COLORS[s]||'secondary'} me-1">${s}: ${n}</span>`)
+        .join('');
+    }
+
+    const tbody = document.getElementById('monitor-tracks-body');
+    const empty = document.getElementById('monitor-tracks-empty');
+    if (!tbody) return;
+
+    if (!tracks.length) {
+      tbody.innerHTML = '';
+      empty?.classList.remove('hidden');
+      return;
+    }
+    empty?.classList.add('hidden');
+
+    tbody.innerHTML = tracks.map(t => {
+      const stab = t.stability || {};
+      const stabStr = stab.summary === '✅' ? '✅'
+        : `⚠️ s:${stab.session_reassignments} a:${stab.anon_reassignments} f:${stab.identity_flips}`;
+      const identityStr = t.customer_id
+        ? `<span class="text-success fw-bold">cid=${t.customer_id}</span>`
+        : (t.anon_id
+            ? `<span class="text-warning">${t.anon_id.slice(0,8)}</span>`
+            : '<span class="text-muted">—</span>');
+      const promoBar = `<div style="width:50px;height:6px;background:#e9ecef;border-radius:3px;display:inline-block;vertical-align:middle">
+        <div style="width:${Math.round((t.promotion_score||0)*100)}%;height:100%;background:${(t.promotion_score||0)>=0.65?'#22c55e':'#f59e0b'};border-radius:3px"></div>
+      </div> ${Math.round((t.promotion_score||0)*100)}%`;
+      const locked = t.locked ? ' 🔒' : '';
+      return `<tr>
+        <td><span class="badge bg-${_STATE_COLORS[t.state]||'secondary'}">${_STATE_ICONS[t.state]||''} ${t.state}</span>${locked}</td>
+        <td class="font-monospace" style="font-size:11px">${t.stable_id.slice(0,8)}</td>
+        <td>${t.current_camera || '—'}</td>
+        <td class="font-monospace" style="font-size:11px">${t.session_id ? t.session_id.slice(0,8) : '—'}</td>
+        <td>${identityStr}</td>
+        <td>${Math.round((t.confidence||0)*100)}%</td>
+        <td>${promoBar}</td>
+        <td>${t.frames_buffered}</td>
+        <td>${t.flush_count}</td>
+        <td style="white-space:nowrap">${stabStr}</td>
+        <td>${t.last_seen_ago}s</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { /* silently fail — don't break main monitor */ }
+}
+
+// ─── Identity Event Log panel ────────────────────────────────────────────────
+const _EVENT_COLORS = {
+  TRACK_CREATED: '#60a5fa', STATE_TRANSITION: '#a3a3a3',
+  SESSION_RESUMED: '#34d399', REENTRY_MATCHED: '#34d399',
+  CAMERA_HANDOFF: '#fbbf24', TRACK_REBOUND: '#fbbf24',
+  ANON_MERGE: '#f97316', ANON_CREATED: '#a78bfa',
+  PROMOTED: '#4ade80', GRACE_STARTED: '#fde68a',
+  GRACE_EXPIRED: '#9ca3af', BAD_EMBEDDING: '#f87171',
+  EVIDENCE_FLUSH: '#818cf8', TRACK_CAP_REACHED: '#f87171',
+};
+
+let _identityLogKnown = new Set();
+
+async function refreshIdentityLog() {
+  try {
+    const d = await api('/api/recognition/identity_events');
+    const events = d.events || [];
+    const logEl = document.getElementById('monitor-identity-log');
+    if (!logEl) return;
+
+    const newEvents = events.filter(ev => {
+      const key = `${ev.ts}_${ev.event}_${ev.stable_id}`;
+      if (_identityLogKnown.has(key)) return false;
+      _identityLogKnown.add(key);
+      return true;
+    });
+    if (!newEvents.length) return;
+
+    // Trim known set if it grows too large
+    if (_identityLogKnown.size > 2000) _identityLogKnown = new Set([..._identityLogKnown].slice(-1000));
+
+    const wasAtBottom = logEl.scrollHeight - logEl.scrollTop <= logEl.clientHeight + 10;
+    newEvents.forEach(ev => {
+      const color = _EVENT_COLORS[ev.event] || '#d4d4d4';
+      const sid = ev.stable_id ? ev.stable_id.slice(0,8) : '        ';
+      const detail = ev.detail || ev.from_state ? `${ev.from_state||''}→${ev.to_state||''}` : '';
+      const extra = ev.sim ? ` sim=${ev.sim}` : (ev.score ? ` score=${ev.score}` : '');
+      const line = document.createElement('div');
+      line.innerHTML = `<span style="color:#666">${ev.ts_iso||''}</span> `
+        + `<span style="color:${color};font-weight:600">${ev.event.padEnd(22)}</span> `
+        + `<span style="color:#60a5fa">${sid}</span>`
+        + (detail ? ` <span style="color:#d4d4d4">${detail}</span>` : '')
+        + (extra  ? ` <span style="color:#fbbf24">${extra}</span>` : '');
+      logEl.appendChild(line);
+    });
+    if (wasAtBottom) logEl.scrollTop = logEl.scrollHeight;
+  } catch(e) { /* silently fail */ }
+}
+
+document.getElementById('btn-clear-identity-log')?.addEventListener('click', () => {
+  const logEl = document.getElementById('monitor-identity-log');
+  if (logEl) logEl.innerHTML = '<div class="text-muted">Cleared.</div>';
+  _identityLogKnown = new Set();
+});
+
 document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('hidden.bs.tab', () => {
   if (_monitorInterval) { clearInterval(_monitorInterval); _monitorInterval = null; }
 });
 
-document.getElementById('btn-monitor-refresh')?.addEventListener('click', () => { refreshMonitor(); refreshLogs(); });
+document.getElementById('btn-monitor-refresh')?.addEventListener('click', () => {
+  refreshMonitor(); refreshLogs(); refreshIdentityTracks(); refreshIdentityLog();
+});
 
 
 // ═══════════════════════════════════════════════════════
@@ -6983,8 +7108,13 @@ document.getElementById('log-level')?.addEventListener('change', refreshLogs);
 document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('shown.bs.tab', () => {
   refreshMonitor();
   refreshLogs();
+  refreshIdentityTracks();
+  refreshIdentityLog();
   if (!_monitorInterval) {
-    _monitorInterval = setInterval(() => { refreshMonitor(); refreshLogs(); }, 5000);
+    _monitorInterval = setInterval(() => {
+      refreshMonitor(); refreshLogs();
+      refreshIdentityTracks(); refreshIdentityLog();
+    }, 5000);
   }
 });
 
