@@ -198,6 +198,8 @@ _VALID_TRANSITIONS: set = {
     (PersonState.PROMOTED,       PersonState.GRACE),
     (PersonState.GRACE,          PersonState.SESSION_ACTIVE),  # resumed
     (PersonState.GRACE,          PersonState.CLOSED),
+    (PersonState.CLOSED,         PersonState.PROMOTED),        # promoted after grace expired
+    (PersonState.CLOSED,         PersonState.SESSION_ACTIVE),  # re-entry after close
 }
 
 @dataclass
