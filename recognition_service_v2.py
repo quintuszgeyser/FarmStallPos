@@ -3798,12 +3798,29 @@ def _clip_analysis_loop():
                         logger.info(f'Clip matched existing customer={customer_id} '
                                     f'(score={best_match_score:.3f}) for event {event_id[:12]}')
 
-                # --- Unresolved: feed evidence into VisitorSession, NOT directly creating a customer ---
+                # --- Unresolved: feed evidence into the stable track's bound session ---
+                # NEVER call _assign_to_session() here — that is first-contact only.
+                # Using it from the clip worker creates a spurious clip_analysis session
+                # that splits evidence away from the real session the track is bound to.
                 if customer_id is None:
-                    # Session resolver will decide what to do with this evidence
-                    face_emb_for_sess = signals.get('face_embedding') if signals.get('face_quality', 0) >= FACE_QUALITY_MIN_CREATE else None
-                    sess_id = _assign_to_session(face_emb_for_sess, clip_camera, event_id, time.time())
-                    sess = _active_sessions.get(sess_id)
+                    # Look up the stable track that owns this event_id
+                    with _stable_tracks_lock:
+                        _st_clip_id = _event_to_stable.get(event_id)
+                        _st_clip    = _stable_tracks.get(_st_clip_id) if _st_clip_id else None
+                    bound_session_id = _st_clip.session_id if _st_clip else None
+
+                    if bound_session_id:
+                        sess = _active_sessions.get(bound_session_id)
+                    else:
+                        # No stable track binding yet (e.g. clip arrived before process_event ran).
+                        # Fall back to similarity-based assignment as a one-time first contact only.
+                        face_emb_for_sess = signals.get('face_embedding') if signals.get('face_quality', 0) >= FACE_QUALITY_MIN_CREATE else None
+                        bound_session_id = _assign_to_session(face_emb_for_sess, clip_camera, event_id, time.time())
+                        sess = _active_sessions.get(bound_session_id)
+                        # Bind the stable track if one exists (may have arrived by now)
+                        if _st_clip and bound_session_id and not _st_clip.session_id:
+                            _st_clip.session_id = bound_session_id
+
                     if sess:
                         gait_for_sess = signals.get('gait_features')
                         gait_q = float(signals.get('gait_quality', 0))
@@ -3815,7 +3832,7 @@ def _clip_analysis_loop():
                                 best_clip_photo = _p
                                 best_clip_qual  = float(_q)
                         sess.add_evidence(
-                            face_emb=face_emb_for_sess,
+                            face_emb=signals.get('face_embedding') if signals.get('face_quality', 0) >= FACE_QUALITY_MIN_CREATE else None,
                             quality=float(signals.get('face_quality', 0)),
                             camera=clip_camera,
                             gait=gait_for_sess,
@@ -3825,7 +3842,7 @@ def _clip_analysis_loop():
                             face_photo=best_clip_photo,
                             snapshot_photo=signals.get('snapshot_photo'),
                         )
-                        logger.debug(f'Clip evidence → session {sess_id[:8]}: '
+                        logger.debug(f'Clip evidence → session {bound_session_id[:8]}: '
                                      f'{len(distinct_faces)} angles from {event_id[:12]}')
                     continue  # Do NOT proceed to enrichment for unresolved clips
 
