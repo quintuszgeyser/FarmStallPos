@@ -3807,6 +3807,13 @@ def _clip_analysis_loop():
                     if sess:
                         gait_for_sess = signals.get('gait_features')
                         gait_q = float(signals.get('gait_quality', 0))
+                        # Extract best face photo from distinct_faces list (qual, emb, photo, attrs)
+                        best_clip_photo = None
+                        best_clip_qual  = 0.0
+                        for _q, _e, _p, _a in distinct_faces:
+                            if _p and len(_p) >= 1500 and float(_q) > best_clip_qual:
+                                best_clip_photo = _p
+                                best_clip_qual  = float(_q)
                         sess.add_evidence(
                             face_emb=face_emb_for_sess,
                             quality=float(signals.get('face_quality', 0)),
@@ -3815,6 +3822,8 @@ def _clip_analysis_loop():
                             gait_quality=gait_q,
                             event_id=event_id,
                             face_embeddings_list=distinct_faces,
+                            face_photo=best_clip_photo,
+                            snapshot_photo=signals.get('snapshot_photo'),
                         )
                         logger.debug(f'Clip evidence → session {sess_id[:8]}: '
                                      f'{len(distinct_faces)} angles from {event_id[:12]}')
