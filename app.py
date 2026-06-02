@@ -2748,6 +2748,10 @@ def api_customers_cleanup_empty():
     ids = [r[0] for r in rows]
     if not ids:
         return jsonify({'ok': True, 'deleted': 0})
+    id_list = ','.join(str(i) for i in ids)
+    # Clear FK-constrained tables before deleting customers
+    db.session.execute(_txt(f'DELETE FROM customer_exclusions WHERE customer_id_a IN ({id_list}) OR customer_id_b IN ({id_list})'))
+    db.session.execute(_txt(f'DELETE FROM customer_merge_log WHERE source_id IN ({id_list}) OR primary_id IN ({id_list})'))
     for cid in ids:
         c = db.session.get(Customer, cid)
         if c:
@@ -2770,6 +2774,8 @@ def api_customers_delete_permanent(cid):
             db.session.execute(_text(f'DELETE FROM {tbl} WHERE customer_id = :cid'), {'cid': cid})
         # Remove merge log entries referencing this customer (as source or primary)
         db.session.execute(_text('DELETE FROM customer_merge_log WHERE source_id = :cid OR primary_id = :cid'), {'cid': cid})
+        # Remove exclusion pairs referencing this customer
+        db.session.execute(_text('DELETE FROM customer_exclusions WHERE customer_id_a = :cid OR customer_id_b = :cid'), {'cid': cid})
         # Unlink sales (keep the sale, just remove the customer link)
         db.session.execute(_text('UPDATE sales SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
         # Unlink any customers that were merged into this one
