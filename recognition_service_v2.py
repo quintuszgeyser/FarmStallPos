@@ -4422,7 +4422,10 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
         elif parsed.path == '/control/sync_cache':
             _signals_cache_ids.clear()
-            logger.info('Monitor: customer cache invalidated — will rebuild on next poll')
+            # Also clear recent customers cache — prevents ghost matches after DB wipe
+            with _recent_customers_lock:
+                _recent_customers_cache.clear()
+            logger.info('Monitor: customer cache + recent cache invalidated — will rebuild on next poll')
             self._send_json({'ok': True})
 
         elif parsed.path == '/control/requeue_clip':
@@ -4483,6 +4486,11 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
             # 4. Invalidate the signals cache so next poll rebuilds without this customer
             _signals_cache_ids.clear()
+
+            # 5. Remove from recent customers cache (anti-clone 10-min window)
+            with _recent_customers_lock:
+                _recent_customers_cache[:] = [
+                    c for c in _recent_customers_cache if c.get('cid') != cid]
 
             logger.info(f'Purged deleted customer cid={cid} '
                         f'(anons_removed={anons_removed}, cache invalidated)')
