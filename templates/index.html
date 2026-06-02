@@ -1248,7 +1248,7 @@
           </div>
         </div>
         <div class="mb-3">
-          <label class="form-label">Name <span class="text-danger">*</span></label>
+          <label class="form-label">Name</label>
           <input type="text" class="form-control" id="enroll-name" placeholder="Customer name">
         </div>
         <div class="mb-3">
@@ -1271,6 +1271,15 @@
             <button class="btn btn-outline-secondary" id="btn-add-plate">Add</button>
           </div>
           <div id="enroll-plates-list" class="mt-2 d-flex flex-wrap gap-2"></div>
+        </div>
+        <div class="mb-3">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="enroll-is-employee">
+            <label class="form-check-label fw-semibold" for="enroll-is-employee">
+              Employee
+              <span class="text-muted fw-normal small ms-1">— suppresses visit logging &amp; teller alerts</span>
+            </label>
+          </div>
         </div>
         <div class="mb-2">
           <label class="form-label fw-semibold">Biometrics</label>

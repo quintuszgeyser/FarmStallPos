@@ -2710,11 +2710,12 @@ def api_customers_update(cid):
     if not c:
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
-    if 'name'  in data: c.name  = data['name'].strip()
-    if 'phone' in data: c.phone = data['phone'].strip() or None
-    if 'email' in data: c.email = data['email'].strip() or None
-    if 'notes' in data: c.notes = data['notes'].strip() or None
-    if 'active' in data: c.active = bool(data['active'])
+    if 'name'        in data: c.name        = (data['name'] or '').strip() or None
+    if 'phone'       in data: c.phone       = data['phone'].strip() or None
+    if 'email'       in data: c.email       = data['email'].strip() or None
+    if 'notes'       in data: c.notes       = data['notes'].strip() or None
+    if 'active'      in data: c.active      = bool(data['active'])
+    if 'is_employee' in data: c.is_employee = bool(data['is_employee'])
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -3140,6 +3141,8 @@ def api_customers_merge_suggestions():
     customers = Customer.query.filter_by(active=True).all()
     embeddings = {}
     for c in customers:
+        if c.is_employee:
+            continue  # employees move through store all day — never suggest merging them
         rows = CustomerFace.query.filter_by(customer_id=c.id, active=True).all()
         embs = []
         for row in rows:

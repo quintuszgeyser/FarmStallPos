@@ -659,18 +659,21 @@ def _compute_per_customer_thresholds(link_threshold):
     _threshold_cache_time = time.time()
     return result
 
+_employee_ids: set = set()  # customer IDs marked is_employee=True — refreshed with customer cache
+
 def refresh_customers():
-    global _signals_cache_ids, _customers_cache_map, _threshold_cache_time
+    global _signals_cache_ids, _customers_cache_map, _threshold_cache_time, _employee_ids
     customers = pos_get('/api/customers')
     with _cache_lock:
         _customers_cache.clear()
         _customers_cache.extend(customers)
         _customers_cache_map = {c['id']: c for c in customers}
+    _employee_ids = {c['id'] for c in customers if c.get('is_employee')}
     # Invalidate signals cache so next event rebuilds with new customer set
     _signals_cache_ids = set()
     # Invalidate threshold cache — last_visit may have changed
     _threshold_cache_time = 0.0
-    logger.info(f'Customer cache refreshed: {len(customers)} customers')
+    logger.info(f'Customer cache refreshed: {len(customers)} customers, {len(_employee_ids)} employees')
 
 def _cache_refresh_loop():
     while True:
@@ -2398,6 +2401,11 @@ def _resolve_session(session):
         if (session.best_face_sim >= RESOLVER_LINK_THRESHOLD
                 and session.candidate_customer_id):
             linked_cid = session.candidate_customer_id
+            # Employees: mark resolved but skip visit log and clip re-queuing entirely
+            if linked_cid in _employee_ids:
+                session.status = 'resolved'
+                logger.debug(f'Resolver: session {session.session_id[:8]} → employee cid={linked_cid} — suppressed')
+                return
             _log_session_visit(linked_cid, session, dwell_seconds=session.duration())
             session.status = 'resolved'
             logger.info(f'Resolver: session {session.session_id[:8]} → '
@@ -2607,6 +2615,14 @@ def process_event(event):
                 logger.info(f'Track {track_id[:8]} resolved merged customer {resolved_id} → primary {primary_id}')
                 resolved_id = primary_id
                 track.customer_id = primary_id
+
+            # ── Employee fast-path ────────────────────────────────────────────
+            # Employees move through the store all day. Once identified, skip
+            # all expensive downstream work: no visit log, no teller alert,
+            # no clip re-queuing, no profile improvement API calls.
+            if resolved_id in _employee_ids:
+                logger.debug(f'Track {track_id[:8]} → employee cid={resolved_id} — suppressed')
+                return
 
             # Collect best face_sim and context_score for safety checks + logging
             best_face_sim = 0.0

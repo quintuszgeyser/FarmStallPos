@@ -5541,7 +5541,8 @@ function renderCustomersList() {
         </div>
         <div class="flex-grow-1 min-width-0">
           <div class="fw-semibold">${c.name || '<span class="text-muted fst-italic">Unnamed</span>'}
-            ${c.auto_enrolled ? '<span class="badge bg-info text-dark ms-1" style="font-size:0.65rem">Auto</span>' : ''}
+            ${c.is_employee ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem">👷 Employee</span>' : ''}
+            ${c.auto_enrolled && !c.is_employee ? '<span class="badge bg-info text-dark ms-1" style="font-size:0.65rem">Auto</span>' : ''}
             ${c.customer_number ? `<span class="text-muted small ms-1">${c.customer_number}</span>` : ''}
           </div>
           ${c.phone ? `<div class="small text-muted">${c.phone}</div>` : ''}
@@ -6189,10 +6190,11 @@ async function openCustomerEnroll(customerId) {
   const c = customerId ? STATE.customers.find(x => x.id === customerId) : null;
   document.getElementById('customerEnrollTitle').textContent = c ? 'Edit Customer' : 'Enroll Customer';
   document.getElementById('enroll-customer-id').value = c?.id || '';
-  document.getElementById('enroll-name').value   = c?.name  || '';
-  document.getElementById('enroll-phone').value  = c?.phone || '';
-  document.getElementById('enroll-email').value  = c?.email || '';
-  document.getElementById('enroll-notes').value  = c?.notes || '';
+  document.getElementById('enroll-name').value        = c?.name  || '';
+  document.getElementById('enroll-phone').value       = c?.phone || '';
+  document.getElementById('enroll-email').value       = c?.email || '';
+  document.getElementById('enroll-notes').value       = c?.notes || '';
+  document.getElementById('enroll-is-employee').checked = c?.is_employee || false;
 
   // Plates
   const platesList = document.getElementById('enroll-plates-list');
@@ -6306,6 +6308,7 @@ document.getElementById('btn-save-customer')?.addEventListener('click', async ()
     phone: document.getElementById('enroll-phone').value.trim() || null,
     email: document.getElementById('enroll-email').value.trim() || null,
     notes: document.getElementById('enroll-notes').value.trim() || null,
+    is_employee: document.getElementById('enroll-is-employee').checked,
   };
 
   try {
