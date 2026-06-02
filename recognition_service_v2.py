@@ -4223,17 +4223,26 @@ def _get_status_snapshot():
     cpu_pct = proc.cpu_percent(interval=0.1)
 
     with _sessions_lock:
+        _now = time.time()
+        with _clip_queue_lock:
+            _clip_q_session_ids = {j[0][:12]: True for j in _clip_analysis_queue}
         sessions = [
             {
-                'id': s.session_id[:8],
-                'status': s.status,
-                'faces': len(s.face_embeddings),
-                'cameras': list(s.cameras_seen),
-                'age_s': round(time.time() - s.created_at),
-                'idle_s': round(time.time() - s.last_evidence_at),
-                'best_sim': round(s.best_face_sim, 3),
+                'id':            s.session_id[:8],
+                'status':        s.status,
+                'faces':         len(s.face_embeddings),
+                'cameras':       list(s.cameras_seen),
+                'age_s':         round(_now - s.created_at),
+                'idle_s':        round(_now - s.last_evidence_at),
+                'resolve_in_s':  max(0, round(SESSION_IDLE_EXPIRY - (_now - s.last_evidence_at))),
+                'best_sim':      round(s.best_face_sim, 3),
                 'candidate_cid': s.candidate_customer_id,
-                'events': len(s.source_event_ids),
+                'events':        len(s.source_event_ids),
+                'promo_score':   _compute_promotion_score(s),
+                'clips_pending': sum(1 for eid in s.source_event_ids
+                                     if eid[:12] in _clip_q_session_ids),
+                'gait':          s.gait_features is not None,
+                'duration_s':    round(s.duration()),
             }
             for s in _active_sessions.values()
         ]

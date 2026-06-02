@@ -6834,16 +6834,31 @@ async function refreshMonitor() {
       } else {
         if(se) se.classList.add('hidden');
         d.sessions.forEach(s => {
-          const color = s.status==='resolving'?'warning':s.candidate_cid?'success':'primary';
+          const color = s.status==='resolving' ? 'warning' : s.candidate_cid ? 'success' : 'primary';
+          const promoPct = Math.round((s.promo_score || 0) * 100);
+          const promoColor = promoPct >= 65 ? '#22c55e' : promoPct >= 40 ? '#f59e0b' : '#94a3b8';
+          const resolveIn = s.resolve_in_s ?? '?';
+          const resolveUrgency = resolveIn <= 10 ? '#f97316' : resolveIn <= 30 ? '#fbbf24' : '#94a3b8';
           const badge = document.createElement('div');
           badge.className = `card border-${color} p-2`;
-          badge.style.minWidth = '160px';
+          badge.style.minWidth = '180px';
+          badge.style.maxWidth = '220px';
           badge.innerHTML = `
-            <div class="small fw-bold text-${color}">${s.id}</div>
-            <div class="small text-muted">${s.status} · ${s.faces} faces</div>
-            <div class="small text-muted">age ${s.age_s}s · idle ${s.idle_s}s</div>
-            <div class="small text-muted">cams: ${s.cameras.join(', ')||'—'}</div>
-            ${s.candidate_cid ? `<div class="small text-success">→ cid=${s.candidate_cid} (${s.best_sim})</div>` : ''}
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="small fw-bold text-${color} font-monospace">${s.id}</span>
+              <span style="font-size:10px;color:${resolveUrgency};font-weight:700">⏱ ${resolveIn}s</span>
+            </div>
+            <div class="small text-muted mb-1">
+              ${s.faces} faces · ${s.cameras.join('+')||'?'}
+              ${s.gait ? ' · 🚶gait' : ''}
+              ${s.clips_pending > 0 ? ` · 📎${s.clips_pending} clip${s.clips_pending>1?'s':''}` : ''}
+            </div>
+            <div class="small text-muted mb-1">age ${s.age_s}s · sim ${Math.round(s.best_sim*100)}%</div>
+            <div style="background:#1e293b;border-radius:3px;height:6px;margin-bottom:2px;overflow:hidden">
+              <div style="width:${promoPct}%;height:100%;background:${promoColor};transition:width 0.5s"></div>
+            </div>
+            <div style="font-size:10px;color:${promoColor};font-weight:600">${promoPct}% promo</div>
+            ${s.candidate_cid ? `<div class="small text-success mt-1">→ cid=${s.candidate_cid}</div>` : ''}
           `;
           sl.appendChild(badge);
         });
@@ -7125,7 +7140,7 @@ document.querySelector('[data-bs-target="#dev-monitor"]')?.addEventListener('sho
     _monitorInterval = setInterval(() => {
       refreshMonitor(); refreshLogs();
       refreshIdentityTracks(); refreshIdentityLog();
-    }, 5000);
+    }, 2000);
   }
 });
 
