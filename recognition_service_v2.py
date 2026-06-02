@@ -3211,8 +3211,15 @@ def _create_customer_from_embeddings(face_embeddings, gait_features, session_id,
     return cid
 
 
+SESSION_VISIT_MIN_SIM = 0.45  # minimum face_sim to log a resolver visit — prevents logging
+                               # weak matches that slipped through on accumulated evidence
+
 def _log_session_visit(cid, session, dwell_seconds=None):
     """Log a visit for a resolved session."""
+    if float(session.best_face_sim) < SESSION_VISIT_MIN_SIM:
+        logger.debug(f'_log_session_visit: skipped cid={cid} '
+                     f'session_face_sim={session.best_face_sim:.3f} < {SESSION_VISIT_MIN_SIM}')
+        return
     payload = {
         'customer_id': cid,
         'matched_signals': 'session_resolved',

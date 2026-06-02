@@ -5902,7 +5902,10 @@ async function openCustomerDetail(customerId) {
   let visitsHtml = '';
   if (visits.length) {
     const rows = visits.map(v => {
-      const dt = new Date(v.detected_at);
+      // detected_at is stored as UTC without 'Z' — append it so the browser parses as UTC
+      // then toLocaleTimeString converts to the user's local timezone (SAST = UTC+2)
+      const dtRaw = v.detected_at || '';
+      const dt = new Date(dtRaw.endsWith('Z') || dtRaw.includes('+') ? dtRaw : dtRaw + 'Z');
       const dateStr = dt.toLocaleDateString('en-ZA', {day:'2-digit', month:'short', year:'numeric'});
       const timeStr = dt.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit'});
       const camera = v.camera_source
