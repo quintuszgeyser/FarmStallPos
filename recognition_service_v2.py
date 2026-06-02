@@ -167,8 +167,10 @@ _mp_pose_inst = None
 _onnx_semaphore      = threading.Semaphore(2)   # Iris Xe GPU: 2 parallel streams
 _mediapipe_semaphore = threading.Semaphore(3)   # CPU: 3 concurrent pose sessions
 
-# Hard ceiling on total active inference tasks — drop events if exceeded.
-MAX_ACTIVE_TASKS   = 6
+# Hard ceiling on total active inference tasks — must equal _event_semaphore value.
+# Setting it higher causes tasks to acquire a slot then block on the semaphore forever,
+# permanently consuming slots and starving all new events.
+MAX_ACTIVE_TASKS   = 3
 _active_tasks      = 0
 _active_tasks_lock = threading.Lock()
 
@@ -1320,10 +1322,11 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
                 os.unlink(tmp.name)
             except Exception:
                 pass
-        # Throttle clip inference — yield 0.2s per frame so 25 frames takes ~5s
-        # instead of hammering all cores. Real-time events are unaffected.
+        # Yield briefly between frames so real-time events can run between clip frames.
+        # The _event_semaphore already caps concurrent processing; this just prevents
+        # a single clip from holding the semaphore slot non-stop for many seconds.
         import time as _clip_time
-        _clip_time.sleep(0.2)
+        _clip_time.sleep(0.05)
 
     cap.release()
 
