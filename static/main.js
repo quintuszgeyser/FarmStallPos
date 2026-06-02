@@ -6421,23 +6421,24 @@ async function loadMergeSuggestions() {
     panel.innerHTML = `
       <div class="alert alert-warning py-2 mb-2">
         <strong>${manual.length} possible duplicate${manual.length > 1 ? 's' : ''} — review needed</strong>
-        <span class="text-muted small ms-2">Click a pair to merge.</span>
+        <span class="text-muted small ms-2">Merge or decline each pair.</span>
       </div>
       ${manual.map(s => `
-        <div class="border rounded px-3 py-2 mb-2 d-flex align-items-center gap-3 bg-warning-subtle"
-             style="cursor:pointer" onclick="openMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id})">
-          <div class="d-flex gap-2 flex-shrink-0">
+        <div class="border rounded px-3 py-2 mb-2 d-flex align-items-center gap-3 bg-warning-subtle">
+          <div class="d-flex gap-2 flex-shrink-0" style="cursor:pointer" onclick="openMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id})">
             <img src="/api/customers/${s.customer_a.id}/photo" style="width:40px;height:40px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6" onerror="this.style.display='none'">
             <img src="/api/customers/${s.customer_b.id}/photo" style="width:40px;height:40px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6" onerror="this.style.display='none'">
           </div>
-          <div class="flex-grow-1">
+          <div class="flex-grow-1" style="cursor:pointer" onclick="openMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id})">
             <span class="fw-semibold">${s.customer_a.name || s.customer_a.customer_number}</span>
             <span class="text-muted small ms-1">(${s.customer_a.visit_count} visits)</span>
             <span class="mx-2 text-muted">↔</span>
             <span class="fw-semibold">${s.customer_b.name || s.customer_b.customer_number}</span>
             <span class="text-muted small ms-1">(${s.customer_b.visit_count} visits)</span>
           </div>
-          <span class="badge bg-warning text-dark">${Math.round(s.similarity * 100)}% similar</span>
+          <span class="badge bg-warning text-dark me-1">${Math.round(s.similarity * 100)}% similar</span>
+          <button class="btn btn-outline-danger btn-sm" title="Not the same person — never suggest again"
+                  onclick="declineMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id}, event)">✕ Not same</button>
         </div>`).join('')}`;
   } catch(e) { /* silently fail */ }
 }
@@ -6449,6 +6450,20 @@ function openMergeSuggestion(idA, idB) {
   });
   updateMergeToolbar();
   openMergeModal();
+}
+
+async function declineMergeSuggestion(idA, idB, event) {
+  event.stopPropagation();
+  try {
+    await api('/api/customers/exclusions', {
+      method: 'POST',
+      body: JSON.stringify({ customer_a_id: idA, customer_b_id: idB, reason: 'Declined by user' })
+    });
+    toast('Pair marked as different people — won\'t be suggested again', 'success');
+    await loadMergeSuggestions();
+  } catch(e) {
+    toast('Could not save decline: ' + e.message, 'error');
+  }
 }
 
 // ─── Dual-handle merge slider ────────────────────────────────

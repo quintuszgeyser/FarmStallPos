@@ -1526,6 +1526,8 @@ def strong_migrate():
                 reason VARCHAR(200),
                 created_at TIMESTAMP DEFAULT NOW()
             )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_excl_a ON customer_exclusions(customer_id_a)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_excl_b ON customer_exclusions(customer_id_b)")
 
             # Merge audit log — one row per merge operation, survives unmerge
             conn.exec_driver_sql("""
@@ -3145,11 +3147,19 @@ def api_customers_merge_suggestions():
         if embs:
             embeddings[c.id] = (embs, c)
 
+    # Load excluded pairs so we never suggest them again
+    excl_rows = db.session.execute(
+        db.text("SELECT customer_id_a, customer_id_b FROM customer_exclusions")
+    ).fetchall()
+    excluded = {(min(r[0], r[1]), max(r[0], r[1])) for r in excl_rows}
+
     cids = list(embeddings.keys())
     suggestions = []
     for i in range(len(cids)):
         for j in range(i + 1, len(cids)):
             a_id, b_id = cids[i], cids[j]
+            if (min(a_id, b_id), max(a_id, b_id)) in excluded:
+                continue
             a_embs, a_c = embeddings[a_id]
             b_embs, b_c = embeddings[b_id]
             # Best-of-N comparison: use top 5 embeddings per customer to limit O(n²)
@@ -3166,6 +3176,33 @@ def api_customers_merge_suggestions():
                 })
     suggestions.sort(key=lambda x: x['similarity'], reverse=True)
     return jsonify(suggestions)
+
+@app.route('/api/customers/exclusions', methods=['POST'])
+def api_customers_add_exclusion():
+    """Mark two customers as definitely NOT the same person.
+    Future merge suggestions for this pair will be suppressed."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json() or {}
+    id_a = data.get('customer_a_id')
+    id_b = data.get('customer_b_id')
+    reason = (data.get('reason') or 'Declined by user')[:200]
+    if not id_a or not id_b or id_a == id_b:
+        return jsonify({'error': 'Two distinct customer IDs required'}), 400
+    # Normalise order so (a,b) and (b,a) are the same pair
+    lo, hi = min(id_a, id_b), max(id_a, id_b)
+    # Upsert — ignore if already excluded
+    existing = db.session.execute(
+        db.text("SELECT id FROM customer_exclusions WHERE customer_id_a=:a AND customer_id_b=:b"),
+        {'a': lo, 'b': hi}
+    ).fetchone()
+    if not existing:
+        db.session.execute(
+            db.text("INSERT INTO customer_exclusions (customer_id_a, customer_id_b, reason) VALUES (:a, :b, :r)"),
+            {'a': lo, 'b': hi, 'r': reason}
+        )
+        db.session.commit()
+    return jsonify({'ok': True})
 
 @app.route('/api/customers/<int:cid>/name', methods=['POST'])
 def api_customer_name(cid):
