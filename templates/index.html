@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lady Coleen POS{% if app_env == 'qa' %} [QA]{% endif %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Delius+Swash+Caps&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#927f57">
   <style>
@@ -30,7 +30,7 @@
       --dd-paper-alt: #faf0d7;
 
       /* Doodle typography */
-      --dd-font:       'Delius Swash Caps', cursive;
+      --dd-font:       'Nunito', system-ui, sans-serif;
       --dd-font-mono:  'JetBrains Mono', monospace;
 
       /* Sketch borders — slightly uneven radii for hand-drawn feel */
@@ -208,7 +208,14 @@
       background: repeating-linear-gradient(90deg, var(--lc-gold-border) 0, var(--lc-gold-border) 6px, transparent 6px, transparent 10px);
     }
     .lc-logo-wrap { height: 72px; flex-shrink: 0; }
-    .lc-logo-wrap img { height: 72px; width: auto; filter: drop-shadow(1px 2px 0 var(--lc-gold-border)); }
+    .lc-logo-wrap img {
+      height: 72px; width: auto;
+      background: #fff;
+      border-radius: 50%;
+      padding: 4px;
+      box-shadow: 0 0 0 2px var(--lc-gold-border);
+      filter: drop-shadow(1px 2px 0 rgba(146,127,87,.3));
+    }
     .lc-brand span {
       font-size: 22px; font-weight: 700; color: var(--lc-gold);
       letter-spacing: .06em;
