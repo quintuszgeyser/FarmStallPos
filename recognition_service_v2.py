@@ -199,7 +199,7 @@ _VALID_TRANSITIONS: set = {
     (PersonState.GRACE,          PersonState.SESSION_ACTIVE),  # resumed
     (PersonState.GRACE,          PersonState.CLOSED),
     (PersonState.CLOSED,         PersonState.PROMOTED),        # promoted after grace expired
-    (PersonState.CLOSED,         PersonState.SESSION_ACTIVE),  # re-entry after close
+    (PersonState.CLOSED,         PersonState.TRACKING),        # re-entry: reset to TRACKING first
 }
 
 @dataclass
@@ -1142,8 +1142,13 @@ def _get_or_create_stable_track(event_id: str,
             log_identity_event('SESSION_RESUMED', existing.stable_id,
                                session_id=existing.session_id, detail='grace period resume')
         elif reason == 'reentry':
+            # Reset lifecycle: CLOSED → TRACKING so the track can accept new evidence
+            # and bind a fresh session. Do NOT reuse the old session_id — it is expired.
+            existing.session_id = None
+            existing.anon_id    = None
+            existing.transition(PersonState.TRACKING)
             log_identity_event('REENTRY_MATCHED', existing.stable_id,
-                               detail=f'matched after {now - existing.last_seen:.1f}s gap')
+                               detail=f'matched after {now - existing.last_seen:.1f}s gap — reset to TRACKING')
         elif reason == 'cross_camera':
             old_cam = existing.current_camera
             with _stable_tracks_lock:
