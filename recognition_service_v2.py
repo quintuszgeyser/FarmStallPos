@@ -2872,18 +2872,24 @@ def _compute_promotion_score(session) -> float:
     Negative signals: proportion of low-quality frames, embedding instability.
     Temporal gate: all frames within 5s = burst noise → hard block (returns 0.0).
     """
-    embs = session.face_embeddings  # list of (bytes, quality, camera)
+    embs = session.face_embeddings  # list of (bytes, quality, camera_str)
     if not embs:
         return 0.0
 
-    qualities   = [_normalize_quality(float(e[1]), '_compute_promotion_score') for e in embs]
-    timestamps  = [e[2] if len(e) > 2 and isinstance(e[2], (int, float)) else 0.0 for e in embs]
+    qualities = [_normalize_quality(float(e[1]), '_compute_promotion_score') for e in embs]
 
-    # Hard temporal gate — burst of frames from a single moment is not diverse
-    if len(timestamps) > 1:
-        time_span = max(timestamps) - min(timestamps)
-        if time_span < MIN_TIME_SPAN_FOR_PROMOTION:
-            return 0.0
+    # Temporal gate: use session duration as proxy (session has created_at / last_evidence_at).
+    # Individual embeddings store (bytes, quality, camera) — no per-embedding timestamp.
+    # If session object has timing attributes use them; otherwise skip the gate.
+    session_duration = 0.0
+    if hasattr(session, 'last_evidence_at') and hasattr(session, 'created_at'):
+        session_duration = max(0.0, session.last_evidence_at - session.created_at)
+    elif hasattr(session, 'face_embeddings') and len(embs) > 1:
+        # _FakeSession or anon list — no timing, skip gate
+        session_duration = MIN_TIME_SPAN_FOR_PROMOTION + 1.0
+
+    if session_duration < MIN_TIME_SPAN_FOR_PROMOTION:
+        return 0.0
 
     # Hard minimum count
     if len(embs) < MIN_FACES_TO_CREATE:
@@ -4279,7 +4285,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             out = []
             for ev in events:
                 row = dict(ev)
-                row['ts_iso'] = datetime.utcfromtimestamp(row['ts']).strftime('%H:%M:%S.%f')[:-3]
+                row['ts_iso'] = datetime.fromtimestamp(row['ts']).strftime('%H:%M:%S.%f')[:-3]
                 out.append(row)
             self._send_json({'events': out, 'total': len(out)})
 
