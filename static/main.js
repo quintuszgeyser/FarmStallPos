@@ -6992,7 +6992,7 @@ async function refreshIdentityLog() {
     // Trim known set if it grows too large
     if (_identityLogKnown.size > 2000) _identityLogKnown = new Set([..._identityLogKnown].slice(-1000));
 
-    const wasAtBottom = logEl.scrollHeight - logEl.scrollTop <= logEl.clientHeight + 10;
+
     newEvents.forEach(ev => {
       const color = _EVENT_COLORS[ev.event] || '#d4d4d4';
       const sid = ev.stable_id ? ev.stable_id.slice(0,8) : '        ';
@@ -7006,7 +7006,7 @@ async function refreshIdentityLog() {
         + (extra  ? ` <span style="color:#fbbf24">${extra}</span>` : '');
       logEl.appendChild(line);
     });
-    if (wasAtBottom) logEl.scrollTop = logEl.scrollHeight;
+    logEl.scrollTop = logEl.scrollHeight;
   } catch(e) { /* silently fail */ }
 }
 
@@ -7066,14 +7066,14 @@ async function refreshLogs() {
     if (search) params.set('q', search);
     const d = await api('/api/recognition/logs?' + params);
     const logColors = { ERROR:'#f87171', WARNING:'#fbbf24', INFO:'#86efac', DEBUG:'#94a3b8' };
-    const wasAtBottom = container.scrollHeight - container.scrollTop <= container.clientHeight + 20;
     container.innerHTML = (d.logs || []).map(r => {
       const color = logColors[r.lvl] || '#94a3b8';
       const lvlBadge = `<span style="color:${color};min-width:60px;display:inline-block">[${r.lvl}]</span>`;
       const escapedMsg = r.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
       return `<div style="color:#e2e8f0;line-height:1.4"><span style="color:#64748b">${r.ts}</span> ${lvlBadge} ${escapedMsg}</div>`;
     }).join('') || '<div style="color:#64748b">No logs</div>';
-    if (wasAtBottom) container.scrollTop = container.scrollHeight;
+    // Always pin to bottom — newest logs at the bottom, always visible
+    container.scrollTop = container.scrollHeight;
   } catch(e) {
     container.innerHTML = `<div style="color:#f87171">Error: ${e.message}</div>`;
   }
