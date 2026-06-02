@@ -2711,9 +2711,9 @@ def api_customers_update(cid):
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
     if 'name'        in data: c.name        = (data['name'] or '').strip() or None
-    if 'phone'       in data: c.phone       = data['phone'].strip() or None
-    if 'email'       in data: c.email       = data['email'].strip() or None
-    if 'notes'       in data: c.notes       = data['notes'].strip() or None
+    if 'phone'       in data: c.phone       = (data['phone'] or '').strip() or None
+    if 'email'       in data: c.email       = (data['email'] or '').strip() or None
+    if 'notes'       in data: c.notes       = (data['notes'] or '').strip() or None
     if 'active'      in data: c.active      = bool(data['active'])
     if 'is_employee' in data: c.is_employee = bool(data['is_employee'])
     db.session.commit()
@@ -7270,12 +7270,15 @@ def api_invoices_finalise(inv_id):
                 for rl in rl_rows:
                     consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * qty_disp, sale_uuid, now)
 
-        db.session.add(Sale(
-            sale_id=sale_uuid, date_time=now,
-            product_id=p.id if p else None,
-            qty=qty_disp, unit_price=unit_price,
-            user_id=u.id if u else None,
-        ))
+        # Only create a Sale row if we matched a real product — custom line items
+        # (no product match) are recorded on the invoice but don't deduct stock.
+        if p:
+            db.session.add(Sale(
+                sale_id=sale_uuid, date_time=now,
+                product_id=p.id,
+                qty=qty_disp, unit_price=unit_price,
+                user_id=u.id if u else None,
+            ))
 
     inv.sale_id = sale_uuid
     inv.status  = 'finalised'
