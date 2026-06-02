@@ -4205,6 +4205,7 @@ def _get_status_snapshot():
             'last_seen_s': round(time.time() - a.get('last_seen_at', a['created_at'])),
             'ttl_s': max(0, round(86400 - (time.time() - a['created_at']))),
             'photo_b64': base64.b64encode(a['best_photo']).decode() if a.get('best_photo') else None,
+            'promo_score': _compute_promotion_score_from_list(a.get('face_embeddings', [])),
         }
         for aid, a in list(_anonymous_identities.items())
     ]

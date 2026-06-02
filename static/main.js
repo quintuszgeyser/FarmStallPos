@@ -6870,9 +6870,11 @@ async function refreshMonitor() {
         if(ae) ae.classList.add('hidden');
         d.anon_identities.forEach(a => {
           const ttlMin = Math.round((a.ttl_s || 0) / 60);
+          const promoPct = Math.round((a.promo_score || 0) * 100);
+          const promoColor = promoPct >= 65 ? '#22c55e' : promoPct >= 40 ? '#f59e0b' : '#94a3b8';
           const card = document.createElement('div');
           card.className = 'card border-warning p-2 text-center';
-          card.style.minWidth = '120px';
+          card.style.minWidth = '130px';
           card.innerHTML = `
             ${a.photo_b64
               ? `<img src="data:image/jpeg;base64,${a.photo_b64}" style="width:60px;height:60px;object-fit:cover;border-radius:50%;margin:0 auto 4px;display:block;border:2px solid #ffc107">`
@@ -6880,6 +6882,12 @@ async function refreshMonitor() {
             <div class="small fw-bold text-warning">${a.id}</div>
             <div class="small text-muted">${a.faces} face${a.faces !== 1 ? 's' : ''} · ${a.cameras.join(',')}</div>
             <div class="small text-muted">TTL ${ttlMin}m · seen ${Math.round(a.last_seen_s)}s ago</div>
+            <div style="margin:4px 0 2px">
+              <div style="background:#374151;border-radius:3px;height:6px;overflow:hidden">
+                <div style="width:${promoPct}%;height:100%;background:${promoColor};transition:width 0.3s"></div>
+              </div>
+              <div style="font-size:10px;color:${promoColor};font-weight:600">${promoPct}% promo</div>
+            </div>
           `;
           al.appendChild(card);
         });
