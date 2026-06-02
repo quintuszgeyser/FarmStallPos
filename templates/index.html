@@ -278,15 +278,13 @@
 
     /* ── Teller screen layout ── */
     #teller-screen {
-      height: calc(100vh - 120px);
-      display: grid;
-      grid-template-rows: auto auto 1fr auto;
+      display: flex;
+      flex-direction: column;
       gap: .25rem;
-      overflow: hidden;
     }
     .teller-toolbar .row.g-2 { --bs-gutter-y: .25rem; --bs-gutter-x: .25rem; }
     #product-search-results { margin-top: .25rem !important; }
-    #cart { margin-bottom: .25rem; overflow: auto; }
+    #cart { margin-bottom: .25rem; overflow-y: auto; max-height: calc(100vh - 340px); }
     .teller-toolbar .form-select,
     .teller-toolbar .form-control { height: 44px; font-size: 16px; }
     #scan-panel { display: none; }
