@@ -3214,28 +3214,33 @@ def _create_customer_from_embeddings(face_embeddings, gait_features, session_id,
 VISIT_SCORE_MIN        = 0.35  # promotion score floor for visit logging — multi-signal
 VISIT_MIN_EMBEDDINGS   = 3     # fallback: allow weak sim if this many embeddings support it
 
-def _log_session_visit(cid, session, dwell_seconds=None):
+def _log_session_visit(cid, session, dwell_seconds=None, direct_match=False):
     """Log a visit for a resolved session.
 
-    Gate uses the multi-signal promotion score, not a single-frame sim threshold.
-    This respects the system design: identity is resolved on accumulated evidence,
-    and visit logging should honour the same logic.
-
-    Fallback: even if score is low, allow logging if enough embeddings are present
-    AND face_sim is at least plausibly real (≥ 0.30 hard floor).
+    direct_match=True: identity was confirmed by direct face_sim >= RESOLVER_LINK_THRESHOLD.
+                       Skip the evidence gate — the match itself is the proof.
+    direct_match=False: identity inferred from accumulated evidence (new/anon promotion).
+                        Apply multi-signal gate to avoid logging weak resolutions.
     """
-    face_sim   = float(session.best_face_sim)
-    n_embs     = len(session.face_embeddings)
-    score      = _compute_promotion_score(session)
+    face_sim = float(session.best_face_sim)
 
-    passes = (
-        score >= VISIT_SCORE_MIN                              # strong multi-signal evidence
-        or (n_embs >= VISIT_MIN_EMBEDDINGS and face_sim >= 0.30)  # weak sim but supported
-    )
-    if not passes:
-        logger.debug(f'_log_session_visit: skipped cid={cid} '
-                     f'score={score:.3f} sim={face_sim:.3f} embs={n_embs}')
-        return
+    if not direct_match:
+        n_embs = len(session.face_embeddings)
+        score  = _compute_promotion_score(session)
+        passes = (
+            score >= VISIT_SCORE_MIN                                    # strong multi-signal
+            or (n_embs >= VISIT_MIN_EMBEDDINGS and face_sim >= 0.30)    # weak sim, supported
+        )
+        if not passes:
+            logger.debug(f'_log_session_visit: skipped cid={cid} '
+                         f'score={score:.3f} sim={face_sim:.3f} embs={n_embs}')
+            return
+    else:
+        # Direct match — still apply absolute floor (0.30) as sanity check
+        if face_sim < 0.30:
+            logger.debug(f'_log_session_visit: skipped direct_match cid={cid} '
+                         f'sim={face_sim:.3f} below hard floor 0.30')
+            return
     payload = {
         'customer_id': cid,
         'matched_signals': 'session_resolved',
@@ -3289,7 +3294,8 @@ def _resolve_session(session):
                 session.status = 'resolved'
                 logger.debug(f'Resolver: session {session.session_id[:8]} → employee cid={linked_cid} — suppressed')
                 return
-            _log_session_visit(linked_cid, session, dwell_seconds=session.duration())
+            _log_session_visit(linked_cid, session, dwell_seconds=session.duration(),
+                               direct_match=True)   # face_sim >= RESOLVER_LINK_THRESHOLD confirmed
             session.status = 'resolved'
             logger.info(f'Resolver: session {session.session_id[:8]} → '
                         f'linked cid={linked_cid} '
