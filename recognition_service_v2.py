@@ -2622,13 +2622,18 @@ def process_event(event):
             plate_prior = best_match_meta.get('plate_prior', False)
             context_score_val = best_match_meta.get('context_score', 0.0)
 
-            # Safety checks when relaxed threshold was used (long-absent customer)
             eff_threshold = per_customer_thresholds.get(resolved_id, link_threshold)
+
+            # Hard face_sim floor — no link without at least some face evidence,
+            # regardless of how high gait/context/camera scores are.
+            # A no-face frame (pink top, back of head, etc.) must never link to a customer.
+            if best_face_sim < 0.30:
+                logger.warning(f'Track {track_id[:8]} face_sim_floor_failed sim={best_face_sim:.3f} '
+                               f'(no face in frame) — link suppressed')
+                return
+
+            # Safety checks when relaxed threshold was used (long-absent customer)
             if eff_threshold < link_threshold:
-                if best_face_sim < 0.30:
-                    logger.warning(f'Track {track_id[:8]} face_sim_floor_failed sim={best_face_sim:.3f} '
-                                   f'threshold={eff_threshold:.3f}')
-                    return
                 # Weak face + context without strong corroborating signal → reject
                 if best_face_sim < 0.40 and context_score_val > 0:
                     has_strong = (plate_prior or
