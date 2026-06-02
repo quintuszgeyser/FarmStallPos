@@ -5893,7 +5893,10 @@ async function openCustomerDetail(customerId) {
     height_cat: 'Height', auto_enrollment: 'Auto-enroll',
     track_confidence: 'Track match',
     face_similarity: 'Face sim', gait_distance: 'Gait dist',
+    session_face_sim: 'Face sim', session_cameras: 'Cameras', session_faces: 'Faces',
   };
+  // These are raw counts/values — do not multiply by 100 or append %
+  const SIGNAL_RAW_COUNT = new Set(['session_cameras', 'session_faces']);
 
   let visitsHtml = '';
   if (visits.length) {
@@ -5906,8 +5909,12 @@ async function openCustomerDetail(customerId) {
 
       const scores = v.confidence_scores || {};
       const signalBadges = Object.entries(scores).map(([k, score]) => {
-        if (k === 'face_similarity' || k === 'gait_distance') return ''; // shown as sub-detail
+        if (k === 'face_similarity' || k === 'gait_distance' || k === 'session_face_sim') return ''; // shown as sub-detail
         const label = SIGNAL_LABELS[k] || k;
+        if (SIGNAL_RAW_COUNT.has(k)) {
+          // Raw count — show as plain number, no %
+          return `<span class="badge bg-secondary" style="font-size:.7rem">${label}: ${score}</span>`;
+        }
         const pct = typeof score === 'number' ? Math.round(score * 100) : null;
         const colour = pct === null ? 'bg-secondary'
           : pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning text-dark' : 'bg-danger';
@@ -5918,8 +5925,9 @@ async function openCustomerDetail(customerId) {
       const gaitPct = scores.gait_distance != null
         ? Math.max(0, Math.round((1 - scores.gait_distance / 0.25) * 100))
         : null;
+      const faceSim = scores.face_similarity ?? scores.session_face_sim ?? null;
       const details = [
-        scores.face_similarity != null ? `face sim: ${(scores.face_similarity * 100).toFixed(1)}%` : '',
+        faceSim != null ? `face sim: ${(faceSim * 100).toFixed(1)}%` : '',
         gaitPct !== null ? `gait match: ${gaitPct}%` : '',
         v.matched_signals && v.matched_signals !== 'track_consensus' ? `method: ${v.matched_signals}` : '',
       ].filter(Boolean).join(' · ');
