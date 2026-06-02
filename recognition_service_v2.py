@@ -2084,7 +2084,7 @@ def _improve_customer_profile(customer_id, signals):
                     'camera_source': cam_src,
                 }
                 face_photo = signals.get('face_photo')
-                if has_face_photo and face_photo and len(face_photo) >= 4000:
+                if has_face_photo and face_photo and len(face_photo) >= 1500:
                     payload['photo_b64'] = base64.b64encode(face_photo).decode()
                 if has_snapshot:
                     payload['body_photo_b64'] = base64.b64encode(signals['snapshot_photo']).decode()
@@ -2104,7 +2104,7 @@ def _improve_customer_profile(customer_id, signals):
                         _profile_upgrade_times[customer_id] = time.time()
                 if due_upgrade:
                     _fp = signals.get('face_photo', b'')
-                    if _fp and len(_fp) >= 4000:
+                    if _fp and len(_fp) >= 1500:
                         logger.info(f'Profile [{customer_id}]: upgrading face photo (quality={new_face_quality:.2f})')
                         payload = {
                             'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
@@ -2917,8 +2917,9 @@ def _clip_analysis_loop():
                         'camera_source': clip_camera,
                     }
                     # Only attach face photo if it's large enough to be a real face.
-                    # ArcFace-aligned 112×112 crops: hands/objects ~2-3KB, real faces ≥4KB.
-                    if photo_bytes and len(photo_bytes) >= 4000:
+                    # ArcFace-aligned 112×112 crops from indoor cameras at distance: 1.5–3.5KB.
+                    # Floor of 1500 rejects tiny non-face false positives (~<1KB).
+                    if photo_bytes and len(photo_bytes) >= 1500:
                         payload['photo_b64'] = base64.b64encode(photo_bytes).decode()
                     if can_replace:
                         payload['replace_if_better'] = True
@@ -3397,7 +3398,7 @@ def _photo_backfill_loop():
                     tmp.close()
                     try:
                         face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, None)
-                        if face_photo and len(face_photo) >= 4000:
+                        if face_photo and len(face_photo) >= 1500:
                             payload = {
                                 'embedding_b64': base64.b64encode(face_emb).decode() if face_emb else None,
                                 'quality': face_qual,
