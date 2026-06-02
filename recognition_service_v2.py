@@ -3973,11 +3973,17 @@ def _cleanup_stable_tracks(now: float):
             # Grace period expiry — GRACE → CLOSED
             # If track has good promo potential but no customer yet, extend grace
             # to 30s to give the session resolver time to promote before closing.
+            # IMPORTANT: compute score live from the bound session — st.promotion_score
+            # is only written during _resolve_session which fires after grace expires.
             if (st.state == PersonState.GRACE
                     and st.grace_started_at is not None):
                 effective_grace = TRACK_GRACE_PERIOD
-                if st.customer_id is None and st.promotion_score >= 0.50:
-                    effective_grace = 30.0  # extended — high-potential unresolved track
+                if st.customer_id is None:
+                    # Check bound session for live evidence quality
+                    _bound_sess = _active_sessions.get(st.session_id) if st.session_id else None
+                    _live_score = _compute_promotion_score(_bound_sess) if _bound_sess else 0.0
+                    if _live_score >= 0.50:
+                        effective_grace = 30.0  # extended — high-potential unresolved track
                 if (now - st.grace_started_at) > effective_grace:
                     st.transition(PersonState.CLOSED)
                     log_identity_event('GRACE_EXPIRED', st.stable_id,
