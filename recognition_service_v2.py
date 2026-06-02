@@ -4366,6 +4366,49 @@ class WebhookHandler(BaseHTTPRequestHandler):
             logger.info(f'Monitor: evicted cid={cid} from signals cache')
             self._send_json({'ok': True})
 
+        elif parsed.path == '/control/purge_customer':
+            # Called immediately after a permanent customer delete.
+            # Removes all traces so the next encounter starts completely fresh.
+            cid = body_data.get('customer_id')
+            if not cid:
+                self._send_json({'error': 'customer_id required'}, 400)
+                return
+
+            # 1. Remove from customer + signals cache
+            with _cache_lock:
+                _customers_cache[:] = [c for c in _customers_cache if c.get('id') != cid]
+                _customers_cache_map.pop(cid, None)
+            _signals_cache.pop(cid, None)
+            _signals_cache_ids.discard(cid)
+            _employee_ids.discard(cid)
+
+            # 2. Purge any anonymous identities whose embeddings came from this customer.
+            #    We can't know for sure which anons belonged to them, but we can remove
+            #    anons that are currently candidate-linked to this customer_id.
+            anons_removed = 0
+            for aid in list(_anonymous_identities.keys()):
+                a = _anonymous_identities.get(aid, {})
+                if a.get('candidate_customer_id') == cid:
+                    _anonymous_identities.pop(aid, None)
+                    anons_removed += 1
+
+            # 3. Close any stable tracks linked to this customer and clear their bindings
+            with _stable_tracks_lock:
+                for st in _stable_tracks.values():
+                    if st.customer_id == cid:
+                        st.customer_id = None
+                        st.anon_id     = None
+                        st.transition(PersonState.CLOSED)
+
+            # 4. Invalidate the signals cache so next poll rebuilds without this customer
+            _signals_cache_ids.clear()
+
+            logger.info(f'Purged deleted customer cid={cid} '
+                        f'(anons_removed={anons_removed}, cache invalidated)')
+            log_identity_event('CUSTOMER_PURGED', None,
+                               customer_id=cid, detail=f'anons_removed={anons_removed}')
+            self._send_json({'ok': True, 'anons_removed': anons_removed})
+
         else:
             self._send_json({'error': 'Not found'}, 404)
             return

@@ -2783,6 +2783,17 @@ def api_customers_delete_permanent(cid):
         db.session.execute(_text('UPDATE customers SET merged_into = NULL WHERE merged_into = :cid'), {'cid': cid})
         db.session.execute(_text('DELETE FROM customers WHERE id = :cid'), {'cid': cid})
         db.session.commit()
+
+        # Tell the recognition service to immediately drop this customer from its cache
+        # and purge any anonymous identities built from their embeddings.
+        # This ensures the next time they walk in they start completely fresh.
+        try:
+            import requests as _req
+            _req.post(f'{RECOGNITION_SERVICE_URL}/control/purge_customer',
+                      json={'customer_id': cid}, timeout=3)
+        except Exception:
+            pass  # Non-fatal — cache will self-correct within 60s anyway
+
         return jsonify({'ok': True})
     except Exception as e:
         db.session.rollback()
@@ -6246,7 +6257,7 @@ def api_recognition_tracks():
 def api_recognition_control(action):
     if not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
-    allowed = {'clear_queue', 'flush_sessions', 'clear_anon', 'sync_cache', 'requeue_clip', 'resync_customer'}
+    allowed = {'clear_queue', 'flush_sessions', 'clear_anon', 'sync_cache', 'requeue_clip', 'resync_customer', 'purge_customer'}
     if action not in allowed:
         return jsonify({'error': 'Unknown action'}), 400
     try:
