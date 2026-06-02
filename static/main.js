@@ -5423,7 +5423,7 @@ function startCustomerVisitPoll() {
         _acknowledgedVisits.add(v.id);
         api(`/api/customers/visits/${v.id}/acknowledge`, { method: 'POST' }).catch(() => {});
 
-        const visitNote = v.visit_count === 1 ? ' — first visit!' : ` · ${v.visit_count} visits`;
+        const visitNote = v.visit_count === 1 ? ' — first visit!' : '';
         const name = v.customer_name || 'customer';
 
         // Fetch purchase history hint for returning customers
