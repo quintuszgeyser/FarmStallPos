@@ -3964,13 +3964,19 @@ def _cleanup_stable_tracks(now: float):
             _apply_confidence_decay(st, now)
 
             # Grace period expiry — GRACE → CLOSED
+            # If track has good promo potential but no customer yet, extend grace
+            # to 30s to give the session resolver time to promote before closing.
             if (st.state == PersonState.GRACE
-                    and st.grace_started_at is not None
-                    and (now - st.grace_started_at) > TRACK_GRACE_PERIOD):
-                st.transition(PersonState.CLOSED)
-                log_identity_event('GRACE_EXPIRED', st.stable_id,
-                                   session_id=st.session_id,
-                                   detail=f'grace={now - st.grace_started_at:.1f}s')
+                    and st.grace_started_at is not None):
+                effective_grace = TRACK_GRACE_PERIOD
+                if st.customer_id is None and st.promotion_score >= 0.50:
+                    effective_grace = 30.0  # extended — high-potential unresolved track
+                if (now - st.grace_started_at) > effective_grace:
+                    st.transition(PersonState.CLOSED)
+                    log_identity_event('GRACE_EXPIRED', st.stable_id,
+                                       session_id=st.session_id,
+                                       detail=f'grace={now - st.grace_started_at:.1f}s '
+                                              f'extended={effective_grace != TRACK_GRACE_PERIOD}')
 
             if st.state == PersonState.CLOSED:
                 # Move to recently_closed if not already there
