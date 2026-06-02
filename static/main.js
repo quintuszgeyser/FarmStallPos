@@ -6935,8 +6935,10 @@ async function refreshIdentityTracks() {
   try {
     const d = await api('/api/recognition/tracks');
     const tracks = d.tracks || [];
+    // Only show active tracks — closed ones are just clutter
+    const activeTracks = tracks.filter(t => t.state !== 'closed');
     const countEl = document.getElementById('m-tracks-count');
-    if (countEl) countEl.textContent = tracks.length;
+    if (countEl) countEl.textContent = activeTracks.length + (tracks.length > activeTracks.length ? ` (+${tracks.length - activeTracks.length} closed)` : '');
 
     const byStateEl = document.getElementById('m-tracks-bystate');
     if (byStateEl && d.by_state) {
@@ -6950,14 +6952,14 @@ async function refreshIdentityTracks() {
     const empty = document.getElementById('monitor-tracks-empty');
     if (!tbody) return;
 
-    if (!tracks.length) {
+    if (!activeTracks.length) {
       tbody.innerHTML = '';
       empty?.classList.remove('hidden');
       return;
     }
     empty?.classList.add('hidden');
 
-    tbody.innerHTML = tracks.map(t => {
+    tbody.innerHTML = activeTracks.map(t => {
       const stab = t.stability || {};
       const stabStr = stab.summary === '✅' ? '✅'
         : `⚠️ s:${stab.session_reassignments} a:${stab.anon_reassignments} f:${stab.identity_flips}`;
