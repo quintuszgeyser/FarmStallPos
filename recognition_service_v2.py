@@ -3211,14 +3211,30 @@ def _create_customer_from_embeddings(face_embeddings, gait_features, session_id,
     return cid
 
 
-SESSION_VISIT_MIN_SIM = 0.45  # minimum face_sim to log a resolver visit — prevents logging
-                               # weak matches that slipped through on accumulated evidence
+VISIT_SCORE_MIN        = 0.35  # promotion score floor for visit logging — multi-signal
+VISIT_MIN_EMBEDDINGS   = 3     # fallback: allow weak sim if this many embeddings support it
 
 def _log_session_visit(cid, session, dwell_seconds=None):
-    """Log a visit for a resolved session."""
-    if float(session.best_face_sim) < SESSION_VISIT_MIN_SIM:
+    """Log a visit for a resolved session.
+
+    Gate uses the multi-signal promotion score, not a single-frame sim threshold.
+    This respects the system design: identity is resolved on accumulated evidence,
+    and visit logging should honour the same logic.
+
+    Fallback: even if score is low, allow logging if enough embeddings are present
+    AND face_sim is at least plausibly real (≥ 0.30 hard floor).
+    """
+    face_sim   = float(session.best_face_sim)
+    n_embs     = len(session.face_embeddings)
+    score      = _compute_promotion_score(session)
+
+    passes = (
+        score >= VISIT_SCORE_MIN                              # strong multi-signal evidence
+        or (n_embs >= VISIT_MIN_EMBEDDINGS and face_sim >= 0.30)  # weak sim but supported
+    )
+    if not passes:
         logger.debug(f'_log_session_visit: skipped cid={cid} '
-                     f'session_face_sim={session.best_face_sim:.3f} < {SESSION_VISIT_MIN_SIM}')
+                     f'score={score:.3f} sim={face_sim:.3f} embs={n_embs}')
         return
     payload = {
         'customer_id': cid,
