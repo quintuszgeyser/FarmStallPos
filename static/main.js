@@ -5460,6 +5460,12 @@ function renderCustomersList() {
   // Preserve checked state across re-renders
   const checkedIds = new Set([...document.querySelectorAll('.merge-check:checked')].map(cb => cb.dataset.id));
 
+  // Preserve any in-progress name inputs so a background refresh doesn't wipe them
+  const draftNames = {};
+  document.querySelectorAll('[id^="qn-input-"]').forEach(el => {
+    if (el.value.trim()) draftNames[el.id] = el.value;
+  });
+
   if (!STATE.customers.length) {
     container.innerHTML = '<div class="text-muted">No customers enrolled yet.</div>';
     return;
@@ -5570,6 +5576,12 @@ function renderCustomersList() {
     });
     updateMergeToolbar();
   }
+
+  // Restore any in-progress name inputs that were wiped by the re-render
+  Object.entries(draftNames).forEach(([id, val]) => {
+    const el = document.getElementById(id);
+    if (el) { el.value = val; el.focus(); }
+  });
 }
 
 function updateMergeToolbar() {
