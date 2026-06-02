@@ -1104,11 +1104,12 @@ def extract_all_signals_with_quality(event):
                     person_box = [px, py, px + pw, py + ph]
                     logger.debug(f'Converted person_box [x,y,w,h]→[x1,y1,x2,y2]: {person_box}')
 
-                # Skip edge-of-frame crops: narrower than 8% of frame width
-                # produces ~20-30px face after upscale — too noisy for ArcFace.
+                # Only skip truly degenerate boxes (< 3% width) — the head-crop
+                # logic upscales small crops to 480px before SCRFD, so 8% was
+                # discarding valid detections where the person is near the edge.
                 box_width = person_box[2] - person_box[0]
-                if box_width < 0.08:
-                    logger.debug(f'Skipping face extraction: person_box too narrow ({box_width:.3f} < 0.08)')
+                if box_width < 0.03:
+                    logger.debug(f'Skipping face extraction: person_box too narrow ({box_width:.3f} < 0.03)')
                     person_box = None  # still extract gait/attrs but skip face
             face_emb, face_qual, face_photo = extract_face_with_quality(snapshot_path, person_box)
             if face_emb:
@@ -1273,7 +1274,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         cv2.imwrite(tmp.name, frame)
         tmp.close()
         try:
-            face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, None)
+            face_emb, face_qual, face_photo = extract_face_with_quality(tmp.name, person_box)
             if face_emb and face_qual >= FACE_QUALITY_MIN:
                 new_emb = np.frombuffer(face_emb, dtype=np.float32).copy()
                 n = np.linalg.norm(new_emb)
