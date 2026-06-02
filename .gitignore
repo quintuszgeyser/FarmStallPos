@@ -1,4 +1,5 @@
 .venv/
+.venv_backup/
 __pycache__/
 *.pyc
 *.pyo
@@ -8,4 +9,7 @@ cert.pem
 key.pem
 _exports/
 .claude-flow/
-.claude/settings.local.json
+.claude/
+instance/
+instance_backup/
+deploy_v2_to_minipc.ps1
