@@ -1,6 +1,9 @@
 mqtt:
   enabled: false
 
+ffmpeg:
+  hwaccel_args: preset-intel-qsv-h264
+
 notifications:
   enabled: true
   webhook:
@@ -74,8 +77,8 @@ cameras:
         - car
 
 detectors:
-  cpu1:
-    type: cpu
-    num_threads: 4
+  ov:
+    type: openvino
+    device: GPU
 
 version: 0.17-0
