@@ -107,11 +107,11 @@ SESSION_IDLE_EXPIRY      = 60     # seconds idle → resolver fires
 MAX_SESSION_LIFETIME     = 300    # seconds hard cap regardless of activity
 
 # Session clustering thresholds
-SESSION_JOIN_FACE_SIM    = 0.50   # min face_sim to join an existing session — 0.40 too loose on indoor camera
-SESSION_MERGE_FACE_SIM   = 0.62   # min face_sim to merge two sessions — 0.50 too loose on indoor camera
+SESSION_JOIN_FACE_SIM    = 0.55   # min face_sim to join an existing session — raised from 0.50
+SESSION_MERGE_FACE_SIM   = 0.68   # min face_sim to merge two sessions — raised from 0.62; cross-person merges were contaminating sessions
 
 # Resolver thresholds
-RESOLVER_LINK_THRESHOLD  = 0.50   # resolver links to existing customer
+RESOLVER_LINK_THRESHOLD  = 0.60   # resolver links to existing customer — raised from 0.50; 0.59 (Marie) was a false match
 RECENT_CUSTOMER_SIM      = 0.40   # anti-clone: link to recently-created customer
 ANON_IDENTITY_SIM        = 0.45   # sim to anonymous identity → merge evidence into it
 
@@ -2230,7 +2230,7 @@ def _assign_to_session(face_emb, camera, event_id, ts):
 def _merge_overlapping_sessions():
     """Merge sessions with very similar face embeddings into one.
     Runs before the resolver so it always sees consolidated evidence.
-    Uses SESSION_MERGE_FACE_SIM (0.50) — stricter than join threshold."""
+    Uses SESSION_MERGE_FACE_SIM — stricter than join threshold."""
     with _sessions_lock:
         open_sessions = [s for s in _active_sessions.values() if s.status == 'accumulating']
 
