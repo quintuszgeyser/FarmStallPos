@@ -2679,9 +2679,7 @@ def api_customers_post():
     customer_number = data.get('customer_number')
     first_seen_str = data.get('first_seen')
 
-    # Manual customer creation requires name
-    if not auto_enrolled and not name:
-        return jsonify({'error': 'name required'}), 400
+    # Name is optional — a customer can be saved with just a plate, note, or phone
 
     u = current_user()
     c = Customer(

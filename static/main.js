@@ -6292,10 +6292,9 @@ document.getElementById('enroll-plate-input')?.addEventListener('keydown', e => 
 document.getElementById('btn-save-customer')?.addEventListener('click', async () => {
   const cid   = document.getElementById('enroll-customer-id').value;
   const name  = document.getElementById('enroll-name').value.trim();
-  if (!name) { toast('Name is required', 'danger'); return; }
 
   const payload = {
-    name,
+    name: name || null,
     phone: document.getElementById('enroll-phone').value.trim() || null,
     email: document.getElementById('enroll-email').value.trim() || null,
     notes: document.getElementById('enroll-notes').value.trim() || null,
