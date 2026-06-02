@@ -181,6 +181,7 @@ class PersonState(enum.Enum):
 # Valid state transitions — any transition not in this set is rejected
 _VALID_TRANSITIONS: set = {
     (PersonState.DETECTED,       PersonState.TRACKING),
+    (PersonState.DETECTED,       PersonState.GRACE),       # left frame before face detected
     (PersonState.DETECTED,       PersonState.CLOSED),      # never got a face
     (PersonState.TRACKING,       PersonState.SESSION_ACTIVE),
     (PersonState.TRACKING,       PersonState.GRACE),
