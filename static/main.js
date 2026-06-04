@@ -800,7 +800,8 @@ function openProductEditor(p) {
   document.getElementById('p-low-stock').value = p?.low_stock_threshold ?? '';
   document.getElementById('p-is-for-sale').checked          = p?.is_for_sale !== false;
   document.getElementById('p-is-prepared').checked          = !!p?.is_prepared;
-  document.getElementById('p-is-available-online').checked  = !!p?.is_available_online;
+  const _onlineEl = document.getElementById('p-is-available-online');
+  if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
   const purPid = document.getElementById('pur-product-id'); if (purPid) purPid.value = p?.id ?? '';
 
   // Product image preview
@@ -3077,6 +3078,7 @@ document.getElementById('search')?.addEventListener('input', function() {
     if (p.image_url) {
       const img = document.createElement('img');
       img.src = `/static/product_images/${encodeURIComponent(p.image_url)}`;
+      img.loading = 'lazy';
       img.style.cssText = 'width:40px;height:40px;object-fit:cover;border-radius:4px;flex-shrink:0';
       a.appendChild(img);
     }
