@@ -5692,20 +5692,20 @@ function renderCustomersList() {
   });
 
   // Update sub-tab counts
-  const onlinePool  = STATE.customers.filter(c => c.is_online_customer);
-  const instorePool = STATE.customers.filter(c => c.is_pos_customer);
+  const onlineOnlyPool = STATE.customers.filter(c => c.is_online_customer && !c.is_pos_customer);
+  const instorePool    = STATE.customers.filter(c => !(c.is_online_customer && !c.is_pos_customer));
   const onlineCount  = document.getElementById('cst-count-online');
   const instoreCount = document.getElementById('cst-count-instore');
-  if (onlineCount)  onlineCount.textContent  = onlinePool.length;
+  if (onlineCount)  onlineCount.textContent  = onlineOnlyPool.length;
   if (instoreCount) instoreCount.textContent = instorePool.length;
 
   // Apply sub-tab filter
-  const tabPool = _customerSubTab === 'instore' ? instorePool : onlinePool;
+  const tabPool = _customerSubTab === 'online' ? onlineOnlyPool : instorePool;
 
   if (!tabPool.length) {
-    container.innerHTML = _customerSubTab === 'instore'
-      ? '<div class="text-muted">No in-store customers yet.</div>'
-      : '<div class="text-muted">No online customers yet.</div>';
+    container.innerHTML = _customerSubTab === 'online'
+      ? '<div class="text-muted">No online-only customers yet.</div>'
+      : '<div class="text-muted">No customers yet.</div>';
     return;
   }
 
