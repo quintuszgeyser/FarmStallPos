@@ -5699,18 +5699,21 @@ function renderCustomersList() {
     return;
   }
 
-  // Apply sort
+  // Apply sort / filter
   const sort = document.getElementById('customer-sort')?.value || 'last_visit';
-  let sortedPool = sort === 'unnamed'
-    ? filtered.filter(c => !c.name && c.auto_enrolled)
-    : filtered;
+  let sortedPool = filtered;
+  if (sort === 'unnamed')     sortedPool = filtered.filter(c => !c.name && c.auto_enrolled);
+  if (sort === 'online_only') sortedPool = filtered.filter(c => c.is_online_customer && !c.is_pos_customer);
+  if (sort === 'pos_only')    sortedPool = filtered.filter(c => c.is_pos_customer && !c.is_online_customer);
+  if (sort === 'both')        sortedPool = filtered.filter(c => c.is_online_customer && c.is_pos_customer);
 
   const sorted = [...sortedPool].sort((a, b) => {
-    if (sort === 'last_visit')    return (b.last_visit || '') .localeCompare(a.last_visit || '');
+    if (sort === 'last_visit')    return (b.last_visit || '').localeCompare(a.last_visit || '');
     if (sort === 'visit_count')   return (b.visit_count || 0) - (a.visit_count || 0);
     if (sort === 'name')          return (a.name || 'zzz').localeCompare(b.name || 'zzz');
     if (sort === 'no_purchase')   return (a.visit_count || 0) - (b.visit_count || 0);
     if (sort === 'unnamed')       return (b.visit_count || 0) - (a.visit_count || 0);
+    if (['online_only','pos_only','both'].includes(sort)) return (b.last_visit || '').localeCompare(a.last_visit || '');
     return 0;
   });
   STATE._sortedCustomers = sorted;
@@ -5757,6 +5760,7 @@ function renderCustomersList() {
           <div class="fw-semibold">${c.name || '<span class="text-muted fst-italic">Unnamed</span>'}
             ${c.is_employee ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem">👷 Employee</span>' : ''}
             ${c.auto_enrolled && !c.is_employee ? '<span class="badge bg-info text-dark ms-1" style="font-size:0.65rem">Auto</span>' : ''}
+            ${(c.is_online_customer && c.is_pos_customer) ? '<span class="badge bg-purple text-white ms-1" style="font-size:0.65rem;background:#7c3aed">🌐+🏪 Both</span>' : (c.is_online_customer ? '<span class="badge ms-1" style="font-size:0.65rem;background:#0ea5e9;color:#fff">🌐 Online</span>' : (c.is_pos_customer ? '<span class="badge bg-success ms-1" style="font-size:0.65rem">🏪 In-store</span>' : ''))}
             ${c.customer_number ? `<span class="text-muted small ms-1">${c.customer_number}</span>` : ''}
           </div>
           ${c.phone ? `<div class="small text-muted">${c.phone}</div>` : ''}
@@ -6060,11 +6064,19 @@ async function openCustomerDetail(customerId) {
     : '';
   const photoHtml = `<div class="d-flex align-items-start">${facePhotoHtml}${bodyPhotoHtml}</div>`;
 
+  const originBadge = (c.is_online_customer && c.is_pos_customer)
+    ? '<span class="badge" style="background:#7c3aed;color:#fff">🌐+🏪 Online & In-store</span>'
+    : c.is_online_customer
+      ? '<span class="badge" style="background:#0ea5e9;color:#fff">🌐 Online customer</span>'
+      : c.is_pos_customer
+        ? '<span class="badge bg-success">🏪 In-store customer</span>'
+        : '';
   const signalBadges = [
     c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face —</span>',
     c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body —</span>',
     ...(c.plates || []).map(p => `<span class="badge bg-light text-dark border">${p}</span>`),
     c.auto_enrolled ? '<span class="badge bg-info text-dark">Auto-enrolled</span>' : '',
+    originBadge,
   ].filter(Boolean).join(' ');
 
   // ── 12 Physical attributes ────────────────────────────────────
@@ -7551,7 +7563,7 @@ function renderInvoicesList() {
           <tr style="cursor:pointer" onclick="openInvoiceEditor(${i.id})">
             <td class="fw-semibold">${i.invoice_number}</td>
             <td class="text-muted small">${i.created_at ? new Date(i.created_at).toLocaleDateString() : ''}</td>
-            <td>${i.customer_name || '<span class="text-muted">—</span>'}</td>
+            <td>${i.customer_name || '<span class="text-muted">—</span>'}${i.customer_id ? ' <span class="badge" style="font-size:0.6rem;background:#7c3aed;color:#fff" title="Linked to POS customer">🔗</span>' : ''}</td>
             <td class="fw-semibold">R${fmt(i.total)}</td>
             <td>${statusBadge(i.status)}</td>
             <td>

@@ -358,6 +358,7 @@ class Invoice(db.Model):
     total        = db.Column(Numeric(10, 2), nullable=False, default=0)
     status       = db.Column(db.String(20), nullable=False, default='draft')  # draft | sent | paid
     created_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    customer_id  = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
 
 
 class SpecialLine(db.Model):
@@ -384,8 +385,10 @@ class Customer(db.Model):
     auto_enrolled   = db.Column(db.Boolean,     nullable=False, default=False)
     customer_number = db.Column(db.String(20),  nullable=True, unique=True)
     first_seen      = db.Column(db.DateTime,    nullable=True)
-    is_employee     = db.Column(db.Boolean,     nullable=False, default=False)
-    merged_into     = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    is_employee          = db.Column(db.Boolean, nullable=False, default=False)
+    merged_into          = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    is_online_customer   = db.Column(db.Boolean, nullable=False, default=False)
+    is_pos_customer      = db.Column(db.Boolean, nullable=False, default=False)
 
     # Relationships used by profile/delete endpoints
     plates  = db.relationship('CustomerPlate', backref='customer', lazy='dynamic',
@@ -1461,6 +1464,10 @@ def strong_migrate():
             pg_try("ALTER TABLE customers ADD COLUMN first_seen TIMESTAMP DEFAULT NOW()")
             pg_try("ALTER TABLE customers ADD COLUMN is_employee BOOLEAN DEFAULT FALSE")
             pg_try("ALTER TABLE customers ADD COLUMN merged_into INTEGER REFERENCES customers(id)")
+            pg_try("ALTER TABLE customers ADD COLUMN is_online_customer BOOLEAN NOT NULL DEFAULT FALSE")
+            pg_try("ALTER TABLE customers ADD COLUMN is_pos_customer BOOLEAN NOT NULL DEFAULT FALSE")
+            pg_try("ALTER TABLE invoices ADD COLUMN customer_id INTEGER REFERENCES customers(id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_invoices_customer ON invoices(customer_id)")
             pg_try("ALTER TABLE customer_faces ADD COLUMN body_photo BYTEA")
 
             # Link sales to customers
@@ -2942,6 +2949,8 @@ def _customer_dict(c, _extra=None):
         'first_seen': c.first_seen.isoformat() if c.first_seen else None,
         'is_employee': c.is_employee,
         'merged_into': c.merged_into,
+        'is_online_customer': c.is_online_customer,
+        'is_pos_customer': c.is_pos_customer,
         'plates': plates,
         'has_face': bool(has_face),
         'has_gait': bool(has_gait),
@@ -3028,6 +3037,41 @@ def api_customer_get_single(cid):
         return jsonify({'error': 'Not found'}), 404
     return jsonify(_customer_dict(c))
 
+def _resolve_online_customer(email, name, phone):
+    """
+    Find-or-create a Customer for an online order.
+    - If email matches an existing active customer → return that customer (merge path).
+    - Otherwise → create a new customer marked as online-only.
+    Returns (customer, created: bool).
+    """
+    from sqlalchemy import text as _txt
+    email_clean = (email or '').strip().lower()
+    if email_clean:
+        row = db.session.execute(_txt(
+            "SELECT id FROM customers WHERE LOWER(TRIM(email)) = :e AND active = true LIMIT 1"
+        ), {'e': email_clean}).fetchone()
+        if row:
+            c = db.session.get(Customer, row[0])
+            if not c.is_online_customer:
+                c.is_online_customer = True
+                db.session.commit()
+            return c, False
+
+    # No match — create new online customer
+    u = current_user()
+    c = Customer(
+        name=(name or '').strip() or None,
+        phone=(phone or '').strip() or None,
+        email=email_clean or None,
+        enrolled_by=u.id if u else None,
+        is_online_customer=True,
+        is_pos_customer=False,
+    )
+    db.session.add(c)
+    db.session.commit()
+    return c, True
+
+
 @app.route('/api/customers', methods=['POST'])
 def api_customers_post():
     if not require_role('admin'):
@@ -3039,6 +3083,9 @@ def api_customers_post():
     auto_enrolled = data.get('auto_enrolled', False)
     customer_number = data.get('customer_number')
     first_seen_str = data.get('first_seen')
+    is_online = bool(data.get('is_online_customer', False))
+    # Manually enrolled customers default to is_pos_customer=True unless they are online-only
+    is_pos    = bool(data.get('is_pos_customer', not is_online))
 
     # Name is optional — a customer can be saved with just a plate, note, or phone
 
@@ -3052,6 +3099,8 @@ def api_customers_post():
         auto_enrolled=auto_enrolled,
         customer_number=customer_number,
         first_seen=datetime.fromisoformat(first_seen_str) if first_seen_str else None,
+        is_online_customer=is_online,
+        is_pos_customer=is_pos,
     )
     db.session.add(c)
     try:
@@ -3071,12 +3120,14 @@ def api_customers_update(cid):
     if not c:
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
-    if 'name'        in data: c.name        = (data['name'] or '').strip() or None
-    if 'phone'       in data: c.phone       = (data['phone'] or '').strip() or None
-    if 'email'       in data: c.email       = (data['email'] or '').strip() or None
-    if 'notes'       in data: c.notes       = (data['notes'] or '').strip() or None
-    if 'active'      in data: c.active      = bool(data['active'])
-    if 'is_employee' in data: c.is_employee = bool(data['is_employee'])
+    if 'name'               in data: c.name               = (data['name'] or '').strip() or None
+    if 'phone'              in data: c.phone              = (data['phone'] or '').strip() or None
+    if 'email'              in data: c.email              = (data['email'] or '').strip() or None
+    if 'notes'              in data: c.notes              = (data['notes'] or '').strip() or None
+    if 'active'             in data: c.active             = bool(data['active'])
+    if 'is_employee'        in data: c.is_employee        = bool(data['is_employee'])
+    if 'is_online_customer' in data: c.is_online_customer = bool(data['is_online_customer'])
+    if 'is_pos_customer'    in data: c.is_pos_customer    = bool(data['is_pos_customer'])
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -4337,6 +4388,8 @@ def api_customers_identify():
     db.session.add(visit)
     c.visit_count = (c.visit_count or 0) + 1
     c.last_visit = datetime.utcnow()
+    if not c.is_pos_customer:
+        c.is_pos_customer = True
 
     # Write a visit_sessions row when dwell time is provided by the recognition service
     dwell_seconds = data.get('dwell_seconds')
@@ -7492,6 +7545,7 @@ def api_invoices_list():
         'due_date': i.due_date, 'customer_name': i.customer_name,
         'customer_phone': i.customer_phone, 'customer_email': i.customer_email,
         'total': float(i.total), 'status': i.status,
+        'customer_id': i.customer_id,
     } for i in invs])
 
 
@@ -7504,6 +7558,17 @@ def api_invoices_create():
     subtotal = sum(float(l.get('subtotal', 0)) for l in lines)
     disc = float(data.get('discount_pct') or 0)
     total = subtotal * (1 - disc / 100) if disc else subtotal
+
+    # Resolve customer via email match (online orders) or explicit customer_id
+    cust_id = data.get('customer_id') or None
+    is_online_inv = bool(data.get('notes') and '[ONLINE' in (data.get('notes') or ''))
+    if not cust_id and is_online_inv:
+        email = (data.get('customer_email') or '').strip()
+        name  = (data.get('customer_name')  or '').strip()
+        phone = (data.get('customer_phone') or '').strip()
+        cust, _ = _resolve_online_customer(email, name, phone)
+        cust_id = cust.id
+
     inv = Invoice(
         invoice_number=_next_invoice_number(),
         due_date=data.get('due_date') or None,
@@ -7519,10 +7584,11 @@ def api_invoices_create():
         total=round(total, 2),
         status='draft',
         created_by=current_user().id if current_user() else None,
+        customer_id=cust_id,
     )
     db.session.add(inv)
     db.session.commit()
-    return jsonify({'id': inv.id, 'invoice_number': inv.invoice_number})
+    return jsonify({'id': inv.id, 'invoice_number': inv.invoice_number, 'customer_id': inv.customer_id})
 
 
 @app.route('/api/invoices/<int:inv_id>', methods=['GET'])
@@ -7541,6 +7607,7 @@ def api_invoices_get(inv_id):
         'lines': _json.loads(inv.lines_json or '[]'),
         'subtotal': float(inv.subtotal), 'discount_pct': float(inv.discount_pct or 0),
         'total': float(inv.total), 'status': inv.status, 'sale_id': inv.sale_id,
+        'customer_id': inv.customer_id,
     })
 
 
@@ -7608,6 +7675,26 @@ def api_invoices_finalise(inv_id):
     if inv.sale_id and inv.status == 'finalised':
         # Already finalised — idempotent no-op
         return jsonify({'ok': True, 'sale_id': inv.sale_id})
+
+    is_online = bool(inv.notes and '[ONLINE' in inv.notes)
+
+    # Resolve customer — match by email or use already-linked customer_id
+    if not inv.customer_id:
+        email = (inv.customer_email or '').strip()
+        name  = (inv.customer_name  or '').strip()
+        phone = (inv.customer_phone or '').strip()
+        if is_online and (email or name or phone):
+            cust, _ = _resolve_online_customer(email, name, phone)
+            inv.customer_id = cust.id
+
+    if inv.customer_id:
+        cust = db.session.get(Customer, inv.customer_id)
+        if cust:
+            if is_online and not cust.is_online_customer:
+                cust.is_online_customer = True
+            if not is_online and not cust.is_pos_customer:
+                cust.is_pos_customer = True
+
     if inv.sale_id:
         # Stock already deducted (online order) — just mark as finalised, no stock action
         inv.status = 'finalised'
@@ -7618,11 +7705,10 @@ def api_invoices_finalise(inv_id):
     if not lines:
         return jsonify({'error': 'Invoice has no items'}), 400
 
-    sale_uuid   = str(uuid.uuid4())
-    now         = datetime.utcnow()
-    u           = current_user()
+    sale_uuid    = str(uuid.uuid4())
+    now          = datetime.utcnow()
+    u            = current_user()
     # Online invoices are tagged with [ONLINE in their notes — attribute sale to Online Shop user
-    is_online   = inv.notes and '[ONLINE' in inv.notes
     sale_user_id = get_online_user_id() if is_online else (u.id if u else None)
 
     for line in lines:
