@@ -7555,8 +7555,8 @@ function renderInvoicesList() {
             <td class="fw-semibold">R${fmt(i.total)}</td>
             <td>${statusBadge(i.status)}</td>
             <td>
-              ${(i.sale_id || i.status === 'finalised')
-                ? `<button class="btn btn-secondary btn-sm" disabled title="Undo the sale to change status">Finalised ✓</button>`
+              ${i.sale_id
+                ? `<span class="text-muted small">Stock deducted</span>`
                 : (i.status !== 'draft'
                   ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`
                   : '<span class="text-muted small">—</span>')}
@@ -7707,23 +7707,23 @@ function openInvoiceEditor(invId) {
       document.getElementById('inv-status').value          = inv.status || 'draft';
       // Show finalise or undo based on current state
       if (inv.sale_id) {
-        // Already finalised — lock status dropdown and line items
+        // Stock already deducted — lock line items but allow status changes (paid → sent → finalised)
         const statusSel = document.getElementById('inv-status');
-        if (statusSel) statusSel.disabled = true;
-        // Grey out add-line button
+        if (statusSel) statusSel.disabled = false;
         const addLineBtn = document.getElementById('btn-inv-add-line');
         if (addLineBtn) addLineBtn.disabled = true;
-        if (finaliseBtn) { finaliseBtn.disabled = true; finaliseBtn.textContent = 'Finalised ✓'; finaliseBtn.className = 'btn btn-secondary btn-sm'; show(finaliseBtn); }
+        // Hide finalise button — stock already deducted, no action needed
+        if (finaliseBtn) hide(finaliseBtn);
         if (undoBtn) show(undoBtn);
       } else {
-        // Not finalised — ensure controls are enabled
+        // Not yet linked to a sale — normal flow
         const statusSel = document.getElementById('inv-status');
         if (statusSel) statusSel.disabled = false;
         const addLineBtn = document.getElementById('btn-inv-add-line');
         if (addLineBtn) addLineBtn.disabled = false;
       }
       if (!inv.sale_id && inv.status !== 'draft') {
-        // Ready to finalise
+        // Ready to finalise (will deduct stock)
         if (finaliseBtn) { finaliseBtn.disabled = false; finaliseBtn.textContent = 'Finalise Sale'; finaliseBtn.className = 'btn btn-success btn-sm'; show(finaliseBtn); }
       }
       // Try to match customer by name to existing customer

@@ -7552,11 +7552,11 @@ def api_invoices_update(inv_id):
     if not inv:
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
-    # Finalised invoices are locked — status and line items cannot be changed
-    # until the sale is undone via /api/invoices/<id>/undo
+    # Invoices with a sale_id have stock already deducted — lock line items but allow
+    # status/contact/notes changes so admin can track paid → sent → finalised progression
     if inv.sale_id:
         allowed = ('due_date', 'customer_name', 'customer_phone', 'customer_email',
-                   'customer_address', 'notes', 'bank_details')
+                   'customer_address', 'notes', 'bank_details', 'status')
         for field in allowed:
             if field in data:
                 setattr(inv, field, data[field] or None)
