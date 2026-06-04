@@ -7606,7 +7606,10 @@ def api_invoices_finalise(inv_id):
     if not inv:
         return jsonify({'error': 'Not found'}), 404
     if inv.sale_id:
-        return jsonify({'error': 'Already finalised'}), 409
+        # Stock already deducted (online order) — just mark as finalised
+        inv.status = 'finalised'
+        db.session.commit()
+        return jsonify({'ok': True, 'sale_id': inv.sale_id})
 
     lines = _json.loads(inv.lines_json or '[]')
     if not lines:
