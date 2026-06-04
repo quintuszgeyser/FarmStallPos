@@ -82,12 +82,16 @@ function imgVariant(image_url, variant) {
 }
 
 // ── Multi-image editor state ──────────────────────────────────────────────────
-let _editingImages = [];   // [{id, filename, is_primary, display_order}]
+let _editingImages = [];   // [{id, filename, is_primary, display_order}]  — already saved
+let _pendingFiles  = [];   // File[] — selected but not yet uploaded
 
 function renderImageList() {
   const host = document.getElementById('product-images-list');
   if (!host) return;
-  if (!_editingImages.length) { host.innerHTML = '<div class="text-muted small">No photos yet.</div>'; return; }
+  if (!_editingImages.length && !_pendingFiles.length) {
+    host.innerHTML = '<div class="text-muted small">No photos yet.</div>';
+    return;
+  }
 
   const pid = parseInt(document.getElementById('p-id')?.value || '0', 10);
   host.innerHTML = '';
@@ -137,6 +141,39 @@ function renderImageList() {
 
     host.appendChild(row);
   });
+
+  // Pending files — queued for upload on save
+  if (_pendingFiles.length) {
+    const divider = document.createElement('div');
+    divider.className = 'text-muted small mt-2 mb-1';
+    divider.textContent = `${_pendingFiles.length} photo${_pendingFiles.length > 1 ? 's' : ''} queued — will upload on save`;
+    host.appendChild(divider);
+
+    _pendingFiles.forEach((file, idx) => {
+      const row = document.createElement('div');
+      row.className = 'd-flex align-items-center gap-2 mb-1 p-2 rounded border border-dashed';
+      row.style.borderStyle = 'dashed';
+
+      const thumb = document.createElement('img');
+      thumb.style.cssText = 'width:48px;height:48px;object-fit:cover;border-radius:4px;flex-shrink:0;opacity:.7';
+      const reader = new FileReader();
+      reader.onload = e => { thumb.src = e.target.result; };
+      reader.readAsDataURL(file);
+      row.appendChild(thumb);
+
+      const label = document.createElement('span');
+      label.className = 'flex-grow-1 small text-muted';
+      label.textContent = file.name;
+      row.appendChild(label);
+
+      const btnDel = document.createElement('button');
+      btnDel.type = 'button'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.textContent = '✕';
+      btnDel.onclick = () => { _pendingFiles.splice(idx, 1); renderImageList(); };
+      row.appendChild(btnDel);
+
+      host.appendChild(row);
+    });
+  }
 }
 
 async function _moveImage(idx, dir, pid) {
@@ -918,7 +955,19 @@ function openProductEditor(p) {
 
   // Multi-image list
   const _fileInp = document.getElementById('p-image-files');
-  if (_fileInp) _fileInp.value = '';
+  if (_fileInp) {
+    _fileInp.value = '';
+    // Accumulate selections across multiple picker opens
+    if (!_fileInp._boundChange) {
+      _fileInp.addEventListener('change', () => {
+        for (const f of _fileInp.files) _pendingFiles.push(f);
+        _fileInp.value = '';   // reset so same file can be picked again
+        renderImageList();
+      });
+      _fileInp._boundChange = true;
+    }
+  }
+  _pendingFiles  = [];
   _editingImages = (p?.images || []).slice().sort((a, b) => a.display_order - b.display_order);
   renderImageList();
 
@@ -1529,13 +1578,13 @@ function getSellPackagesForSubmit() {
 
 // ── Multi-image upload helper ──
 async function _uploadProductImagesIfSelected(pid) {
-  const fileInp = document.getElementById('p-image-files');
-  if (!fileInp || !fileInp.files.length) return;
+  if (!_pendingFiles.length) return;
   const fd = new FormData();
-  for (const f of fileInp.files) fd.append('images[]', f);
+  for (const f of _pendingFiles) fd.append('images[]', f);
   const res = await fetch(`/api/products/${pid}/images`, {
     method: 'POST', body: fd, credentials: 'same-origin'
   });
+  _pendingFiles = [];
   if (res.ok) {
     const data = await res.json().catch(() => ({}));
     if (data.errors?.length) {
