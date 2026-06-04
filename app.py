@@ -510,6 +510,21 @@ def seed_first_admin():
                 set_setting('markup_percent', float(default_markup))
             except Exception:
                 pass
+    # Ensure the virtual "Online Shop" user exists (active=False — cannot log in)
+    if not User.query.filter_by(username='Online Shop').first():
+        db.session.add(User(
+            username='Online Shop',
+            password_hash='!',   # invalid hash — login always fails
+            role='teller',
+            active=False,
+        ))
+        db.session.commit()
+
+
+def get_online_user_id():
+    """Return the ID of the virtual Online Shop user, or None if not found."""
+    u = User.query.filter_by(username='Online Shop').first()
+    return u.id if u else None
 
 
 # -----------------------------
@@ -7597,9 +7612,12 @@ def api_invoices_finalise(inv_id):
     if not lines:
         return jsonify({'error': 'Invoice has no items'}), 400
 
-    sale_uuid = str(uuid.uuid4())
-    now       = datetime.utcnow()
-    u         = current_user()
+    sale_uuid   = str(uuid.uuid4())
+    now         = datetime.utcnow()
+    u           = current_user()
+    # Online invoices are tagged with [ONLINE in their notes — attribute sale to Online Shop user
+    is_online   = inv.notes and '[ONLINE' in inv.notes
+    sale_user_id = get_online_user_id() if is_online else (u.id if u else None)
 
     for line in lines:
         name       = (line.get('name') or '').strip()
@@ -7636,7 +7654,7 @@ def api_invoices_finalise(inv_id):
                 sale_id=sale_uuid, date_time=now,
                 product_id=p.id,
                 qty=qty_disp, unit_price=unit_price,
-                user_id=u.id if u else None,
+                user_id=sale_user_id,
             ))
 
     inv.sale_id = sale_uuid
