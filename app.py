@@ -7605,8 +7605,11 @@ def api_invoices_finalise(inv_id):
     inv = db.session.get(Invoice, inv_id)
     if not inv:
         return jsonify({'error': 'Not found'}), 404
+    if inv.sale_id and inv.status == 'finalised':
+        # Already finalised — idempotent no-op
+        return jsonify({'ok': True, 'sale_id': inv.sale_id})
     if inv.sale_id:
-        # Stock already deducted (online order) — just mark as finalised
+        # Stock already deducted (online order) — just mark as finalised, no stock action
         inv.status = 'finalised'
         db.session.commit()
         return jsonify({'ok': True, 'sale_id': inv.sale_id})
@@ -7675,11 +7678,16 @@ def api_invoices_undo(inv_id):
     if not inv:
         return jsonify({'error': 'Not found'}), 404
     if not inv.sale_id:
-        return jsonify({'error': 'Not yet finalised'}), 400
+        # Already undone — idempotent no-op
+        return jsonify({'ok': True})
 
-    sale_rows = Sale.query.filter_by(sale_id=inv.sale_id, voided=False).all()
-    u = current_user()
+    sale_uuid = inv.sale_id
+    u   = current_user()
     now = datetime.utcnow()
+    stamp = (f"[UNDO] Sale {sale_uuid[:8]} reversed by "
+             f"{u.username if u else '?'} @ {now.strftime('%Y-%m-%d %H:%M')} UTC")
+
+    sale_rows = Sale.query.filter_by(sale_id=sale_uuid, voided=False).all()
 
     for s in sale_rows:
         s.voided    = True
@@ -7687,23 +7695,24 @@ def api_invoices_undo(inv_id):
         s.voided_at = now
         s.void_reason = f'Invoice {inv.invoice_number} undone'
 
-        # Restore stock
+        # Restore stock per product type
         p = db.session.get(Product, s.product_id) if s.product_id else None
         if not p:
             continue
         if p.product_type == 'simple':
             p.stock_qty = (p.stock_qty or 0) + int(s.qty)
-        elif p.product_type in ('stock_item', 'recipe'):
-            # Restore consumed batches
-            consumed = StockConsumption.query.filter_by(sale_id=inv.sale_id).all()
-            for c in consumed:
-                batch = db.session.get(StockBatch, c.batch_id)
-                if batch:
-                    batch.qty_remaining_base = (batch.qty_remaining_base or 0) + c.qty_consumed_base
-            StockConsumption.query.filter_by(sale_id=inv.sale_id).delete()
 
+    # Restore all FIFO batch consumption for this sale
+    consumed = StockConsumption.query.filter_by(sale_id=sale_uuid).all()
+    for c in consumed:
+        batch = db.session.get(StockBatch, c.batch_id)
+        if batch:
+            batch.qty_remaining_base = (batch.qty_remaining_base or 0) + c.qty_consumed_base
+    StockConsumption.query.filter_by(sale_id=sale_uuid).delete()
+
+    inv.notes   = ((inv.notes or '') + ' ' + stamp).strip()
     inv.sale_id = None
-    inv.status  = 'sent'  # revert to sent
+    inv.status  = 'draft'   # reset to draft so it can be re-edited and re-finalised
     db.session.commit()
     return jsonify({'ok': True})
 

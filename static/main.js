@@ -7555,11 +7555,13 @@ function renderInvoicesList() {
             <td class="fw-semibold">R${fmt(i.total)}</td>
             <td>${statusBadge(i.status)}</td>
             <td>
-              ${i.sale_id
-                ? `<span class="text-muted small">Stock deducted</span>`
-                : (i.status !== 'draft'
-                  ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`
-                  : '<span class="text-muted small">—</span>')}
+              ${i.status === 'finalised'
+                ? `<span class="badge bg-dark">Finalised ✓</span>`
+                : i.sale_id
+                  ? `<span class="text-muted small">Stock deducted</span>`
+                  : (i.status !== 'draft'
+                    ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`
+                    : '<span class="text-muted small">—</span>')}
             </td>
             <td><a href="/invoices/${i.id}/print" target="_blank" class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation()">Print</a></td>
             <td><button class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();_invDeleteFromList(${i.id}, '${i.invoice_number}')">Delete</button></td>
@@ -7590,7 +7592,7 @@ async function _invUndoFromList(invId) {
   if (!confirm('Undo this sale? Stock will be restored to inventory.')) return;
   try {
     await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
-    toast('Sale undone — stock restored', 'warning');
+    toast('Invoice undone — stock restored. Invoice is now Draft.', 'warning');
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -7705,22 +7707,26 @@ function openInvoiceEditor(invId) {
       document.getElementById('inv-bank-details').value    = inv.bank_details || '';
       document.getElementById('inv-discount-pct').value    = inv.discount_pct || '';
       document.getElementById('inv-status').value          = inv.status || 'draft';
-      // Show finalise or undo based on current state
-      if (inv.sale_id) {
-        // Stock already deducted — lock line items but allow status changes (paid → sent → finalised)
-        const statusSel = document.getElementById('inv-status');
-        if (statusSel) statusSel.disabled = false;
-        const addLineBtn = document.getElementById('btn-inv-add-line');
+      // Show finalise/undo based on state
+      const statusSel  = document.getElementById('inv-status');
+      const addLineBtn = document.getElementById('btn-inv-add-line');
+      if (inv.sale_id && inv.status === 'finalised') {
+        // Fully finalised — lock everything; undo is the only action
+        if (statusSel)  statusSel.disabled  = true;
         if (addLineBtn) addLineBtn.disabled = true;
-        // Hide finalise button — stock already deducted, no action needed
+        if (finaliseBtn) hide(finaliseBtn);
+        if (undoBtn) show(undoBtn);
+      } else if (inv.sale_id) {
+        // Stock deducted but status is paid/sent — allow status change, lock line items
+        if (statusSel)  statusSel.disabled  = false;
+        if (addLineBtn) addLineBtn.disabled = true;
         if (finaliseBtn) hide(finaliseBtn);
         if (undoBtn) show(undoBtn);
       } else {
-        // Not yet linked to a sale — normal flow
-        const statusSel = document.getElementById('inv-status');
-        if (statusSel) statusSel.disabled = false;
-        const addLineBtn = document.getElementById('btn-inv-add-line');
+        // No sale yet — normal editable state
+        if (statusSel)  statusSel.disabled  = false;
         if (addLineBtn) addLineBtn.disabled = false;
+        if (undoBtn) hide(undoBtn);
       }
       if (!inv.sale_id && inv.status !== 'draft') {
         // Ready to finalise (will deduct stock)
@@ -7921,10 +7927,10 @@ document.getElementById('btn-inv-finalise')?.addEventListener('click', async () 
 document.getElementById('btn-inv-undo')?.addEventListener('click', async () => {
   const invId = document.getElementById('inv-id').value;
   if (!invId) return;
-  if (!confirm('Undo this sale? Stock will be restored to inventory.')) return;
+  if (!confirm('Undo this invoice?\n\nStock will be restored to inventory.\nThe invoice will return to Draft so it can be edited and re-finalised.')) return;
   try {
     await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
-    toast('Sale undone — stock restored', 'warning');
+    toast('Invoice undone — stock restored. Invoice is now Draft.', 'warning');
     bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
