@@ -163,7 +163,7 @@ function renderImageList() {
 
       const label = document.createElement('span');
       label.className = 'flex-grow-1 small text-muted';
-      label.textContent = file.name;
+      label.textContent = file._name || file.name || 'photo';
       row.appendChild(label);
 
       const btnDel = document.createElement('button');
@@ -960,8 +960,13 @@ function openProductEditor(p) {
     // Accumulate selections across multiple picker opens
     if (!_fileInp._boundChange) {
       _fileInp.addEventListener('change', () => {
-        for (const f of _fileInp.files) _pendingFiles.push(f);
-        _fileInp.value = '';   // reset so same file can be picked again
+        // Copy File objects into Blobs immediately so they stay valid after input is cleared
+        for (const f of _fileInp.files) {
+          const blob = f.slice(0, f.size, f.type);
+          blob._name = f.name;   // preserve original name for error messages
+          _pendingFiles.push(blob);
+        }
+        _fileInp.value = '';   // reset so same file can be re-picked
         renderImageList();
       });
       _fileInp._boundChange = true;
@@ -1580,7 +1585,7 @@ function getSellPackagesForSubmit() {
 async function _uploadProductImagesIfSelected(pid) {
   if (!_pendingFiles.length) return;
   const fd = new FormData();
-  for (const f of _pendingFiles) fd.append('images[]', f);
+  for (const f of _pendingFiles) fd.append('images[]', f, f._name || 'photo.jpg');
   const res = await fetch(`/api/products/${pid}/images`, {
     method: 'POST', body: fd, credentials: 'same-origin'
   });
