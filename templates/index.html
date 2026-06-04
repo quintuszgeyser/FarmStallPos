@@ -1210,14 +1210,20 @@
             <option value="name">Name</option>
             <option value="no_purchase">Never purchased</option>
             <option value="unnamed">Unnamed only</option>
-            <option value="online_only">Online only</option>
-            <option value="pos_only">In-store only</option>
-            <option value="both">Online + In-store</option>
           </select>
           <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-customers" title="Refresh">↻ Refresh</button>
           <button class="btn btn-outline-danger btn-sm admin-only hidden" id="btn-cleanup-empty" title="Delete auto-enrolled customers with no face and no recent visits">🗑 Clean up empty</button>
         </div>
       </div>
+      <!-- Customer sub-tabs -->
+      <ul class="nav nav-tabs mb-3" id="customer-subtabs">
+        <li class="nav-item">
+          <button class="nav-link active" data-customer-tab="all">All Customers <span class="badge bg-secondary ms-1" id="cst-count-all"></span></button>
+        </li>
+        <li class="nav-item">
+          <button class="nav-link" data-customer-tab="online_only">🌐 Online Only <span class="badge bg-info ms-1" id="cst-count-online"></span></button>
+        </li>
+      </ul>
       <div id="merge-suggestions-panel" class="hidden mb-3"></div>
       <div id="customers-list"></div>
     </div>

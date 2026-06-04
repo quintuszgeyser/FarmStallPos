@@ -5660,6 +5660,17 @@ function startCustomerVisitPoll() {
 // ═══════════════════════════════════════════════════════
 // CUSTOMERS TAB
 // ═══════════════════════════════════════════════════════
+let _customerSubTab = 'all';
+
+document.getElementById('customer-subtabs')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-customer-tab]');
+  if (!btn) return;
+  _customerSubTab = btn.dataset.customerTab;
+  document.querySelectorAll('#customer-subtabs .nav-link').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderCustomersList();
+});
+
 async function loadCustomers() {
   STATE.customers = await api('/api/customers');
   renderCustomersList();
@@ -5680,40 +5691,48 @@ function renderCustomersList() {
     if (el.value.trim()) draftNames[el.id] = el.value;
   });
 
-  if (!STATE.customers.length) {
-    container.innerHTML = '<div class="text-muted">No customers enrolled yet.</div>';
+  // Update sub-tab counts
+  const onlineOnly = STATE.customers.filter(c => c.is_online_customer && !c.is_pos_customer);
+  const allCount = document.getElementById('cst-count-all');
+  const onlineCount = document.getElementById('cst-count-online');
+  if (allCount)    allCount.textContent    = STATE.customers.length;
+  if (onlineCount) onlineCount.textContent = onlineOnly.length;
+
+  // Apply sub-tab filter first
+  const tabPool = _customerSubTab === 'online_only' ? onlineOnly : STATE.customers;
+
+  if (!tabPool.length) {
+    container.innerHTML = _customerSubTab === 'online_only'
+      ? '<div class="text-muted">No online-only customers yet.</div>'
+      : '<div class="text-muted">No customers enrolled yet.</div>';
     return;
   }
 
   // Apply search filter
   const q = (document.getElementById('customer-search')?.value || '').trim().toLowerCase();
   const filtered = q
-    ? STATE.customers.filter(c =>
+    ? tabPool.filter(c =>
         (c.name || '').toLowerCase().includes(q) ||
         (c.customer_number || '').toLowerCase().includes(q) ||
-        (c.phone || '').includes(q))
-    : STATE.customers;
+        (c.phone || '').includes(q) ||
+        (c.email || '').toLowerCase().includes(q))
+    : tabPool;
 
   if (!filtered.length) {
     container.innerHTML = `<div class="text-muted">No customers match "${q}".</div>`;
     return;
   }
 
-  // Apply sort / filter
+  // Apply sort
   const sort = document.getElementById('customer-sort')?.value || 'last_visit';
-  let sortedPool = filtered;
-  if (sort === 'unnamed')     sortedPool = filtered.filter(c => !c.name && c.auto_enrolled);
-  if (sort === 'online_only') sortedPool = filtered.filter(c => c.is_online_customer && !c.is_pos_customer);
-  if (sort === 'pos_only')    sortedPool = filtered.filter(c => c.is_pos_customer && !c.is_online_customer);
-  if (sort === 'both')        sortedPool = filtered.filter(c => c.is_online_customer && c.is_pos_customer);
+  let sortedPool = sort === 'unnamed' ? filtered.filter(c => !c.name && c.auto_enrolled) : filtered;
 
   const sorted = [...sortedPool].sort((a, b) => {
-    if (sort === 'last_visit')    return (b.last_visit || '').localeCompare(a.last_visit || '');
-    if (sort === 'visit_count')   return (b.visit_count || 0) - (a.visit_count || 0);
-    if (sort === 'name')          return (a.name || 'zzz').localeCompare(b.name || 'zzz');
-    if (sort === 'no_purchase')   return (a.visit_count || 0) - (b.visit_count || 0);
-    if (sort === 'unnamed')       return (b.visit_count || 0) - (a.visit_count || 0);
-    if (['online_only','pos_only','both'].includes(sort)) return (b.last_visit || '').localeCompare(a.last_visit || '');
+    if (sort === 'last_visit')  return (b.last_visit || '').localeCompare(a.last_visit || '');
+    if (sort === 'visit_count') return (b.visit_count || 0) - (a.visit_count || 0);
+    if (sort === 'name')        return (a.name || 'zzz').localeCompare(b.name || 'zzz');
+    if (sort === 'no_purchase') return (a.visit_count || 0) - (b.visit_count || 0);
+    if (sort === 'unnamed')     return (b.visit_count || 0) - (a.visit_count || 0);
     return 0;
   });
   STATE._sortedCustomers = sorted;
