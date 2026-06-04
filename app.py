@@ -7616,8 +7616,10 @@ def api_invoices_finalise(inv_id):
 
         if p:
             # Convert display qty to base units for FIFO
-            if p.product_type == 'stock_item' and p.unit_type in ('weight', 'volume'):
-                conv    = _UNIT_TO_BASE.get(p.unit_type, {}).get(unit, 1) if unit else 1
+            if p.product_type == 'stock_item':
+                # weight/volume: convert display unit (kg/L) to base unit (g/ml)
+                # count: conv=1 (1 unit = 1 base unit)
+                conv     = _UNIT_TO_BASE.get(p.unit_type, {}).get(unit, 1) if (unit and p.unit_type in ('weight', 'volume')) else 1
                 qty_base = qty_disp * Decimal(str(conv))
                 consume_fifo(p.id, qty_base, sale_uuid, now)
             elif p.product_type == 'simple':
