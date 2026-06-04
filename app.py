@@ -186,6 +186,10 @@ class Product(db.Model):
     margin_pct           = db.Column(Numeric(5, 2), nullable=True)   # stored margin % for this product
     is_prepared          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     # TRUE = product requires kitchen preparation; triggers a KitchenOrder on checkout
+    is_available_online  = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    # TRUE = visible on the Lady Coleen web shop
+    image_url            = db.Column(db.String(200), nullable=True)
+    # Filename under static/product_images/ (e.g. "42_abc123.jpg")
     is_archived          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     # TRUE = discontinued product, hidden everywhere (not the same as is_for_sale=false which means internal ingredient)
     archived_reason      = db.Column(db.String(200), nullable=True)
@@ -700,9 +704,11 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'package_unit':         p.package_unit,
         'parent_stock_item_id': p.parent_stock_item_id,
         'margin_pct':      float(p.margin_pct) if p.margin_pct is not None else None,
-        'is_prepared':     p.is_prepared,
-        'is_archived':     p.is_archived,
-        'archived_reason': p.archived_reason,
+        'is_prepared':          p.is_prepared,
+        'is_available_online':  p.is_available_online,
+        'image_url':            p.image_url,
+        'is_archived':          p.is_archived,
+        'archived_reason':      p.archived_reason,
     }
     if p.product_type == 'stock_item':
         d['stock_level'] = get_stock_level(p.id)
@@ -785,6 +791,8 @@ def strong_migrate():
                 ('parent_stock_item_id', 'INTEGER'),
                 ('margin_pct',  'REAL'),
                 ('is_prepared', 'INTEGER NOT NULL DEFAULT 0'),
+                ('is_available_online', 'INTEGER NOT NULL DEFAULT 0'),
+                ('image_url',   'TEXT'),
             ]:
                 if col not in existing_prod:
                     conn.exec_driver_sql(f"ALTER TABLE products ADD COLUMN {col} {defn}")
@@ -1123,6 +1131,8 @@ def strong_migrate():
                 ('parent_stock_item_id', 'INTEGER'),
                 ('margin_pct',  'NUMERIC(5,2)'),
                 ('is_prepared', 'BOOLEAN NOT NULL DEFAULT FALSE'),
+                ('is_available_online', 'BOOLEAN NOT NULL DEFAULT FALSE'),
+                ('image_url',   'VARCHAR(200)'),
             ]:
                 pg_try(f"ALTER TABLE products ADD COLUMN {col} {defn}")
 
@@ -1773,8 +1783,9 @@ def api_products_post():
     stock_qty     = int(data.get('stock_qty', 0) or 0)
     unit_type     = data.get('unit_type') or None
     base_unit     = data.get('base_unit') or None
-    sold_by_weight      = bool(data.get('sold_by_weight', False))
-    is_for_sale         = bool(data.get('is_for_sale', True))
+    sold_by_weight       = bool(data.get('sold_by_weight', False))
+    is_for_sale          = bool(data.get('is_for_sale', True))
+    is_available_online  = bool(data.get('is_available_online', False))
     price_per_unit      = data.get('price_per_unit') or None
     low_stock_threshold = data.get('low_stock_threshold') or None
     package_size        = data.get('package_size') or None
@@ -1811,6 +1822,7 @@ def api_products_post():
         price=price, product_type=product_type,
         unit_type=unit_type, base_unit=base_unit,
         sold_by_weight=sold_by_weight, is_for_sale=is_for_sale,
+        is_available_online=is_available_online,
         is_prepared=bool(data.get('is_prepared', False)),
         price_per_unit=price_per_unit,
         low_stock_threshold=low_stock_threshold,
@@ -1895,7 +1907,7 @@ def api_products_update():
         except Exception:
             return jsonify({'error': 'Invalid package_size'}), 400
 
-    for field in ('sold_by_weight', 'is_for_sale', 'is_prepared', 'is_archived'):
+    for field in ('sold_by_weight', 'is_for_sale', 'is_prepared', 'is_archived', 'is_available_online'):
         if field in data:
             setattr(p, field, bool(data[field]))
 
@@ -1922,6 +1934,59 @@ def api_products_update():
         sync_sell_packages(p.id, data['sell_packages'])
 
     db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/products/<int:pid>/image', methods=['POST'])
+def api_product_image_upload(pid):
+    """Upload or replace a product image. Stores in static/product_images/<pid>_<uuid>.<ext>."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = db.session.get(Product, pid)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+
+    if 'image' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    f = request.files['image']
+    if not f or not f.filename:
+        return jsonify({'error': 'Empty file'}), 400
+
+    ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+    if ext not in ('jpg', 'jpeg', 'png', 'webp'):
+        return jsonify({'error': 'Only JPG, PNG or WebP allowed'}), 422
+
+    import uuid, os
+    img_dir = os.path.join(app.static_folder, 'product_images')
+    os.makedirs(img_dir, exist_ok=True)
+
+    # Delete old image if exists
+    if p.image_url:
+        old_path = os.path.join(img_dir, p.image_url)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+
+    filename = f'{pid}_{uuid.uuid4().hex[:8]}.{ext}'
+    f.save(os.path.join(img_dir, filename))
+
+    p.image_url = filename
+    db.session.commit()
+    return jsonify({'ok': True, 'image_url': filename})
+
+@app.route('/api/products/<int:pid>/image', methods=['DELETE'])
+def api_product_image_delete(pid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = db.session.get(Product, pid)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+    if p.image_url:
+        import os
+        old_path = os.path.join(app.static_folder, 'product_images', p.image_url)
+        if os.path.exists(old_path):
+            os.remove(old_path)
+        p.image_url = None
+        db.session.commit()
     return jsonify({'ok': True})
 
 @app.route('/api/products/<int:pid>/archive', methods=['POST'])

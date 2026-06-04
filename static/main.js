@@ -798,9 +798,22 @@ function openProductEditor(p) {
   document.getElementById('p-type').value      = p?.product_type ?? 'stock_item';
   document.getElementById('p-unit-type').value = p?.unit_type ?? 'weight';
   document.getElementById('p-low-stock').value = p?.low_stock_threshold ?? '';
-  document.getElementById('p-is-for-sale').checked   = p?.is_for_sale !== false;
-  document.getElementById('p-is-prepared').checked  = !!p?.is_prepared;
+  document.getElementById('p-is-for-sale').checked          = p?.is_for_sale !== false;
+  document.getElementById('p-is-prepared').checked          = !!p?.is_prepared;
+  document.getElementById('p-is-available-online').checked  = !!p?.is_available_online;
   const purPid = document.getElementById('pur-product-id'); if (purPid) purPid.value = p?.id ?? '';
+
+  // Product image preview
+  const _thumb   = document.getElementById('p-image-thumb');
+  const _preview = document.getElementById('product-image-preview');
+  const _fileInp = document.getElementById('p-image-file');
+  if (_fileInp) _fileInp.value = '';
+  if (p?.image_url && _thumb && _preview) {
+    _thumb.src = `/static/product_images/${encodeURIComponent(p.image_url)}`;
+    _preview.style.display = '';
+  } else if (_preview) {
+    _preview.style.display = 'none';
+  }
 
   // Single price field: weight/volume stock_items use price_per_unit, everything else uses price
   const isWeightOrVolume = (p?.unit_type === 'weight' || p?.unit_type === 'volume')
@@ -869,6 +882,18 @@ document.getElementById('btn-new-product')?.addEventListener('click', () => {
   openProductEditor(null);
   document.getElementById('p-id').value      = String(nextId);
   document.getElementById('p-barcode').value = genBarcode(nextId);
+});
+
+document.getElementById('btn-remove-image')?.addEventListener('click', async () => {
+  const id = parseInt(document.getElementById('p-id').value || '0', 10);
+  if (!id || !confirm('Remove this product photo?')) return;
+  try {
+    await api(`/api/products/${id}/image`, { method: 'DELETE' });
+    document.getElementById('product-image-preview').style.display = 'none';
+    document.getElementById('p-image-file').value = '';
+    await loadProducts();
+    toast('Photo removed');
+  } catch (e) { toast(e.message, 'error'); }
 });
 
 document.getElementById('p-type')?.addEventListener('change', (e) => {
@@ -1405,12 +1430,30 @@ function getSellPackagesForSubmit() {
     });
 }
 
+// ── Image upload helper ──
+async function _uploadProductImageIfSelected(pid) {
+  const fileInp = document.getElementById('p-image-file');
+  if (!fileInp || !fileInp.files.length) return;
+  const fd = new FormData();
+  fd.append('image', fileInp.files[0]);
+  // Use fetch directly — api() forces Content-Type: application/json which breaks FormData
+  const res = await fetch(`/api/products/${pid}/image`, {
+    method: 'POST', body: fd, credentials: 'same-origin'
+  });
+  if (!res.ok) {
+    let err = 'Image upload failed';
+    try { const j = await res.json(); err = j.error || err; } catch {}
+    toast(err, 'warning');
+  }
+}
+
 // ── Save / Update / Delete ──
 document.getElementById('btn-add-product')?.addEventListener('click', async () => {
   const payload = buildProductPayload();
   if (!payload) return;
   try {
     const result = await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
+    if (result?.id) await _uploadProductImageIfSelected(result.id);
     await loadProducts();
     toast('Product added');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
@@ -1442,6 +1485,7 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
 
   try {
     await api('/api/products/update', { method: 'POST', body: JSON.stringify(payload) });
+    await _uploadProductImageIfSelected(id);
     await loadProducts();
     let msg = 'Product updated.';
     if (wasForSale && !nowForSale)  msg = `"${payload.name}" moved to the Ingredients tab.`;
@@ -1490,7 +1534,8 @@ function buildProductPayload() {
   const pkgSize      = document.getElementById('p-pkg-size').value || null;
   const pkgSizeUnit  = document.getElementById('p-pkg-size-unit')?.value || null;
   const pkgUnit      = document.getElementById('p-pkg-unit').value?.trim() || null;
-  const isForSale    = document.getElementById('p-is-for-sale').checked;
+  const isForSale          = document.getElementById('p-is-for-sale').checked;
+  const isAvailableOnline  = document.getElementById('p-is-available-online')?.checked || false;
   // sold_by_weight is now auto-derived from unit type (hidden input set by updateProductTypeSections)
   const soldByWeight = document.getElementById('p-sold-by-weight')?.value === '1';
 
@@ -1514,7 +1559,8 @@ function buildProductPayload() {
     ...(type === 'simple' ? { stock_qty } : {}),
     product_type: type,
     unit_type:    type !== 'simple' ? unitType : null,
-    is_for_sale:  isForSale,
+    is_for_sale:         isForSale,
+    is_available_online: isAvailableOnline,
     sold_by_weight: soldByWeight,
     price_per_unit: finalPricePerUnit,
     low_stock_threshold: lowStock ? (() => {
@@ -3027,7 +3073,16 @@ document.getElementById('search')?.addEventListener('input', function() {
     const stockInfo = p.product_type === 'stock_item'
       ? ` (${displayQty(p.stock_level || 0, p.unit_type)})`
       : p.product_type === 'simple' ? ` (stock ${p.stock_qty})` : '';
-    a.textContent = `#${p.id} ${p.name}${p.price != null ? ` — R${fmt(p.price)}` : ''}${stockInfo}`;
+    a.style.cssText = 'display:flex;align-items:center;gap:10px';
+    if (p.image_url) {
+      const img = document.createElement('img');
+      img.src = `/static/product_images/${encodeURIComponent(p.image_url)}`;
+      img.style.cssText = 'width:40px;height:40px;object-fit:cover;border-radius:4px;flex-shrink:0';
+      a.appendChild(img);
+    }
+    const span = document.createElement('span');
+    span.textContent = `#${p.id} ${p.name}${p.price != null ? ` — R${fmt(p.price)}` : ''}${stockInfo}`;
+    a.appendChild(span);
     a.onclick = () => {
       addToCart(p);
       this.value = '';
