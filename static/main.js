@@ -73,6 +73,14 @@ function fmt(n)   { return (Math.round(n * 100) / 100).toFixed(2); }
 function fmtQty(n) { return n % 1 === 0 ? String(n) : n.toFixed(3); }
 function isAdmin() { const r = STATE.user?.roles || [STATE.user?.role]; return r.includes('admin'); }
 
+// Returns the URL for a product image variant ('thumb'|'small'|'') or null if no image.
+function imgVariant(image_url, variant) {
+  if (!image_url) return null;
+  const base   = image_url.replace(/\.jpg$/i, '');
+  const suffix = variant ? '_' + variant : '';
+  return `/static/product_images/${base}${suffix}.jpg`;
+}
+
 async function api(path, opts = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -810,7 +818,7 @@ function openProductEditor(p) {
   const _fileInp = document.getElementById('p-image-file');
   if (_fileInp) _fileInp.value = '';
   if (p?.image_url && _thumb && _preview) {
-    _thumb.src = `/static/product_images/${encodeURIComponent(p.image_url)}`;
+    _thumb.src = imgVariant(p.image_url, 'small');
     _preview.style.display = '';
   } else if (_preview) {
     _preview.style.display = 'none';
@@ -3077,8 +3085,10 @@ document.getElementById('search')?.addEventListener('input', function() {
     a.style.cssText = 'display:flex;align-items:center;gap:10px';
     if (p.image_url) {
       const img = document.createElement('img');
-      img.src = `/static/product_images/${encodeURIComponent(p.image_url)}`;
+      img.src = imgVariant(p.image_url, 'thumb');
       img.loading = 'lazy';
+      img.decoding = 'async';
+      img.width = 40; img.height = 40;
       img.style.cssText = 'width:40px;height:40px;object-fit:cover;border-radius:4px;flex-shrink:0';
       a.appendChild(img);
     }

@@ -1936,9 +1936,63 @@ def api_products_update():
     db.session.commit()
     return jsonify({'ok': True})
 
+_IMG_MAX_BYTES  = 10 * 1024 * 1024   # 10 MB file size limit
+_IMG_MAX_PIXELS = 20_000_000          # ~4500×4500 resolution limit
+_IMG_SIZES      = [(64, '_thumb'), (300, '_small'), (800, '')]  # (px, suffix)
+
+
+def _delete_product_image_files(img_dir, image_url):
+    """Delete all variants (base, _thumb, _small) for a given image_url."""
+    if not image_url:
+        return
+    import os
+    base = image_url.rsplit('.', 1)[0]
+    for _, suffix in _IMG_SIZES:
+        path = os.path.join(img_dir, f'{base}{suffix}.jpg')
+        if os.path.exists(path):
+            os.remove(path)
+
+
+def _process_and_save_image(f_stream, img_dir, pid):
+    """
+    Resize/compress an uploaded image into three variants (thumb/small/full).
+    Returns the base filename (e.g. '16_abc12345.jpg') or raises ValueError.
+    """
+    import uuid, os
+    from PIL import Image as _PIL, ImageOps, ImageEnhance
+
+    uid  = uuid.uuid4().hex[:8]
+    base = f'{pid}_{uid}'
+
+    try:
+        img = _PIL.open(f_stream)
+        img = ImageOps.exif_transpose(img).convert('RGB')
+    except Exception:
+        raise ValueError('Could not read image — file may be corrupt or unsupported')
+
+    if img.width * img.height > _IMG_MAX_PIXELS:
+        raise ValueError('Image resolution too large — please resize to under 4500×4500px')
+
+    os.makedirs(img_dir, exist_ok=True)
+
+    for dim, suffix in _IMG_SIZES:
+        if suffix:  # thumb + small — square crop for consistent grid layout
+            resized = ImageOps.fit(img, (dim, dim), method=_PIL.LANCZOS)
+        else:       # full — preserve aspect ratio
+            resized = img.copy()
+            resized.thumbnail((dim, dim), _PIL.LANCZOS)
+        resized = ImageEnhance.Sharpness(resized).enhance(1.2)
+        tmp  = os.path.join(img_dir, f'{base}{suffix}.tmp')
+        dest = os.path.join(img_dir, f'{base}{suffix}.jpg')
+        resized.save(tmp, 'JPEG', quality=82, optimize=True, progressive=True)
+        os.replace(tmp, dest)
+
+    return f'{base}.jpg'
+
+
 @app.route('/api/products/<int:pid>/image', methods=['POST'])
 def api_product_image_upload(pid):
-    """Upload or replace a product image. Stores in static/product_images/<pid>_<uuid>.<ext>."""
+    """Upload or replace a product image. Generates thumb (64px), small (300px), full (800px) variants."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     p = db.session.get(Product, pid)
@@ -1947,7 +2001,6 @@ def api_product_image_upload(pid):
 
     if 'image' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
-
     f = request.files['image']
     if not f or not f.filename:
         return jsonify({'error': 'Empty file'}), 400
@@ -1956,22 +2009,27 @@ def api_product_image_upload(pid):
     if ext not in ('jpg', 'jpeg', 'png', 'webp'):
         return jsonify({'error': 'Only JPG, PNG or WebP allowed'}), 422
 
-    import uuid, os
+    # Check file size before reading into Pillow
+    f.seek(0, 2); fsize = f.tell(); f.seek(0)
+    if fsize > _IMG_MAX_BYTES:
+        return jsonify({'error': 'File too large — max 10MB'}), 422
+
+    import os
     img_dir = os.path.join(app.static_folder, 'product_images')
-    os.makedirs(img_dir, exist_ok=True)
 
-    # Delete old image if exists
+    try:
+        filename = _process_and_save_image(f.stream, img_dir, pid)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 422
+
+    # Delete old variants only after new ones are safely written
     if p.image_url:
-        old_path = os.path.join(img_dir, p.image_url)
-        if os.path.exists(old_path):
-            os.remove(old_path)
-
-    filename = f'{pid}_{uuid.uuid4().hex[:8]}.{ext}'
-    f.save(os.path.join(img_dir, filename))
+        _delete_product_image_files(img_dir, p.image_url)
 
     p.image_url = filename
     db.session.commit()
     return jsonify({'ok': True, 'image_url': filename})
+
 
 @app.route('/api/products/<int:pid>/image', methods=['DELETE'])
 def api_product_image_delete(pid):
@@ -1982,9 +2040,7 @@ def api_product_image_delete(pid):
         return jsonify({'error': 'Product not found'}), 404
     if p.image_url:
         import os
-        old_path = os.path.join(app.static_folder, 'product_images', p.image_url)
-        if os.path.exists(old_path):
-            os.remove(old_path)
+        _delete_product_image_files(os.path.join(app.static_folder, 'product_images'), p.image_url)
         p.image_url = None
         db.session.commit()
     return jsonify({'ok': True})
