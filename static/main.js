@@ -5660,7 +5660,7 @@ function startCustomerVisitPoll() {
 // ═══════════════════════════════════════════════════════
 // CUSTOMERS TAB
 // ═══════════════════════════════════════════════════════
-let _customerSubTab = 'online';
+let _customerSubTab = 'instore';
 
 document.getElementById('customer-subtabs')?.addEventListener('click', e => {
   const btn = e.target.closest('[data-customer-tab]');
