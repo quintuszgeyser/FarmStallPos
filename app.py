@@ -189,11 +189,22 @@ class Product(db.Model):
     is_available_online  = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     # TRUE = visible on the Lady Coleen web shop
     image_url            = db.Column(db.String(200), nullable=True)
-    # Filename under static/product_images/ (e.g. "42_abc123.jpg")
+    # Primary image filename — kept in sync with product_images.is_primary for backward compat
+    description          = db.Column(db.Text, nullable=True)
     is_archived          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     # TRUE = discontinued product, hidden everywhere (not the same as is_for_sale=false which means internal ingredient)
     archived_reason      = db.Column(db.String(200), nullable=True)
     # 'cascade' = auto-archived because an ingredient was archived
+
+
+class ProductImage(db.Model):
+    __tablename__ = 'product_images'
+    id            = db.Column(db.Integer, primary_key=True)
+    product_id    = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    filename      = db.Column(db.String(200), nullable=False)
+    is_primary    = db.Column(db.Boolean, nullable=False, default=False)
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at    = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
 
 
 class KitchenOrder(db.Model):
@@ -707,8 +718,15 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'is_prepared':          p.is_prepared,
         'is_available_online':  p.is_available_online,
         'image_url':            p.image_url,
+        'description':          p.description,
         'is_archived':          p.is_archived,
         'archived_reason':      p.archived_reason,
+        'images': [{
+            'id':            img.id,
+            'filename':      img.filename,
+            'is_primary':    img.is_primary,
+            'display_order': img.display_order,
+        } for img in ProductImage.query.filter_by(product_id=p.id).order_by(ProductImage.display_order).all()],
     }
     if p.product_type == 'stock_item':
         d['stock_level'] = get_stock_level(p.id)
@@ -793,9 +811,30 @@ def strong_migrate():
                 ('is_prepared', 'INTEGER NOT NULL DEFAULT 0'),
                 ('is_available_online', 'INTEGER NOT NULL DEFAULT 0'),
                 ('image_url',   'TEXT'),
+                ('description', 'TEXT'),
             ]:
                 if col not in existing_prod:
                     conn.exec_driver_sql(f"ALTER TABLE products ADD COLUMN {col} {defn}")
+
+            # product_images table (SQLite)
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS product_images (
+              id            INTEGER PRIMARY KEY AUTOINCREMENT,
+              product_id    INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+              filename      TEXT NOT NULL,
+              is_primary    INTEGER NOT NULL DEFAULT 0,
+              display_order INTEGER NOT NULL DEFAULT 0,
+              created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_product_images_product ON product_images (product_id, display_order)")
+
+            # Migrate existing single images into product_images (idempotent)
+            conn.exec_driver_sql("""
+              INSERT INTO product_images (product_id, filename, is_primary, display_order)
+              SELECT id, image_url, 1, 0 FROM products
+              WHERE image_url IS NOT NULL
+                AND id NOT IN (SELECT DISTINCT product_id FROM product_images)
+            """)
 
             # kitchen_orders table (SQLite)
             conn.exec_driver_sql("""
@@ -1133,8 +1172,29 @@ def strong_migrate():
                 ('is_prepared', 'BOOLEAN NOT NULL DEFAULT FALSE'),
                 ('is_available_online', 'BOOLEAN NOT NULL DEFAULT FALSE'),
                 ('image_url',   'VARCHAR(200)'),
+                ('description', 'TEXT'),
             ]:
                 pg_try(f"ALTER TABLE products ADD COLUMN {col} {defn}")
+
+            # product_images table (PostgreSQL)
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS product_images (
+              id            SERIAL PRIMARY KEY,
+              product_id    INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+              filename      VARCHAR(200) NOT NULL,
+              is_primary    BOOLEAN NOT NULL DEFAULT FALSE,
+              display_order INTEGER NOT NULL DEFAULT 0,
+              created_at    TIMESTAMPTZ DEFAULT now()
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_product_images_product ON product_images (product_id, display_order)")
+
+            # Migrate existing single images into product_images (idempotent)
+            conn.exec_driver_sql("""
+              INSERT INTO product_images (product_id, filename, is_primary, display_order)
+              SELECT id, image_url, true, 0 FROM products
+              WHERE image_url IS NOT NULL
+                AND id NOT IN (SELECT DISTINCT product_id FROM product_images)
+            """)
 
             # kitchen_orders table (PostgreSQL)
             conn.exec_driver_sql("""
@@ -1786,6 +1846,7 @@ def api_products_post():
     sold_by_weight       = bool(data.get('sold_by_weight', False))
     is_for_sale          = bool(data.get('is_for_sale', True))
     is_available_online  = bool(data.get('is_available_online', False))
+    description          = (data.get('description') or '').strip() or None
     price_per_unit      = data.get('price_per_unit') or None
     low_stock_threshold = data.get('low_stock_threshold') or None
     package_size        = data.get('package_size') or None
@@ -1823,6 +1884,7 @@ def api_products_post():
         unit_type=unit_type, base_unit=base_unit,
         sold_by_weight=sold_by_weight, is_for_sale=is_for_sale,
         is_available_online=is_available_online,
+        description=description,
         is_prepared=bool(data.get('is_prepared', False)),
         price_per_unit=price_per_unit,
         low_stock_threshold=low_stock_threshold,
@@ -1911,6 +1973,9 @@ def api_products_update():
         if field in data:
             setattr(p, field, bool(data[field]))
 
+    if 'description' in data:
+        p.description = (data['description'] or '').strip() or None
+
     if 'margin_pct' in data:
         try:
             p.margin_pct = float(data['margin_pct']) if data['margin_pct'] is not None else None
@@ -1992,58 +2057,218 @@ def _process_and_save_image(f_stream, img_dir, pid):
 
 @app.route('/api/products/<int:pid>/image', methods=['POST'])
 def api_product_image_upload(pid):
-    """Upload or replace a product image. Generates thumb (64px), small (300px), full (800px) variants."""
+    """Legacy single-image upload — proxies to new multi-image endpoint."""
+    # Remap 'image' field to 'images[]' so the new endpoint handles it
+    with app.test_request_context():
+        pass
+    # Directly call the logic inline for backward compat
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     p = db.session.get(Product, pid)
     if not p:
         return jsonify({'error': 'Product not found'}), 404
 
-    if 'image' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    f = request.files['image']
+    f = request.files.get('image')
     if not f or not f.filename:
-        return jsonify({'error': 'Empty file'}), 400
+        return jsonify({'error': 'No file uploaded'}), 400
 
     ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
     if ext not in ('jpg', 'jpeg', 'png', 'webp'):
         return jsonify({'error': 'Only JPG, PNG or WebP allowed'}), 422
-
-    # Check file size before reading into Pillow
     f.seek(0, 2); fsize = f.tell(); f.seek(0)
     if fsize > _IMG_MAX_BYTES:
         return jsonify({'error': 'File too large — max 10MB'}), 422
 
     import os
     img_dir = os.path.join(app.static_folder, 'product_images')
-
     try:
         filename = _process_and_save_image(f.stream, img_dir, pid)
     except ValueError as e:
         return jsonify({'error': str(e)}), 422
 
-    # Delete old variants only after new ones are safely written
-    if p.image_url:
-        _delete_product_image_files(img_dir, p.image_url)
+    # Remove old primary image files
+    old_primary = ProductImage.query.filter_by(product_id=pid, is_primary=True).first()
+    old_filename = old_primary.filename if old_primary else None
 
-    p.image_url = filename
+    # Replace all existing images with this one
+    ProductImage.query.filter_by(product_id=pid).delete()
+    img = ProductImage(product_id=pid, filename=filename, is_primary=True, display_order=0)
+    db.session.add(img)
+    _sync_primary_image_url(pid)
     db.session.commit()
+
+    if old_filename and old_filename != filename:
+        try:
+            _delete_product_image_files(img_dir, old_filename)
+        except Exception:
+            pass
+
     return jsonify({'ok': True, 'image_url': filename})
 
 
 @app.route('/api/products/<int:pid>/image', methods=['DELETE'])
 def api_product_image_delete(pid):
+    """Legacy single-image delete — removes all images for this product."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     p = db.session.get(Product, pid)
     if not p:
         return jsonify({'error': 'Product not found'}), 404
-    if p.image_url:
-        import os
-        _delete_product_image_files(os.path.join(app.static_folder, 'product_images'), p.image_url)
-        p.image_url = None
-        db.session.commit()
+
+    import os
+    img_dir = os.path.join(app.static_folder, 'product_images')
+    imgs = ProductImage.query.filter_by(product_id=pid).all()
+    filenames = [img.filename for img in imgs]
+    ProductImage.query.filter_by(product_id=pid).delete()
+    p.image_url = None
+    db.session.commit()
+    for fn in filenames:
+        try:
+            _delete_product_image_files(img_dir, fn)
+        except Exception:
+            pass
     return jsonify({'ok': True})
+
+def _sync_primary_image_url(pid):
+    """Keep products.image_url in sync with the primary product_image filename."""
+    primary = ProductImage.query.filter_by(product_id=pid, is_primary=True).first()
+    p = db.session.get(Product, pid)
+    if p:
+        p.image_url = primary.filename if primary else None
+
+
+@app.route('/api/products/<int:pid>/images', methods=['POST'])
+def api_product_images_upload(pid):
+    """Upload one or more images. field name: images[]"""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = db.session.get(Product, pid)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+
+    files = request.files.getlist('images[]')
+    if not files:
+        return jsonify({'error': 'No files uploaded'}), 400
+
+    import os
+    img_dir = os.path.join(app.static_folder, 'product_images')
+    existing_count = ProductImage.query.filter_by(product_id=pid).count()
+
+    results, errors = [], []
+    for f in files:
+        if not f or not f.filename:
+            continue
+        ext = f.filename.rsplit('.', 1)[-1].lower() if '.' in f.filename else ''
+        if ext not in ('jpg', 'jpeg', 'png', 'webp'):
+            errors.append({'file': f.filename, 'error': 'Only JPG, PNG or WebP allowed'})
+            continue
+        f.seek(0, 2); fsize = f.tell(); f.seek(0)
+        if fsize > _IMG_MAX_BYTES:
+            errors.append({'file': f.filename, 'error': 'File too large — max 10MB'})
+            continue
+        try:
+            filename = _process_and_save_image(f.stream, img_dir, pid)
+        except ValueError as e:
+            errors.append({'file': f.filename, 'error': str(e)})
+            continue
+
+        is_first = (existing_count == 0 and len(results) == 0)
+        max_order = db.session.query(db.func.max(ProductImage.display_order)).filter_by(product_id=pid).scalar() or -1
+        img = ProductImage(
+            product_id=pid,
+            filename=filename,
+            is_primary=is_first,
+            display_order=max_order + 1,
+        )
+        db.session.add(img)
+        db.session.flush()
+        results.append({'id': img.id, 'filename': filename, 'is_primary': img.is_primary,
+                        'display_order': img.display_order})
+
+    _sync_primary_image_url(pid)
+    db.session.commit()
+    return jsonify({'images': results, 'errors': errors}), (201 if results else 422)
+
+
+@app.route('/api/products/<int:pid>/images/<int:img_id>', methods=['DELETE'])
+def api_product_image_delete_one(pid, img_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    img = ProductImage.query.filter_by(id=img_id, product_id=pid).first()
+    if not img:
+        return jsonify({'error': 'Image not found'}), 404
+
+    import os
+    was_primary = img.is_primary
+    filename_to_delete = img.filename
+
+    db.session.delete(img)
+    db.session.flush()
+
+    # Re-fetch remaining images and reindex display_order
+    remaining = ProductImage.query.filter_by(product_id=pid).order_by(ProductImage.display_order).all()
+    for i, r in enumerate(remaining):
+        r.display_order = i
+    if was_primary and remaining:
+        for r in remaining:
+            r.is_primary = False
+        remaining[0].is_primary = True
+
+    _sync_primary_image_url(pid)
+    db.session.commit()
+
+    # Delete files after commit — best effort
+    try:
+        _delete_product_image_files(os.path.join(app.static_folder, 'product_images'), filename_to_delete)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning('Could not delete image files for %s: %s', filename_to_delete, e)
+
+    return jsonify({'ok': True})
+
+
+@app.route('/api/products/<int:pid>/images/<int:img_id>/primary', methods=['POST'])
+def api_product_image_set_primary(pid, img_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    img = ProductImage.query.filter_by(id=img_id, product_id=pid).first()
+    if not img:
+        return jsonify({'error': 'Image not found'}), 404
+
+    # Single transaction: clear all, then set one
+    ProductImage.query.filter_by(product_id=pid).update({'is_primary': False})
+    img.is_primary = True
+    _sync_primary_image_url(pid)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/products/<int:pid>/images/reorder', methods=['POST'])
+def api_product_images_reorder(pid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    data = request.json or []
+    if not isinstance(data, list):
+        return jsonify({'error': 'Expected list of {id, display_order}'}), 422
+
+    # Validate: all IDs belong to this product, no duplicates, sequential orders
+    product_img_ids = {img.id for img in ProductImage.query.filter_by(product_id=pid).all()}
+    req_ids     = [item.get('id') for item in data]
+    req_orders  = [item.get('display_order') for item in data]
+
+    if len(set(req_ids)) != len(req_ids):
+        return jsonify({'error': 'Duplicate image IDs in request'}), 422
+    if not all(iid in product_img_ids for iid in req_ids):
+        return jsonify({'error': 'One or more image IDs do not belong to this product'}), 422
+    if sorted(req_orders) != list(range(len(data))):
+        return jsonify({'error': 'display_order must be sequential starting from 0'}), 422
+
+    for item in data:
+        ProductImage.query.filter_by(id=item['id'], product_id=pid).update({'display_order': item['display_order']})
+    db.session.commit()
+    return jsonify({'ok': True})
+
 
 @app.route('/api/products/<int:pid>/archive', methods=['POST'])
 def api_product_archive(pid):

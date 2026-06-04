@@ -1484,17 +1484,20 @@
           </label>
         </div>
 
-        <!-- ── Product image ── -->
-        <div class="mb-3" id="product-image-section">
-          <label class="form-label small fw-semibold mb-1">Product Photo</label>
-          <div id="product-image-preview" class="mb-2" style="display:none">
-            <img id="p-image-thumb" src="" alt="Product photo"
-                 style="max-height:120px;max-width:100%;border-radius:6px;border:1px solid #ddd;object-fit:cover">
-            <button type="button" class="btn btn-sm btn-outline-danger ms-2" id="btn-remove-image">Remove</button>
-          </div>
-          <input type="file" class="form-control form-control-sm" id="p-image-file"
-                 accept="image/jpeg,image/png,image/webp">
-          <div class="form-text">JPG, PNG or WebP. Displayed on website and at teller.</div>
+        <!-- ── Description ── -->
+        <div class="mb-3">
+          <label class="form-label small fw-semibold mb-1">Description <span class="text-muted fw-normal">(shown on website)</span></label>
+          <textarea id="p-description" class="form-control form-control-sm" rows="3"
+            placeholder="Describe the product for the online shop…"></textarea>
+        </div>
+
+        <!-- ── Product photos ── -->
+        <div class="mb-3" id="product-images-section">
+          <label class="form-label small fw-semibold mb-1">Product Photos</label>
+          <div id="product-images-list" class="mb-2"></div>
+          <input type="file" class="form-control form-control-sm" id="p-image-files"
+                 accept="image/jpeg,image/png,image/webp" multiple>
+          <div class="form-text">JPG, PNG or WebP, max 10MB each. First image becomes primary. Shown on website and at teller.</div>
         </div>
 
         <!-- ── Price Calculator — only shown when editing an existing product ── -->

@@ -81,6 +81,106 @@ function imgVariant(image_url, variant) {
   return `/static/product_images/${base}${suffix}.jpg`;
 }
 
+// ── Multi-image editor state ──────────────────────────────────────────────────
+let _editingImages = [];   // [{id, filename, is_primary, display_order}]
+
+function renderImageList() {
+  const host = document.getElementById('product-images-list');
+  if (!host) return;
+  if (!_editingImages.length) { host.innerHTML = '<div class="text-muted small">No photos yet.</div>'; return; }
+
+  const pid = parseInt(document.getElementById('p-id')?.value || '0', 10);
+  host.innerHTML = '';
+
+  _editingImages.forEach((img, idx) => {
+    const row = document.createElement('div');
+    row.className = 'd-flex align-items-center gap-2 mb-1 p-2 rounded border' + (img.is_primary ? ' border-warning bg-light' : '');
+    row.dataset.imgId = img.id;
+
+    const thumb = document.createElement('img');
+    thumb.src = imgVariant(img.filename, 'thumb');
+    thumb.style.cssText = 'width:48px;height:48px;object-fit:cover;border-radius:4px;flex-shrink:0';
+    row.appendChild(thumb);
+
+    const label = document.createElement('span');
+    label.className = 'flex-grow-1 small' + (img.is_primary ? ' fw-bold' : '');
+    label.textContent = img.is_primary ? '★ Primary' : img.filename.split('_').slice(0,2).join('_');
+    row.appendChild(label);
+
+    // ↑ button
+    if (idx > 0) {
+      const btnUp = document.createElement('button');
+      btnUp.type = 'button'; btnUp.className = 'btn btn-sm btn-outline-secondary'; btnUp.textContent = '↑';
+      btnUp.onclick = () => _moveImage(idx, -1, pid);
+      row.appendChild(btnUp);
+    }
+    // ↓ button
+    if (idx < _editingImages.length - 1) {
+      const btnDown = document.createElement('button');
+      btnDown.type = 'button'; btnDown.className = 'btn btn-sm btn-outline-secondary'; btnDown.textContent = '↓';
+      btnDown.onclick = () => _moveImage(idx, 1, pid);
+      row.appendChild(btnDown);
+    }
+    // ⭐ set primary
+    if (!img.is_primary) {
+      const btnPri = document.createElement('button');
+      btnPri.type = 'button'; btnPri.className = 'btn btn-sm btn-outline-warning'; btnPri.title = 'Set as primary';
+      btnPri.textContent = '⭐';
+      btnPri.onclick = () => _setPrimary(img.id, pid);
+      row.appendChild(btnPri);
+    }
+    // ✕ delete
+    const btnDel = document.createElement('button');
+    btnDel.type = 'button'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.textContent = '✕';
+    btnDel.onclick = () => _deleteImage(img.id, pid);
+    row.appendChild(btnDel);
+
+    host.appendChild(row);
+  });
+}
+
+async function _moveImage(idx, dir, pid) {
+  const other = idx + dir;
+  if (other < 0 || other >= _editingImages.length) return;
+  [_editingImages[idx], _editingImages[other]] = [_editingImages[other], _editingImages[idx]];
+  _editingImages.forEach((img, i) => img.display_order = i);
+  renderImageList();
+  if (pid) {
+    try {
+      await api(`/api/products/${pid}/images/reorder`, {
+        method: 'POST',
+        body: JSON.stringify(_editingImages.map(img => ({id: img.id, display_order: img.display_order})))
+      });
+    } catch (e) { toast('Reorder failed: ' + e.message, 'warning'); }
+  }
+}
+
+async function _setPrimary(imgId, pid) {
+  _editingImages.forEach(img => img.is_primary = (img.id === imgId));
+  renderImageList();
+  if (pid) {
+    try {
+      await api(`/api/products/${pid}/images/${imgId}/primary`, { method: 'POST' });
+    } catch (e) { toast('Set primary failed: ' + e.message, 'warning'); }
+  }
+}
+
+async function _deleteImage(imgId, pid) {
+  if (!confirm('Remove this photo?')) return;
+  _editingImages = _editingImages.filter(img => img.id !== imgId);
+  _editingImages.forEach((img, i) => img.display_order = i);
+  if (_editingImages.length && !_editingImages.some(img => img.is_primary)) {
+    _editingImages[0].is_primary = true;
+  }
+  renderImageList();
+  if (pid) {
+    try {
+      await api(`/api/products/${pid}/images/${imgId}`, { method: 'DELETE' });
+      await loadProducts();
+    } catch (e) { toast('Delete failed: ' + e.message, 'warning'); }
+  }
+}
+
 async function api(path, opts = {}, timeoutMs = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -812,17 +912,15 @@ function openProductEditor(p) {
   if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
   const purPid = document.getElementById('pur-product-id'); if (purPid) purPid.value = p?.id ?? '';
 
-  // Product image preview
-  const _thumb   = document.getElementById('p-image-thumb');
-  const _preview = document.getElementById('product-image-preview');
-  const _fileInp = document.getElementById('p-image-file');
+  // Description
+  const descEl = document.getElementById('p-description');
+  if (descEl) descEl.value = p?.description ?? '';
+
+  // Multi-image list
+  const _fileInp = document.getElementById('p-image-files');
   if (_fileInp) _fileInp.value = '';
-  if (p?.image_url && _thumb && _preview) {
-    _thumb.src = imgVariant(p.image_url, 'small');
-    _preview.style.display = '';
-  } else if (_preview) {
-    _preview.style.display = 'none';
-  }
+  _editingImages = (p?.images || []).slice().sort((a, b) => a.display_order - b.display_order);
+  renderImageList();
 
   // Single price field: weight/volume stock_items use price_per_unit, everything else uses price
   const isWeightOrVolume = (p?.unit_type === 'weight' || p?.unit_type === 'volume')
@@ -893,17 +991,7 @@ document.getElementById('btn-new-product')?.addEventListener('click', () => {
   document.getElementById('p-barcode').value = genBarcode(nextId);
 });
 
-document.getElementById('btn-remove-image')?.addEventListener('click', async () => {
-  const id = parseInt(document.getElementById('p-id').value || '0', 10);
-  if (!id || !confirm('Remove this product photo?')) return;
-  try {
-    await api(`/api/products/${id}/image`, { method: 'DELETE' });
-    document.getElementById('product-image-preview').style.display = 'none';
-    document.getElementById('p-image-file').value = '';
-    await loadProducts();
-    toast('Photo removed');
-  } catch (e) { toast(e.message, 'error'); }
-});
+// btn-remove-image removed — image deletion now handled per-image via renderImageList()
 
 document.getElementById('p-type')?.addEventListener('change', (e) => {
   updateProductTypeSections(e.target.value);
@@ -1439,17 +1527,21 @@ function getSellPackagesForSubmit() {
     });
 }
 
-// ── Image upload helper ──
-async function _uploadProductImageIfSelected(pid) {
-  const fileInp = document.getElementById('p-image-file');
+// ── Multi-image upload helper ──
+async function _uploadProductImagesIfSelected(pid) {
+  const fileInp = document.getElementById('p-image-files');
   if (!fileInp || !fileInp.files.length) return;
   const fd = new FormData();
-  fd.append('image', fileInp.files[0]);
-  // Use fetch directly — api() forces Content-Type: application/json which breaks FormData
-  const res = await fetch(`/api/products/${pid}/image`, {
+  for (const f of fileInp.files) fd.append('images[]', f);
+  const res = await fetch(`/api/products/${pid}/images`, {
     method: 'POST', body: fd, credentials: 'same-origin'
   });
-  if (!res.ok) {
+  if (res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (data.errors?.length) {
+      data.errors.forEach(e => toast(`${e.file}: ${e.error}`, 'warning'));
+    }
+  } else {
     let err = 'Image upload failed';
     try { const j = await res.json(); err = j.error || err; } catch {}
     toast(err, 'warning');
@@ -1462,7 +1554,7 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
   if (!payload) return;
   try {
     const result = await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
-    if (result?.id) await _uploadProductImageIfSelected(result.id);
+    if (result?.id) await _uploadProductImagesIfSelected(result.id);
     await loadProducts();
     toast('Product added');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
@@ -1494,7 +1586,7 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
 
   try {
     await api('/api/products/update', { method: 'POST', body: JSON.stringify(payload) });
-    await _uploadProductImageIfSelected(id);
+    await _uploadProductImagesIfSelected(id);
     await loadProducts();
     let msg = 'Product updated.';
     if (wasForSale && !nowForSale)  msg = `"${payload.name}" moved to the Ingredients tab.`;
@@ -1582,6 +1674,7 @@ function buildProductPayload() {
     package_unit:      pkgUnit,
     margin_pct:    document.getElementById('calc-markup')?.value ? parseFloat(document.getElementById('calc-markup').value) : null,
     is_prepared:   document.getElementById('p-is-prepared')?.checked || false,
+    description:   document.getElementById('p-description')?.value?.trim() || null,
     recipe_lines:  type === 'recipe'     ? getRecipeLinesForSubmit()  : [],
     sell_packages: type === 'stock_item' ? getSellPackagesForSubmit() : [],
   };
