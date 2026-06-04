@@ -5660,7 +5660,7 @@ function startCustomerVisitPoll() {
 // ═══════════════════════════════════════════════════════
 // CUSTOMERS TAB
 // ═══════════════════════════════════════════════════════
-let _customerSubTab = 'all';
+let _customerSubTab = 'online';
 
 document.getElementById('customer-subtabs')?.addEventListener('click', e => {
   const btn = e.target.closest('[data-customer-tab]');
@@ -5692,19 +5692,20 @@ function renderCustomersList() {
   });
 
   // Update sub-tab counts
-  const onlineOnly = STATE.customers.filter(c => c.is_online_customer && !c.is_pos_customer);
-  const allCount = document.getElementById('cst-count-all');
-  const onlineCount = document.getElementById('cst-count-online');
-  if (allCount)    allCount.textContent    = STATE.customers.length;
-  if (onlineCount) onlineCount.textContent = onlineOnly.length;
+  const onlinePool  = STATE.customers.filter(c => c.is_online_customer);
+  const instorePool = STATE.customers.filter(c => c.is_pos_customer);
+  const onlineCount  = document.getElementById('cst-count-online');
+  const instoreCount = document.getElementById('cst-count-instore');
+  if (onlineCount)  onlineCount.textContent  = onlinePool.length;
+  if (instoreCount) instoreCount.textContent = instorePool.length;
 
-  // Apply sub-tab filter first
-  const tabPool = _customerSubTab === 'online_only' ? onlineOnly : STATE.customers;
+  // Apply sub-tab filter
+  const tabPool = _customerSubTab === 'instore' ? instorePool : onlinePool;
 
   if (!tabPool.length) {
-    container.innerHTML = _customerSubTab === 'online_only'
-      ? '<div class="text-muted">No online-only customers yet.</div>'
-      : '<div class="text-muted">No customers enrolled yet.</div>';
+    container.innerHTML = _customerSubTab === 'instore'
+      ? '<div class="text-muted">No in-store customers yet.</div>'
+      : '<div class="text-muted">No online customers yet.</div>';
     return;
   }
 
@@ -5719,7 +5720,9 @@ function renderCustomersList() {
     : tabPool;
 
   if (!filtered.length) {
-    container.innerHTML = `<div class="text-muted">No customers match "${q}".</div>`;
+    container.innerHTML = q
+      ? `<div class="text-muted">No customers match "${q}".</div>`
+      : '<div class="text-muted">No customers in this view.</div>';
     return;
   }
 
