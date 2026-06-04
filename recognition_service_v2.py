@@ -3450,6 +3450,10 @@ def _resolve_session(session):
                 'created_at': session.created_at,
                 'last_seen_at': time.time(),
             }
+            log_identity_event('ANON_CREATED', None,
+                               anon_id=anon_id,
+                               session_id=session.session_id,
+                               detail=f'faces={len(session.face_embeddings)} best_sim={session.best_face_sim:.3f}')
             logger.debug(f'Resolver: session {session.session_id[:8]} → '
                          f'anonymous identity {anon_id[:8]} '
                          f'(faces={len(session.face_embeddings)} '

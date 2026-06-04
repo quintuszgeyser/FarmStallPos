@@ -7024,7 +7024,7 @@ async function refreshIdentityLog() {
     newEvents.forEach(ev => {
       const color = _EVENT_COLORS[ev.event] || '#d4d4d4';
       const sid = ev.stable_id ? ev.stable_id.slice(0,8) : '        ';
-      const detail = ev.detail || ev.from_state ? `${ev.from_state||''}→${ev.to_state||''}` : '';
+      const detail = ev.detail || (ev.from_state ? `${ev.from_state}→${ev.to_state||''}` : '');
       const extra = ev.sim ? ` sim=${ev.sim}` : (ev.score ? ` score=${ev.score}` : '');
       const line = document.createElement('div');
       line.innerHTML = `<span style="color:#666">${ev.ts_iso||''}</span> `
