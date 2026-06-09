@@ -834,6 +834,23 @@ def strong_migrate():
                 if col not in existing_prod:
                     conn.exec_driver_sql(f"ALTER TABLE products ADD COLUMN {col} {defn}")
 
+            # updated_at for scale sync change detection
+            if 'updated_at' not in existing_prod:
+                conn.exec_driver_sql(
+                    "ALTER TABLE products ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
+                )
+                conn.exec_driver_sql("""
+                    CREATE TRIGGER IF NOT EXISTS trg_products_updated_at
+                    BEFORE UPDATE ON products FOR EACH ROW
+                    WHEN NEW.updated_at = OLD.updated_at
+                    BEGIN
+                        UPDATE products SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+                    END
+                """)
+                conn.exec_driver_sql(
+                    "UPDATE products SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"
+                )
+
             # product_images table (SQLite)
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS product_images (
@@ -1321,6 +1338,22 @@ def strong_migrate():
 
             pg_try("ALTER TABLE products ADD COLUMN is_archived BOOLEAN NOT NULL DEFAULT FALSE")
             pg_try("ALTER TABLE products ADD COLUMN archived_reason VARCHAR(200)")
+
+            # updated_at for scale sync change detection
+            pg_try("ALTER TABLE products ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW()")
+            pg_try("""
+                CREATE OR REPLACE FUNCTION trg_products_set_updated_at()
+                RETURNS TRIGGER AS $$
+                BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+                $$ LANGUAGE plpgsql
+            """)
+            pg_try("DROP TRIGGER IF EXISTS trg_products_updated_at ON products")
+            pg_try("""
+                CREATE TRIGGER trg_products_updated_at
+                BEFORE UPDATE ON products
+                FOR EACH ROW EXECUTE FUNCTION trg_products_set_updated_at()
+            """)
+            pg_try("UPDATE products SET updated_at = NOW() WHERE updated_at IS NULL")
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS user_sessions (
