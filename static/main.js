@@ -6796,69 +6796,321 @@ function initMergeSlider(reviewPct, autoPct) {
   updateTrack();
 }
 
-// ─── Recognition Settings Tab ────────────────────────────────
-let _recSettingsDirty = false;
+// ─── Configuration Tab ────────────────────────────────
 
-function _markRecSettingsDirty() {
-  _recSettingsDirty = true;
-  show(document.getElementById('rec-settings-dirty'));
-  hide(document.getElementById('rec-settings-saved'));
+function _flashSaved(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  show(el);
+  setTimeout(() => hide(el), 3000);
 }
 
-function _markRecSettingsClean() {
-  _recSettingsDirty = false;
-  hide(document.getElementById('rec-settings-dirty'));
-  const saved = document.getElementById('rec-settings-saved');
-  show(saved);
-  setTimeout(() => hide(saved), 3000);
+function _bindSlider(id, valId, fmt) {
+  const el  = document.getElementById(id);
+  const vEl = document.getElementById(valId);
+  if (!el) return;
+  el.oninput = () => {
+    if (vEl) vEl.textContent = fmt ? fmt(parseFloat(el.value)) : parseFloat(el.value).toFixed(2);
+  };
+}
+
+function _setSlider(id, valId, val, fmt) {
+  const el  = document.getElementById(id);
+  const vEl = document.getElementById(valId);
+  if (el)  el.value = val;
+  if (vEl) vEl.textContent = fmt ? fmt(val) : parseFloat(val).toFixed(2);
 }
 
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', async () => {
   try {
-    const s = await api('/api/settings');
-    const setSlider = (id, valId, val, fmt) => {
-      const el  = document.getElementById(id);
-      const vEl = document.getElementById(valId);
-      const display = fmt ? fmt(val) : parseFloat(val).toFixed(2);
-      if (el)  {
-        el.value = val;
-        el.oninput = () => {
-          if (vEl) vEl.textContent = fmt ? fmt(parseFloat(el.value)) : parseFloat(el.value).toFixed(2);
-          _markRecSettingsDirty();
-        };
-      }
-      if (vEl) vEl.textContent = display;
-    };
-    setSlider('set-face-threshold',   'set-face-threshold-val',  s.face_threshold);
-    setSlider('set-link-threshold',   'set-link-threshold-val',  s.link_threshold);
-    setSlider('set-face-quality-min', 'set-face-quality-val',    s.face_quality_min);
-    setSlider('set-max-face-angles',  'set-max-face-angles-val', s.max_face_angles,  v => Math.round(v) + ' angles');
-    setSlider('set-min-angle-dist',   'set-min-angle-dist-val',  s.min_angle_distance, v => parseFloat(v).toFixed(2));
-    // Merge dual slider
+    const [s, us] = await Promise.all([api('/api/settings'), api('/api/system/update-status')]);
+
+    // Business
+    _setSlider('set-markup-pct', 'set-markup-pct-val', s.markup_percent, v => Math.round(v) + '%');
+    _bindSlider('set-markup-pct', 'set-markup-pct-val', v => Math.round(v) + '%');
+
+    // Updates
+    const autoEl  = document.getElementById('set-auto-update-enabled');
+    const minorEl = document.getElementById('set-auto-update-minor');
+    if (autoEl)  autoEl.checked  = !!us.auto_update_enabled;
+    if (minorEl) minorEl.checked = !!us.auto_update_minor;
+
+    // Kiosk connection settings
+    const apiKeyEl     = document.getElementById('kiosk-api-key');
+    const portEl       = document.getElementById('kiosk-port');
+    const inactivityEl = document.getElementById('kiosk-inactivity-mins');
+    const syncUrlEl    = document.getElementById('kiosk-sync-url');
+    if (apiKeyEl)     apiKeyEl.value     = s.kiosk_api_key            || '';
+    if (portEl)       portEl.value       = s.kiosk_port               || 2323;
+    if (inactivityEl) inactivityEl.value = s.kiosk_inactivity_minutes || 0;
+    if (syncUrlEl)    syncUrlEl.value    = s.kiosk_url                || '';
+
+    // Load kiosk tablet statuses
+    loadKioskTablets();
+
+    // Face Recognition
+    _setSlider('set-face-threshold',   'set-face-threshold-val',  s.face_threshold);
+    _setSlider('set-link-threshold',   'set-link-threshold-val',  s.link_threshold);
+    _setSlider('set-face-quality-min', 'set-face-quality-val',    s.face_quality_min);
+    _bindSlider('set-face-threshold',   'set-face-threshold-val');
+    _bindSlider('set-link-threshold',   'set-link-threshold-val');
+    _bindSlider('set-face-quality-min', 'set-face-quality-val');
+
+    // Merging
     initMergeSlider(s.merge_suggest_min_sim, s.auto_merge_min_sim ?? 0.95);
-    _recSettingsDirty = false;
-    hide(document.getElementById('rec-settings-dirty'));
-    hide(document.getElementById('rec-settings-saved'));
-  } catch(e) { console.error('loadSettings', e); }
+
+    // Enrollment
+    _setSlider('set-max-face-angles', 'set-max-face-angles-val', s.max_face_angles, v => Math.round(v) + ' angles');
+    _setSlider('set-min-angle-dist',  'set-min-angle-dist-val',  s.min_angle_distance, v => parseFloat(v).toFixed(2));
+    _bindSlider('set-max-face-angles', 'set-max-face-angles-val', v => Math.round(v) + ' angles');
+    _bindSlider('set-min-angle-dist',  'set-min-angle-dist-val',  v => parseFloat(v).toFixed(2));
+  } catch(e) { console.error('loadConfigSettings', e); }
+});
+
+document.getElementById('btn-save-business-settings')?.addEventListener('click', async () => {
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      markup_percent: parseFloat(document.getElementById('set-markup-pct')?.value || 20),
+    })});
+    _globalMarkupPct = parseFloat(document.getElementById('set-markup-pct')?.value || 20);
+    _flashSaved('business-settings-saved');
+    toast('Business settings saved', 'success', 2000);
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('btn-save-update-settings')?.addEventListener('click', async () => {
+  try {
+    await api('/api/system/update-settings', { method: 'POST', body: JSON.stringify({
+      auto_update_enabled: document.getElementById('set-auto-update-enabled')?.checked ?? false,
+      auto_update_minor:   document.getElementById('set-auto-update-minor')?.checked   ?? false,
+    })});
+    _flashSaved('update-settings-saved');
+    toast('Update settings saved', 'success', 2000);
+  } catch(e) { toast(e.message, 'error'); }
 });
 
 document.getElementById('btn-save-recognition-settings')?.addEventListener('click', async () => {
   try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      face_threshold:   parseFloat(document.getElementById('set-face-threshold')?.value),
+      link_threshold:   parseFloat(document.getElementById('set-link-threshold')?.value),
+      face_quality_min: parseFloat(document.getElementById('set-face-quality-min')?.value),
+    })});
+    _flashSaved('rec-settings-saved');
+    toast('Recognition settings saved — takes effect within 60s', 'success', 3000);
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('btn-save-merge-settings')?.addEventListener('click', async () => {
+  try {
     const reviewPct = parseInt(document.getElementById('merge-review-min')?.value || 55);
     const autoPct   = parseInt(document.getElementById('merge-auto-min')?.value   || 95);
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
-      face_threshold:        parseFloat(document.getElementById('set-face-threshold')?.value),
-      link_threshold:        parseFloat(document.getElementById('set-link-threshold')?.value),
-      face_quality_min:      parseFloat(document.getElementById('set-face-quality-min')?.value),
       merge_suggest_min_sim: reviewPct / 100,
       auto_merge_min_sim:    autoPct   / 100,
-      max_face_angles:       parseInt(document.getElementById('set-max-face-angles')?.value || 24),
-      min_angle_distance:    parseFloat(document.getElementById('set-min-angle-dist')?.value || 0.25),
     })});
-    _markRecSettingsClean();
-    toast('Settings saved — takes effect within 60s', 'success', 3000);
+    _flashSaved('merge-settings-saved');
+    toast('Merge settings saved', 'success', 2000);
   } catch(e) { toast(e.message, 'error'); }
 });
+
+document.getElementById('btn-save-enrollment-settings')?.addEventListener('click', async () => {
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      max_face_angles:   parseInt(document.getElementById('set-max-face-angles')?.value  || 24),
+      min_angle_distance: parseFloat(document.getElementById('set-min-angle-dist')?.value || 0.25),
+    })});
+    _flashSaved('enrollment-settings-saved');
+    toast('Enrollment settings saved', 'success', 2000);
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+// ─── Kiosk Tablet Management ────────────────────────────────
+
+let _kioskTablets = [];
+
+function _batteryIcon(level) {
+  if (level == null) return '';
+  if (level > 80) return '🔋';
+  if (level > 30) return '🔋';
+  return '🪫';
+}
+
+function _statusBadge(available) {
+  return available === false
+    ? '<span class="badge bg-secondary">Offline</span>'
+    : '<span class="badge bg-success">Online</span>';
+}
+
+function _renderKioskTablets(statuses) {
+  const list = document.getElementById('kiosk-tablet-list');
+  if (!list) return;
+  if (!_kioskTablets.length) {
+    list.innerHTML = '<div class="text-muted small p-3">No tablets configured. Add one below.</div>';
+    return;
+  }
+  list.innerHTML = _kioskTablets.map((t, i) => {
+    const s = statuses?.[i];
+    const online = s && !s.error;
+    const battery = s?.battery;
+    const screen  = s?.screen;
+    const wifi    = s?.wifi;
+    const mem     = s?.memory;
+    return `
+      <div class="p-3 border-bottom">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div>
+            <span class="fw-semibold">${t.name}</span>
+            <span class="text-muted small ms-2">${t.ip}</span>
+          </div>
+          <div class="d-flex gap-1 align-items-center">
+            ${_statusBadge(online)}
+            <button class="btn btn-link btn-sm text-danger p-0 ms-2" onclick="removeKioskTablet(${i})" title="Remove">✕</button>
+          </div>
+        </div>
+        ${online ? `
+        <div class="d-flex flex-wrap gap-2 small text-muted mb-2">
+          ${battery ? `<span title="Battery">${_batteryIcon(battery.level)} ${battery.level}%${battery.charging ? ' ⚡' : ''}</span>` : ''}
+          ${screen  ? `<span title="Screen">🖥 ${screen.on ? 'On' : 'Off'} · ${screen.brightness}% brightness</span>` : ''}
+          ${wifi    ? `<span title="WiFi">📶 ${wifi.ssid || 'WiFi'} · ${wifi.rssi} dBm</span>` : ''}
+          ${mem     ? `<span title="Memory">💾 ${mem.availableMB}MB free</span>` : ''}
+        </div>
+        <div class="d-flex flex-wrap gap-1">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/on')">Screen On</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/off')">Screen Off</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','reload')">Reload</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','wake')">Wake</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskSetBrightness('${t.ip}', ${screen?.brightness ?? 80})">Brightness</button>
+          <button class="btn btn-outline-warning btn-sm" onclick="kioskAction('${t.ip}','restart-ui')">Restart UI</button>
+          <button class="btn btn-outline-danger btn-sm" onclick="kioskReboot('${t.ip}')">Reboot</button>
+        </div>` : '<div class="text-muted small">Cannot reach tablet — check Tailscale connection.</div>'}
+      </div>`;
+  }).join('');
+}
+
+async function loadKioskTablets() {
+  try {
+    const data = await api('/api/kiosk/tablets');
+    _kioskTablets = data.tablets || [];
+    _renderKioskTablets(null);
+    // Load statuses in parallel
+    const statuses = await Promise.all(
+      _kioskTablets.map(t => api(`/api/kiosk/status/${t.ip}`).catch(() => ({ error: true, available: false })))
+    );
+    _renderKioskTablets(statuses);
+  } catch(e) { console.error('loadKioskTablets', e); }
+}
+
+async function saveKioskTablets() {
+  await api('/api/kiosk/tablets', { method: 'POST', body: JSON.stringify({ tablets: _kioskTablets }) });
+}
+
+async function removeKioskTablet(i) {
+  _kioskTablets.splice(i, 1);
+  await saveKioskTablets();
+  await loadKioskTablets();
+}
+
+async function kioskAction(ip, action, body) {
+  try {
+    await api(`/api/kiosk/control/${ip}/${action}`, { method: 'POST', body: JSON.stringify(body || {}) });
+    toast(`${action} sent`, 'success', 1500);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function kioskReboot(ip) {
+  if (!confirm('Reboot this tablet?')) return;
+  await kioskAction(ip, 'reboot');
+}
+
+async function kioskSetBrightness(ip, current) {
+  const val = prompt('Brightness (0–100):', current);
+  if (val === null) return;
+  const n = parseInt(val);
+  if (isNaN(n) || n < 0 || n > 100) { toast('Enter 0–100', 'error'); return; }
+  await kioskAction(ip, 'brightness', { value: n });
+}
+
+document.getElementById('btn-kiosk-refresh')?.addEventListener('click', loadKioskTablets);
+
+document.getElementById('btn-kiosk-add')?.addEventListener('click', async () => {
+  const name = document.getElementById('kiosk-new-name')?.value.trim();
+  const ip   = document.getElementById('kiosk-new-ip')?.value.trim();
+  if (!name || !ip) { toast('Enter a name and IP', 'error'); return; }
+  _kioskTablets.push({ name, ip });
+  await saveKioskTablets();
+  document.getElementById('kiosk-new-name').value = '';
+  document.getElementById('kiosk-new-ip').value = '';
+  await loadKioskTablets();
+});
+
+document.getElementById('btn-kiosk-save-settings')?.addEventListener('click', async () => {
+  try {
+    const apiKey      = document.getElementById('kiosk-api-key')?.value.trim();
+    const port        = document.getElementById('kiosk-port')?.value.trim();
+    const inactivity  = parseInt(document.getElementById('kiosk-inactivity-mins')?.value || 0);
+    const syncUrl     = document.getElementById('kiosk-sync-url')?.value.trim();
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      kiosk_api_key:            apiKey,
+      kiosk_port:               parseInt(port) || 2323,
+      kiosk_inactivity_minutes: inactivity,
+      kiosk_url:                syncUrl,
+    })});
+    _startKioskInactivityTimer(inactivity);
+    _flashSaved('kiosk-settings-saved');
+    toast('Kiosk settings saved', 'success', 2000);
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('btn-kiosk-sync-all')?.addEventListener('click', async () => {
+  const url = document.getElementById('kiosk-sync-url')?.value.trim();
+  if (!_kioskTablets.length) { toast('No tablets configured', 'error'); return; }
+  if (!url) { toast('Enter a URL to sync', 'error'); return; }
+  const statusEl = document.getElementById('kiosk-sync-status');
+  try {
+    // Save URL to settings so it persists
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ kiosk_url: url }) });
+    // Push URL + reload to all tablets in parallel
+    await Promise.all(_kioskTablets.map(t =>
+      api(`/api/kiosk/control/${t.ip}/url`, { method: 'POST', body: JSON.stringify({ url }) })
+        .then(() => api(`/api/kiosk/control/${t.ip}/reload`, { method: 'POST', body: '{}' }))
+        .catch(() => {}) // offline tablets silently skipped
+    ));
+    if (statusEl) { show(statusEl); setTimeout(() => hide(statusEl), 3000); }
+    toast(`Synced ${_kioskTablets.length} tablet(s)`, 'success', 2500);
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+// ─── Inactivity reload timer ─────────────────────────────────
+let _kioskInactivityTimer = null;
+let _kioskInactivityMs    = 0;
+
+function _resetKioskInactivity() {
+  if (!_kioskInactivityMs) return;
+  clearTimeout(_kioskInactivityTimer);
+  _kioskInactivityTimer = setTimeout(() => {
+    window.location.reload();
+  }, _kioskInactivityMs);
+}
+
+function _startKioskInactivityTimer(minutes) {
+  clearTimeout(_kioskInactivityTimer);
+  _kioskInactivityMs = (minutes > 0) ? minutes * 60 * 1000 : 0;
+  if (!_kioskInactivityMs) return;
+  ['mousemove', 'mousedown', 'keydown', 'touchstart', 'touchmove', 'scroll'].forEach(evt =>
+    document.addEventListener(evt, _resetKioskInactivity, { passive: true })
+  );
+  _resetKioskInactivity();
+}
+
+// Bootstrap inactivity timer on page load from server setting
+(async () => {
+  try {
+    const s = await api('/api/settings');
+    _startKioskInactivityTimer(parseInt(s.kiosk_inactivity_minutes) || 0);
+  } catch {}
+})();
+
 
 // ═══════════════════════════════════════════════════════
 // TILL CUSTOMER DETECTION (Phase 1: Purchase Linking)

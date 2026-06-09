@@ -547,7 +547,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
-    <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Recognition</button></li>
+    <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Configuration</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>
   </ul>
 
@@ -1001,89 +1001,214 @@
       </div>
     </div>
 
-    <!-- ═══════════════ RECOGNITION SETTINGS ═══════════════ -->
+    <!-- ═══════════════ CONFIGURATION ═══════════════ -->
     <div class="tab-pane fade" id="recognition-settings">
-      <h5 class="mb-3">Recognition Settings</h5>
-      <div class="row g-3" style="max-width:520px">
-        <div class="col-12">
-          <label class="form-label fw-semibold">Face match threshold <span class="text-muted fw-normal small">(min similarity to count as a match)</span></label>
-          <div class="d-flex align-items-center gap-2">
-            <input type="range" class="form-range flex-grow-1" id="set-face-threshold" min="0.1" max="0.9" step="0.05">
-            <span id="set-face-threshold-val" class="text-muted small" style="min-width:40px"></span>
+      <h5 class="mb-3">Configuration</h5>
+      <div class="d-flex flex-column gap-3" style="max-width:560px">
+
+        <!-- ── Kiosk Tablets ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2 d-flex justify-content-between align-items-center">
+            Kiosk Tablets
+            <button class="btn btn-outline-secondary btn-sm" id="btn-kiosk-refresh">&#8635; Refresh</button>
+          </div>
+          <div class="card-body p-0">
+            <div id="kiosk-tablet-list">
+              <div class="text-muted small p-3">Loading...</div>
+            </div>
+            <div class="border-top p-3 d-flex flex-column gap-2">
+
+              <!-- Sync all tablets -->
+              <div class="fw-semibold small">Sync all tablets</div>
+              <div class="text-muted small">Push the same URL to every tablet at once, then reload them.</div>
+              <div class="d-flex gap-2 align-items-center">
+                <input type="url" class="form-control form-control-sm" id="kiosk-sync-url" placeholder="https://..." style="max-width:320px">
+                <button class="btn btn-primary btn-sm" id="btn-kiosk-sync-all">Sync &amp; Reload All</button>
+                <span id="kiosk-sync-status" class="text-success small hidden">Done</span>
+              </div>
+
+              <hr class="my-1">
+
+              <!-- Inactivity timeout -->
+              <div class="fw-semibold small">Inactivity reload</div>
+              <div class="text-muted small">Reload the POS page after this many minutes of no touch/click activity — logs the user out.</div>
+              <div class="d-flex gap-2 align-items-center">
+                <input type="number" class="form-control form-control-sm" id="kiosk-inactivity-mins" min="0" max="120" placeholder="0 = disabled" style="max-width:140px">
+                <span class="small text-muted">minutes (0 = disabled)</span>
+              </div>
+
+              <hr class="my-1">
+
+              <!-- Add tablet -->
+              <div class="fw-semibold small">Add tablet</div>
+              <div class="d-flex gap-2">
+                <input type="text" class="form-control form-control-sm" id="kiosk-new-name" placeholder="Name (e.g. Teller 1)" style="max-width:160px">
+                <input type="text" class="form-control form-control-sm" id="kiosk-new-ip" placeholder="Tailscale IP" style="max-width:180px">
+                <button class="btn btn-primary btn-sm" id="btn-kiosk-add">Add</button>
+              </div>
+
+              <hr class="my-1">
+
+              <!-- Connection settings -->
+              <div class="fw-semibold small">Connection settings</div>
+              <div class="d-flex gap-2 align-items-center flex-wrap">
+                <label class="small text-muted mb-0" style="white-space:nowrap">API Key</label>
+                <input type="text" class="form-control form-control-sm" id="kiosk-api-key" placeholder="Leave blank if none" style="max-width:220px">
+                <label class="small text-muted mb-0 ms-2" style="white-space:nowrap">Port</label>
+                <input type="number" class="form-control form-control-sm" id="kiosk-port" value="2323" style="max-width:90px">
+              </div>
+              <div>
+                <button class="btn btn-outline-secondary btn-sm" id="btn-kiosk-save-settings">Save Settings</button>
+                <span id="kiosk-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+              </div>
+
+            </div>
           </div>
         </div>
-        <div class="col-12">
-          <label class="form-label fw-semibold">Identity link threshold <span class="text-muted fw-normal small">(confidence needed to link a track to a customer)</span></label>
-          <div class="d-flex align-items-center gap-2">
-            <input type="range" class="form-range flex-grow-1" id="set-link-threshold" min="0.1" max="0.95" step="0.05">
-            <span id="set-link-threshold-val" class="text-muted small" style="min-width:40px"></span>
+
+        <!-- ── Business ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2">Business</div>
+          <div class="card-body d-flex flex-column gap-3">
+            <div>
+              <label class="form-label fw-semibold mb-1">Default markup % <span class="text-muted fw-normal small">(applied to WAC when suggesting prices)</span></label>
+              <div class="d-flex align-items-center gap-2">
+                <input type="range" class="form-range flex-grow-1" id="set-markup-pct" min="0" max="200" step="1">
+                <span id="set-markup-pct-val" class="text-muted small" style="min-width:44px"></span>
+              </div>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" id="btn-save-business-settings">Save</button>
+              <span id="business-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+            </div>
           </div>
         </div>
-        <div class="col-12">
-          <label class="form-label fw-semibold">Face quality minimum <span class="text-muted fw-normal small">(lower = accepts blurrier/smaller faces)</span></label>
-          <div class="d-flex align-items-center gap-2">
-            <input type="range" class="form-range flex-grow-1" id="set-face-quality-min" min="0.05" max="0.5" step="0.05">
-            <span id="set-face-quality-val" class="text-muted small" style="min-width:40px"></span>
+
+        <!-- ── System Updates ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2">System Updates</div>
+          <div class="card-body d-flex flex-column gap-2">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="set-auto-update-enabled">
+              <label class="form-check-label" for="set-auto-update-enabled">Auto-install patch updates <span class="text-muted small">(bug fixes — recommended)</span></label>
+            </div>
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" id="set-auto-update-minor">
+              <label class="form-check-label" for="set-auto-update-minor">Auto-install minor updates <span class="text-muted small">(new features — opt-in)</span></label>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" id="btn-save-update-settings">Save</button>
+              <span id="update-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+            </div>
           </div>
         </div>
-        <div class="col-12">
-          <label class="form-label fw-semibold">Merge thresholds</label>
-          <div class="text-muted small mb-2">
-            <span class="badge bg-warning text-dark me-1">Review</span> Show in panel for manual confirmation ·
-            <span class="badge bg-success me-1">Auto</span> Merge automatically without asking
-          </div>
-          <!-- Dual-handle range slider -->
-          <div class="position-relative" style="height:40px;user-select:none" id="merge-slider-wrap">
-            <div class="position-absolute w-100" style="top:14px;height:8px;background:#dee2e6;border-radius:4px"></div>
-            <div class="position-absolute" id="merge-slider-track"
-                 style="top:14px;height:8px;border-radius:4px;background:linear-gradient(to right,#ffc107,#198754)"></div>
-            <input type="range" class="position-absolute w-100" id="merge-review-min"
-                   min="10" max="99" step="1" style="top:6px;height:24px;background:none;pointer-events:none;-webkit-appearance:none;appearance:none">
-            <input type="range" class="position-absolute w-100" id="merge-auto-min"
-                   min="10" max="99" step="1" style="top:6px;height:24px;background:none;pointer-events:none;-webkit-appearance:none;appearance:none">
-          </div>
-          <div class="d-flex justify-content-between mt-1">
-            <span class="small text-muted">10%</span>
-            <span class="small">
-              <span class="badge bg-warning text-dark">Review ≥ <span id="merge-review-val">55</span>%</span>
-              &nbsp;
-              <span class="badge bg-success">Auto ≥ <span id="merge-auto-val">95</span>%</span>
-            </span>
-            <span class="small text-muted">99%</span>
-          </div>
-          <style>
-            #merge-review-min::-webkit-slider-thumb,
-            #merge-auto-min::-webkit-slider-thumb {
-              pointer-events:all; width:20px; height:20px; border-radius:50%;
-              border:2px solid #fff; cursor:pointer; -webkit-appearance:none; appearance:none;
-              box-shadow:0 1px 4px rgba(0,0,0,.3);
-            }
-            #merge-review-min::-webkit-slider-thumb { background:#ffc107; }
-            #merge-auto-min::-webkit-slider-thumb  { background:#198754; }
-            #merge-review-min::-moz-range-thumb { width:18px;height:18px;border-radius:50%;background:#ffc107;border:2px solid #fff;cursor:pointer; }
-            #merge-auto-min::-moz-range-thumb   { width:18px;height:18px;border-radius:50%;background:#198754;border:2px solid #fff;cursor:pointer; }
-          </style>
-        </div>
-        <div class="col-12">
-          <label class="form-label fw-semibold">Max face angles stored per customer <span class="text-muted fw-normal small">(more = better cross-camera matching, more storage)</span></label>
-          <div class="d-flex align-items-center gap-2">
-            <input type="range" class="form-range flex-grow-1" id="set-max-face-angles" min="3" max="40" step="1">
-            <span id="set-max-face-angles-val" class="text-muted small" style="min-width:40px"></span>
+
+        <!-- ── Face Recognition ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2">Face Recognition</div>
+          <div class="card-body d-flex flex-column gap-3">
+            <div>
+              <label class="form-label fw-semibold mb-1">Face match threshold <span class="text-muted fw-normal small">(min similarity to count as a match)</span></label>
+              <div class="d-flex align-items-center gap-2">
+                <input type="range" class="form-range flex-grow-1" id="set-face-threshold" min="0.1" max="0.9" step="0.05">
+                <span id="set-face-threshold-val" class="text-muted small" style="min-width:40px"></span>
+              </div>
+            </div>
+            <div>
+              <label class="form-label fw-semibold mb-1">Identity link threshold <span class="text-muted fw-normal small">(confidence needed to link a track to a customer)</span></label>
+              <div class="d-flex align-items-center gap-2">
+                <input type="range" class="form-range flex-grow-1" id="set-link-threshold" min="0.1" max="0.95" step="0.05">
+                <span id="set-link-threshold-val" class="text-muted small" style="min-width:40px"></span>
+              </div>
+            </div>
+            <div>
+              <label class="form-label fw-semibold mb-1">Face quality minimum <span class="text-muted fw-normal small">(lower = accepts blurrier/smaller faces)</span></label>
+              <div class="d-flex align-items-center gap-2">
+                <input type="range" class="form-range flex-grow-1" id="set-face-quality-min" min="0.05" max="0.5" step="0.05">
+                <span id="set-face-quality-val" class="text-muted small" style="min-width:40px"></span>
+              </div>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" id="btn-save-recognition-settings">Save</button>
+              <span id="rec-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+              <div class="text-muted small mt-1">Changes take effect within 60 seconds (no restart needed).</div>
+            </div>
           </div>
         </div>
-        <div class="col-12">
-          <label class="form-label fw-semibold">Min angle distance <span class="text-muted fw-normal small">(how different two embeddings must be to count as a new angle — lower = more angles stored)</span></label>
-          <div class="d-flex align-items-center gap-2">
-            <input type="range" class="form-range flex-grow-1" id="set-min-angle-dist" min="0.10" max="0.60" step="0.05">
-            <span id="set-min-angle-dist-val" class="text-muted small" style="min-width:40px"></span>
+
+        <!-- ── Customer Merging ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2">Customer Merging</div>
+          <div class="card-body d-flex flex-column gap-3">
+            <div>
+              <label class="form-label fw-semibold mb-1">Merge thresholds</label>
+              <div class="text-muted small mb-2">
+                <span class="badge bg-warning text-dark me-1">Review</span> Show in panel for manual confirmation ·
+                <span class="badge bg-success me-1">Auto</span> Merge automatically without asking
+              </div>
+              <div class="position-relative" style="height:40px;user-select:none" id="merge-slider-wrap">
+                <div class="position-absolute w-100" style="top:14px;height:8px;background:#dee2e6;border-radius:4px"></div>
+                <div class="position-absolute" id="merge-slider-track"
+                     style="top:14px;height:8px;border-radius:4px;background:linear-gradient(to right,#ffc107,#198754)"></div>
+                <input type="range" class="position-absolute w-100" id="merge-review-min"
+                       min="10" max="99" step="1" style="top:6px;height:24px;background:none;pointer-events:none;-webkit-appearance:none;appearance:none">
+                <input type="range" class="position-absolute w-100" id="merge-auto-min"
+                       min="10" max="99" step="1" style="top:6px;height:24px;background:none;pointer-events:none;-webkit-appearance:none;appearance:none">
+              </div>
+              <div class="d-flex justify-content-between mt-1">
+                <span class="small text-muted">10%</span>
+                <span class="small">
+                  <span class="badge bg-warning text-dark">Review ≥ <span id="merge-review-val">55</span>%</span>
+                  &nbsp;
+                  <span class="badge bg-success">Auto ≥ <span id="merge-auto-val">95</span>%</span>
+                </span>
+                <span class="small text-muted">99%</span>
+              </div>
+              <style>
+                #merge-review-min::-webkit-slider-thumb,
+                #merge-auto-min::-webkit-slider-thumb {
+                  pointer-events:all; width:20px; height:20px; border-radius:50%;
+                  border:2px solid #fff; cursor:pointer; -webkit-appearance:none; appearance:none;
+                  box-shadow:0 1px 4px rgba(0,0,0,.3);
+                }
+                #merge-review-min::-webkit-slider-thumb { background:#ffc107; }
+                #merge-auto-min::-webkit-slider-thumb  { background:#198754; }
+                #merge-review-min::-moz-range-thumb { width:18px;height:18px;border-radius:50%;background:#ffc107;border:2px solid #fff;cursor:pointer; }
+                #merge-auto-min::-moz-range-thumb   { width:18px;height:18px;border-radius:50%;background:#198754;border:2px solid #fff;cursor:pointer; }
+              </style>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" id="btn-save-merge-settings">Save</button>
+              <span id="merge-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+            </div>
           </div>
         </div>
-        <div class="col-12">
-          <button class="btn btn-primary" id="btn-save-recognition-settings">Save Settings</button>
-          <span id="rec-settings-dirty" class="badge bg-warning text-dark ms-2 hidden">Unsaved changes</span>
-          <span id="rec-settings-saved" class="text-success small ms-2 hidden">Saved</span>
-          <div class="text-muted small mt-1">Changes take effect within 60 seconds (no restart needed).</div>
+
+        <!-- ── Enrollment ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2">Enrollment</div>
+          <div class="card-body d-flex flex-column gap-3">
+            <div>
+              <label class="form-label fw-semibold mb-1">Max face angles per customer <span class="text-muted fw-normal small">(more = better cross-camera matching, more storage)</span></label>
+              <div class="d-flex align-items-center gap-2">
+                <input type="range" class="form-range flex-grow-1" id="set-max-face-angles" min="3" max="40" step="1">
+                <span id="set-max-face-angles-val" class="text-muted small" style="min-width:40px"></span>
+              </div>
+            </div>
+            <div>
+              <label class="form-label fw-semibold mb-1">Min angle distance <span class="text-muted fw-normal small">(how different two embeddings must be to count as a new angle)</span></label>
+              <div class="d-flex align-items-center gap-2">
+                <input type="range" class="form-range flex-grow-1" id="set-min-angle-dist" min="0.10" max="0.60" step="0.05">
+                <span id="set-min-angle-dist-val" class="text-muted small" style="min-width:40px"></span>
+              </div>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" id="btn-save-enrollment-settings">Save</button>
+              <span id="enrollment-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+            </div>
+          </div>
         </div>
+
       </div>
     </div>
 

@@ -6559,6 +6559,10 @@ def api_settings():
             'auto_merge_min_sim':    float(get_setting('auto_merge_min_sim',    0.95) or 0.95),
             'max_face_angles':       int(float(get_setting('max_face_angles',   24) or 24)),
             'min_angle_distance':    float(get_setting('min_angle_distance',    0.25) or 0.25),
+            'kiosk_api_key':             str(get_setting('kiosk_api_key', '') or ''),
+            'kiosk_port':                int(get_setting('kiosk_port', 2323) or 2323),
+            'kiosk_inactivity_minutes':  int(get_setting('kiosk_inactivity_minutes', 0) or 0),
+            'kiosk_url':                 str(get_setting('kiosk_url', '') or ''),
         })
     data = request.json or {}
     saved = {}
@@ -6567,6 +6571,8 @@ def api_settings():
         ('link_threshold', float), ('face_quality_min', float),
         ('merge_suggest_min_sim', float), ('auto_merge_min_sim', float),
         ('max_face_angles', int), ('min_angle_distance', float),
+        ('kiosk_api_key', str), ('kiosk_port', int),
+        ('kiosk_inactivity_minutes', int), ('kiosk_url', str),
     ]:
         if key in data:
             try:
@@ -6678,6 +6684,71 @@ def api_recognition_control(action):
         import requests as _req
         r = _req.post(f'{RECOGNITION_SERVICE_URL}/control/{action}',
                       json=request.json or {}, timeout=5)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e), 'available': False}), 503
+
+
+# -----------------------------
+# Kiosk Tablet Management (admin/developer)
+# -----------------------------
+
+@app.route('/api/kiosk/tablets', methods=['GET', 'POST'])
+def api_kiosk_tablets():
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if request.method == 'GET':
+        raw = get_setting('kiosk_tablets', '[]')
+        try:
+            tablets = json.loads(raw)
+        except Exception:
+            tablets = []
+        return jsonify({'tablets': tablets})
+    data = request.json or {}
+    tablets = data.get('tablets', [])
+    set_setting('kiosk_tablets', json.dumps(tablets))
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@app.route('/api/kiosk/status/<path:tablet_ip>', methods=['GET'])
+def api_kiosk_status(tablet_ip):
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    api_key = get_setting('kiosk_api_key', '')
+    port    = int(get_setting('kiosk_port', 2323) or 2323)
+    headers = {'X-Api-Key': api_key} if api_key else {}
+    try:
+        import requests as _req
+        r = _req.get(f'http://{tablet_ip}:{port}/api/status', headers=headers, timeout=4)
+        return jsonify(r.json()), r.status_code
+    except Exception as e:
+        return jsonify({'error': str(e), 'available': False}), 503
+
+
+@app.route('/api/kiosk/control/<path:tablet_ip>/<action>', methods=['POST'])
+def api_kiosk_control(tablet_ip, action):
+    if not require_role('admin', 'developer'):
+        return jsonify({'error': 'Forbidden'}), 403
+    allowed = {
+        'screen/on', 'screen/off', 'reload', 'wake',
+        'screensaver/on', 'screensaver/off',
+        'reboot', 'restart-ui', 'clearCache',
+        'brightness', 'volume', 'url', 'toast',
+    }
+    if action not in allowed:
+        return jsonify({'error': 'Unknown action'}), 400
+    api_key = get_setting('kiosk_api_key', '')
+    port    = int(get_setting('kiosk_port', 2323) or 2323)
+    headers = {'X-Api-Key': api_key} if api_key else {}
+    try:
+        import requests as _req
+        r = _req.post(
+            f'http://{tablet_ip}:{port}/api/{action}',
+            json=request.json or {},
+            headers=headers,
+            timeout=5,
+        )
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({'error': str(e), 'available': False}), 503
