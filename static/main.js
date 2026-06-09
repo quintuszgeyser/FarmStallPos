@@ -6969,18 +6969,65 @@ function _renderKioskTablets(statuses) {
           </div>
         </div>
         ${online ? `
-        <div class="d-flex flex-wrap gap-2 small text-muted mb-2">
-          ${battery ? `<span title="Battery">${_batteryIcon(battery.level)} ${battery.level}%${battery.charging ? ' ⚡' : ''}</span>` : ''}
-          ${screen  ? `<span title="Screen">🖥 ${screen.on ? 'On' : 'Off'} · ${screen.brightness}% brightness</span>` : ''}
-          ${wifi    ? `<span title="WiFi">📶 ${wifi.ssid || 'WiFi'} · ${wifi.rssi} dBm</span>` : ''}
-          ${mem     ? `<span title="Memory">💾 ${mem.availableMB}MB free</span>` : ''}
+        <!-- Status row -->
+        <div class="d-flex flex-wrap gap-3 small text-muted mb-2">
+          ${battery ? `<span title="Battery">${_batteryIcon(battery.level)} ${battery.level}%${battery.charging ? ' ⚡' : ''} · ${battery.temperature}°C</span>` : ''}
+          ${screen  ? `<span title="Screen">🖥 ${screen.on ? 'On' : 'Off'} · ${screen.brightness}% brightness${screen.screensaverActive ? ' · screensaver' : ''}</span>` : ''}
+          ${wifi    ? `<span title="WiFi">📶 ${wifi.ssid || 'WiFi'} · ${wifi.rssi} dBm · ${wifi.ip}</span>` : ''}
+          ${mem     ? `<span title="Memory">💾 ${mem.availableMB}MB free / ${mem.totalMB}MB${mem.lowMemory ? ' ⚠ LOW' : ''}</span>` : ''}
+          ${s.audio ? `<span title="Volume">🔊 ${s.audio.volume ?? '?'}%</span>` : ''}
         </div>
-        <div class="d-flex flex-wrap gap-1">
-          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/on')">Screen On</button>
-          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/off')">Screen Off</button>
-          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','reload')">Reload</button>
+
+        <!-- Screen controls -->
+        <div class="mb-1 small text-muted fw-semibold">Screen</div>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/on')">On</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/off')">Off</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','wake')">Wake</button>
-          <button class="btn btn-outline-secondary btn-sm" onclick="kioskSetBrightness('${t.ip}', ${screen?.brightness ?? 80})">Brightness</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screensaver/on')">Screensaver On</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screensaver/off')">Screensaver Off</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskSetBrightness('${t.ip}', ${screen?.brightness ?? 80})">Brightness…</button>
+        </div>
+
+        <!-- WebView controls -->
+        <div class="mb-1 small text-muted fw-semibold">WebView</div>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','reload')">Reload</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','clearCache')">Clear Cache</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskNavigate('${t.ip}')">Navigate…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskRunJs('${t.ip}')">Run JS…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskTypeText('${t.ip}')">Type Text…</button>
+        </div>
+
+        <!-- Remote / D-pad -->
+        <div class="mb-1 small text-muted fw-semibold">Remote Control</div>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/up')">▲</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/down')">▼</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/left')">◀</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/right')">▶</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/select')">OK</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/back')">Back</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/home')">Home</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/menu')">Menu</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/playpause')">⏯</button>
+        </div>
+
+        <!-- Audio / Comms -->
+        <div class="mb-1 small text-muted fw-semibold">Audio &amp; Notifications</div>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskSetVolume('${t.ip}', ${s.audio?.volume})">Volume…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','audio/beep')">Beep</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskPlayAudio('${t.ip}')">Play Audio…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','audio/stop')">Stop Audio</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskTts('${t.ip}')">Speak…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskToast('${t.ip}')">Toast…</button>
+        </div>
+
+        <!-- System -->
+        <div class="mb-1 small text-muted fw-semibold">System</div>
+        <div class="d-flex flex-wrap gap-1">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','lock')">Lock</button>
           <button class="btn btn-outline-warning btn-sm" onclick="kioskAction('${t.ip}','restart-ui')">Restart UI</button>
           <button class="btn btn-outline-danger btn-sm" onclick="kioskReboot('${t.ip}')">Reboot</button>
         </div>` : '<div class="text-muted small">Cannot reach tablet — check Tailscale connection.</div>'}
@@ -7011,9 +7058,9 @@ async function removeKioskTablet(i) {
   await loadKioskTablets();
 }
 
-async function kioskAction(ip, action, body) {
+async function kioskAction(ip, action, extra) {
   try {
-    await api(`/api/kiosk/control/${ip}/${action}`, { method: 'POST', body: JSON.stringify(body || {}) });
+    await api(`/api/kiosk/control/${ip}`, { method: 'POST', body: JSON.stringify({ action, ...(extra || {}) }) });
     toast(`${action} sent`, 'success', 1500);
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -7029,6 +7076,50 @@ async function kioskSetBrightness(ip, current) {
   const n = parseInt(val);
   if (isNaN(n) || n < 0 || n > 100) { toast('Enter 0–100', 'error'); return; }
   await kioskAction(ip, 'brightness', { value: n });
+}
+
+async function kioskSetVolume(ip, current) {
+  const val = prompt('Volume (0–100):', current ?? 50);
+  if (val === null) return;
+  const n = parseInt(val);
+  if (isNaN(n) || n < 0 || n > 100) { toast('Enter 0–100', 'error'); return; }
+  await kioskAction(ip, 'volume', { value: n });
+}
+
+async function kioskNavigate(ip) {
+  const url = prompt('Navigate to URL:');
+  if (!url) return;
+  await kioskAction(ip, 'url', { url });
+}
+
+async function kioskToast(ip) {
+  const text = prompt('Message to show on tablet:');
+  if (!text) return;
+  await kioskAction(ip, 'toast', { text });
+}
+
+async function kioskTts(ip) {
+  const text = prompt('Text to speak:');
+  if (!text) return;
+  await kioskAction(ip, 'tts', { text });
+}
+
+async function kioskTypeText(ip) {
+  const text = prompt('Text to type into the WebView:');
+  if (!text) return;
+  await kioskAction(ip, 'remote/text', { text });
+}
+
+async function kioskRunJs(ip) {
+  const code = prompt('JavaScript to execute in WebView:');
+  if (!code) return;
+  await kioskAction(ip, 'js', { code });
+}
+
+async function kioskPlayAudio(ip) {
+  const url = prompt('Audio URL to play:');
+  if (!url) return;
+  await kioskAction(ip, 'audio/play', { url, loop: false });
 }
 
 document.getElementById('btn-kiosk-refresh')?.addEventListener('click', loadKioskTablets);
@@ -7072,8 +7163,8 @@ document.getElementById('btn-kiosk-sync-all')?.addEventListener('click', async (
     await api('/api/settings', { method: 'POST', body: JSON.stringify({ kiosk_url: url }) });
     // Push URL + reload to all tablets in parallel
     await Promise.all(_kioskTablets.map(t =>
-      api(`/api/kiosk/control/${t.ip}/url`, { method: 'POST', body: JSON.stringify({ url }) })
-        .then(() => api(`/api/kiosk/control/${t.ip}/reload`, { method: 'POST', body: '{}' }))
+      api(`/api/kiosk/control/${t.ip}`, { method: 'POST', body: JSON.stringify({ action: 'url', url }) })
+        .then(() => api(`/api/kiosk/control/${t.ip}`, { method: 'POST', body: JSON.stringify({ action: 'reload' }) }))
         .catch(() => {}) // offline tablets silently skipped
     ));
     if (statusEl) { show(statusEl); setTimeout(() => hide(statusEl), 3000); }

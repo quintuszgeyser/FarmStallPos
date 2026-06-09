@@ -6726,26 +6726,35 @@ def api_kiosk_status(tablet_ip):
         return jsonify({'error': str(e), 'available': False}), 503
 
 
-@app.route('/api/kiosk/control/<path:tablet_ip>/<action>', methods=['POST'])
-def api_kiosk_control(tablet_ip, action):
+@app.route('/api/kiosk/control/<path:tablet_ip>', methods=['POST'])
+def api_kiosk_control(tablet_ip):
     if not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
+    # action passed in body to avoid URL slash ambiguity
+    data   = request.json or {}
+    action = data.get('action', '')
     allowed = {
         'screen/on', 'screen/off', 'reload', 'wake',
         'screensaver/on', 'screensaver/off',
-        'reboot', 'restart-ui', 'clearCache',
-        'brightness', 'volume', 'url', 'toast',
+        'reboot', 'restart-ui', 'clearCache', 'lock',
+        'brightness', 'volume', 'url', 'toast', 'tts',
+        'audio/play', 'audio/stop', 'audio/beep',
+        'remote/up', 'remote/down', 'remote/left', 'remote/right',
+        'remote/select', 'remote/back', 'remote/home',
+        'remote/menu', 'remote/playpause',
+        'remote/text', 'js',
     }
     if action not in allowed:
-        return jsonify({'error': 'Unknown action'}), 400
+        return jsonify({'error': f'Unknown action: {action}'}), 400
     api_key = get_setting('kiosk_api_key', '')
     port    = int(get_setting('kiosk_port', 2323) or 2323)
     headers = {'X-Api-Key': api_key} if api_key else {}
+    payload = {k: v for k, v in data.items() if k != 'action'}
     try:
         import requests as _req
         r = _req.post(
             f'http://{tablet_ip}:{port}/api/{action}',
-            json=request.json or {},
+            json=payload,
             headers=headers,
             timeout=5,
         )
