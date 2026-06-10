@@ -6831,17 +6831,11 @@ function _setSlider(id, valId, val, fmt) {
 
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', async () => {
   try {
-    const [s, us] = await Promise.all([api('/api/settings'), api('/api/system/update-status')]);
+    const s = await api('/api/settings');
 
     // Business
     _setSlider('set-markup-pct', 'set-markup-pct-val', s.markup_percent, v => Math.round(v) + '%');
     _bindSlider('set-markup-pct', 'set-markup-pct-val', v => Math.round(v) + '%');
-
-    // Updates
-    const autoEl  = document.getElementById('set-auto-update-enabled');
-    const minorEl = document.getElementById('set-auto-update-minor');
-    if (autoEl)  autoEl.checked  = !!us.auto_update_enabled;
-    if (minorEl) minorEl.checked = !!us.auto_update_minor;
 
     // Kiosk connection settings
     const apiKeyEl     = document.getElementById('kiosk-api-key');
@@ -6860,9 +6854,11 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     _setSlider('set-face-threshold',   'set-face-threshold-val',  s.face_threshold);
     _setSlider('set-link-threshold',   'set-link-threshold-val',  s.link_threshold);
     _setSlider('set-face-quality-min', 'set-face-quality-val',    s.face_quality_min);
+    _setSlider('set-visit-min-gap',    'set-visit-min-gap-val',   s.visit_min_gap_seconds ?? 180, v => Math.round(v) + 's');
     _bindSlider('set-face-threshold',   'set-face-threshold-val');
     _bindSlider('set-link-threshold',   'set-link-threshold-val');
     _bindSlider('set-face-quality-min', 'set-face-quality-val');
+    _bindSlider('set-visit-min-gap',    'set-visit-min-gap-val',  v => Math.round(v) + 's');
 
     // Merging
     initMergeSlider(s.merge_suggest_min_sim, s.auto_merge_min_sim ?? 0.95);
@@ -6886,23 +6882,13 @@ document.getElementById('btn-save-business-settings')?.addEventListener('click',
   } catch(e) { toast(e.message, 'error'); }
 });
 
-document.getElementById('btn-save-update-settings')?.addEventListener('click', async () => {
-  try {
-    await api('/api/system/update-settings', { method: 'POST', body: JSON.stringify({
-      auto_update_enabled: document.getElementById('set-auto-update-enabled')?.checked ?? false,
-      auto_update_minor:   document.getElementById('set-auto-update-minor')?.checked   ?? false,
-    })});
-    _flashSaved('update-settings-saved');
-    toast('Update settings saved', 'success', 2000);
-  } catch(e) { toast(e.message, 'error'); }
-});
-
 document.getElementById('btn-save-recognition-settings')?.addEventListener('click', async () => {
   try {
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
-      face_threshold:   parseFloat(document.getElementById('set-face-threshold')?.value),
-      link_threshold:   parseFloat(document.getElementById('set-link-threshold')?.value),
-      face_quality_min: parseFloat(document.getElementById('set-face-quality-min')?.value),
+      face_threshold:       parseFloat(document.getElementById('set-face-threshold')?.value),
+      link_threshold:       parseFloat(document.getElementById('set-link-threshold')?.value),
+      face_quality_min:     parseFloat(document.getElementById('set-face-quality-min')?.value),
+      visit_min_gap_seconds: parseInt(document.getElementById('set-visit-min-gap')?.value || 180),
     })});
     _flashSaved('rec-settings-saved');
     toast('Recognition settings saved — takes effect within 60s', 'success', 3000);

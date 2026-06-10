@@ -23,9 +23,10 @@ def api_settings():
             'max_face_angles':       int(float(get_setting('max_face_angles',   24) or 24)),
             'min_angle_distance':    float(get_setting('min_angle_distance',    0.25) or 0.25),
             'kiosk_api_key':             str(get_setting('kiosk_api_key', '') or ''),
-            'kiosk_port':                int(get_setting('kiosk_port', 2323) or 2323),
+            'kiosk_port':                int(get_setting('kiosk_port', 8080) or 8080),
             'kiosk_inactivity_minutes':  int(get_setting('kiosk_inactivity_minutes', 0) or 0),
             'kiosk_url':                 str(get_setting('kiosk_url', '') or ''),
+            'visit_min_gap_seconds':     int(get_setting('visit_min_gap_seconds', 180) or 180),
         })
 
     data  = request.json or {}
@@ -37,6 +38,7 @@ def api_settings():
         ('max_face_angles', int), ('min_angle_distance', float),
         ('kiosk_api_key', str), ('kiosk_port', int),
         ('kiosk_inactivity_minutes', int), ('kiosk_url', str),
+        ('visit_min_gap_seconds', int),
     ]:
         if key in data:
             try:
