@@ -4024,6 +4024,15 @@ def _cleanup_stable_tracks(now: float):
                                        detail=f'grace={now - st.grace_started_at:.1f}s '
                                               f'extended={effective_grace != TRACK_GRACE_PERIOD}')
 
+            # Force-close any non-CLOSED track that hasn't been seen in TRACK_IDLE_EXPIRY
+            # seconds. This prevents zombie tracks (e.g. from service restarts, network
+            # drops, or Frigate event flickers) from permanently filling the per-camera cap.
+            if (st.state not in (PersonState.CLOSED, PersonState.GRACE)
+                    and (now - st.last_seen) > TRACK_IDLE_EXPIRY):
+                st.transition(PersonState.CLOSED)
+                log_identity_event('TRACK_ZOMBIE_CLOSED', st.stable_id,
+                                   detail=f'idle {now - st.last_seen:.0f}s in state {st.state.name}')
+
             if st.state == PersonState.CLOSED:
                 # Move to recently_closed if not already there
                 if sid not in _recently_closed:
