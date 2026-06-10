@@ -20,7 +20,7 @@ from models import (
     StockBatch, StockConsumption, StockAdjustment,
     Purchase, Sale, Special, SpecialLine, Invoice, KitchenOrder,
     Customer, CustomerPlate, CustomerFace, CustomerGait,
-    CustomerVisit, PlateDetection,
+    CustomerVisit, PlateDetection, Supplier,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
