@@ -1,0 +1,303 @@
+from decimal import Decimal
+from datetime import datetime
+
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import Numeric
+
+db = SQLAlchemy()
+
+SESSION_TIMEOUT_MINUTES = 10
+SESSION_LOGOUT_HOURS    = 2
+
+
+class User(db.Model):
+    __tablename__ = 'users'
+    id            = db.Column(db.Integer, primary_key=True)
+    username      = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    role          = db.Column(db.String(60), nullable=False, default='teller')
+    active        = db.Column(db.Boolean, nullable=False, default=True)
+
+    @property
+    def roles(self):
+        return [r.strip() for r in self.role.split(',') if r.strip()]
+
+    def has_role(self, *roles):
+        return any(r in self.roles for r in roles)
+
+
+class Product(db.Model):
+    __tablename__ = 'products'
+    id            = db.Column(db.Integer, primary_key=True)
+    name          = db.Column(db.String(120), unique=True, nullable=False)
+    price         = db.Column(Numeric(10, 2), nullable=True)
+    barcode       = db.Column(db.String(32), unique=True, nullable=True)
+    stock_qty     = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+    product_type  = db.Column(db.String(20), nullable=False, default='simple', server_default='simple')
+    unit_type     = db.Column(db.String(10), nullable=True)
+    base_unit     = db.Column(db.String(10), nullable=True)
+    sold_by_weight      = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    is_for_sale         = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    price_per_unit      = db.Column(Numeric(10, 4), nullable=True)
+    low_stock_threshold = db.Column(Numeric(10, 4), nullable=True)
+    package_size        = db.Column(Numeric(10, 4), nullable=True)
+    package_size_unit   = db.Column(db.String(10), nullable=True)
+    package_unit        = db.Column(db.String(30), nullable=True)
+    parent_stock_item_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
+    margin_pct           = db.Column(Numeric(5, 2), nullable=True)
+    is_prepared          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    is_available_online  = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    image_url            = db.Column(db.String(200), nullable=True)
+    description          = db.Column(db.Text, nullable=True)
+    is_archived          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    archived_reason      = db.Column(db.String(200), nullable=True)
+
+
+class ProductImage(db.Model):
+    __tablename__ = 'product_images'
+    id            = db.Column(db.Integer, primary_key=True)
+    product_id    = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    filename      = db.Column(db.String(200), nullable=False)
+    is_primary    = db.Column(db.Boolean, nullable=False, default=False)
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at    = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
+
+
+class KitchenOrder(db.Model):
+    __tablename__ = 'kitchen_orders'
+    id           = db.Column(db.Integer, primary_key=True)
+    sale_id      = db.Column(db.String(64), nullable=False, index=True)
+    product_id   = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
+    product_name = db.Column(db.String(120), nullable=False)
+    qty          = db.Column(Numeric(10, 4), nullable=False)
+    ingredients  = db.Column(db.Text, nullable=True)
+    status       = db.Column(db.String(20), nullable=False, default='pending')
+    sort_order   = db.Column(db.Integer, nullable=False, default=0)
+    queued_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    teller_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    notes        = db.Column(db.String(500), nullable=True)
+
+
+class Supplier(db.Model):
+    __tablename__ = 'suppliers'
+    id      = db.Column(db.Integer, primary_key=True)
+    name    = db.Column(db.String(120), unique=True, nullable=False)
+    phone   = db.Column(db.String(50),  nullable=True)
+    email   = db.Column(db.String(120), nullable=True)
+    website = db.Column(db.String(200), nullable=True)
+    notes   = db.Column(db.String(500), nullable=True)
+
+
+class RecipeLine(db.Model):
+    __tablename__ = 'recipe_lines'
+    id            = db.Column(db.Integer, primary_key=True)
+    product_id    = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    ingredient_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    qty_base      = db.Column(Numeric(10, 4), nullable=False)
+
+
+class StockBatch(db.Model):
+    __tablename__ = 'stock_batches'
+    id                  = db.Column(db.Integer, primary_key=True)
+    product_id          = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    qty_purchased_base  = db.Column(Numeric(10, 4), nullable=False)
+    qty_remaining_base  = db.Column(Numeric(10, 4), nullable=False)
+    cost_per_base_unit  = db.Column(Numeric(10, 6), nullable=False)
+    purchased_at        = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    supplier_id         = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    user_id             = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
+class StockConsumption(db.Model):
+    __tablename__ = 'stock_consumption'
+    id                  = db.Column(db.Integer, primary_key=True)
+    sale_id             = db.Column(db.String(64), nullable=False, index=True)
+    ingredient_id       = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    batch_id            = db.Column(db.Integer, db.ForeignKey('stock_batches.id'), nullable=False)
+    qty_consumed_base   = db.Column(Numeric(10, 4), nullable=False)
+    cost_per_base_unit  = db.Column(Numeric(10, 6), nullable=False)
+    consumed_at         = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class StockAdjustment(db.Model):
+    __tablename__ = 'stock_adjustments'
+    id                = db.Column(db.Integer, primary_key=True)
+    product_id        = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    adjustment_type   = db.Column(db.String(20), nullable=False)
+    qty_change_base   = db.Column(Numeric(10, 4), nullable=False)
+    system_qty_before = db.Column(Numeric(10, 4), nullable=False)
+    cost_written_off  = db.Column(Numeric(10, 4), nullable=True)
+    reason            = db.Column(db.String(200), nullable=False)
+    adjusted_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    user_id           = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
+class Purchase(db.Model):
+    __tablename__ = 'purchases'
+    id             = db.Column(db.Integer, primary_key=True)
+    product_id     = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    qty_added      = db.Column(db.Integer, nullable=False)
+    purchase_price = db.Column(Numeric(10, 2), nullable=False)
+    date_time      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    user_id        = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
+class Setting(db.Model):
+    __tablename__ = 'settings'
+    id    = db.Column(db.Integer, primary_key=True)
+    key   = db.Column(db.String(50), unique=True, nullable=False)
+    value = db.Column(db.String(200), nullable=False)
+
+
+class UserSession(db.Model):
+    __tablename__ = 'user_sessions'
+    id          = db.Column(db.Integer, primary_key=True)
+    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    logged_in   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    logged_out  = db.Column(db.DateTime, nullable=True)
+    last_active = db.Column(db.DateTime, nullable=True)
+
+
+class Sale(db.Model):
+    __tablename__ = 'sales'
+    id           = db.Column(db.Integer, primary_key=True)
+    sale_id      = db.Column(db.String(64), index=True, nullable=False)
+    date_time    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    product_id   = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    qty          = db.Column(Numeric(10, 4), nullable=False)
+    unit_price   = db.Column(Numeric(10, 2), nullable=False)
+    user_id      = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    customer_id  = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    voided       = db.Column(db.Boolean, nullable=False, default=False)
+    voided_by    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    voided_at    = db.Column(db.DateTime, nullable=True)
+    void_reason  = db.Column(db.String(200), nullable=True)
+    flagged      = db.Column(db.Boolean, nullable=False, default=False)
+    flag_note    = db.Column(db.String(500), nullable=True)
+    flag_resolved = db.Column(db.Boolean, nullable=False, default=False)
+    sub_log       = db.Column(db.Text, nullable=True)
+    discount_json = db.Column(db.Text, nullable=True)
+    discount_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
+class Special(db.Model):
+    __tablename__ = 'specials'
+    id            = db.Column(db.Integer, primary_key=True)
+    name          = db.Column(db.String(120), nullable=False)
+    special_price = db.Column(Numeric(10, 2), nullable=False)
+    active        = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    schedule      = db.Column(db.Text, nullable=True)
+
+
+class Invoice(db.Model):
+    __tablename__ = 'invoices'
+    id               = db.Column(db.Integer, primary_key=True)
+    invoice_number   = db.Column(db.String(20), unique=True, nullable=False)
+    created_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    due_date         = db.Column(db.String(20), nullable=True)
+    customer_name    = db.Column(db.String(120), nullable=True)
+    customer_phone   = db.Column(db.String(50), nullable=True)
+    customer_email   = db.Column(db.String(120), nullable=True)
+    customer_address = db.Column(db.Text, nullable=True)
+    notes            = db.Column(db.Text, nullable=True)
+    bank_details     = db.Column(db.Text, nullable=True)
+    lines_json       = db.Column(db.Text, nullable=False, default='[]')
+    sale_id          = db.Column(db.String(64), nullable=True)
+    subtotal         = db.Column(Numeric(10, 2), nullable=False, default=0)
+    discount_pct     = db.Column(Numeric(5, 2), nullable=True)
+    total            = db.Column(Numeric(10, 2), nullable=False, default=0)
+    status           = db.Column(db.String(20), nullable=False, default='draft')
+    created_by       = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    customer_id      = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+
+
+class SpecialLine(db.Model):
+    __tablename__ = 'special_lines'
+    id         = db.Column(db.Integer, primary_key=True)
+    special_id = db.Column(db.Integer, db.ForeignKey('specials.id'), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    qty        = db.Column(db.Integer, nullable=False, default=1)
+
+
+class Customer(db.Model):
+    __tablename__ = 'customers'
+    id              = db.Column(db.Integer, primary_key=True)
+    name            = db.Column(db.String(120), nullable=True)
+    phone           = db.Column(db.String(50),  nullable=True)
+    email           = db.Column(db.String(120), nullable=True)
+    notes           = db.Column(db.Text,        nullable=True)
+    enrolled_at     = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
+    enrolled_by     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    last_visit      = db.Column(db.DateTime,    nullable=True)
+    visit_count     = db.Column(db.Integer,     nullable=False, default=0)
+    active          = db.Column(db.Boolean,     nullable=False, default=True)
+    auto_enrolled   = db.Column(db.Boolean,     nullable=False, default=False)
+    customer_number = db.Column(db.String(20),  nullable=True, unique=True)
+    first_seen      = db.Column(db.DateTime,    nullable=True)
+    is_employee          = db.Column(db.Boolean, nullable=False, default=False)
+    merged_into          = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    is_online_customer   = db.Column(db.Boolean, nullable=False, default=False)
+    is_pos_customer      = db.Column(db.Boolean, nullable=False, default=False)
+
+    plates  = db.relationship('CustomerPlate', backref='customer', lazy='dynamic',
+                              foreign_keys='CustomerPlate.customer_id')
+    faces   = db.relationship('CustomerFace', backref='customer', lazy='dynamic',
+                              foreign_keys='CustomerFace.customer_id')
+    gaits   = db.relationship('CustomerGait', backref='customer', lazy='dynamic',
+                              foreign_keys='CustomerGait.customer_id')
+
+
+class CustomerPlate(db.Model):
+    __tablename__ = 'customer_plates'
+    id           = db.Column(db.Integer, primary_key=True)
+    customer_id  = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    plate_number = db.Column(db.String(20), nullable=False, unique=True)
+    enrolled_at  = db.Column(db.DateTime,   nullable=False, default=datetime.utcnow)
+    active       = db.Column(db.Boolean,    nullable=False, default=True)
+
+
+class CustomerFace(db.Model):
+    __tablename__ = 'customer_faces'
+    id           = db.Column(db.Integer, primary_key=True)
+    customer_id  = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    embedding    = db.Column(db.LargeBinary, nullable=False)
+    photo        = db.Column(db.LargeBinary, nullable=True)
+    body_photo   = db.Column(db.LargeBinary, nullable=True)
+    enrolled_at  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    active       = db.Column(db.Boolean,  nullable=False, default=True)
+    quality      = db.Column(Numeric(4, 3), nullable=True)
+    camera_source = db.Column(db.String(20), nullable=True)
+    original_customer_id = db.Column(db.Integer, nullable=True)
+
+
+class CustomerGait(db.Model):
+    __tablename__ = 'customer_gaits'
+    id            = db.Column(db.Integer, primary_key=True)
+    customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    gait_features = db.Column(db.LargeBinary, nullable=False)
+    enrolled_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    active        = db.Column(db.Boolean,  nullable=False, default=True)
+
+
+class CustomerVisit(db.Model):
+    __tablename__ = 'customer_visits'
+    id               = db.Column(db.Integer, primary_key=True)
+    customer_id      = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
+    detected_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    matched_signals  = db.Column(db.String(50),  nullable=False)
+    confidence_scores = db.Column(db.Text,       nullable=True)
+    camera_source    = db.Column(db.String(20),  nullable=True)
+    acknowledged     = db.Column(db.Boolean,     nullable=False, default=False)
+
+
+class PlateDetection(db.Model):
+    __tablename__ = 'plate_detections'
+    id            = db.Column(db.Integer, primary_key=True)
+    plate_number  = db.Column(db.String(20),  nullable=False)
+    confidence    = db.Column(Numeric(3, 2),  nullable=True)
+    detected_at   = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
+    customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    matched       = db.Column(db.Boolean,     nullable=False, default=False)
+    snapshot_path = db.Column(db.Text,        nullable=True)
+    camera_source = db.Column(db.String(20),  nullable=True)

@@ -1,30 +1,42 @@
-
+﻿
 # -*- coding: utf-8 -*-
-"""
-Farm Stall POS — v1.5.0
-- Recipe-based stock system with FIFO costing
-- Product types: simple, stock_item, recipe
-- Variable weight selling (sold_by_weight flag)
-- Package products auto-created from stock items
-- Backward compatible: existing simple products unchanged
-"""
 
 import os, uuid, logging, traceback, json
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 from io import StringIO, BytesIO
 from decimal import Decimal
+import time as _time
 
 from flask import Flask, jsonify, request, session, send_file, render_template, g
-from flask_sqlalchemy import SQLAlchemy
+from flask.json.provider import DefaultJSONProvider
 from sqlalchemy import text, func, Numeric
 from werkzeug.security import generate_password_hash, check_password_hash
 
+from models import (
+    db,
+    User, UserSession, Setting,
+    Product, ProductImage, RecipeLine,
+    StockBatch, StockConsumption, StockAdjustment,
+    Purchase, Sale, Special, SpecialLine, Invoice, KitchenOrder,
+    Customer, CustomerPlate, CustomerFace, CustomerGait,
+    CustomerVisit, PlateDetection,
+    SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
+)
+from helpers import (
+    get_setting, set_setting,
+    require_login, require_role, current_user,
+    seed_first_admin, get_online_user_id,
+    consume_fifo, reverse_fifo,
+    get_stock_level, get_fifo_cost_per_unit,
+    sync_sell_packages, _gen_barcode, _ean13_check, _serialize_product,
+)
+
 APP_VERSION = '1.6.0'
 
-# -----------------------------
+# ---------------------------------------------------------------------------
 # Logging
-# -----------------------------
+# ---------------------------------------------------------------------------
 LOG_PATH = os.path.join(os.path.dirname(__file__), 'logs', 'pos.log')
 os.makedirs(os.path.dirname(LOG_PATH), exist_ok=True)
 
@@ -33,751 +45,15 @@ logging.basicConfig(
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.FileHandler(LOG_PATH, encoding='utf-8'),
-        logging.StreamHandler(),           # also print to console
+        logging.StreamHandler(),
     ]
 )
 logger = logging.getLogger('pos')
 
-app = Flask(__name__)
 
-# Decimal → float for JSON (Numeric columns return Decimal)
-from flask.json.provider import DefaultJSONProvider
-class _JSONProvider(DefaultJSONProvider):
-    def default(self, o):
-        if isinstance(o, Decimal):
-            return float(o)
-        return super().default(o)
-app.json_provider_class = _JSONProvider
-app.json = _JSONProvider(app)
-app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key')
-
-# ---- Request/response logging ----
-import time as _time
-
-@app.before_request
-def _log_request():
-    g._req_start = _time.monotonic()
-    if request.path.startswith('/static'):
-        return
-    user_id = session.get('user_id', '-')
-    logger.info('REQ  %s %s  user=%s', request.method, request.path, user_id)
-
-    uid = session.get('user_id')
-    if not uid:
-        return
-    # /api/me is a passive presence-check — don't create sessions from it
-    if request.path == '/api/me':
-        return
-    now = datetime.utcnow()
-    sid = session.get('session_id')
-    if sid:
-        sess = db.session.get(UserSession, sid)
-        if sess and sess.logged_out is None:
-            cutoff = now - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
-            last   = sess.last_active or sess.logged_in
-            if last < cutoff:
-                sess.logged_out = last + timedelta(minutes=SESSION_TIMEOUT_MINUTES)
-                db.session.commit()
-                session.pop('session_id', None)
-                sid = None
-            else:
-                sess.last_active = now
-                db.session.commit()
-        elif sess is None:
-            # Cookie points at a deleted/missing session record — clear it
-            session.pop('session_id', None)
-            sid = None
-    if not sid:
-        # Only open a new session if no other open session exists for this user
-        # (prevents duplicates from parallel browser requests)
-        existing = UserSession.query.filter_by(
-            user_id=uid, logged_out=None
-        ).order_by(UserSession.logged_in.desc()).first()
-        if existing:
-            session['session_id'] = existing.id
-            existing.last_active  = now
-            db.session.commit()
-        else:
-            new_sess = UserSession(user_id=uid, logged_in=now, last_active=now)
-            db.session.add(new_sess)
-            db.session.commit()
-            session['session_id'] = new_sess.id
-
-@app.after_request
-def _log_response(response):
-    if request.path.startswith('/static'):
-        return response
-    elapsed_ms = round((_time.monotonic() - getattr(g, '_req_start', 0)) * 1000)
-    level = logging.WARNING if response.status_code >= 400 else logging.INFO
-    logger.log(level, 'RESP %s %s  status=%s  %dms',
-               request.method, request.path, response.status_code, elapsed_ms)
-    return response
-
-@app.errorhandler(Exception)
-def _handle_exception(e):
-    logger.error('UNHANDLED EXCEPTION  %s %s\n%s',
-                 request.method, request.path, traceback.format_exc())
-    return jsonify({'error': 'Internal server error', 'detail': str(e)}), 500
-
-# ---- DB URL rewrite to psycopg driver ----
-db_url = os.getenv('DATABASE_URL', 'sqlite:///pos.db')
-if db_url.startswith('postgres://'):
-    db_url = db_url.replace('postgres://', 'postgresql+psycopg://', 1)
-elif db_url.startswith('postgresql://') and '+psycopg://' not in db_url:
-    db_url = 'postgresql+psycopg://' + db_url.split('://', 1)[1]
-
-app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
-
-# -----------------------------
-# Models
-# -----------------------------
-class User(db.Model):
-    __tablename__ = 'users'
-    id            = db.Column(db.Integer, primary_key=True)
-    username      = db.Column(db.String(80), unique=True, nullable=False)
-    password_hash = db.Column(db.String(200), nullable=False)
-    role          = db.Column(db.String(60), nullable=False, default='teller')
-
-    @property
-    def roles(self):
-        return [r.strip() for r in self.role.split(',') if r.strip()]
-
-    def has_role(self, *roles):
-        return any(r in self.roles for r in roles)
-    active        = db.Column(db.Boolean, nullable=False, default=True)
-
-
-class Product(db.Model):
-    __tablename__ = 'products'
-    id            = db.Column(db.Integer, primary_key=True)
-    name          = db.Column(db.String(120), unique=True, nullable=False)
-    price         = db.Column(Numeric(10, 2), nullable=True)   # null for stock_items (cost from batches)
-    barcode       = db.Column(db.String(32), unique=True, nullable=True)
-    stock_qty     = db.Column(db.Integer, nullable=False, default=0, server_default='0')  # simple only
-
-    # Product type system
-    product_type  = db.Column(db.String(20), nullable=False, default='simple', server_default='simple')
-    # 'simple'     — fixed unit product, integer stock_qty (legacy behaviour)
-    # 'stock_item' — raw ingredient/bulk stock tracked in FIFO batches by unit (g/ml/unit)
-    # 'recipe'     — composed of other products via recipe_lines
-
-    # Unit system (stock_item only)
-    unit_type     = db.Column(db.String(10), nullable=True)   # 'weight' | 'volume' | 'count'
-    base_unit     = db.Column(db.String(10), nullable=True)   # 'g' | 'ml' | 'unit'
-
-    # Selling config
-    sold_by_weight      = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
-    # True → teller enters qty at till (biltong, cheese); qty in Sale = base units consumed
-    is_for_sale         = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
-    # False → internal ingredient only, never shown at teller
-    price_per_unit      = db.Column(Numeric(10, 4), nullable=True)
-    # For sold_by_weight products: R per base unit (e.g. R0.50 per g)
-
-    # Stock management
-    low_stock_threshold = db.Column(Numeric(10, 4), nullable=True)
-    package_size        = db.Column(Numeric(10, 4), nullable=True)   # always stored in base unit (e.g. 1000 ml per carton)
-    package_size_unit   = db.Column(db.String(10), nullable=True)    # display unit the admin entered (e.g. 'L', 'kg')
-    package_unit        = db.Column(db.String(30), nullable=True)    # name of the package (e.g. 'carton', 'bag')
-
-    # Package / child product link
-    parent_stock_item_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
-    margin_pct           = db.Column(Numeric(5, 2), nullable=True)   # stored margin % for this product
-    is_prepared          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
-    # TRUE = product requires kitchen preparation; triggers a KitchenOrder on checkout
-    is_available_online  = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
-    # TRUE = visible on the Lady Coleen web shop
-    image_url            = db.Column(db.String(200), nullable=True)
-    # Primary image filename — kept in sync with product_images.is_primary for backward compat
-    description          = db.Column(db.Text, nullable=True)
-    is_archived          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
-    # TRUE = discontinued product, hidden everywhere (not the same as is_for_sale=false which means internal ingredient)
-    archived_reason      = db.Column(db.String(200), nullable=True)
-    # 'cascade' = auto-archived because an ingredient was archived
-
-
-class ProductImage(db.Model):
-    __tablename__ = 'product_images'
-    id            = db.Column(db.Integer, primary_key=True)
-    product_id    = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    filename      = db.Column(db.String(200), nullable=False)
-    is_primary    = db.Column(db.Boolean, nullable=False, default=False)
-    display_order = db.Column(db.Integer, nullable=False, default=0)
-    created_at    = db.Column(db.DateTime(timezone=True), server_default=db.func.now())
-
-
-class KitchenOrder(db.Model):
-    __tablename__ = 'kitchen_orders'
-    id           = db.Column(db.Integer, primary_key=True)
-    sale_id      = db.Column(db.String(64), nullable=False, index=True)
-    product_id   = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
-    product_name = db.Column(db.String(120), nullable=False)        # snapshot — survives product rename
-    qty          = db.Column(Numeric(10, 4), nullable=False)
-    ingredients  = db.Column(db.Text, nullable=True)                # JSON snapshot of recipe lines
-    status       = db.Column(db.String(20), nullable=False, default='pending')  # pending | completed | cancelled
-    sort_order   = db.Column(db.Integer, nullable=False, default=0)  # lower = higher priority in queue
-    queued_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    completed_at = db.Column(db.DateTime, nullable=True)
-    teller_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    notes        = db.Column(db.String(500), nullable=True)
-
-
-class Supplier(db.Model):
-    __tablename__ = 'suppliers'
-    id      = db.Column(db.Integer, primary_key=True)
-    name    = db.Column(db.String(120), unique=True, nullable=False)
-    phone   = db.Column(db.String(50),  nullable=True)
-    email   = db.Column(db.String(120), nullable=True)
-    website = db.Column(db.String(200), nullable=True)
-    notes   = db.Column(db.String(500), nullable=True)
-
-
-class RecipeLine(db.Model):
-    __tablename__ = 'recipe_lines'
-    id            = db.Column(db.Integer, primary_key=True)
-    product_id    = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    ingredient_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    qty_base      = db.Column(Numeric(10, 4), nullable=False)   # in ingredient's base unit per 1 sale
-
-
-class StockBatch(db.Model):
-    __tablename__ = 'stock_batches'
-    id                  = db.Column(db.Integer, primary_key=True)
-    product_id          = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    qty_purchased_base  = db.Column(Numeric(10, 4), nullable=False)
-    qty_remaining_base  = db.Column(Numeric(10, 4), nullable=False)
-    cost_per_base_unit  = db.Column(Numeric(10, 6), nullable=False)   # R per g / ml / unit
-    purchased_at        = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    supplier_id         = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
-    user_id             = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-
-
-class StockConsumption(db.Model):
-    __tablename__ = 'stock_consumption'
-    id                  = db.Column(db.Integer, primary_key=True)
-    sale_id             = db.Column(db.String(64), nullable=False, index=True)
-    ingredient_id       = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    batch_id            = db.Column(db.Integer, db.ForeignKey('stock_batches.id'), nullable=False)
-    qty_consumed_base   = db.Column(Numeric(10, 4), nullable=False)
-    cost_per_base_unit  = db.Column(Numeric(10, 6), nullable=False)   # snapshot at time of sale
-    consumed_at         = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-
-
-class StockAdjustment(db.Model):
-    __tablename__ = 'stock_adjustments'
-    id                = db.Column(db.Integer, primary_key=True)
-    product_id        = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    adjustment_type   = db.Column(db.String(20), nullable=False)  # 'stocktake' | 'writeoff'
-    qty_change_base   = db.Column(Numeric(10, 4), nullable=False)  # negative = reduction
-    system_qty_before = db.Column(Numeric(10, 4), nullable=False)  # stock level before adjustment
-    cost_written_off  = db.Column(Numeric(10, 4), nullable=True)   # writeoff only: COGS value lost
-    reason            = db.Column(db.String(200), nullable=False)
-    adjusted_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    user_id           = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-
-
-class Purchase(db.Model):
-    __tablename__ = 'purchases'
-    id             = db.Column(db.Integer, primary_key=True)
-    product_id     = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    qty_added      = db.Column(db.Integer, nullable=False)
-    purchase_price = db.Column(Numeric(10, 2), nullable=False)
-    date_time      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    user_id        = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-
-
-class Setting(db.Model):
-    __tablename__ = 'settings'
-    id    = db.Column(db.Integer, primary_key=True)
-    key   = db.Column(db.String(50), unique=True, nullable=False)
-    value = db.Column(db.String(200), nullable=False)
-
-
-class UserSession(db.Model):
-    __tablename__ = 'user_sessions'
-    id          = db.Column(db.Integer, primary_key=True)
-    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
-    logged_in   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    logged_out  = db.Column(db.DateTime, nullable=True)
-    last_active = db.Column(db.DateTime, nullable=True)
-
-SESSION_TIMEOUT_MINUTES = 10    # idle window for time-tracking purposes
-SESSION_LOGOUT_HOURS    = 2     # hard logout after this much total inactivity
-
-
-class Sale(db.Model):
-    __tablename__ = 'sales'
-    id          = db.Column(db.Integer, primary_key=True)
-    sale_id     = db.Column(db.String(64), index=True, nullable=False)
-    date_time   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    product_id  = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    qty         = db.Column(Numeric(10, 4), nullable=False)   # Numeric for variable weight support
-    unit_price  = db.Column(Numeric(10, 2), nullable=False)
-    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)  # Link sale to detected customer
-    voided      = db.Column(db.Boolean, nullable=False, default=False)
-    voided_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    voided_at   = db.Column(db.DateTime, nullable=True)
-    void_reason = db.Column(db.String(200), nullable=True)
-    flagged     = db.Column(db.Boolean, nullable=False, default=False)
-    flag_note   = db.Column(db.String(500), nullable=True)
-    flag_resolved = db.Column(db.Boolean, nullable=False, default=False)
-    sub_log      = db.Column(db.Text, nullable=True)   # JSON {ingredient_id: replacement_id} for recipe subs
-    discount_json = db.Column(db.Text, nullable=True)  # JSON {item:{type,value}, cart:{type,value}} if discounts applied
-    discount_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)  # admin who applied discount
-
-
-class Special(db.Model):
-    __tablename__ = 'specials'
-    id            = db.Column(db.Integer, primary_key=True)
-    name          = db.Column(db.String(120), nullable=False)
-    special_price = db.Column(Numeric(10, 2), nullable=False)
-    active        = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
-    # JSON array of schedule windows: [{"days":[0,1,2,3,4,5,6], "all_day":true, "start":"09:00", "end":"17:00"}]
-    # days: 0=Mon … 6=Sun. Empty array = always active.
-    schedule      = db.Column(db.Text, nullable=True)
-
-
-class Invoice(db.Model):
-    __tablename__ = 'invoices'
-    id           = db.Column(db.Integer, primary_key=True)
-    invoice_number = db.Column(db.String(20), unique=True, nullable=False)
-    created_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    due_date     = db.Column(db.String(20), nullable=True)
-    customer_name = db.Column(db.String(120), nullable=True)
-    customer_phone = db.Column(db.String(50), nullable=True)
-    customer_email = db.Column(db.String(120), nullable=True)
-    customer_address = db.Column(db.Text, nullable=True)
-    notes        = db.Column(db.Text, nullable=True)
-    bank_details = db.Column(db.Text, nullable=True)
-    lines_json   = db.Column(db.Text, nullable=False, default='[]')
-    sale_id      = db.Column(db.String(64), nullable=True)  # set when finalised
-    subtotal     = db.Column(Numeric(10, 2), nullable=False, default=0)
-    discount_pct = db.Column(Numeric(5, 2), nullable=True)
-    total        = db.Column(Numeric(10, 2), nullable=False, default=0)
-    status       = db.Column(db.String(20), nullable=False, default='draft')  # draft | sent | paid
-    created_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    customer_id  = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
-
-
-class SpecialLine(db.Model):
-    __tablename__ = 'special_lines'
-    id         = db.Column(db.Integer, primary_key=True)
-    special_id = db.Column(db.Integer, db.ForeignKey('specials.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    qty        = db.Column(db.Integer, nullable=False, default=1)
-
-
-class Customer(db.Model):
-    __tablename__ = 'customers'
-    id              = db.Column(db.Integer, primary_key=True)
-    name            = db.Column(db.String(120), nullable=True)  # Made nullable for auto-enrollment
-    phone           = db.Column(db.String(50),  nullable=True)
-    email           = db.Column(db.String(120), nullable=True)
-    notes           = db.Column(db.Text,        nullable=True)
-    enrolled_at     = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
-    enrolled_by     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    last_visit      = db.Column(db.DateTime,    nullable=True)
-    visit_count     = db.Column(db.Integer,     nullable=False, default=0)
-    active          = db.Column(db.Boolean,     nullable=False, default=True)
-    # Phase 1: Auto-enrollment fields
-    auto_enrolled   = db.Column(db.Boolean,     nullable=False, default=False)
-    customer_number = db.Column(db.String(20),  nullable=True, unique=True)
-    first_seen      = db.Column(db.DateTime,    nullable=True)
-    is_employee          = db.Column(db.Boolean, nullable=False, default=False)
-    merged_into          = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
-    is_online_customer   = db.Column(db.Boolean, nullable=False, default=False)
-    is_pos_customer      = db.Column(db.Boolean, nullable=False, default=False)
-
-    # Relationships used by profile/delete endpoints
-    plates  = db.relationship('CustomerPlate', backref='customer', lazy='dynamic',
-                              foreign_keys='CustomerPlate.customer_id')
-    faces   = db.relationship('CustomerFace', backref='customer', lazy='dynamic',
-                              foreign_keys='CustomerFace.customer_id')
-    gaits   = db.relationship('CustomerGait', backref='customer', lazy='dynamic',
-                              foreign_keys='CustomerGait.customer_id')
-
-
-class CustomerPlate(db.Model):
-    __tablename__ = 'customer_plates'
-    id          = db.Column(db.Integer, primary_key=True)
-    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
-    plate_number = db.Column(db.String(20), nullable=False, unique=True)
-    enrolled_at = db.Column(db.DateTime,   nullable=False, default=datetime.utcnow)
-    active      = db.Column(db.Boolean,    nullable=False, default=True)
-
-
-class CustomerFace(db.Model):
-    __tablename__ = 'customer_faces'
-    id          = db.Column(db.Integer, primary_key=True)
-    customer_id = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
-    embedding   = db.Column(db.LargeBinary, nullable=False)  # float32[512] = 2048 bytes
-    photo       = db.Column(db.LargeBinary, nullable=True)   # JPEG of aligned face crop
-    body_photo  = db.Column(db.LargeBinary, nullable=True)   # JPEG of full-body snapshot thumbnail
-    enrolled_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    active      = db.Column(db.Boolean,  nullable=False, default=True)
-    quality     = db.Column(Numeric(4, 3), nullable=True)    # face extraction quality score 0–1
-    camera_source = db.Column(db.String(20), nullable=True)  # camera that produced this embedding
-    original_customer_id = db.Column(db.Integer, nullable=True)  # pre-merge origin (for unmerge)
-
-
-class CustomerGait(db.Model):
-    __tablename__ = 'customer_gaits'
-    id            = db.Column(db.Integer, primary_key=True)
-    customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
-    gait_features = db.Column(db.LargeBinary, nullable=False)  # serialized numpy float32 vector
-    enrolled_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    active        = db.Column(db.Boolean,  nullable=False, default=True)
-
-
-class CustomerVisit(db.Model):
-    __tablename__ = 'customer_visits'
-    id               = db.Column(db.Integer, primary_key=True)
-    customer_id      = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=False)
-    detected_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    matched_signals  = db.Column(db.String(50),  nullable=False)  # e.g. "plate,face"
-    confidence_scores = db.Column(db.Text,       nullable=True)   # JSON {"plate":1.0,"face":0.92}
-    camera_source    = db.Column(db.String(20),  nullable=True)   # 'indoor' | 'outdoor'
-    acknowledged     = db.Column(db.Boolean,     nullable=False, default=False)
-
-
-class PlateDetection(db.Model):
-    __tablename__ = 'plate_detections'
-    id            = db.Column(db.Integer, primary_key=True)
-    plate_number  = db.Column(db.String(20),  nullable=False)
-    confidence    = db.Column(Numeric(3, 2),  nullable=True)
-    detected_at   = db.Column(db.DateTime,    nullable=False, default=datetime.utcnow)
-    customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
-    matched       = db.Column(db.Boolean,     nullable=False, default=False)
-    snapshot_path = db.Column(db.Text,        nullable=True)
-    camera_source = db.Column(db.String(20),  nullable=True)
-
-
-# -----------------------------
-# Utilities
-# -----------------------------
-def get_setting(key, default=None):
-    s = Setting.query.filter_by(key=key).first()
-    return s.value if s else default
-
-def set_setting(key, value):
-    s = Setting.query.filter_by(key=key).first()
-    if s:
-        s.value = str(value)
-    else:
-        s = Setting(key=key, value=str(value))
-        db.session.add(s)
-    db.session.commit()
-
-def require_login():
-    if 'user_id' not in session:
-        return False
-    user = db.session.get(User, session['user_id'])
-    if not user or not user.active:
-        session.clear()
-        return False
-    # Hard logout after 2 hours of total inactivity
-    sid = session.get('session_id')
-    if sid:
-        sess = db.session.get(UserSession, sid)
-        if sess and sess.logged_out is None:
-            last = sess.last_active or sess.logged_in
-            if last < datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS):
-                sess.logged_out = last
-                db.session.commit()
-                session.clear()
-                return False
-    return True
-
-def current_user():
-    if 'user_id' not in session:
-        return None
-    return db.session.get(User, session.get('user_id'))
-
-def require_role(*roles):
-    """Returns True if the current user has any of the given roles."""
-    u = current_user()
-    return bool(u and u.has_role(*roles))
-
-def seed_first_admin():
-    if User.query.count() == 0:
-        admin_user = os.getenv('ADMIN_USER', 'admin')
-        admin_pass = os.getenv('ADMIN_PASS', 'admin123')
-        hashed = generate_password_hash(admin_pass)
-        db.session.add(User(username=admin_user, password_hash=hashed, role='admin', active=True))
-        db.session.commit()
-        default_markup = os.getenv('DEFAULT_MARKUP_PERCENT')
-        if default_markup:
-            try:
-                set_setting('markup_percent', float(default_markup))
-            except Exception:
-                pass
-    # Ensure the virtual "Online Shop" user exists (active=False — cannot log in)
-    if not User.query.filter_by(username='Online Shop').first():
-        db.session.add(User(
-            username='Online Shop',
-            password_hash='!',   # invalid hash — login always fails
-            role='teller',
-            active=False,
-        ))
-        db.session.commit()
-
-
-def get_online_user_id():
-    """Return the ID of the virtual Online Shop user, or None if not found."""
-    u = User.query.filter_by(username='Online Shop').first()
-    return u.id if u else None
-
-
-# -----------------------------
-# FIFO Stock Functions
-# -----------------------------
-def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0):
-    """
-    Consume qty_needed_base units of ingredient_id from FIFO batches.
-    Recursive: if the ingredient itself has recipe_lines (compound ingredient),
-    recurse into each sub-ingredient instead.
-    Returns total COGS as Decimal. Never raises — consumes what's available.
-    """
-    if _depth > 10:
-        return Decimal('0')
-
-    qty_needed = Decimal(str(qty_needed_base))
-
-    # Check if this ingredient is itself a recipe (compound ingredient e.g. Cheese Blend)
-    sub_lines = RecipeLine.query.filter_by(product_id=ingredient_id).all()
-    if sub_lines:
-        total_cost = Decimal('0')
-        for sub in sub_lines:
-            sub_qty = sub.qty_base * qty_needed
-            total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1)
-        return total_cost
-
-    # Direct ingredient: consume from FIFO batches oldest-first.
-    # Only use batches purchased ON OR BEFORE the sale date so that future
-    # stock (bought later at a different price) never distorts historical COGS.
-    # Fall back to all available batches if none exist before the sale date
-    # (e.g. backdated sales or opening stock).
-    qty_to_consume = qty_needed
-    total_cost = Decimal('0')
-
-    batch_q = (StockBatch.query
-               .filter_by(product_id=ingredient_id)
-               .filter(StockBatch.qty_remaining_base > 0)
-               .with_for_update()
-               .order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc()))
-
-    batches = batch_q.filter(StockBatch.purchased_at <= now).all()
-    if not batches:
-        # Fallback: use any available batch (covers opening stock with no purchase date)
-        batches = batch_q.all()
-
-    for batch in batches:
-        if qty_to_consume <= 0:
-            break
-        take = min(Decimal(str(batch.qty_remaining_base)), qty_to_consume)
-        batch.qty_remaining_base = Decimal(str(batch.qty_remaining_base)) - take
-        cost = take * Decimal(str(batch.cost_per_base_unit))
-        total_cost += cost
-        db.session.add(StockConsumption(
-            sale_id=sale_id,
-            ingredient_id=ingredient_id,
-            batch_id=batch.id,
-            qty_consumed_base=take,
-            cost_per_base_unit=batch.cost_per_base_unit,
-            consumed_at=now
-        ))
-        qty_to_consume -= take
-
-    return total_cost
-
-
-def reverse_fifo(sale_id):
-    """Restore all batch quantities consumed by this sale_id. Delete consumption records."""
-    records = StockConsumption.query.filter_by(sale_id=sale_id).all()
-    for r in records:
-        batch = db.session.get(StockBatch, r.batch_id, with_for_update=True)
-        if batch:
-            batch.qty_remaining_base = (
-                Decimal(str(batch.qty_remaining_base)) + Decimal(str(r.qty_consumed_base))
-            )
-        db.session.delete(r)
-
-
-def get_stock_level(product_id):
-    """Current stock level for a stock_item: sum of remaining batch quantities."""
-    result = db.session.query(
-        func.sum(StockBatch.qty_remaining_base)
-    ).filter_by(product_id=product_id).scalar()
-    return float(result or 0)
-
-
-def get_fifo_cost_per_unit(product_id):
-    """Current FIFO cost: cost_per_base_unit from oldest non-empty batch."""
-    batch = (StockBatch.query
-             .filter_by(product_id=product_id)
-             .filter(StockBatch.qty_remaining_base > 0)
-             .order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc())
-             .first())
-    return float(batch.cost_per_base_unit) if batch else 0.0
-
-
-def sync_sell_packages(product_id, packages):
-    """
-    Create/update/delete auto-managed package products for a stock_item.
-    packages = [{name, qty_base, price, barcode}]
-    """
-    # Get existing auto-created packages for this stock item
-    existing = Product.query.filter_by(parent_stock_item_id=product_id).all()
-    existing_by_name = {p.name: p for p in existing}
-    submitted_names = {pkg['name'] for pkg in packages}
-
-    # Delete packages that were removed
-    for name, prod in existing_by_name.items():
-        if name not in submitted_names:
-            # Remove recipe lines first
-            RecipeLine.query.filter_by(product_id=prod.id).delete()
-            # Only delete if no sales history
-            if Sale.query.filter_by(product_id=prod.id).count() == 0:
-                db.session.delete(prod)
-
-    parent = db.session.get(Product, product_id)
-
-    for pkg in packages:
-        pkg_name = pkg.get('name', '').strip()
-        qty_base = Decimal(str(pkg.get('qty_base', 0)))
-        price    = Decimal(str(pkg.get('price', 0)))
-        barcode  = pkg.get('barcode', '').strip() or None
-
-        if not pkg_name or qty_base <= 0:
-            continue
-
-        if pkg_name in existing_by_name:
-            # Update existing
-            prod = existing_by_name[pkg_name]
-            prod.price = price
-            if barcode:
-                # Only update if not taken by another product
-                clash = Product.query.filter(Product.barcode == barcode, Product.id != prod.id).first()
-                if not clash:
-                    prod.barcode = barcode
-            # Update recipe line
-            RecipeLine.query.filter_by(product_id=prod.id).delete()
-            db.session.add(RecipeLine(
-                product_id=prod.id,
-                ingredient_id=product_id,
-                qty_base=qty_base
-            ))
-        else:
-            # Create new package product
-            # Auto-generate barcode if not provided
-            if not barcode:
-                barcode = _gen_barcode(product_id)
-            # Ensure barcode unique
-            if Product.query.filter_by(barcode=barcode).first():
-                barcode = _gen_barcode(product_id)
-
-            prod = Product(
-                name=pkg_name,
-                price=price,
-                barcode=barcode,
-                product_type='recipe',
-                is_for_sale=True,
-                sold_by_weight=False,
-                parent_stock_item_id=product_id
-            )
-            db.session.add(prod)
-            db.session.flush()   # get prod.id
-            db.session.add(RecipeLine(
-                product_id=prod.id,
-                ingredient_id=product_id,
-                qty_base=qty_base
-            ))
-
-
-def _gen_barcode(seed_id):
-    """Generate a unique EAN-13-style internal barcode."""
-    import random
-    for _ in range(30):
-        rnd = str(random.randint(0, 99999)).zfill(5)
-        core = f"200{str(seed_id).zfill(5)}{rnd}"[:12]
-        check = _ean13_check(core)
-        candidate = core + check
-        if not Product.query.filter_by(barcode=candidate).first():
-            return candidate
-    return str(uuid.uuid4().int)[:13]
-
-
-def _ean13_check(code12):
-    s = sum(int(code12[i]) * (1 if i % 2 == 0 else 3) for i in range(12))
-    return str((10 - s % 10) % 10)
-
-
-def _serialize_product(p, include_recipe=False, include_packages=False):
-    d = {
-        'id':           p.id,
-        'name':         p.name,
-        'price':        float(p.price) if p.price is not None else None,
-        'barcode':      p.barcode,
-        'stock_qty':    p.stock_qty,
-        'product_type': p.product_type,
-        'unit_type':    p.unit_type,
-        'base_unit':    p.base_unit,
-        'sold_by_weight':       p.sold_by_weight,
-        'is_for_sale':          p.is_for_sale,
-        'price_per_unit':       float(p.price_per_unit) if p.price_per_unit is not None else None,
-        'low_stock_threshold':  float(p.low_stock_threshold) if p.low_stock_threshold is not None else None,
-        'package_size':         float(p.package_size) if p.package_size is not None else None,
-        'package_size_unit':    p.package_size_unit,
-        'package_unit':         p.package_unit,
-        'parent_stock_item_id': p.parent_stock_item_id,
-        'margin_pct':      float(p.margin_pct) if p.margin_pct is not None else None,
-        'is_prepared':          p.is_prepared,
-        'is_available_online':  p.is_available_online,
-        'image_url':            p.image_url,
-        'description':          p.description,
-        'is_archived':          p.is_archived,
-        'archived_reason':      p.archived_reason,
-        'images': [{
-            'id':            img.id,
-            'filename':      img.filename,
-            'is_primary':    img.is_primary,
-            'display_order': img.display_order,
-        } for img in ProductImage.query.filter_by(product_id=p.id).order_by(ProductImage.display_order).all()],
-    }
-    if p.product_type == 'stock_item':
-        d['stock_level'] = get_stock_level(p.id)
-        d['low_stock']   = (
-            p.low_stock_threshold is not None and
-            d['stock_level'] < float(p.low_stock_threshold)
-        )
-    if include_recipe and p.product_type in ('recipe',):
-        lines = RecipeLine.query.filter_by(product_id=p.id).all()
-        d['recipe_lines'] = []
-        for ln in lines:
-            ing = db.session.get(Product, ln.ingredient_id)
-            d['recipe_lines'].append({
-                'ingredient_id':   ln.ingredient_id,
-                'ingredient_name': ing.name if ing else None,
-                'unit_type':       ing.unit_type if ing else None,
-                'base_unit':       ing.base_unit if ing else None,
-                'qty_base':        float(ln.qty_base),
-            })
-    if include_packages and p.product_type == 'stock_item':
-        pkgs = Product.query.filter_by(parent_stock_item_id=p.id).all()
-        d['sell_packages'] = []
-        for pkg in pkgs:
-            rl = RecipeLine.query.filter_by(product_id=pkg.id).first()
-            d['sell_packages'].append({
-                'id':       pkg.id,
-                'name':     pkg.name,
-                'price':    float(pkg.price) if pkg.price is not None else None,
-                'barcode':  pkg.barcode,
-                'qty_base': float(rl.qty_base) if rl else None,
-            })
-    return d
-
+# ---------------------------------------------------------------------------
+# Application factory
+# ---------------------------------------------------------------------------
 
 # -----------------------------
 # Strong startup migration
@@ -1699,23 +975,126 @@ def strong_migrate():
                 """)
 
 
-with app.app_context():
-    strong_migrate()
-    seed_first_admin()
-    # Close stale open sessions using raw SQL so it works even on fresh DBs
-    # where last_active was just added by strong_migrate() above.
-    try:
-        from sqlalchemy import text
-        _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
-        with db.engine.begin() as _conn:
-            _conn.execute(text("""
-                UPDATE user_sessions
-                SET logged_out = COALESCE(last_active, logged_in)
-                WHERE logged_out IS NULL
-                  AND (last_active IS NULL OR last_active < :cutoff)
-            """), {'cutoff': _stale_cutoff})
-    except Exception as _e:
-        logger.warning('Stale session cleanup skipped: %s', _e)
+def create_app():
+    app = Flask(__name__)
+
+    # Decimal → float for JSON
+    class _JSONProvider(DefaultJSONProvider):
+        def default(self, o):
+            if isinstance(o, Decimal):
+                return float(o)
+            return super().default(o)
+    app.json_provider_class = _JSONProvider
+    app.json = _JSONProvider(app)
+    app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key')
+
+    # DB URL
+    db_url = os.getenv('DATABASE_URL', 'sqlite:///pos.db')
+    if db_url.startswith('postgres://'):
+        db_url = db_url.replace('postgres://', 'postgresql+psycopg://', 1)
+    elif db_url.startswith('postgresql://') and '+psycopg://' not in db_url:
+        db_url = 'postgresql+psycopg://' + db_url.split('://', 1)[1]
+
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+    db.init_app(app)
+
+    # Request / response logging
+    @app.before_request
+    def _log_request():
+        g._req_start = _time.monotonic()
+        if request.path.startswith('/static'):
+            return
+        logger.info('REQ  %s %s  user=%s', request.method, request.path,
+                    session.get('user_id', '-'))
+        uid = session.get('user_id')
+        if not uid or request.path == '/api/me':
+            return
+        now = datetime.utcnow()
+        sid = session.get('session_id')
+        if sid:
+            sess = db.session.get(UserSession, sid)
+            if sess and sess.logged_out is None:
+                cutoff = now - timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+                last   = sess.last_active or sess.logged_in
+                if last < cutoff:
+                    sess.logged_out = last + timedelta(minutes=SESSION_TIMEOUT_MINUTES)
+                    db.session.commit()
+                    session.pop('session_id', None)
+                    sid = None
+                else:
+                    sess.last_active = now
+                    db.session.commit()
+            elif sess is None:
+                session.pop('session_id', None)
+                sid = None
+        if not sid:
+            existing = UserSession.query.filter_by(
+                user_id=uid, logged_out=None
+            ).order_by(UserSession.logged_in.desc()).first()
+            if existing:
+                session['session_id'] = existing.id
+                existing.last_active  = now
+                db.session.commit()
+            else:
+                new_sess = UserSession(user_id=uid, logged_in=now, last_active=now)
+                db.session.add(new_sess)
+                db.session.commit()
+                session['session_id'] = new_sess.id
+
+    @app.after_request
+    def _log_response(response):
+        if request.path.startswith('/static'):
+            return response
+        elapsed_ms = round((_time.monotonic() - getattr(g, '_req_start', 0)) * 1000)
+        level = logging.WARNING if response.status_code >= 400 else logging.INFO
+        logger.log(level, 'RESP %s %s  status=%s  %dms',
+                   request.method, request.path, response.status_code, elapsed_ms)
+        return response
+
+    @app.errorhandler(Exception)
+    def _handle_exception(e):
+        logger.error('UNHANDLED EXCEPTION  %s %s\n%s',
+                     request.method, request.path, traceback.format_exc())
+        return jsonify({'error': 'Internal server error', 'detail': str(e)}), 500
+
+    # Startup: migrate + seed
+    with app.app_context():
+        strong_migrate()
+        seed_first_admin()
+        try:
+            _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
+            with db.engine.begin() as _conn:
+                _conn.execute(text("""
+                    UPDATE user_sessions
+                    SET logged_out = COALESCE(last_active, logged_in)
+                    WHERE logged_out IS NULL
+                      AND (last_active IS NULL OR last_active < :cutoff)
+                """), {'cutoff': _stale_cutoff})
+        except Exception as _e:
+            logger.warning('Stale session cleanup skipped: %s', _e)
+
+    return app
+
+
+def _register_routes(_app):
+    # No-op hook — routes currently live at module level, decorated against the
+    # module-level `app` instance. Phase 2c+ will replace this with Blueprint
+    # registrations.
+    pass
+
+
+# Module-level app instance — used by gunicorn (`app:app`) and @app.route decorators.
+# Must be defined AFTER strong_migrate (below) and BEFORE the route definitions.
+# create_app() is called here, which runs strong_migrate + seed on startup.
+
+
+
+
+# Create the module-level app instance. strong_migrate() is defined above so
+# this is safe. All @app.route decorators below bind against this instance.
+app = create_app()
 
 
 # -----------------------------
