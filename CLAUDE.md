@@ -4,73 +4,122 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Running the App
 
-Two environments, two scripts:
-
 | Environment | Script | URL | Database |
 |---|---|---|---|
 | QA (dev/testing) | `start-qa.ps1` | `http://localhost:5000` | `farm_pos` |
 | Production | `start-prod.ps1` | `https://localhost:5443` | `farm_pos_prod` |
 
 ```powershell
-# QA
 powershell -ExecutionPolicy Bypass -File start-qa.ps1
-
-# Production
 powershell -ExecutionPolicy Bypass -File start-prod.ps1
 ```
 
-QA shows a yellow banner at the top so you can never confuse the two.
-Default login (both): `admin` / `admin123` (change prod password in `start-prod.ps1`).
+QA shows a yellow banner. Default login (both): `admin` / `admin123`.
 
-To promote QA → Production:
-
+Promote QA → Production branch:
 ```powershell
 powershell -ExecutionPolicy Bypass -File promote.ps1
 ```
 
-This merges `main` into the `production` GitHub branch and pushes both.
-
-To install new packages add `--trusted-host pypi.org --trusted-host files.pythonhosted.org` (Capitec corporate SSL proxy):
-
+pip installs require SSL bypass (Capitec corporate proxy):
 ```powershell
 .venv\Scripts\pip install <package> --trusted-host pypi.org --trusted-host files.pythonhosted.org
 ```
 
+## Deployment (Ubuntu Server via Docker)
+
+The production system runs on an Ubuntu 24.04 server (`farmpc` in `~/.ssh/config`) via Docker Compose at `~/farmpos-docker/`. SSH requires a jump host — see `~/.ssh/config`.
+
+```bash
+# SSH to server
+ssh farmpc
+
+# Rebuild and redeploy POS after pushing to main
+ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh pos'
+
+# Check container health
+ssh farmpc 'docker compose -f ~/farmpos-docker/docker-compose.yml ps'
+```
+
+The POS Dockerfile does a fresh `git clone https://github.com/quintuszgeyser/FarmStallPos.git` on every build — push to `main` first, then run `deploy.sh pos`.
+
 ## Environment
 
 - **Database:** PostgreSQL at `postgresql://farmstall:FarmStall@localhost:5432/farm_pos`
-- **PostgreSQL location:** `C:\Users\CP368103\PostgreSQL\pgsql\` — not a Windows service, started manually by the start scripts
+- **PostgreSQL location:** `C:\Users\CP368103\PostgreSQL\pgsql\` — not a Windows service, started by the start scripts
 - **Python venv:** `.venv\` in project root
-- **Platform:** Windows 11, shell is bash (use Unix syntax in tool calls)
+- **Platform:** Windows 11 locally, Ubuntu 24.04 in production (Docker)
+- **Shell:** bash (use Unix syntax in tool calls)
 
 ## Architecture
 
-Single-file Flask backend (`app.py`) + single-page frontend (`templates/index.html` + `static/main.js`).
+Single-file Flask backend (`app.py`) + single-page frontend (`templates/index.html` + `static/main.js`). All three files are large by design — the monolithic structure is intentional for this deployment.
 
-### Backend (`app.py`)
+### Backend (`app.py`) — ~8,000 lines
 
-- All routes are REST JSON API under `/api/` except the root `/` which serves the SPA and `/admin/export/` for CSV downloads
-- **Auth:** Flask session-based. `require_login()` checks session, `require_role('admin')` checks role. No JWT.
-- **Session tracking:** `UserSession` records login/logout/last_active. `before_request` stamps `last_active` and auto-closes idle sessions after `SESSION_TIMEOUT_MINUTES` (10 min), creating a new one transparently. Hard logout fires after `SESSION_LOGOUT_HOURS` (2 h) of total inactivity via `require_login()`.
-- **DB:** SQLAlchemy ORM. All money columns are `Numeric(10,2)` — never `Float`. Decimal→float conversion handled by custom `_JSONProvider` at the top of the file.
-- **Migration:** `strong_migrate()` runs on every startup. It is idempotent — uses `SAVEPOINT`/rollback per DDL statement for PostgreSQL so failures don't abort the transaction. Add all schema changes here, never use Alembic.
-- **Concurrency:** All stock-mutating routes use `with_for_update=True` on `db.session.get()` and `.with_for_update()` on batch queries to prevent race conditions under concurrent users.
-- **`Sale` model** is the single source of truth for transactions. Each receipt is a group of rows sharing the same `sale_id` (UUID string). Voided sales have `voided=True` and are excluded from all queries.
-- **`Purchase` model** is the legacy stock-receiving path for `simple` products. `stock_batches` is the current path for `stock_item` products.
+**Route groups** (131 routes total):
+- `/api/login|logout|me` — auth
+- `/api/users` — user management
+- `/api/products` — products + images + recipe cost + FIFO pricing
+- `/api/suppliers` + `/purchase_run` — supplier management
+- `/api/stock/receive|adjust|writeoff|batches|adjustments` — stock management
+- `/api/purchases` — legacy simple-product purchasing
+- `/api/customers` — customers, enrollment (face/plate/gait), visits, merging
+- `/api/till` — active customer detection at POS
+- `/api/transactions` — sales, void, edit, flag
+- `/api/kitchen/orders` — kitchen queue
+- `/api/specials` — product bundles
+- `/api/invoices` — draft/finalised invoices
+- `/api/stats` + drilldowns — analytics
+- `/api/settings` — key-value config store
+- `/api/recognition` — recognition service control
+- `/api/kiosk` — Free Kiosk tablet management and proxy
+- `/api/system/update-*` — Windows updater engine control
+- `/admin/export/*` — CSV exports
+- `/`, `/health`, `/guide`, `/__version` — system
 
-### Frontend (`static/main.js`)
+**Key patterns:**
+- All money columns are `Numeric(10,2)` — never `Float`
+- `strong_migrate()` runs on every startup — idempotent via `SAVEPOINT`/rollback. Add all schema changes here, never use Alembic
+- Stock-mutating routes use `with_for_update=True` to prevent race conditions
+- `Sale` rows share a UUID `sale_id` — always slice to 8 chars for display
+- `require_login()` / `require_role('admin')` for auth guards
+- Session auto-closes after `SESSION_TIMEOUT_MINUTES` (10 min) idle; hard logout after `SESSION_LOGOUT_HOURS` (2 h)
 
-- Vanilla JS, no framework. All state lives in the `STATE` object at the top.
-- `api(path, opts)` is the single fetch wrapper — throws on non-2xx with the server's error message.
-- `toast(msg, type, durationMs)` replaces all `alert()` calls — never use `alert()`.
-- `displayQty(qty_base, unitType)` converts base units (g/ml) to friendly display (kg/L) with auto-thresholding at 1000. `displayCost(cost_per_base, qty_base, unitType)` returns `{cost, unit}` scaled to the same display unit — always use these together when showing stock quantities and costs.
-- `_globalMarkupPct` holds the default margin loaded from `/api/settings` — do not use a DOM element for this.
-- **USB barcode scanner support:** global `keydown` listener buffers rapid keystrokes ending in Enter. Only active on the Teller tab when no input is focused.
-- **Camera scanner:** ZXing `BrowserMultiFormatReader`, on-demand only (button toggle), 1.5s cooldown.
+**Database models** (21 total):
+- Core: `User`, `UserSession`, `Setting`
+- Products: `Product`, `ProductImage`, `RecipeLine`, `Supplier`
+- Stock: `StockBatch`, `StockConsumption`, `StockAdjustment`
+- Sales: `Sale`, `Purchase`, `Special`, `SpecialLine`, `Invoice`, `KitchenOrder`
+- Customers: `Customer`, `CustomerPlate`, `CustomerFace`, `CustomerGait`, `CustomerVisit`, `PlateDetection`
+
+### Frontend (`static/main.js`) — ~8,444 lines
+
+All state lives in the `STATE` object at the top. Sections are separated by `═══` dividers. Major sections:
+
+| Section | What it does |
+|---|---|
+| STATE / HELPERS / AUTH | Global state, `api()` fetch wrapper, `toast()`, `show()`/`hide()`, role-based visibility |
+| PRODUCTS | Product cards, archive/restore, product editor modal |
+| STOCK TAB | Ingredient stock, stocktake modal, write-off modal |
+| SUPPLIERS | Supplier CRUD, purchase runs |
+| CART / TELLER | Shopping cart, weight entry, barcode scanner (USB + camera) |
+| TRANSACTIONS | History, void, edit, flag |
+| STATS | Dashboard with drilldown charts |
+| SETTINGS | App settings including kiosk tablet management |
+| KITCHEN | Kitchen order queue |
+| CUSTOMERS | Customer management, face/plate/gait enrollment, merge suggestions |
+| INVOICES | Draft/finalised invoice management |
+| DEVELOPER MONITOR | Recognition service live diagnostics |
+
+Key conventions:
+- `api(path, opts)` — single fetch wrapper, throws on non-2xx with server's error message
+- `toast(msg, type, durationMs)` — never use `alert()`
+- `displayQty(qty_base, unitType)` + `displayCost(cost_per_base, qty_base, unitType)` — always use these together for stock quantities
+- `_globalMarkupPct` — loaded from `/api/settings`, never read from DOM
+- USB barcode scanner: global `keydown` listener, only active on Teller tab when no input is focused
 
 ### Product Types
-
-`product_type` drives all stock, pricing, and FIFO behaviour:
 
 | Type | Stock tracked by | Sold by | Cost |
 |---|---|---|---|
@@ -78,31 +127,54 @@ Single-file Flask backend (`app.py`) + single-page frontend (`templates/index.ht
 | `stock_item` | `stock_batches` (FIFO) | weight/volume or unit | FIFO COGS |
 | `recipe` | ingredients' batches (FIFO) | unit | sum of ingredient COGS |
 
-- `sold_by_weight=True` on a `stock_item` means it is weighed at point of sale (price × weight).
-- `is_for_sale=False` marks internal ingredients that don't appear at the teller.
-- `is_prepared=True` sends the product to the kitchen queue on sale.
+`sold_by_weight=True` on a `stock_item` — weighed at point of sale.
+`is_for_sale=False` — internal ingredient, hidden at teller.
+`is_prepared=True` — sends to kitchen queue on sale.
 
-### Key Design Decisions
+### Recognition System
 
-- **Transactions tab is role-aware:** tellers see last 5 only and never see COGS/margin; admins get a date-range picker and full financials.
-- **Edit vs Void:** editing a transaction restores original stock then deducts new stock atomically. Voiding requires a reason and fully restores stock.
-- **`sale_id` is a UUID string** — always slice to 8 chars for display (`String(id).slice(0,8)`).
-- **Product editor modal** (`#productEditorModal`) shows only "Add" when creating, only "Update"+"Delete" when editing. `openProductEditor(p)` handles this — always call it, never show the modal directly.
-- **Supplier contact fields** are three separate columns: `phone`, `email`, `website` — not a single `contact` string.
+`recognition_service_v2.py` (~4,700 lines) runs as a separate Docker container (`farmpos-recognition`). It:
+- Polls Frigate NVR events (12 Tapo cameras at `http://10.0.0.101:8971`)
+- Runs InsightFace ArcFace (512D embeddings) for face recognition
+- Runs fast-plate-ocr for ANPR
+- Posts identification events to `farmpos-app:5000`
+- Maintains a customer cache and visit log
+
+`recognition_service.py` in the root is the deprecated v1 — do not modify it.
+
+### Kiosk Tablet Control
+
+Free Kiosk tablets are managed from the Configuration tab. The POS server acts as a proxy to the Free Kiosk HTTP API (default port 2323, configurable). Three proxy routes:
+- `GET /api/kiosk/status/<ip>` — polls `/api/status`, returns unwrapped `data`
+- `POST /api/kiosk/query/<ip>` — body `{endpoint}` for read-only GET endpoints (battery, screen, sensors, etc.)
+- `POST /api/kiosk/control/<ip>` — body `{action, ...payload}` for control commands
+- `GET /api/kiosk/screenshot/<ip>` — streams PNG
+
+### Windows Update Engine
+
+The update engine (`farm_pos_installer/updater/`) runs as `FarmPOS-Updater` Windows service. Releases are created manually:
+1. Copy changed files → `farm_pos_installer/releases/updates/vX.Y.Z/files/`
+2. Calculate SHA-256 checksums (PowerShell `Get-FileHash`)
+3. Create `manifest.json` + ZIP
+4. Sign: `C:\Python314\python.exe scripts\sign_manifest.py manifest.json --key <key> --output manifest.json.sig`
+5. Tag git: `git tag vX.Y.Z && git push origin vX.Y.Z`
+6. Upload to GitHub release via API (no `gh` CLI installed — use `curl` + GitHub REST API with credential from `git credential fill`)
+
+Private signing key: `farm_pos_installer\.signing_keys\PRIVATE_KEY.txt`
 
 ## Database Schema
 
 ```
 users             — id, username, password_hash, role, active
-products          — id, name, price (Numeric), barcode, stock_qty, product_type,
+products          — id, name, price, barcode, stock_qty, product_type,
                     unit_type, base_unit, sold_by_weight, is_for_sale, is_prepared,
-                    price_per_unit (Numeric), low_stock_threshold, package_size,
+                    price_per_unit, low_stock_threshold, package_size,
                     package_size_unit, package_unit, margin_pct, is_archived
-purchases         — id, product_id, qty_added, purchase_price (Numeric), date_time, user_id
+purchases         — id, product_id, qty_added, purchase_price, date_time, user_id
 settings          — id, key, value
-sales             — id, sale_id, date_time, product_id, qty (Numeric), unit_price (Numeric),
+sales             — id, sale_id, date_time, product_id, qty, unit_price,
                     user_id, voided, voided_by, voided_at, void_reason, sub_log
-recipe_lines      — id, product_id, ingredient_id, qty_base (Numeric)
+recipe_lines      — id, product_id, ingredient_id, qty_base
 stock_batches     — id, product_id, qty_purchased_base, qty_remaining_base,
                     cost_per_base_unit (Numeric 10,6), purchased_at, user_id, supplier_id
 stock_consumption — id, sale_id, ingredient_id, batch_id, qty_consumed_base,
@@ -115,6 +187,9 @@ kitchen_orders    — id, sale_id, product_id, product_name, qty, ingredients (J
 user_sessions     — id, user_id, logged_in, logged_out, last_active
 specials          — id, name, special_price, active
 special_lines     — id, special_id, product_id, qty
+invoices          — id, ..., status (draft/sent/paid)
+customers         — id, name, ..., face embeddings, plate list
+customer_visits   — id, customer_id, ..., detection method, timestamp
 ```
 
 ## API Quick Reference
@@ -124,12 +199,9 @@ POST /api/login                              { username, password }
 POST /api/logout
 GET  /api/me
 GET  /api/products
-GET  /api/products/<id>
 POST /api/products                           admin only
 POST /api/products/update                    admin only
 POST /api/products/<id>/archive              admin only
-POST /api/products/<id>/restore              admin only
-DELETE /api/products/<name>                  admin only
 GET  /api/products/<id>/recipe_cost
 GET  /api/products/<id>/fifo_price           ?markup=
 GET  /api/products/<id>/suggested_price      ?markup=
@@ -142,24 +214,26 @@ GET  /api/stats                              ?start=&end=  admin only
 GET  /api/settings                           admin only
 POST /api/settings                           admin only
 GET  /api/suppliers
-POST /api/suppliers                          admin only
-POST /api/suppliers/<id>                     admin only
-DELETE /api/suppliers/<id>                   admin only
-GET  /api/suppliers/<id>/products
 POST /api/suppliers/<id>/purchase_run        admin only
 GET  /api/stock/ingredients
 POST /api/stock/receive                      admin only
 POST /api/stock/writeoff                     admin only
 POST /api/stock/adjust                       admin only
-GET  /api/stock/adjustments
 GET  /api/users                              admin only
 POST /api/users                              admin only
-POST /api/users/<id>                         admin only
-DELETE /api/users/<id>                       admin only
 GET  /api/kitchen/orders
 POST /api/kitchen/orders/<id>/complete       admin only
 GET  /api/specials
 POST /api/specials                           admin only
+GET  /api/customers
+POST /api/customers/<id>/enroll/face         admin only
+POST /api/customers/<id>/enroll/plate        admin only
+GET  /api/customers/identify
+GET  /api/till/active_customer
+GET  /api/kiosk/tablets
+POST /api/kiosk/control/<ip>                 { action, ...payload }
+POST /api/kiosk/query/<ip>                   { endpoint }
+GET  /api/kiosk/screenshot/<ip>
 GET  /admin/export/products                  CSV
 GET  /admin/export/transactions              ?start=&end= CSV
 ```
