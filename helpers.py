@@ -272,6 +272,31 @@ def _ean13_check(code12):
     return str((10 - s % 10) % 10)
 
 
+# ---------------------------------------------------------------------------
+# Date parsing helper (used by kitchen and stats routes)
+# ---------------------------------------------------------------------------
+
+def _parse_dt(value: str, is_end: bool = False):
+    if not value:
+        return None
+    v = value.strip()
+    try:
+        if len(v) == 10 and v[4] == '-' and v[7] == '-':
+            d = datetime.strptime(v, "%Y-%m-%d")
+            return d.replace(hour=23, minute=59, second=59, microsecond=999999) if is_end else d
+        v2 = v.replace('Z', '')
+        for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
+                    "%Y-%m-%d %H:%M:%S.%f", "%Y-%m-%d %H:%M:%S"):
+            try:
+                return datetime.strptime(v2, fmt)
+            except ValueError:
+                pass
+        d = datetime.strptime(v[:10], "%Y-%m-%d")
+        return d.replace(hour=23, minute=59, second=59, microsecond=999999) if is_end else d
+    except Exception:
+        return None
+
+
 def _serialize_product(p, include_recipe=False, include_packages=False):
     d = {
         'id':           p.id,
