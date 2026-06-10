@@ -21,9 +21,10 @@ Promote QA → Production branch:
 powershell -ExecutionPolicy Bypass -File promote.ps1
 ```
 
-pip installs require SSL bypass (Capitec corporate proxy):
+pip installs require SSL bypass (Capitec corporate proxy).
+The venv `python.exe` stub is broken — use `C:\Python314\python.exe` directly:
 ```powershell
-.venv\Scripts\pip install <package> --trusted-host pypi.org --trusted-host files.pythonhosted.org
+C:\Python314\python.exe -m pip install <package> --trusted-host pypi.org --trusted-host files.pythonhosted.org
 ```
 
 ## Deployment (Ubuntu Server via Docker)
@@ -47,36 +48,44 @@ The POS Dockerfile does a fresh `git clone https://github.com/quintuszgeyser/Far
 
 - **Database:** PostgreSQL at `postgresql://farmstall:FarmStall@localhost:5432/farm_pos`
 - **PostgreSQL location:** `C:\Users\CP368103\PostgreSQL\pgsql\` — not a Windows service, started by the start scripts
-- **Python venv:** `.venv\` in project root
+- **Python (local):** `C:\Python314\python.exe` — the `.venv\Scripts\python.exe` stub is broken (points to missing Python311)
 - **Platform:** Windows 11 locally, Ubuntu 24.04 in production (Docker)
 - **Shell:** bash (use Unix syntax in tool calls)
 
 ## Architecture
 
-Single-file Flask backend (`app.py`) + single-page frontend (`templates/index.html` + `static/main.js`). All three files are large by design — the monolithic structure is intentional for this deployment.
+Blueprint-based Flask backend + single-page frontend. Refactored June 2026.
 
-### Backend (`app.py`) — ~8,000 lines
+**Backend structure:**
+- `app.py` (1,146 lines) — pure factory: `create_app()`, `strong_migrate()`, `_register_routes()`
+- `models.py` — 21 SQLAlchemy models, `db = SQLAlchemy()` unbound
+- `helpers.py` — `get_setting`, `require_login`, `consume_fifo`, `_parse_dt`, etc.
+- `blueprints/` — 15 Blueprint files covering all 131 routes
 
-**Route groups** (131 routes total):
-- `/api/login|logout|me` — auth
-- `/api/users` — user management
-- `/api/products` — products + images + recipe cost + FIFO pricing
-- `/api/suppliers` + `/purchase_run` — supplier management
-- `/api/stock/receive|adjust|writeoff|batches|adjustments` — stock management
-- `/api/purchases` — legacy simple-product purchasing
-- `/api/customers` — customers, enrollment (face/plate/gait), visits, merging
-- `/api/till` — active customer detection at POS
-- `/api/transactions` — sales, void, edit, flag
-- `/api/kitchen/orders` — kitchen queue
-- `/api/specials` — product bundles
-- `/api/invoices` — draft/finalised invoices
-- `/api/stats` + drilldowns — analytics
-- `/api/settings` — key-value config store
-- `/api/recognition` — recognition service control
-- `/api/kiosk` — Free Kiosk tablet management and proxy
-- `/api/system/update-*` — Windows updater engine control
-- `/admin/export/*` — CSV exports
-- `/`, `/health`, `/guide`, `/__version` — system
+**Import order (never break):** `blueprints → helpers → models → db`  
+**Never import from `app.py` inside a blueprint** — circular import risk.
+
+### Backend (`app.py`) — 1,146 lines (factory only)
+
+**Route groups** (131 routes across 15 blueprints):
+
+| Blueprint | Routes |
+|---|---|
+| `blueprints/auth.py` | `/api/login\|logout\|me`, `/api/users/*` |
+| `blueprints/products.py` | `/api/products/*` (images, archive, recipe_cost, fifo_price) |
+| `blueprints/suppliers.py` | `/api/suppliers/*`, `purchase_run` |
+| `blueprints/stock.py` | `/api/stock/*`, `/api/purchases` |
+| `blueprints/customers.py` | `/api/customers/*`, `/api/till/*` |
+| `blueprints/transactions.py` | `/api/transactions/*` |
+| `blueprints/kitchen.py` | `/api/kitchen/*` |
+| `blueprints/specials.py` | `/api/specials/*` |
+| `blueprints/invoices.py` | `/api/invoices/*`, `/invoices/*/print` |
+| `blueprints/stats.py` | `/api/stats/*`, `/admin/export/*` |
+| `blueprints/settings.py` | `/api/settings` |
+| `blueprints/recognition.py` | `/api/recognition/*` |
+| `blueprints/kiosk.py` | `/api/kiosk/*` |
+| `blueprints/system.py` | `/api/system/update-*` |
+| `blueprints/core.py` | `/`, `/health`, `/guide`, `/__version`, `/api/logs`, `/api/db-*` |
 
 **Key patterns:**
 - All money columns are `Numeric(10,2)` — never `Float`
