@@ -6984,9 +6984,12 @@ function _renderKioskTablets(statuses) {
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/on')">On</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screen/off')">Off</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','wake')">Wake</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','lock')">Lock</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screensaver/on')">Screensaver On</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','screensaver/off')">Screensaver Off</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskSetBrightness('${t.ip}', ${screen?.brightness ?? 80})">Brightness…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAutoBrightness('${t.ip}')">Auto Brightness…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','autoBrightness/disable')">Auto Off</button>
         </div>
 
         <!-- WebView controls -->
@@ -6995,6 +6998,7 @@ function _renderKioskTablets(statuses) {
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','reload')">Reload</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','clearCache')">Clear Cache</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskNavigate('${t.ip}')">Navigate…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskSwitchMode('${t.ip}')">Switch Mode…</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskRunJs('${t.ip}')">Run JS…</button>
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskTypeText('${t.ip}')">Type Text…</button>
         </div>
@@ -7013,6 +7017,14 @@ function _renderKioskTablets(statuses) {
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','remote/playpause')">⏯</button>
         </div>
 
+        <!-- Keyboard emulation -->
+        <div class="mb-1 small text-muted fw-semibold">Keyboard</div>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskKeyPress('${t.ip}')">Key Press…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskKeyCombo('${t.ip}')">Key Combo…</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskTypeText('${t.ip}')">Type Text…</button>
+        </div>
+
         <!-- Audio / Comms -->
         <div class="mb-1 small text-muted fw-semibold">Audio &amp; Notifications</div>
         <div class="d-flex flex-wrap gap-1 mb-2">
@@ -7024,10 +7036,31 @@ function _renderKioskTablets(statuses) {
           <button class="btn btn-outline-secondary btn-sm" onclick="kioskToast('${t.ip}')">Toast…</button>
         </div>
 
+        <!-- Apps -->
+        <div class="mb-1 small text-muted fw-semibold">Apps</div>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskLaunchApp('${t.ip}')">Launch App…</button>
+        </div>
+
+        <!-- Info / Diagnostics -->
+        <div class="mb-1 small text-muted fw-semibold">Diagnostics</div>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','battery')">Battery</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','screen')">Screen</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','volume')">Volume</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','wifi')">WiFi</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','storage')">Storage</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','memory')">Memory</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','sensors')">Sensors</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','autoBrightness')">Auto-Brightness</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','info')">Device Info</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskQuery('${t.ip}','location')">GPS Location</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="kioskShowScreenshot('${t.ip}')">Screenshot</button>
+        </div>
+
         <!-- System -->
         <div class="mb-1 small text-muted fw-semibold">System</div>
         <div class="d-flex flex-wrap gap-1">
-          <button class="btn btn-outline-secondary btn-sm" onclick="kioskAction('${t.ip}','lock')">Lock</button>
           <button class="btn btn-outline-warning btn-sm" onclick="kioskAction('${t.ip}','restart-ui')">Restart UI</button>
           <button class="btn btn-outline-danger btn-sm" onclick="kioskReboot('${t.ip}')">Reboot</button>
         </div>` : '<div class="text-muted small">Cannot reach tablet — check Tailscale connection.</div>'}
@@ -7120,6 +7153,59 @@ async function kioskPlayAudio(ip) {
   const url = prompt('Audio URL to play:');
   if (!url) return;
   await kioskAction(ip, 'audio/play', { url, loop: false });
+}
+
+async function kioskAutoBrightness(ip) {
+  const min = prompt('Auto-brightness min (0–100):', 10);
+  if (min === null) return;
+  const max = prompt('Auto-brightness max (0–100):', 100);
+  if (max === null) return;
+  await kioskAction(ip, 'autoBrightness/enable', { min: parseInt(min), max: parseInt(max) });
+}
+
+async function kioskSwitchMode(ip) {
+  const mode = prompt('Mode: "webview" or "external_app"');
+  if (!mode) return;
+  if (mode === 'webview') {
+    const url = prompt('URL to load (leave blank to keep current):');
+    await kioskAction(ip, 'mode', url ? { mode, url } : { mode });
+  } else if (mode === 'external_app') {
+    const pkg = prompt('Package name (e.g. com.example.app):');
+    if (!pkg) return;
+    await kioskAction(ip, 'mode', { mode, package: pkg });
+  } else {
+    toast('Unknown mode', 'error');
+  }
+}
+
+async function kioskKeyPress(ip) {
+  const key = prompt('Key to press (e.g. enter, f5, a, escape):');
+  if (!key) return;
+  await kioskAction(ip, `remote/keyboard/${key.trim()}`);
+}
+
+async function kioskKeyCombo(ip) {
+  const combo = prompt('Key combo (e.g. ctrl+c, ctrl+shift+a):');
+  if (!combo) return;
+  await kioskAction(ip, 'remote/keyboard', { map: combo.trim() });
+}
+
+async function kioskLaunchApp(ip) {
+  const pkg = prompt('Package name to launch (e.g. com.spotify.music):');
+  if (!pkg) return;
+  await kioskAction(ip, 'app/launch', { package: pkg });
+}
+
+async function kioskQuery(ip, endpoint) {
+  try {
+    const data = await api(`/api/kiosk/query/${ip}`, { method: 'POST', body: JSON.stringify({ endpoint }) });
+    toast(`${endpoint}: ${JSON.stringify(data)}`, 'info', 6000);
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function kioskShowScreenshot(ip) {
+  const win = window.open('', '_blank');
+  win.document.write(`<img src="/api/kiosk/screenshot/${ip}" style="max-width:100%">`);
 }
 
 document.getElementById('btn-kiosk-refresh')?.addEventListener('click', loadKioskTablets);
