@@ -1,4 +1,13 @@
 // Farm Stall POS main.js — v1.5.0
+//
+// Structure: 15 sections separated by ═══ dividers.
+// Shared globals exported at module level for future ES module split:
+//   STATE, api(), toast(), show(), hide(), displayQty(), displayCost(),
+//   _globalMarkupPct, loadProducts(), loadStats(), openProductEditor()
+//
+// To split into ES modules: each section becomes static/modules/<name>.js
+// with: import { STATE, api, toast, show, hide, displayQty, displayCost } from '../main.js'
+// Requires a build step (Vite/esbuild) or native <script type="module"> loading.
 
 // ═══════════════════════════════════════════════════════
 // STATE
@@ -947,7 +956,6 @@ function openProductEditor(p) {
   document.getElementById('p-is-prepared').checked          = !!p?.is_prepared;
   const _onlineEl = document.getElementById('p-is-available-online');
   if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
-  const purPid = document.getElementById('pur-product-id'); if (purPid) purPid.value = p?.id ?? '';
 
   // Description
   const descEl = document.getElementById('p-description');

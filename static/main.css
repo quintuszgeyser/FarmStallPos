@@ -1,0 +1,61 @@
+/* Farm Stall POS — custom styles */
+
+/* Utility: hide elements (replaces inline style="display:none") */
+.hidden { display: none !important; }
+
+/* Repeated sub-label text under buttons */
+.btn-sublabel {
+    font-size: 10px;
+    color: #6c757d;
+    display: block;
+}
+
+/* Input widths used across multiple forms */
+.w-80  { width: 80px;  }
+.w-90  { width: 90px;  }
+.w-100 { width: 100px; }
+.w-140 { width: 140px; }
+.w-160 { width: 160px; }
+.w-180 { width: 180px; }
+.min-w-40 { min-width: 40px; }
+
+/* Small badge text */
+.text-11 { font-size: 11px; }
+
+/* Range input overlay (used in settings sliders) */
+.range-overlay {
+    top: 6px;
+    height: 24px;
+    background: none;
+    pointer-events: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+/* QA environment banner */
+#qa-banner {
+    background: #ffc107;
+    color: #212529;
+    text-align: center;
+    font-weight: 600;
+    padding: 4px;
+    font-size: 13px;
+    letter-spacing: 1px;
+}
+
+/* Kitchen queue order cards */
+.kitchen-order-card { transition: opacity .2s; }
+.kitchen-order-card.completed { opacity: 0.5; }
+
+/* Customer radar chart container */
+.radar-chart-wrap { position: relative; min-height: 200px; }
+
+/* Product image grid */
+.product-image-thumb {
+    width: 64px;
+    height: 64px;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.product-image-thumb.primary { outline: 2px solid #198754; }
