@@ -375,7 +375,6 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
       await loadSuppliers();    // pre-load for receive stock dropdown
       await loadSpecials();
       startKitchenBadgePoll();  // keep badge count live across all tabs
-      startUpdatePolling();     // check for system updates
     }
   } catch (e) {
     const s = document.getElementById('login-status');
@@ -389,7 +388,6 @@ async function doLogout() {
   STATE.users = [];
   _statsData = null;
   stopScanner();
-  stopUpdatePolling();
   // Deactivate all tab panes so no stale content shows after re-login
   document.querySelectorAll('#tab-contents .tab-pane').forEach(p => {
     p.classList.remove('show', 'active');
@@ -7345,126 +7343,7 @@ function stopCustomerPolling() {
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', startCustomerPolling);
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('hidden.bs.tab', stopCustomerPolling);
 
-// ═══════════════════════════════════════════════════════
-// SYSTEM UPDATE (Admin Only)
-// ═══════════════════════════════════════════════════════
-let updateCheckInterval = null;
-
-async function checkUpdateStatus() {
-  if (!STATE.user || !isAdmin()) return;
-
-  try {
-    const status = await api('/api/system/update-status');
-
-    // Show banner if update is ready
-    if (status.state === 'ready') {
-      showUpdateBanner(status);
-    } else {
-      hideUpdateBanner();
-    }
-
-    // Show progress modal if downloading or installing
-    if (['downloading', 'installing', 'rollback'].includes(status.state)) {
-      showUpdateProgress(status);
-    } else {
-      hideUpdateProgress();
-    }
-
-  } catch (error) {
-    console.error('Failed to check update status:', error);
-  }
-}
-
-function showUpdateBanner(status) {
-  const banner = document.getElementById('update-banner');
-  const versionSpan = document.getElementById('update-version');
-  const typeBadge = document.getElementById('update-type-badge');
-
-  versionSpan.textContent = `v${status.available_version}`;
-  typeBadge.textContent = status.available_type || 'patch';
-
-  banner.classList.add('show');
-}
-
-function hideUpdateBanner() {
-  const banner = document.getElementById('update-banner');
-  banner.classList.remove('show');
-}
-
-function showUpdateProgress(status) {
-  const modal = document.getElementById('update-progress-modal');
-  const progressBar = document.getElementById('update-progress-bar');
-  const progressPct = document.getElementById('update-progress-pct');
-  const statusText = document.getElementById('update-status-text');
-
-  const pct = status.progress_pct || 0;
-  progressBar.style.width = `${pct}%`;
-  progressPct.textContent = `${pct}%`;
-  statusText.textContent = status.current_action || 'Processing...';
-
-  modal.classList.add('show');
-}
-
-function hideUpdateProgress() {
-  const modal = document.getElementById('update-progress-modal');
-  modal.classList.remove('show');
-}
-
-async function installUpdate() {
-  try {
-    await api('/api/system/update-install', { method: 'POST' });
-    toast('Update installation started', 'success');
-    hideUpdateBanner();
-
-    // Start polling for progress
-    if (!updateCheckInterval) {
-      updateCheckInterval = setInterval(checkUpdateStatus, 2000); // 2 seconds
-    }
-  } catch (error) {
-    toast(error.message || 'Failed to start update', 'error');
-  }
-}
-
-function dismissUpdate() {
-  hideUpdateBanner();
-  toast('Update dismissed. Will check again later.', 'info');
-}
-
-async function triggerUpdateCheck() {
-  try {
-    await api('/api/system/update-check', { method: 'POST' });
-    toast('Update check triggered', 'success');
-
-    // Start polling for status
-    if (!updateCheckInterval) {
-      updateCheckInterval = setInterval(checkUpdateStatus, 2000);
-    }
-  } catch (error) {
-    toast(error.message || 'Failed to trigger update check', 'error');
-  }
-}
-
-// Start update polling when user is admin
-function startUpdatePolling() {
-  if (STATE.user && isAdmin()) {
-    if (!updateCheckInterval) {
-      updateCheckInterval = setInterval(checkUpdateStatus, 5000); // 5 seconds
-    }
-    // Immediate check
-    checkUpdateStatus();
-  }
-}
-
-function stopUpdatePolling() {
-  if (updateCheckInterval) {
-    clearInterval(updateCheckInterval);
-    updateCheckInterval = null;
-  }
-  hideUpdateBanner();
-  hideUpdateProgress();
-}
-
-// Call startUpdatePolling after login - add to postLogin function manually
+// (System Updates removed — deployment is via Docker rebuild, not Windows updater)
 
 // ═══════════════════════════════════════════════════════
 // DEVELOPER MONITOR

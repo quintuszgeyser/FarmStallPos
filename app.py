@@ -1081,7 +1081,6 @@ def create_app():
 def _register_routes(_app):
     from blueprints.auth         import bp as auth_bp
     from blueprints.kiosk        import bp as kiosk_bp
-    from blueprints.system       import bp as system_bp
     from blueprints.kitchen      import bp as kitchen_bp
     from blueprints.settings     import bp as settings_bp
     from blueprints.specials     import bp as specials_bp
@@ -1096,7 +1095,6 @@ def _register_routes(_app):
     from blueprints.core         import bp as core_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
-    _app.register_blueprint(system_bp)
     _app.register_blueprint(kitchen_bp)
     _app.register_blueprint(settings_bp)
     _app.register_blueprint(specials_bp)
