@@ -11,8 +11,6 @@ import time as _time
 from flask import Flask, jsonify, request, session, send_file, render_template, g
 from flask.json.provider import DefaultJSONProvider
 from sqlalchemy import text, func, Numeric
-from werkzeug.security import generate_password_hash, check_password_hash
-
 from models import (
     db,
     User, UserSession, Setting,
@@ -1081,14 +1079,20 @@ def create_app():
 
 
 def _register_routes(_app):
-    from blueprints.kiosk    import bp as kiosk_bp
-    from blueprints.system   import bp as system_bp
-    from blueprints.kitchen  import bp as kitchen_bp
-    from blueprints.settings import bp as settings_bp
+    from blueprints.auth      import bp as auth_bp
+    from blueprints.kiosk     import bp as kiosk_bp
+    from blueprints.system    import bp as system_bp
+    from blueprints.kitchen   import bp as kitchen_bp
+    from blueprints.settings  import bp as settings_bp
+    from blueprints.specials  import bp as specials_bp
+    from blueprints.suppliers import bp as suppliers_bp
+    _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(system_bp)
     _app.register_blueprint(kitchen_bp)
     _app.register_blueprint(settings_bp)
+    _app.register_blueprint(specials_bp)
+    _app.register_blueprint(suppliers_bp)
 
 
 # Module-level app instance — used by gunicorn (`app:app`) and @app.route decorators.
@@ -1102,135 +1106,6 @@ def _register_routes(_app):
 # this is safe. All @app.route decorators below bind against this instance.
 app = create_app()
 
-
-# -----------------------------
-# Auth
-# -----------------------------
-@app.route('/api/login', methods=['POST'])
-def api_login():
-    data = request.json or {}
-    username = data.get('username', '').strip()
-    password = data.get('password', '')
-    user = User.query.filter_by(username=username).first()
-    if not user or not check_password_hash(user.password_hash, password) or not user.active:
-        return jsonify({'ok': False, 'error': 'Invalid credentials'}), 401
-    session['user_id'] = user.id
-    sess = UserSession(user_id=user.id, logged_in=datetime.utcnow())
-    db.session.add(sess)
-    db.session.commit()
-    session['session_id'] = sess.id
-    return jsonify({'ok': True, 'username': user.username, 'role': user.role, 'roles': user.roles})
-
-@app.route('/api/logout', methods=['POST'])
-def api_logout():
-    sid = session.get('session_id')
-    if sid:
-        sess = db.session.get(UserSession, sid)
-        if sess and sess.logged_out is None:
-            sess.logged_out = datetime.utcnow()
-            db.session.commit()
-    session.clear()
-    return jsonify({'ok': True})
-
-@app.route('/api/me', methods=['GET'])
-def api_me():
-    u = current_user()
-    if not u:
-        return jsonify({'logged_in': False})
-    return jsonify({'logged_in': True, 'username': u.username, 'role': u.role, 'roles': u.roles})
-
-@app.route('/api/db-migrate', methods=['POST'])
-def api_db_migrate():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    strong_migrate()
-    return jsonify({'ok': True})
-
-
-# -----------------------------
-# Users (admin)
-# -----------------------------
-@app.route('/api/users', methods=['GET'])
-def api_users_get():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    users = User.query.order_by(User.username.asc()).all()
-    return jsonify([{'username': u.username, 'role': u.role, 'roles': u.roles, 'active': u.active} for u in users])
-
-@app.route('/api/users', methods=['POST'])
-def api_users_post():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    data = request.json or {}
-    username = data.get('username', '').strip()
-    role     = data.get('role', 'teller')
-    password = data.get('password', '').strip()
-    if not username or not password:
-        return jsonify({'error': 'Username and password required'}), 400
-    valid_roles = {'admin', 'teller', 'developer'}
-    role_set = {r.strip() for r in role.split(',') if r.strip()}
-    if not role_set or not role_set.issubset(valid_roles):
-        return jsonify({'error': f'Invalid role(s). Valid: {", ".join(sorted(valid_roles))}'}), 400
-    role = ','.join(sorted(role_set))
-    if User.query.filter_by(username=username).first():
-        return jsonify({'error': 'Username exists'}), 409
-    u = User(username=username, role=role, password_hash=generate_password_hash(password), active=True)
-    db.session.add(u)
-    db.session.commit()
-    return jsonify({'ok': True})
-
-@app.route('/api/users/update', methods=['POST'])
-def api_users_update():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    data     = request.json or {}
-    username = data.get('username')
-    role     = data.get('role')
-    active   = data.get('active')
-    password = data.get('password')
-    u = User.query.filter_by(username=username).first()
-    if not u:
-        return jsonify({'error': 'User not found'}), 404
-    if role:
-        valid_roles = {'admin', 'teller', 'developer'}
-        role_set = {r.strip() for r in role.split(',') if r.strip()}
-        if role_set and role_set.issubset(valid_roles):
-            u.role = ','.join(sorted(role_set))
-    if isinstance(active, bool):
-        u.active = active
-    if password:
-        u.password_hash = generate_password_hash(password)
-    db.session.commit()
-    return jsonify({'ok': True})
-
-@app.route('/api/users/<username>', methods=['DELETE'])
-def api_users_delete(username):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    u = User.query.filter_by(username=username).first()
-    if not u:
-        return jsonify({'error': 'User not found'}), 404
-    db.session.delete(u)
-    db.session.commit()
-    return jsonify({'ok': True})
-
-
-@app.route('/api/users/change_password', methods=['POST'])
-def api_users_change_password():
-    """Any logged-in user can change their own password."""
-    if not require_login():
-        return jsonify({'error': 'Unauthorized'}), 401
-    u = current_user()
-    data = request.json or {}
-    current_pw = data.get('current_password', '')
-    new_pw = data.get('new_password', '')
-    if not check_password_hash(u.password_hash, current_pw):
-        return jsonify({'error': 'Current password is incorrect'}), 400
-    if len(new_pw) < 1:
-        return jsonify({'error': 'New password cannot be empty'}), 400
-    u.password_hash = generate_password_hash(new_pw)
-    db.session.commit()
-    return jsonify({'ok': True})
 
 
 # -----------------------------
@@ -2118,219 +1993,6 @@ def api_suggested_price(pid):
 # -----------------------------
 # Suppliers (admin)
 # -----------------------------
-@app.route('/api/suppliers', methods=['GET'])
-def api_suppliers_get():
-    if not require_login():
-        return jsonify({'error': 'Unauthorized'}), 401
-    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
-    return jsonify([{'id': s.id, 'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website, 'notes': s.notes} for s in suppliers])
-
-@app.route('/api/suppliers', methods=['POST'])
-def api_suppliers_post():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    data = request.json or {}
-    name    = data.get('name', '').strip()
-    phone   = data.get('phone',   '').strip() or None
-    email   = data.get('email',   '').strip() or None
-    website = data.get('website', '').strip() or None
-    notes   = data.get('notes',   '').strip() or None
-    if not name:
-        return jsonify({'error': 'name required'}), 400
-    if Supplier.query.filter_by(name=name).first():
-        return jsonify({'error': 'Supplier already exists'}), 409
-    s = Supplier(name=name, phone=phone, email=email, website=website, notes=notes)
-    db.session.add(s)
-    db.session.commit()
-    return jsonify({'ok': True, 'id': s.id})
-
-@app.route('/api/suppliers/<int:sid>', methods=['POST'])
-def api_suppliers_update(sid):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    s = db.session.get(Supplier, sid)
-    if not s:
-        return jsonify({'error': 'Not found'}), 404
-    data = request.json or {}
-    if 'name' in data:
-        name = data['name'].strip()
-        clash = Supplier.query.filter(Supplier.id != sid, Supplier.name == name).first()
-        if clash:
-            return jsonify({'error': 'Supplier name already exists'}), 409
-        s.name = name
-    if 'phone'   in data: s.phone   = data['phone'].strip()   or None
-    if 'email'   in data: s.email   = data['email'].strip()   or None
-    if 'website' in data: s.website = data['website'].strip() or None
-    if 'notes'   in data: s.notes   = data['notes'].strip()   or None
-    db.session.commit()
-    return jsonify({'ok': True})
-
-@app.route('/api/suppliers/<int:sid>', methods=['DELETE'])
-def api_suppliers_delete(sid):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    s = db.session.get(Supplier, sid)
-    if not s:
-        return jsonify({'error': 'Not found'}), 404
-    # Nullify references rather than blocking
-    StockBatch.query.filter_by(supplier_id=sid).update({'supplier_id': None})
-    db.session.delete(s)
-    db.session.commit()
-    return jsonify({'ok': True})
-
-@app.route('/api/suppliers/<int:sid>/products', methods=['GET'])
-def api_suppliers_products(sid):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    s = db.session.get(Supplier, sid)
-    if not s:
-        return jsonify({'error': 'Not found'}), 404
-
-    # Get distinct products from batches for this supplier
-    batches = (db.session.query(StockBatch.product_id, func.max(StockBatch.purchased_at).label('last_received'))
-               .filter_by(supplier_id=sid)
-               .group_by(StockBatch.product_id)
-               .all())
-
-    result = []
-    for prod_id, last_received in batches:
-        p = db.session.get(Product, prod_id)
-        if p:
-            result.append({
-                'id': p.id,
-                'name': p.name,
-                'product_type': p.product_type,
-                'last_received': last_received.date().isoformat() if last_received else None,
-            })
-
-    result.sort(key=lambda x: x['name'])
-    return jsonify(result)
-
-@app.route('/api/suppliers/<int:sid>/purchase_run', methods=['POST'])
-def api_suppliers_purchase_run(sid):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    s = db.session.get(Supplier, sid)
-    if not s:
-        return jsonify({'error': 'Not found'}), 404
-
-    data = request.json or {}
-    lines = data.get('lines', [])
-    date_str = data.get('date')
-
-    if not lines:
-        return jsonify({'error': 'No lines provided'}), 400
-
-    # Parse date if provided
-    purchase_date = datetime.now()
-    if date_str:
-        try:
-            parts = date_str.split('-')
-            purchase_date = datetime(int(parts[0]), int(parts[1]), int(parts[2]))
-        except Exception:
-            return jsonify({'error': 'Invalid date format'}), 400
-
-    u = current_user()
-    created_products = []
-    batches_created = 0
-
-    unit_conversions = {
-        'g': 1, 'kg': 1000,
-        'ml': 1, 'L': 1000,
-        'unit': 1, 'dozen': 12,
-    }
-
-    for line in lines:
-        pid = line.get('product_id')
-        new_prod = line.get('new_product')
-        qty = line.get('qty')
-        unit = line.get('unit', 'unit')
-        total_price = line.get('total_price')
-
-        try:
-            qty = float(qty)
-            total_price = float(total_price)
-        except Exception:
-            return jsonify({'error': 'Invalid qty or total_price'}), 400
-
-        # Create new product if requested
-        if new_prod:
-            name = new_prod.get('name', '').strip()
-            if not name:
-                return jsonify({'error': 'new_product.name required'}), 400
-
-            # Check for duplicate name
-            if Product.query.filter_by(name=name).first():
-                return jsonify({'error': f'Product name "{name}" already exists'}), 409
-
-            # Auto-generate barcode
-            next_id = (db.session.query(func.max(Product.id)).scalar() or 0) + 1
-            barcode = _gen_barcode(next_id)
-
-            price = new_prod.get('price')
-            product_type = new_prod.get('product_type', 'simple')
-            base_unit = new_prod.get('base_unit') or None
-            unit_type = new_prod.get('unit_type') or None
-
-            if product_type not in ('simple', 'stock_item'):
-                return jsonify({'error': 'Invalid product_type'}), 400
-
-            try:
-                price = float(price) if price is not None else None
-            except Exception:
-                return jsonify({'error': 'Invalid price'}), 400
-
-            p = Product(
-                name=name, barcode=barcode, stock_qty=0,
-                price=price, product_type=product_type,
-                unit_type=unit_type, base_unit=base_unit,
-            )
-            db.session.add(p)
-            db.session.flush()
-            pid = p.id
-            created_products.append({'id': p.id, 'name': p.name})
-        else:
-            # Use existing product
-            try:
-                pid = int(pid)
-            except Exception:
-                return jsonify({'error': 'product_id required'}), 400
-
-        p = db.session.get(Product, pid)
-        if not p:
-            return jsonify({'error': f'Product id {pid} not found'}), 404
-
-        # Handle stock based on product type
-        if p.product_type == 'stock_item':
-            # Create FIFO batch
-            conversion = unit_conversions.get(unit, 1)
-            qty_base = qty * conversion
-            cost_per_base = total_price / qty_base
-
-            batch = StockBatch(
-                product_id=pid,
-                qty_purchased_base=qty_base,
-                qty_remaining_base=qty_base,
-                cost_per_base_unit=cost_per_base,
-                supplier_id=sid,
-                user_id=u.id if u else None,
-                purchased_at=purchase_date
-            )
-            db.session.add(batch)
-            batches_created += 1
-        elif p.product_type == 'simple':
-            # Add to stock_qty
-            p.stock_qty = (p.stock_qty or 0) + int(qty)
-            batches_created += 1
-
-    db.session.commit()
-
-    return jsonify({
-        'ok': True,
-        'created_products': created_products,
-        'batches_created': batches_created
-    })
-
 
 # -----------------------------
 # Customers (identification)
@@ -4774,90 +4436,6 @@ def api_purchases_post():
 # -----------------------------
 # Specials
 # -----------------------------
-def _serialize_special(s):
-    import json as _json
-    lines = SpecialLine.query.filter_by(special_id=s.id).all()
-    try:
-        schedule = _json.loads(s.schedule) if s.schedule else []
-    except Exception:
-        schedule = []
-    return {
-        'id':            s.id,
-        'name':          s.name,
-        'special_price': float(s.special_price),
-        'active':        s.active,
-        'schedule':      schedule,
-        'lines': [
-            {
-                'product_id':   l.product_id,
-                'product_name': db.session.get(Product, l.product_id).name if db.session.get(Product, l.product_id) else None,
-                'qty':          l.qty,
-            }
-            for l in lines
-        ],
-    }
-
-@app.route('/api/specials', methods=['GET'])
-def api_specials_get():
-    if not require_login():
-        return jsonify({'error': 'Unauthorized'}), 401
-    specials = Special.query.order_by(Special.name.asc()).all()
-    return jsonify([_serialize_special(s) for s in specials])
-
-@app.route('/api/specials', methods=['POST'])
-def api_specials_post():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    data  = request.json or {}
-    name  = data.get('name', '').strip()
-    price = data.get('special_price')
-    lines = data.get('lines', [])
-    if not name:
-        return jsonify({'error': 'Name required'}), 400
-    if price is None:
-        return jsonify({'error': 'special_price required'}), 400
-    import json as _json
-    schedule = data.get('schedule', [])
-    s = Special(name=name, special_price=Decimal(str(price)), active=data.get('active', True),
-                schedule=_json.dumps(schedule) if schedule else None)
-    db.session.add(s)
-    db.session.flush()
-    for l in lines:
-        db.session.add(SpecialLine(special_id=s.id, product_id=int(l['product_id']), qty=int(l.get('qty', 1))))
-    db.session.commit()
-    return jsonify(_serialize_special(s)), 201
-
-@app.route('/api/specials/<int:sid>', methods=['POST'])
-def api_specials_update(sid):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    s = db.session.get(Special, sid)
-    if not s:
-        return jsonify({'error': 'Not found'}), 404
-    data = request.json or {}
-    import json as _json
-    if 'name'          in data: s.name          = data['name'].strip()
-    if 'special_price' in data: s.special_price = Decimal(str(data['special_price']))
-    if 'active'        in data: s.active        = bool(data['active'])
-    if 'schedule'      in data: s.schedule      = _json.dumps(data['schedule']) if data['schedule'] else None
-    if 'lines' in data:
-        SpecialLine.query.filter_by(special_id=sid).delete()
-        for l in data['lines']:
-            db.session.add(SpecialLine(special_id=sid, product_id=int(l['product_id']), qty=int(l.get('qty', 1))))
-    db.session.commit()
-    return jsonify(_serialize_special(s))
-
-@app.route('/api/specials/<int:sid>', methods=['DELETE'])
-def api_specials_delete(sid):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
-    s = db.session.get(Special, sid)
-    if not s:
-        return jsonify({'error': 'Not found'}), 404
-    SpecialLine.query.filter_by(special_id=sid).delete()
-    db.session.delete(s)
-    db.session.commit()
-    return jsonify({'ok': True})
 
 # -----------------------------
 # Ingredient substitution suggestions
