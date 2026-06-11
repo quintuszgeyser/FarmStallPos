@@ -190,12 +190,16 @@ _VALID_TRANSITIONS: set = {
     (PersonState.SESSION_ACTIVE, PersonState.READY),
     (PersonState.SESSION_ACTIVE, PersonState.GRACE),
     (PersonState.SESSION_ACTIVE, PersonState.PROMOTED),    # fast-path (already known customer)
+    (PersonState.SESSION_ACTIVE, PersonState.CLOSED),      # zombie cleanup
     (PersonState.BUILDING,       PersonState.READY),
     (PersonState.BUILDING,       PersonState.GRACE),
     (PersonState.BUILDING,       PersonState.PROMOTED),
+    (PersonState.BUILDING,       PersonState.CLOSED),      # zombie cleanup
     (PersonState.READY,          PersonState.PROMOTED),
     (PersonState.READY,          PersonState.GRACE),
+    (PersonState.READY,          PersonState.CLOSED),      # zombie cleanup
     (PersonState.PROMOTED,       PersonState.GRACE),
+    (PersonState.PROMOTED,       PersonState.CLOSED),      # zombie cleanup
     (PersonState.GRACE,          PersonState.SESSION_ACTIVE),  # resumed
     (PersonState.GRACE,          PersonState.CLOSED),
     (PersonState.CLOSED,         PersonState.PROMOTED),        # promoted after grace expired
