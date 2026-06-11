@@ -987,6 +987,11 @@ def create_app():
     app.json = _JSONProvider(app)
     app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key')
 
+    # Trust Cloudflare / nginx reverse proxy headers so Flask sees HTTPS correctly.
+    # Required for secure session cookies and PWA install prompt.
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
     # DB URL
     db_url = os.getenv('DATABASE_URL', 'sqlite:///pos.db')
     if db_url.startswith('postgres://'):
