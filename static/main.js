@@ -7551,6 +7551,7 @@ const _EVENT_COLORS = {
 };
 
 let _identityLogKnown = new Set();
+let _identityLogCutoff = 0; // unix seconds — events at or before this ts are suppressed after a clear
 
 async function refreshIdentityLog() {
   try {
@@ -7560,6 +7561,7 @@ async function refreshIdentityLog() {
     if (!logEl) return;
 
     const newEvents = events.filter(ev => {
+      if (ev.ts <= _identityLogCutoff) return false;
       const key = `${ev.ts}_${ev.event}_${ev.stable_id}`;
       if (_identityLogKnown.has(key)) return false;
       _identityLogKnown.add(key);
@@ -7591,6 +7593,7 @@ async function refreshIdentityLog() {
 document.getElementById('btn-clear-identity-log')?.addEventListener('click', () => {
   const logEl = document.getElementById('monitor-identity-log');
   if (logEl) logEl.innerHTML = '<div class="text-muted">Cleared.</div>';
+  _identityLogCutoff = Date.now() / 1000; // service uses unix seconds
   _identityLogKnown = new Set();
 });
 
