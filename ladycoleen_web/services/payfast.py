@@ -89,7 +89,10 @@ def verify_itn(form_data: dict) -> bool:
     # 1. Verify signature — preserve received field order, exclude 'signature' field
     received_sig = form_data.get("signature", "")
     data_no_sig  = {k: v for k, v in form_data.items() if k != "signature"}
-    expected_sig = _signature(data_no_sig, cfg.get("PAYFAST_PASSPHRASE", ""))
+    passphrase   = cfg.get("PAYFAST_PASSPHRASE", "")
+    expected_sig = _signature(data_no_sig, passphrase)
+    log.info("PayFast ITN: fields=%s passphrase_set=%s received=%s expected=%s",
+             list(data_no_sig.keys()), bool(passphrase), received_sig, expected_sig)
     if received_sig != expected_sig:
         log.warning("PayFast ITN: signature mismatch received=%s expected=%s",
                     received_sig, expected_sig)

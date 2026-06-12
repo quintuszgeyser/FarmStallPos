@@ -70,8 +70,8 @@ def ensure_pos_customer(db, name: str, email: str | None, phone: str | None,
         # 4. Create
         row = db.session.execute(
             text("""
-                INSERT INTO customers (name, phone, email, notes, enrolled_at, auto_enrolled, visit_count, active)
-                VALUES (:name, :phone, :email, :notes, now(), false, 0, true)
+                INSERT INTO customers (name, phone, email, notes, enrolled_at, auto_enrolled, visit_count, active, is_employee)
+                VALUES (:name, :phone, :email, :notes, now(), false, 0, true, false)
                 RETURNING id
             """),
             {
