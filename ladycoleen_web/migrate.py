@@ -217,6 +217,8 @@ def _add_missing_columns(conn):
           "cake_orders.serves")
     _exec(conn, "ALTER TABLE payments ADD COLUMN IF NOT EXISTS external_payload JSONB",
           "payments.external_payload")
+    _exec(conn, "ALTER TABLE payment_sessions ADD COLUMN IF NOT EXISTS pf_payment_id VARCHAR(64)",
+          "payment_sessions.pf_payment_id")
 
 
 def _add_constraints(conn):
