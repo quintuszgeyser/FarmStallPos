@@ -6960,6 +6960,11 @@ function _renderKioskTablets(statuses) {
             <button class="btn btn-link btn-sm text-danger p-0 ms-2" onclick="removeKioskTablet(${i})" title="Remove">✕</button>
           </div>
         </div>
+        ${(t.url || (t.apps && t.apps.length)) ? `
+        <div class="d-flex flex-wrap gap-1 mb-2">
+          ${t.url ? `<button class="btn btn-outline-primary btn-sm" onclick="kioskAction('${t.ip}','url',{url:${JSON.stringify(t.url)}}).then(()=>kioskAction('${t.ip}','reload'))" title="${t.url}">🌐 Open URL</button>` : ''}
+          ${(t.apps||[]).map(a => a.package ? `<button class="btn btn-outline-success btn-sm" onclick="kioskAction('${t.ip}','app/launch',{package:${JSON.stringify(a.package)}})">${a.label||a.package}</button>` : '').join('')}
+        </div>` : ''}
         ${online ? `
         <!-- Status row -->
         <div class="d-flex flex-wrap gap-3 small text-muted mb-2">
@@ -7112,7 +7117,8 @@ async function kioskSetVolume(ip, current) {
 }
 
 async function kioskNavigate(ip) {
-  const url = prompt('Navigate to URL:');
+  const tablet = _kioskTablets.find(t => t.ip === ip);
+  const url = prompt('Navigate to URL:', tablet?.url || '');
   if (!url) return;
   await kioskAction(ip, 'url', { url });
 }
@@ -7203,13 +7209,28 @@ async function kioskShowScreenshot(ip) {
 document.getElementById('btn-kiosk-refresh')?.addEventListener('click', loadKioskTablets);
 
 document.getElementById('btn-kiosk-add')?.addEventListener('click', async () => {
-  const name = document.getElementById('kiosk-new-name')?.value.trim();
-  const ip   = document.getElementById('kiosk-new-ip')?.value.trim();
+  const name      = document.getElementById('kiosk-new-name')?.value.trim();
+  const ip        = document.getElementById('kiosk-new-ip')?.value.trim();
+  const url       = document.getElementById('kiosk-new-url')?.value.trim();
+  const app1label = document.getElementById('kiosk-new-app1-label')?.value.trim();
+  const app1pkg   = document.getElementById('kiosk-new-app1-pkg')?.value.trim();
+  const app2label = document.getElementById('kiosk-new-app2-label')?.value.trim();
+  const app2pkg   = document.getElementById('kiosk-new-app2-pkg')?.value.trim();
   if (!name || !ip) { toast('Enter a name and IP', 'error'); return; }
-  _kioskTablets.push({ name, ip });
+  const apps = [];
+  if (app1pkg) apps.push({ label: app1label || app1pkg, package: app1pkg });
+  if (app2pkg) apps.push({ label: app2label || app2pkg, package: app2pkg });
+  const tablet = { name, ip };
+  if (url)        tablet.url  = url;
+  if (apps.length) tablet.apps = apps;
+  _kioskTablets.push(tablet);
   await saveKioskTablets();
-  document.getElementById('kiosk-new-name').value = '';
-  document.getElementById('kiosk-new-ip').value = '';
+  ['kiosk-new-name','kiosk-new-ip','kiosk-new-url',
+   'kiosk-new-app1-label','kiosk-new-app1-pkg',
+   'kiosk-new-app2-label','kiosk-new-app2-pkg'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
   await loadKioskTablets();
 });
 

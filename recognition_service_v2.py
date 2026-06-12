@@ -62,11 +62,11 @@ FRIGATE_URL     = os.environ.get('FRIGATE_URL', 'http://127.0.0.1:8971')
 WEBHOOK_PORT    = int(os.environ.get('WEBHOOK_PORT', '8080'))
 
 # Model thresholds — overridden at startup from POS settings (GET /api/settings)
-FACE_THRESHOLD  = 0.35  # Minimum cosine similarity for face match
+FACE_THRESHOLD  = 0.55  # Minimum cosine similarity for face match (raised from 0.35 — logs showed false matches at 0.35-0.54)
 GAIT_THRESHOLD  = 0.40  # Euclidean distance for gait match — 0.40 for 12-dim L2-normalized temporal vector
 
 # Quality gates
-FACE_QUALITY_MIN = 0.15  # Minimum face quality — recalibrated for head crops
+FACE_QUALITY_MIN = 0.25  # Minimum face quality — raised from 0.15 to reject more marginal detections
 GAIT_QUALITY_MIN = 0.45  # Mounted camera looking down scores lower
 PLATE_CONF_MIN   = 0.8   # Minimum OCR confidence to use
 
@@ -111,17 +111,16 @@ SESSION_JOIN_FACE_SIM    = 0.55   # min face_sim to join an existing session —
 SESSION_MERGE_FACE_SIM   = 0.68   # min face_sim to merge two sessions — raised from 0.62; cross-person merges were contaminating sessions
 
 # Resolver thresholds
-RESOLVER_LINK_THRESHOLD  = 0.60   # resolver links to existing customer — raised from 0.50; 0.59 (Marie) was a false match
-RECENT_CUSTOMER_SIM      = 0.40   # anti-clone: link to recently-created customer
-ANON_IDENTITY_SIM        = 0.45   # sim to anonymous identity → merge evidence into it
+RESOLVER_LINK_THRESHOLD  = 0.70   # resolver links to existing customer — raised from 0.60; logs showed false matches at 0.63-0.69
+RECENT_CUSTOMER_SIM      = 0.50   # anti-clone: link to recently-created customer (raised from 0.40)
+ANON_IDENTITY_SIM        = 0.50   # sim to anonymous identity → merge evidence into it (raised from 0.45)
 
 # Customer creation gates (all must pass)
 MIN_FACES_TO_CREATE      = 5      # face embedding count required
-MIN_HIGH_QUALITY_FACES   = 2      # of those, must be quality ≥ FACE_QUALITY_MIN_CREATE
-FACE_QUALITY_MIN_CREATE  = 0.25   # quality floor — indoor camera clips score 0.22–0.35
+MIN_HIGH_QUALITY_FACES   = 3      # of those, must be quality ≥ FACE_QUALITY_MIN_CREATE (raised from 2)
+FACE_QUALITY_MIN_CREATE  = 0.35   # quality floor — raised from 0.25 to require better frames
 MIN_SESSION_DURATION     = 30     # seconds session must exist before creation
-CLEARLY_NOT_EXISTING     = 0.35   # best_face_sim must be BELOW this to create
-                                   # 0.35–0.50 band → anonymous identity, not new customer
+CLEARLY_NOT_EXISTING     = 0.45   # best_face_sim must be BELOW this to create (raised from 0.35)
 
 ANON_IDENTITY_TTL        = 86400  # 24 hours
 
@@ -155,12 +154,12 @@ CONFIDENCE_DECAY_INTERVAL  = 30.0  # seconds between decay ticks
 CONFIDENCE_DECAY_FLOOR     = 0.10  # never decay below this
 
 # Promotion scoring
-PROMOTION_MIN_SCORE        = 0.65  # promotion fires when score exceeds this
-PROFILE_QUALITY_MIN        = 0.40  # quality floor for profile-worthy embeddings
+PROMOTION_MIN_SCORE        = 0.72  # promotion fires when score exceeds this (raised from 0.65 — logs showed false matches at 0.63-0.69)
+PROFILE_QUALITY_MIN        = 0.45  # quality floor for profile-worthy embeddings (raised from 0.40)
 MIN_TIME_SPAN_FOR_PROMOTION = 5.0  # seconds — block single-burst promotions
 
 # Anon identity reconciliation
-ANON_MERGE_THRESHOLD       = 0.55  # bidirectional — both directions must clear this
+ANON_MERGE_THRESHOLD       = 0.65  # bidirectional — raised from 0.55 to prevent merging different people
 ANON_MERGE_COOLDOWN        = 60.0  # seconds before re-attempting same pair
 
 # ─── Stable Track Data Structures ────────────────────────────────────────────
@@ -584,12 +583,26 @@ def get_face_app():
                         blur_var = cv2.Laplacian(gray, cv2.CV_64F).var()
                         blur_score = min(1.0, blur_var / 500)
 
-                        # Combined quality
-                        quality = det_conf * 0.4 + size_score * 0.4 + blur_score * 0.2
+                        # Hard-reject overexposed / completely dark frames — these produce
+                        # garbage embeddings that cause false matches across different people.
+                        mean_brightness = float(np.mean(gray))
+                        if mean_brightness > 220:
+                            logger.debug(f'Face rejected: overexposed (brightness={mean_brightness:.0f})')
+                            continue
+                        if mean_brightness < 15:
+                            logger.debug(f'Face rejected: too dark (brightness={mean_brightness:.0f})')
+                            continue
+
+                        # Penalise near-overexposed / near-dark frames in quality score
+                        brightness_score = 1.0 - max(0.0, (mean_brightness - 180) / 40) - max(0.0, (30 - mean_brightness) / 30)
+                        brightness_score = max(0.0, brightness_score)
+
+                        # Combined quality — added brightness as a modifier
+                        quality = det_conf * 0.4 + size_score * 0.35 + blur_score * 0.15 + brightness_score * 0.10
 
                         # Quality gate
                         if quality < FACE_QUALITY_MIN:
-                            logger.debug(f'Face quality too low: {quality:.2f}')
+                            logger.debug(f'Face quality too low: {quality:.2f} (brightness={mean_brightness:.0f})')
                             continue
 
                         # Align face
@@ -2529,7 +2542,7 @@ class ThresholdManager:
 
     def __init__(self):
         self.global_thresholds = {
-            'link': 0.55,      # Face-only max score at 0.45 sim ≈ 0.27; at 0.65 sim ≈ 0.46 → need lower bar
+            'link': 0.70,      # Raised from 0.55 — logs showed false matches at 0.63–0.69
             'pending': 0.45    # Don't enroll if already matched at this level
         }
         self.segment_thresholds = {}
