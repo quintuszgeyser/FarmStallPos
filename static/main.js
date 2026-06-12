@@ -5843,7 +5843,12 @@ function renderCustomersList() {
             ${c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face —</span>'}
             ${c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body —</span>'}
             ${_attrChips(c.physical_attributes)}
-            <span class="text-muted">${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}${c.last_visit ? ` · last ${new Date(c.last_visit).toLocaleDateString()}` : ''}</span>
+          </div>
+          <div class="small mt-1 d-flex flex-wrap gap-2 text-muted">
+            <span title="Visits">${c.visit_count} visit${c.visit_count !== 1 ? 's' : ''}${c.last_visit ? ` · last ${new Date(c.last_visit).toLocaleDateString()}` : ''}</span>
+            ${c.receipt_count > 0 ? `<span class="text-success fw-semibold" title="Total spent">R${c.total_spent != null ? c.total_spent.toFixed(2) : '0.00'}</span>` : '<span title="No purchases yet">Never purchased</span>'}
+            ${c.receipt_count > 0 ? `<span title="Receipts">${c.receipt_count} receipt${c.receipt_count !== 1 ? 's' : ''}</span>` : ''}
+            ${c.receipt_count > 0 ? `<span title="Avg basket">avg R${c.avg_basket != null ? c.avg_basket.toFixed(2) : '0.00'}</span>` : ''}
           </div>
           ${!c.name ? `
           <div class="d-flex gap-1 mt-2 quick-name-row" id="qn-row-${c.id}">

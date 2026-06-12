@@ -84,6 +84,24 @@ def _build_customer_list(customers):
     '''), {'cids': cids}).fetchall()
     extras = {row[0]: row[1:] for row in rows}
 
+    # Bulk spend stats — receipt-level to avoid row inflation
+    spend_rows = db.session.execute(text('''
+        WITH receipts AS (
+            SELECT s.customer_id, s.sale_id,
+                SUM(s.qty * s.unit_price) AS receipt_total
+            FROM sales s
+            WHERE s.customer_id = ANY(:cids) AND COALESCE(s.voided, FALSE) = FALSE
+            GROUP BY s.customer_id, s.sale_id
+        )
+        SELECT customer_id,
+            COUNT(*)                      AS receipt_count,
+            COALESCE(SUM(receipt_total),0) AS total_spent,
+            CASE WHEN COUNT(*) > 0 THEN COALESCE(SUM(receipt_total),0)/COUNT(*) ELSE 0 END AS avg_basket
+        FROM receipts
+        GROUP BY customer_id
+    '''), {'cids': cids}).fetchall()
+    spend_by_cid = {r[0]: {'receipt_count': int(r[1]), 'total_spent': float(r[2]), 'avg_basket': round(float(r[3]),2)} for r in spend_rows}
+
     attr_rows = db.session.execute(text('''
         SELECT customer_id, height_cm, hair_color, skin_tone, build, eye_color,
                age_range, gender, wearing_glasses, facial_hair, detected_at,
@@ -110,6 +128,10 @@ def _build_customer_list(customers):
     for c in customers:
         d = _customer_dict(c, extras.get(c.id))
         d['physical_attributes'] = voted_attrs.get(c.id)
+        spend = spend_by_cid.get(c.id, {})
+        d['total_spent']     = spend.get('total_spent', 0.0)
+        d['avg_basket']      = spend.get('avg_basket', 0.0)
+        d['receipt_count']   = spend.get('receipt_count', 0)
         result.append(d)
     return result
 
