@@ -189,6 +189,7 @@ function _showDetails(loggedIn) {
   document.getElementById('step-register').classList.add('d-none');
   document.getElementById('step-details').classList.remove('d-none');
   document.getElementById('logged-in-banner').classList.toggle('d-none', !loggedIn);
+  document.getElementById('form-error').classList.add('d-none');
 }
 
 // ── Boot: already logged in ───────────────────────────────────────────────────
@@ -280,6 +281,11 @@ document.getElementById('checkout-form').addEventListener('submit', async (e) =>
   const err = document.getElementById('form-error');
   btn.disabled = true; btn.textContent = 'Processing…';
   err.classList.add('d-none');
+
+  // If details step not visible yet, form submit shouldn't fire — bail silently
+  if (document.getElementById('step-details').classList.contains('d-none')) {
+    btn.disabled = false; btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`; return;
+  }
 
   const email    = _resolvedEmail || document.getElementById('f-email').value.trim();
   const name     = document.getElementById('f-name').value.trim();
