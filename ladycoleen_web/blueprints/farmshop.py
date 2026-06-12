@@ -646,6 +646,21 @@ def payfast_notify():
 
         db.session.flush()
 
+        # Ensure POS customer exists and is linked BEFORE stock deduction
+        # so the sale record gets the correct customer_id
+        from services.customers import ensure_pos_customer as _ensure_pos
+        _pos_id = _ensure_pos(db, customer_name, customer_email, customer_phone,
+                              web_customer_id=customer_id)
+        if _pos_id and customer_id:
+            try:
+                db.session.execute(
+                    text("UPDATE web_customers SET pos_customer_id=:pid WHERE id=:cid AND pos_customer_id IS NULL"),
+                    {"pid": _pos_id, "cid": customer_id}
+                )
+                db.session.flush()
+            except Exception:
+                pass
+
         # Deduct stock
         sale_uuid = check_and_deduct_order(db, order_id, None)
 
@@ -692,20 +707,6 @@ def payfast_notify():
         db.session.rollback()
         log.error("PayFast ITN: order creation failed for session %s: %s", session_id, e)
         return "OK", 200   # Still return 200 — log and investigate manually
-
-    # Auto-create POS customer
-    from services.customers import ensure_pos_customer
-    pos_id = ensure_pos_customer(db, customer_name, customer_email, customer_phone,
-                                 web_customer_id=customer_id)
-    if pos_id and customer_id:
-        try:
-            db.session.execute(
-                text("UPDATE web_customers SET pos_customer_id=:pid WHERE id=:cid AND pos_customer_id IS NULL"),
-                {"pid": pos_id, "cid": customer_id}
-            )
-            db.session.commit()
-        except Exception:
-            pass
 
     # Emails (non-blocking)
     order_full = db.session.execute(
