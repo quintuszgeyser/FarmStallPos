@@ -13,13 +13,17 @@ PAYFAST_LIVE_URL    = "https://www.payfast.co.za/eng/process"
 PAYFAST_SANDBOX_URL = "https://sandbox.payfast.co.za/eng/process"
 
 
-def _signature(data: dict, passphrase: str) -> str:
+def _signature(data: dict, passphrase: str, skip_empty: bool = True) -> str:
     """
     Generate MD5 signature for PayFast request.
     IMPORTANT: Fields must remain in insertion order — PayFast docs explicitly say
     DO NOT sort alphabetically. The pairs must appear in the order defined in the spec.
+    skip_empty=True for outgoing form (skip blank fields).
+    skip_empty=False for ITN verification (include all fields PayFast sent).
     """
-    items = [(k, str(v)) for k, v in data.items() if k != "signature" and str(v) != ""]
+    items = [(k, str(v)) for k, v in data.items() if k != "signature"]
+    if skip_empty:
+        items = [(k, v) for k, v in items if v != ""]
     query = "&".join(f"{k}={urllib.parse.quote_plus(v)}" for k, v in items)
     if passphrase and passphrase.strip():
         query += f"&passphrase={urllib.parse.quote_plus(passphrase.strip())}"
@@ -90,7 +94,7 @@ def verify_itn(form_data: dict) -> bool:
     received_sig = form_data.get("signature", "")
     data_no_sig  = {k: v for k, v in form_data.items() if k != "signature"}
     passphrase   = cfg.get("PAYFAST_PASSPHRASE", "")
-    expected_sig = _signature(data_no_sig, passphrase)
+    expected_sig = _signature(data_no_sig, passphrase, skip_empty=False)
     log.info("PayFast ITN: fields=%s passphrase_set=%s received=%s expected=%s",
              list(data_no_sig.keys()), bool(passphrase), received_sig, expected_sig)
     if received_sig != expected_sig:
