@@ -857,6 +857,52 @@
         </div>
       </div>
 
+      <!-- ── Customer & Channel stats row ── -->
+      <div class="row g-2 mb-3">
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">New Customers</div>
+            <h4 class="mb-0" id="stat-new-customers">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Returning</div>
+            <h4 class="mb-0" id="stat-returning-customers">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Repeat Rate</div>
+            <h4 class="mb-0" id="stat-repeat-rate">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Revenue / Customer</div>
+            <h4 class="mb-0" id="stat-rev-per-customer">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100 border-success"><div class="card-body py-2">
+            <div class="text-success small">Online Revenue</div>
+            <h4 class="mb-0 text-success" id="stat-online-rev">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">In-Store Revenue</div>
+            <h4 class="mb-0" id="stat-instore-rev">—</h4>
+          </div></div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="card h-100"><div class="card-body py-2">
+            <div class="text-muted small">Void Rate</div>
+            <h4 class="mb-0" id="stat-void-rate">—</h4>
+          </div></div>
+        </div>
+      </div>
+
       <!-- ── Charts: sub-tab toggle ── -->
       <div class="d-flex gap-1 mb-2 border-bottom pb-1 flex-wrap">
         <button class="btn btn-sm btn-primary"          data-chart-tab="daily">Daily Revenue</button>
@@ -865,6 +911,8 @@
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="top-qty">Top Products (Qty)</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="top-rev">Top Products (Revenue)</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="suppliers">Supplier Spend</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="channels">Channels</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="customers">Customers</button>
       </div>
       <div class="text-muted small mb-1" id="chart-click-hint" style="display:none">Click a bar to drill into those transactions</div>
       <div id="stats-chart-area" style="position:relative; height:320px;">
@@ -874,6 +922,8 @@
         <canvas id="chart-top"       style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-top-rev"   style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-suppliers" style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-channels"  style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-customers" style="display:none; width:100%; height:100%"></canvas>
       </div>
 
       <!-- ── Employee Performance ── -->

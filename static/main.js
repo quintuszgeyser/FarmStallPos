@@ -4151,9 +4151,11 @@ async function openProfitDrilldown() {
   }
 }
 
+function switchChartTab(tab) { _showChartTab(tab); }
+
 function _showChartTab(tab) {
   _statsChartTab = tab;
-  ['daily','hourly','minute','top','top-rev','suppliers'].forEach(id => {
+  ['daily','hourly','minute','top','top-rev','suppliers','channels','customers'].forEach(id => {
     const c = document.getElementById(`chart-${id}`);
     if (c) c.style.display = 'none';
   });
@@ -4218,6 +4220,41 @@ function _showChartTab(tab) {
       color: '#5d4037', valuePrefix: 'R',
       onBarClick: (lbl) => openSupplierDrilldown(lbl),
     });
+
+  } else if (tab === 'channels') {
+    const c = document.getElementById('chart-channels');
+    c.style.display = '';
+    const start = document.getElementById('stats-start')?.value || todayISO();
+    const end   = document.getElementById('stats-end')?.value   || todayISO();
+    api(`/api/stats/drilldown/channels?start=${start}&end=${end}`).then(d => {
+      const daily = d.daily || [];
+      if (!daily.length) { drawBarChart(c, [], [], {title: 'No channel data'}); return; }
+      // Stacked-style: show online vs instore as two separate datasets using colour
+      // Draw online revenue, then overlay instore as a second pass using a helper
+      drawBarChart(c, daily.map(x => x.date.slice(5)),
+        daily.map(x => x.online_rev), {
+          color: '#4caf7d', color2: '#81c784', valuePrefix: 'R',
+          title: 'Online Revenue',
+        });
+    }).catch(() => {});
+
+  } else if (tab === 'customers') {
+    const c = document.getElementById('chart-customers');
+    c.style.display = '';
+    const start = document.getElementById('stats-start')?.value || todayISO();
+    const end   = document.getElementById('stats-end')?.value   || todayISO();
+    api(`/api/stats/drilldown/customers?start=${start}&end=${end}`).then(d => {
+      const daily = d.new_vs_returning_daily || [];
+      const freq  = d.frequency_distribution || {};
+      if (!daily.length && !freq.once) { drawBarChart(c, [], [], {title: 'No customer data'}); return; }
+      // Show frequency distribution as a simple bar (3 bars)
+      const freqLabels = ['Once', '2–5×', '6+×'];
+      const freqVals   = [freq.once || 0, freq.two_to_five || 0, freq.six_plus || 0];
+      drawBarChart(c, freqLabels, freqVals, {
+        color: '#1976d2', color2: '#42a5f5',
+        title: 'Customer Purchase Frequency',
+      });
+    }).catch(() => {});
   }
 }
 
@@ -4373,6 +4410,15 @@ async function loadStats() {
       }
       cardClick(el('stat-avg-wait'), () => openKitchenDrilldown());
     }
+
+    // ── New customer / channel cards ──
+    if (el('stat-new-customers'))     { el('stat-new-customers').textContent     = j.new_customers ?? '—';     cardClick(el('stat-new-customers'),     () => switchChartTab('customers')); }
+    if (el('stat-returning-customers')){ el('stat-returning-customers').textContent = j.returning_customers ?? '—'; cardClick(el('stat-returning-customers'), () => switchChartTab('customers')); }
+    if (el('stat-repeat-rate'))       { el('stat-repeat-rate').textContent       = j.repeat_customer_rate != null ? j.repeat_customer_rate + '%' : '—'; cardClick(el('stat-repeat-rate'), () => switchChartTab('customers')); }
+    if (el('stat-rev-per-customer'))  { el('stat-rev-per-customer').textContent  = j.revenue_per_customer != null ? `R${fmt(j.revenue_per_customer)}` : '—'; }
+    if (el('stat-online-rev'))        { el('stat-online-rev').textContent        = j.online_revenue != null ? `R${fmt(j.online_revenue)}` : '—';     cardClick(el('stat-online-rev'),        () => switchChartTab('channels')); }
+    if (el('stat-instore-rev'))       { el('stat-instore-rev').textContent       = j.instore_revenue != null ? `R${fmt(j.instore_revenue)}` : '—';   cardClick(el('stat-instore-rev'),       () => switchChartTab('channels')); }
+    if (el('stat-void-rate'))         { el('stat-void-rate').textContent         = j.void_receipt_rate != null ? j.void_receipt_rate + '%' : '—'; }
 
     if (el('stat-best-day') && j.best_day) {
       el('stat-best-day').textContent     = j.best_day.date;
@@ -6232,6 +6278,11 @@ async function openCustomerDetail(customerId) {
     const totalVisits = (p.recent_sessions || []).length;
     const buyRate = totalVisits > 0 ? Math.round(purchaseVisits / totalVisits * 100) : null;
 
+    const onlinePct  = p.online_spend_pct !== null && p.online_spend_pct !== undefined ? p.online_spend_pct + '%' : null;
+    const lastPurchaseStr = p.days_since_purchase !== null && p.days_since_purchase !== undefined
+      ? (p.days_since_purchase === 0 ? 'Today' : p.days_since_purchase + 'd ago') : '—';
+    const longestGapStr = p.longest_gap_days !== null && p.longest_gap_days !== undefined ? p.longest_gap_days + 'd' : '—';
+
     bizHtml = `
     <div class="row g-2 mb-3">
       <div class="col-4"><div class="border rounded text-center py-2 px-1">
@@ -6259,6 +6310,36 @@ async function openCustomerDetail(customerId) {
       <div class="col-4"><div class="border rounded text-center py-2 px-1">
         <div class="text-muted" style="font-size:11px">First Seen</div>
         <div class="fw-bold" style="font-size:12px">${firstSeen}</div>
+      </div></div>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Online Receipts</div>
+        <div class="fw-bold">${p.online_count || 0}</div>
+        ${p.online_spend ? `<div class="text-muted" style="font-size:10px">${fmtR(p.online_spend)}</div>` : ''}
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">In-Store</div>
+        <div class="fw-bold">${p.instore_count || 0}</div>
+        ${p.instore_spend ? `<div class="text-muted" style="font-size:10px">${fmtR(p.instore_spend)}</div>` : ''}
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Online Split</div>
+        <div class="fw-bold">${onlinePct || '—'}</div>
+      </div></div>
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Last Purchase</div>
+        <div class="fw-bold" style="font-size:12px">${lastPurchaseStr}</div>
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Fav. Day</div>
+        <div class="fw-bold" style="font-size:12px">${p.fav_day || '—'}</div>
+      </div></div>
+      <div class="col-4"><div class="border rounded text-center py-2 px-1">
+        <div class="text-muted" style="font-size:11px">Fav. Time</div>
+        <div class="fw-bold" style="font-size:12px">${p.fav_time || '—'}</div>
       </div></div>
     </div>`;
 

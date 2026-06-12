@@ -177,7 +177,79 @@ def api_stats():
     filtered_product_name = (db.session.get(Product, product_id_filter) or Product(name=None)).name if product_id_filter else None
     filtered_user_name    = (db.session.get(User, user_id_filter) or User(username=None)).username if user_id_filter else None
 
-    return jsonify({'filtered_product_id': product_id_filter, 'filtered_product_name': filtered_product_name, 'filtered_user_id': user_id_filter, 'filtered_user_name': filtered_user_name, 'transactions_count': transactions_count, 'total_sales_value': round(total_sales_value, 2), 'total_items_sold': round(total_items_sold, 2), 'avg_basket_value': round(avg_basket_value, 2), 'avg_basket_qty': round(avg_basket_qty, 2), 'total_cogs': round(total_cogs, 2), 'gross_profit': round(gross_profit, 2), 'gross_margin': gross_margin, 'total_writeoff_cost': round(total_writeoff_cost, 2), 'writeoff_count': total_writeoff_count, 'kitchen_orders_today': len(kitchen_completed_list), 'avg_wait_seconds': max_wait_seconds, 'avg_completed_wait': avg_completed_wait, 'top_products': top_by_qty, 'top_by_revenue': top_by_revenue, 'revenue_per_hour': hourly, 'revenue_per_day': daily, 'best_day': best_day, 'worst_day': worst_day, 'supplier_breakdown': supplier_breakdown, 'revenue_per_minute': minutely, 'employee_stats': employee_stats})
+    # ── New customer/channel metrics — receipt-level, correct deduplication ──
+    from sqlalchemy import text as _text
+    cust_row = db.session.execute(_text("""
+        WITH all_receipts AS (
+            SELECT s.sale_id, s.customer_id, MIN(s.date_time) AS sale_at,
+                MAX(CASE WHEN oo.id IS NOT NULL THEN 1 ELSE 0 END) AS is_online,
+                SUM(CASE WHEN NOT COALESCE(s.voided,FALSE) THEN s.qty * s.unit_price ELSE 0 END) AS receipt_total,
+                BOOL_OR(COALESCE(s.voided,FALSE)) AS is_voided
+            FROM sales s
+            LEFT JOIN online_orders oo ON oo.pos_sale_id::text = s.sale_id
+            GROUP BY s.sale_id, s.customer_id
+        ),
+        period AS (SELECT * FROM all_receipts WHERE sale_at >= :s AND sale_at <= :e),
+        first_purchase AS (
+            SELECT customer_id, MIN(sale_at) AS first_sale_at
+            FROM all_receipts WHERE customer_id IS NOT NULL AND NOT is_voided
+            GROUP BY customer_id
+        ),
+        period_customers AS (
+            SELECT customer_id, COUNT(*) AS receipt_count
+            FROM period WHERE customer_id IS NOT NULL AND NOT is_voided
+            GROUP BY customer_id
+        )
+        SELECT
+            COUNT(DISTINCT period.sale_id) FILTER (WHERE NOT period.is_voided)                AS total_receipts,
+            COUNT(DISTINCT period.sale_id) FILTER (WHERE period.is_voided)                    AS voided_receipts,
+            COUNT(DISTINCT period.sale_id) FILTER (WHERE NOT period.is_voided AND is_online=1) AS online_receipts,
+            COUNT(DISTINCT period.sale_id) FILTER (WHERE NOT period.is_voided AND is_online=0) AS instore_receipts,
+            COALESCE(SUM(receipt_total) FILTER (WHERE NOT period.is_voided AND is_online=1),0) AS online_revenue,
+            COALESCE(SUM(receipt_total) FILTER (WHERE NOT period.is_voided AND is_online=0),0) AS instore_revenue,
+            COUNT(DISTINCT period.customer_id) FILTER (WHERE NOT period.is_voided)             AS distinct_customers,
+            (SELECT COUNT(*) FROM first_purchase WHERE first_sale_at >= :s AND first_sale_at <= :e) AS new_customers,
+            (SELECT COUNT(*) FROM first_purchase fp JOIN period_customers pc ON pc.customer_id=fp.customer_id WHERE fp.first_sale_at < :s) AS returning_customers,
+            (SELECT COUNT(*) FROM period_customers WHERE receipt_count > 1) AS repeat_customers
+        FROM period
+    """), {'s': start_dt, 'e': end_dt}).fetchone()
+
+    cr = cust_row
+    distinct_customers  = int(cr.distinct_customers or 0)
+    total_receipts_ct   = int(cr.total_receipts or 0)
+    voided_receipts_ct  = int(cr.voided_receipts or 0)
+    all_receipts_ct     = total_receipts_ct + voided_receipts_ct
+    online_revenue      = float(cr.online_revenue or 0)
+    instore_revenue     = float(cr.instore_revenue or 0)
+    repeat_customer_rate = round(int(cr.repeat_customers or 0) / distinct_customers * 100, 1) if distinct_customers else 0
+    revenue_per_customer = round(total_sales_value / distinct_customers, 2) if distinct_customers else None
+    void_receipt_rate    = round(voided_receipts_ct / all_receipts_ct * 100, 1) if all_receipts_ct else 0
+
+    return jsonify({
+        'filtered_product_id': product_id_filter, 'filtered_product_name': filtered_product_name,
+        'filtered_user_id': user_id_filter, 'filtered_user_name': filtered_user_name,
+        'transactions_count': transactions_count, 'total_sales_value': round(total_sales_value, 2),
+        'total_items_sold': round(total_items_sold, 2), 'avg_basket_value': round(avg_basket_value, 2),
+        'avg_basket_qty': round(avg_basket_qty, 2), 'total_cogs': round(total_cogs, 2),
+        'gross_profit': round(gross_profit, 2), 'gross_margin': gross_margin,
+        'total_writeoff_cost': round(total_writeoff_cost, 2), 'writeoff_count': total_writeoff_count,
+        'kitchen_orders_today': len(kitchen_completed_list), 'avg_wait_seconds': max_wait_seconds,
+        'avg_completed_wait': avg_completed_wait, 'top_products': top_by_qty,
+        'top_by_revenue': top_by_revenue, 'revenue_per_hour': hourly, 'revenue_per_day': daily,
+        'best_day': best_day, 'worst_day': worst_day, 'supplier_breakdown': supplier_breakdown,
+        'revenue_per_minute': minutely, 'employee_stats': employee_stats,
+        # ── New metrics ──
+        'new_customers':         int(cr.new_customers or 0),
+        'returning_customers':   int(cr.returning_customers or 0),
+        'distinct_customers':    distinct_customers,
+        'online_revenue':        round(online_revenue, 2),
+        'instore_revenue':       round(instore_revenue, 2),
+        'online_receipts':       int(cr.online_receipts or 0),
+        'instore_receipts':      int(cr.instore_receipts or 0),
+        'repeat_customer_rate':  repeat_customer_rate,
+        'revenue_per_customer':  revenue_per_customer,
+        'void_receipt_rate':     void_receipt_rate,
+    })
 
 
 @bp.route('/api/stats/drilldown')
@@ -507,3 +579,113 @@ def export_staff_csv():
         fu = db.session.get(User, uid_filter)
         if fu: emp_slug = f"_{fu.username.replace(' ','_')}"
     return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=f"staff_stats{emp_slug}_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv")
+
+
+# ── New drilldown: Channels ──────────────────────────────────────────────────
+
+@bp.route('/api/stats/drilldown/channels')
+def api_stats_drilldown_channels():
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+    from sqlalchemy import text as _text
+
+    daily_rows = db.session.execute(_text("""
+        WITH receipts AS (
+            SELECT
+                s.sale_id,
+                DATE(MIN(s.date_time))                                          AS sale_date,
+                SUM(CASE WHEN NOT COALESCE(s.voided,FALSE) THEN s.qty * s.unit_price ELSE 0 END) AS receipt_total,
+                BOOL_OR(COALESCE(s.voided,FALSE))                               AS is_voided,
+                MAX(CASE WHEN oo.id IS NOT NULL THEN 1 ELSE 0 END)              AS is_online
+            FROM sales s
+            LEFT JOIN online_orders oo ON oo.pos_sale_id::text = s.sale_id
+            WHERE s.date_time >= :s AND s.date_time <= :e
+            GROUP BY s.sale_id
+        )
+        SELECT
+            sale_date::text,
+            COALESCE(SUM(receipt_total) FILTER (WHERE is_online=1 AND NOT is_voided), 0) AS online_rev,
+            COALESCE(SUM(receipt_total) FILTER (WHERE is_online=0 AND NOT is_voided), 0) AS instore_rev,
+            COUNT(DISTINCT sale_id) FILTER (WHERE is_online=1 AND NOT is_voided)          AS online_count,
+            COUNT(DISTINCT sale_id) FILTER (WHERE is_online=0 AND NOT is_voided)          AS instore_count
+        FROM receipts
+        GROUP BY sale_date
+        ORDER BY sale_date
+    """), {'s': start_dt, 'e': end_dt}).fetchall()
+
+    delivery_rows = db.session.execute(_text("""
+        SELECT delivery_method, COUNT(*) AS cnt
+        FROM online_orders
+        WHERE created_at >= :s AND created_at <= :e AND status != 'cancelled'
+        GROUP BY delivery_method
+    """), {'s': start_dt, 'e': end_dt}).fetchall()
+
+    return jsonify({
+        'daily': [{'date': r[0], 'online_rev': float(r[1]), 'instore_rev': float(r[2]),
+                   'online_count': int(r[3]), 'instore_count': int(r[4])} for r in daily_rows],
+        'delivery_methods': {r[0]: int(r[1]) for r in delivery_rows},
+    })
+
+
+# ── New drilldown: Customers ─────────────────────────────────────────────────
+
+@bp.route('/api/stats/drilldown/customers')
+def api_stats_drilldown_customers():
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+    from sqlalchemy import text as _text
+
+    daily_rows = db.session.execute(_text("""
+        WITH all_receipts AS (
+            SELECT s.sale_id, s.customer_id, MIN(s.date_time) AS sale_at,
+                BOOL_OR(COALESCE(s.voided,FALSE)) AS is_voided
+            FROM sales s
+            WHERE s.customer_id IS NOT NULL
+            GROUP BY s.sale_id, s.customer_id
+        ),
+        first_purchase AS (
+            SELECT customer_id, MIN(sale_at) AS first_sale_at
+            FROM all_receipts WHERE NOT is_voided
+            GROUP BY customer_id
+        ),
+        period_receipts AS (
+            SELECT ar.*, DATE(ar.sale_at) AS sale_date,
+                CASE WHEN fp.first_sale_at >= :s AND fp.first_sale_at <= :e THEN 'new' ELSE 'returning' END AS ctype
+            FROM all_receipts ar
+            JOIN first_purchase fp ON fp.customer_id = ar.customer_id
+            WHERE ar.sale_at >= :s AND ar.sale_at <= :e AND NOT ar.is_voided
+        )
+        SELECT sale_date::text,
+            COUNT(DISTINCT customer_id) FILTER (WHERE ctype='new')       AS new_c,
+            COUNT(DISTINCT customer_id) FILTER (WHERE ctype='returning') AS returning_c
+        FROM period_receipts
+        GROUP BY sale_date ORDER BY sale_date
+    """), {'s': start_dt, 'e': end_dt}).fetchall()
+
+    freq_row = db.session.execute(_text("""
+        WITH period_receipts AS (
+            SELECT s.sale_id, s.customer_id, BOOL_OR(COALESCE(s.voided,FALSE)) AS is_voided
+            FROM sales s
+            WHERE s.date_time >= :s AND s.date_time <= :e AND s.customer_id IS NOT NULL
+            GROUP BY s.sale_id, s.customer_id
+        ),
+        customer_counts AS (
+            SELECT customer_id, COUNT(*) AS receipt_count
+            FROM period_receipts WHERE NOT is_voided
+            GROUP BY customer_id
+        )
+        SELECT
+            COUNT(*) FILTER (WHERE receipt_count = 1)  AS once,
+            COUNT(*) FILTER (WHERE receipt_count BETWEEN 2 AND 5) AS two_to_five,
+            COUNT(*) FILTER (WHERE receipt_count > 5)  AS six_plus
+        FROM customer_counts
+    """), {'s': start_dt, 'e': end_dt}).fetchone()
+
+    return jsonify({
+        'new_vs_returning_daily': [{'date': r[0], 'new': int(r[1]), 'returning': int(r[2])} for r in daily_rows],
+        'frequency_distribution': {
+            'once':        int(freq_row[0] or 0),
+            'two_to_five': int(freq_row[1] or 0),
+            'six_plus':    int(freq_row[2] or 0),
+        },
+    })

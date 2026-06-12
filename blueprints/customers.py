@@ -331,20 +331,89 @@ def api_customer_name(cid):
 # Profile & analytics
 # ---------------------------------------------------------------------------
 
+_DOW_NAMES = {0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday'}
+
 @bp.route('/api/customers/<int:cid>/profile', methods=['GET'])
 def api_customer_profile(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     customer = db.session.get(Customer, cid)
     if not customer: return jsonify({'error': 'Customer not found'}), 404
 
+    # ── Receipt-level CTE — one row per receipt, avoids row-based inflation ──
+    receipt_rows = db.session.execute(text("""
+        WITH receipt_sales AS (
+            SELECT
+                s.sale_id,
+                MIN(s.date_time)                                              AS sale_at,
+                SUM(s.qty * s.unit_price)                                     AS receipt_total,
+                MAX(CASE WHEN oo.id IS NOT NULL THEN 1 ELSE 0 END)            AS is_online
+            FROM sales s
+            LEFT JOIN online_orders oo ON oo.pos_sale_id::text = s.sale_id
+            WHERE s.customer_id = :cid
+              AND COALESCE(s.voided, FALSE) = FALSE
+            GROUP BY s.sale_id
+        ),
+        purchase_gaps AS (
+            SELECT sale_at,
+                   LAG(sale_at) OVER (ORDER BY sale_at) AS prev_sale_at
+            FROM receipt_sales
+        ),
+        visit_gaps AS (
+            SELECT detected_at,
+                   LAG(detected_at) OVER (ORDER BY detected_at) AS prev_detected_at
+            FROM customer_visits
+            WHERE customer_id = :cid
+        ),
+        fav_day AS (
+            SELECT EXTRACT(DOW FROM sale_at)::int AS dow, COUNT(*) AS n
+            FROM receipt_sales
+            GROUP BY 1 ORDER BY n DESC, 1 LIMIT 1
+        ),
+        fav_hour AS (
+            SELECT CASE
+                WHEN EXTRACT(HOUR FROM sale_at) < 12 THEN 'Morning'
+                WHEN EXTRACT(HOUR FROM sale_at) < 17 THEN 'Afternoon'
+                ELSE 'Evening'
+            END AS bucket, COUNT(*) AS n
+            FROM receipt_sales
+            GROUP BY 1 ORDER BY n DESC, 1 LIMIT 1
+        )
+        SELECT
+            COUNT(*)                                                           AS receipt_count_total,
+            COUNT(*) FILTER (WHERE is_online = 1)                             AS online_receipt_count,
+            COUNT(*) FILTER (WHERE is_online = 0)                             AS instore_receipt_count,
+            COALESCE(SUM(receipt_total), 0)                                   AS total_spent,
+            COALESCE(SUM(receipt_total) FILTER (WHERE is_online = 1), 0)      AS online_spend,
+            COALESCE(SUM(receipt_total) FILTER (WHERE is_online = 0), 0)      AS instore_spend,
+            CASE WHEN COUNT(*) > 0
+                 THEN COALESCE(SUM(receipt_total),0) / COUNT(*) ELSE 0 END    AS avg_basket,
+            MAX(sale_at)                                                       AS last_purchase_at,
+            CASE WHEN MAX(sale_at) IS NOT NULL
+                 THEN (CURRENT_DATE - DATE(MAX(sale_at))) ELSE NULL END        AS days_since_purchase,
+            (SELECT MAX(DATE_PART('day', sale_at - prev_sale_at))
+             FROM purchase_gaps WHERE prev_sale_at IS NOT NULL)                AS longest_purchase_gap_days,
+            (SELECT MAX(DATE_PART('day', detected_at - prev_detected_at))
+             FROM visit_gaps WHERE prev_detected_at IS NOT NULL)               AS longest_visit_gap_days,
+            (SELECT AVG(DATE_PART('day', sale_at - prev_sale_at))
+             FROM purchase_gaps WHERE prev_sale_at IS NOT NULL)                AS avg_days_between_purchases,
+            (SELECT dow FROM fav_day)                                          AS fav_dow,
+            (SELECT bucket FROM fav_hour)                                      AS fav_time_bucket
+        FROM receipt_sales
+    """), {'cid': cid}).fetchone()
+
+    r = receipt_rows
+    total_spent   = float(r.total_spent or 0)
+    online_spend  = float(r.online_spend or 0)
+    instore_spend = float(r.instore_spend or 0)
+
+    # ── Build receipts dict for purchase history (using ORM for item details) ──
     sales = Sale.query.filter(Sale.customer_id == cid, Sale.voided == False).order_by(Sale.date_time.desc()).all()
-    receipts, product_counts, total_spent = {}, {}, Decimal('0')
+    receipts, product_counts = {}, {}
     for sale in sales:
         if sale.sale_id not in receipts:
             receipts[sale.sale_id] = {'sale_id': sale.sale_id, 'date_time': sale.date_time.isoformat(), 'total': Decimal('0'), 'items': []}
         item_total = sale.qty * sale.unit_price
         receipts[sale.sale_id]['total'] += item_total
-        total_spent += item_total
         receipts[sale.sale_id]['items'].append({'product_id': sale.product_id, 'product_name': sale.product.name if sale.product else 'Unknown', 'qty': float(sale.qty), 'unit_price': float(sale.unit_price)})
         pid = sale.product_id
         if pid not in product_counts:
@@ -356,16 +425,45 @@ def api_customer_profile(cid):
     for p in top_products: p['total_spent'] = float(p['total_spent'])
 
     sessions_result = db.session.execute(text("""SELECT session_start, session_end, dwell_seconds, purchase_made, sale_ids FROM visit_sessions WHERE customer_id = :cid ORDER BY session_start DESC LIMIT 20"""), {'cid': cid}).fetchall()
-    sessions = [{'session_start': r[0].isoformat() if r[0] else None, 'session_end': r[1].isoformat() if r[1] else None, 'dwell_seconds': r[2], 'purchase_made': r[3], 'sale_ids': r[4]} for r in sessions_result]
-    total_dwell = sum(r[2] for r in sessions_result if r[2])
+    sessions   = [{'session_start': row[0].isoformat() if row[0] else None, 'session_end': row[1].isoformat() if row[1] else None, 'dwell_seconds': row[2], 'purchase_made': row[3], 'sale_ids': row[4]} for row in sessions_result]
+    total_dwell = sum(row[2] for row in sessions_result if row[2])
     avg_dwell   = total_dwell / len(sessions) if sessions else 0
-    avg_basket  = float(total_spent) / len(receipts) if receipts else 0
 
-    plates = [p.plate_number for p in customer.plates if p.active]
+    plates        = [p.plate_number for p in customer.plates if p.active]
     face_enrolled = any(f.active for f in customer.faces)
     gait_enrolled = any(g.active for g in customer.gaits)
 
-    return jsonify({'customer_id': cid, 'customer_number': customer.customer_number, 'name': customer.name, 'phone': customer.phone, 'email': customer.email, 'auto_enrolled': customer.auto_enrolled, 'first_seen': customer.first_seen.isoformat() if customer.first_seen else None, 'last_visit': customer.last_visit.isoformat() if customer.last_visit else None, 'visit_count': customer.visit_count, 'total_spent': float(total_spent), 'avg_basket': avg_basket, 'avg_dwell_seconds': avg_dwell, 'receipts': [{**r, 'total': float(r['total'])} for r in receipts.values()], 'top_products': top_products, 'recent_sessions': sessions, 'signals': {'plates': plates, 'face_enrolled': face_enrolled, 'gait_enrolled': gait_enrolled}})
+    return jsonify({
+        'customer_id': cid, 'customer_number': customer.customer_number,
+        'name': customer.name, 'phone': customer.phone, 'email': customer.email,
+        'auto_enrolled': customer.auto_enrolled,
+        'first_seen':  customer.first_seen.isoformat()  if customer.first_seen  else None,
+        'last_visit':  customer.last_visit.isoformat()   if customer.last_visit  else None,
+        'visit_count': customer.visit_count,
+        # ── Core spend (receipt-accurate) ──
+        'total_spent':           total_spent,
+        'avg_basket':            float(r.avg_basket or 0),
+        'receipt_count_total':   int(r.receipt_count_total or 0),
+        # ── Channel split ──
+        'online_count':          int(r.online_receipt_count or 0),
+        'instore_count':         int(r.instore_receipt_count or 0),
+        'online_spend':          round(online_spend, 2),
+        'instore_spend':         round(instore_spend, 2),
+        'online_spend_pct':      round(online_spend / total_spent * 100, 1) if total_spent else None,
+        # ── Behaviour ──
+        'fav_day':               _DOW_NAMES.get(int(r.fav_dow)) if r.fav_dow is not None else None,
+        'fav_time':              r.fav_time_bucket,
+        'days_since_purchase':   int(r.days_since_purchase)          if r.days_since_purchase          is not None else None,
+        'longest_gap_days':      int(r.longest_visit_gap_days)        if r.longest_visit_gap_days        is not None else None,
+        'longest_purchase_gap':  int(r.longest_purchase_gap_days)    if r.longest_purchase_gap_days    is not None else None,
+        'avg_days_between_purchases': round(float(r.avg_days_between_purchases), 1) if r.avg_days_between_purchases is not None else None,
+        # ── Existing ──
+        'avg_dwell_seconds': avg_dwell,
+        'receipts':     [{**rec, 'total': float(rec['total'])} for rec in receipts.values()],
+        'top_products': top_products,
+        'recent_sessions': sessions,
+        'signals':      {'plates': plates, 'face_enrolled': face_enrolled, 'gait_enrolled': gait_enrolled},
+    })
 
 
 @bp.route('/api/customers/<int:cid>/radar', methods=['GET'])
