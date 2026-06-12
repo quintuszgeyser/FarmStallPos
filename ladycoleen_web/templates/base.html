@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Lady Coleen{% endblock %}</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/doodle.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="navbar navbar-expand-lg lc-navbar">
+    <div class="container">
+      <a class="navbar-brand lc-brand" href="/">
+        <img src="/static/logo.svg" alt="Lady Coleen" height="140">
+      </a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="nav">
+        <ul class="navbar-nav ms-auto align-items-center">
+          <li class="nav-item"><a class="nav-link" href="/cakes">Cakes</a></li>
+          <li class="nav-item"><a class="nav-link" href="/farmshop">Farm Shop</a></li>
+          <li class="nav-item" id="nav-account">
+            <a class="nav-link" href="#" id="nav-account-link">My Orders</a>
+          </li>
+          <li class="nav-item ms-2">
+            <a href="/farmshop/cart" class="btn lc-btn-primary position-relative" style="padding:.4rem .9rem">
+              🛒 Cart
+              <span id="nav-cart-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;display:none">0</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="lc-footer mt-5 py-4">
+    <div class="container text-center">
+      <p class="mb-1">Lady Coleen Boutique Farmstall</p>
+      <p class="mb-1 text-muted small">Custom cakes &amp; farm-fresh products</p>
+      <div class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:.82rem">
+        <a href="/policies/refund"   style="color:var(--lc-gold)">Refund Policy</a>
+        <a href="/policies/privacy"  style="color:var(--lc-gold)">Privacy Policy</a>
+        <a href="/policies/terms"    style="color:var(--lc-gold)">Terms &amp; Conditions</a>
+        <a href="/policies/shipping" style="color:var(--lc-gold)">Shipping Policy</a>
+        <a href="/policies/returns"  style="color:var(--lc-gold)">Returns &amp; Exchanges</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="/static/js/main.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

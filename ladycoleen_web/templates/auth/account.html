@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}My Account - Lady Coleen{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:700px">
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="lc-heading fw-bold mb-0">My Account</h2>
+    <button class="btn lc-btn-outline btn-sm" onclick="logout()">Sign Out</button>
+  </div>
+
+  <div id="not-logged-in" class="text-center py-5 d-none">
+    <p class="text-muted">Please sign in to view your account.</p>
+    <a href="/login" class="btn lc-btn-primary">Sign In</a>
+  </div>
+
+  <div id="account-content">
+    <div class="lc-card p-4 mb-4">
+      <h5 class="fw-bold mb-2">Profile</h5>
+      <p class="mb-1" id="profile-name"></p>
+      <p class="mb-0 text-muted" id="profile-email"></p>
+    </div>
+
+    <h5 class="fw-bold mb-3">Cake Orders</h5>
+    <div id="cake-orders-list">
+      <div class="text-muted small">Loading…</div>
+    </div>
+
+    <h5 class="fw-bold mt-4 mb-3">Farmshop Orders</h5>
+    <div id="farmshop-orders-list">
+      <div class="text-muted small">Loading…</div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async () => {
+  if (!LC.isLoggedIn()) {
+    document.getElementById('account-content').classList.add('d-none');
+    document.getElementById('not-logged-in').classList.remove('d-none');
+    return;
+  }
+
+  // Load profile
+  const meRes = await LC.api('/api/auth/me');
+  if (!meRes.ok) { LC.setToken(null); window.location='/login'; return; }
+  const { customer } = await meRes.json();
+  document.getElementById('profile-name').textContent = customer.name;
+  document.getElementById('profile-email').textContent = customer.email;
+
+  // Load cake orders
+  const cakeRes = await LC.api('/api/account/cake-orders');
+  const { orders: cakeOrders } = await cakeRes.json();
+  const cakeList = document.getElementById('cake-orders-list');
+  if (!cakeOrders.length) {
+    cakeList.innerHTML = '<p class="text-muted small">No cake orders yet. <a href="/cakes/order">Order a cake</a></p>';
+  } else {
+    cakeList.innerHTML = cakeOrders.map(o => `
+      <div class="lc-card p-3 mb-2 d-flex justify-content-between align-items-center">
+        <div>
+          <a href="/cakes/orders/${o.reference}" class="fw-semibold">${o.reference}</a>
+          <div class="text-muted small">${o.size} · ${o.flavor} · ${o.date_required}</div>
+        </div>
+        <div class="text-end">
+          <span class="badge lc-status-${o.status}">${o.status.replace('_',' ')}</span>
+          ${o.quoted_price ? `<div class="small mt-1 fw-semibold">R${parseFloat(o.quoted_price).toFixed(2)}</div>` : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  // Load farmshop orders
+  const shopRes = await LC.api('/api/farmshop/orders');
+  const { orders: shopOrders } = await shopRes.json();
+  const shopList = document.getElementById('farmshop-orders-list');
+  if (!shopOrders.length) {
+    shopList.innerHTML = '<p class="text-muted small">No farmshop orders yet. <a href="/farmshop/products">Browse products</a></p>';
+  } else {
+    shopList.innerHTML = shopOrders.map(o => `
+      <div class="lc-card p-3 mb-2 d-flex justify-content-between align-items-center">
+        <div>
+          <a href="/farmshop/orders/${o.reference}" class="fw-semibold">${o.reference}</a>
+          <div class="text-muted small">${new Date(o.created_at).toLocaleDateString('en-ZA')}</div>
+        </div>
+        <div class="text-end">
+          <span class="badge lc-status-${o.status}">${o.status}</span>
+          <div class="small fw-semibold">R${parseFloat(o.total).toFixed(2)}</div>
+        </div>
+      </div>`).join('');
+  }
+})();
+
+function logout() {
+  LC.setToken(null);
+  window.location = '/';
+}
+</script>
+{% endblock %}

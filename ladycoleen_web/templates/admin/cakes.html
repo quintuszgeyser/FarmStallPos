@@ -1,0 +1,107 @@
+{% extends "admin/base.html" %}
+{% block title %}Cake Orders{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h2 class="lc-heading fw-bold mb-0">Cake Orders</h2>
+  <div class="btn-group">
+    <a href="?status=active" class="btn btn-sm {% if status_filter=='active' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">Active</a>
+    <a href="?status=pending" class="btn btn-sm {% if status_filter=='pending' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">Needs Quote</a>
+    <a href="?status=quoted" class="btn btn-sm {% if status_filter=='quoted' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">Waiting Confirm</a>
+    <a href="?status=all" class="btn btn-sm {% if status_filter=='all' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">All</a>
+  </div>
+</div>
+
+{% if orders %}
+<div class="table-responsive">
+  <table class="table lc-table">
+    <thead><tr>
+      <th>Reference</th><th>Customer</th><th>Date Required</th>
+      <th>Size / Flavour</th><th>Quoted</th><th>Status</th><th>Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for o in orders %}
+    {% set overdue = o.status == 'pending' and (now - o.created_at).days >= 1 %}
+    <tr class="{% if overdue %}table-warning{% endif %}">
+      <td><a href="/admin/cakes/{{ o.id }}" class="fw-semibold">{{ o.reference }}</a></td>
+      <td>
+        {{ o.customer_name }}<br>
+        <small class="text-muted">{{ o.customer_email }}</small>
+      </td>
+      <td>{{ o.date_required.strftime('%d %b %Y') }}</td>
+      <td>{{ o.size }}<br><small class="text-muted">{{ o.flavor }}</small></td>
+      <td>{% if o.quoted_price %}<strong>R{{ "%.2f"|format(o.quoted_price) }}</strong>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      <td><span class="badge lc-status-{{ o.status }}">{{ o.status.replace('_',' ').title() }}</span></td>
+      <td>
+        <a href="/admin/cakes/{{ o.id }}" class="btn btn-sm lc-btn-outline">Manage</a>
+        {% if o.status == 'pending' %}
+        <button class="btn btn-sm btn-warning ms-1" onclick="openQuoteModal({{ o.id }}, '{{ o.reference }}')">Quote</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="lc-card p-4 text-center text-muted">No orders in this filter.</div>
+{% endif %}
+
+<!-- Quick Quote Modal -->
+<div class="modal fade" id="quoteModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content lc-card">
+      <div class="modal-header border-0">
+        <h5 class="modal-title fw-bold">Set Quote - <span id="qm-ref"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Quoted Price (R)</label>
+          <input type="number" class="form-control lc-input" id="qm-price" min="0" step="0.01">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Notes to Customer</label>
+          <textarea class="form-control lc-input" id="qm-notes" rows="3"></textarea>
+        </div>
+        <div id="qm-error" class="alert alert-danger d-none"></div>
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn lc-btn-outline" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn lc-btn-primary" id="qm-submit">Send Quote</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let quoteOrderId = null;
+const quoteModal = new bootstrap.Modal(document.getElementById('quoteModal'));
+
+function openQuoteModal(id, ref) {
+  quoteOrderId = id;
+  document.getElementById('qm-ref').textContent = ref;
+  document.getElementById('qm-price').value = '';
+  document.getElementById('qm-notes').value = '';
+  document.getElementById('qm-error').classList.add('d-none');
+  quoteModal.show();
+}
+
+document.getElementById('qm-submit').addEventListener('click', async () => {
+  const price = document.getElementById('qm-price').value;
+  const notes = document.getElementById('qm-notes').value;
+  const res = await fetch(`/api/admin/cakes/${quoteOrderId}/quote`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({price: parseFloat(price), notes})
+  });
+  const data = await res.json();
+  if (res.ok) { quoteModal.hide(); location.reload(); }
+  else {
+    document.getElementById('qm-error').textContent = data.error || 'Error';
+    document.getElementById('qm-error').classList.remove('d-none');
+  }
+});
+</script>
+{% endblock %}

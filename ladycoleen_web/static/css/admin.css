@@ -1,0 +1,31 @@
+.lc-admin-sidebar {
+  background: var(--dd-paper);
+  border-right: 2px solid var(--lc-gold-border);
+  position: sticky;
+  top: 0;
+}
+
+.lc-admin-link {
+  color: var(--dd-ink) !important;
+  font-weight: 600;
+  border-radius: 6px;
+  padding: 8px 12px !important;
+}
+.lc-admin-link:hover,
+.lc-admin-link.active {
+  background: var(--lc-gold-light);
+  color: var(--lc-gold) !important;
+}
+
+.lc-stat-card {
+  background: var(--dd-paper);
+  border: 2px solid var(--lc-gold-border);
+  border-radius: 8px;
+  box-shadow: 2px 2px 0 var(--lc-gold-border);
+}
+.lc-stat-num {
+  font-size: 36px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 4px;
+}

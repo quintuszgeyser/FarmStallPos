@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Products - Lady Coleen Farm Shop{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="mb-3">
+    <h2 class="lc-heading fw-bold mb-0">Farm Shop Products</h2>
+  </div>
+
+  <!-- Search -->
+  <form method="GET" class="mb-4">
+    <div class="input-group" style="max-width:400px">
+      <input type="text" class="form-control lc-input" name="q" value="{{ search }}" placeholder="Search products…">
+      <button class="btn lc-btn-primary">Search</button>
+    </div>
+  </form>
+
+  <div class="row g-3" id="product-grid">
+    {% for item in items %}
+    <div class="col-6 col-md-4 col-lg-3">
+      <div class="lc-card p-0 h-100 d-flex flex-column overflow-hidden">
+
+        <!-- Product image (links to detail page) -->
+        <a href="/farmshop/products/{{ item.id }}" class="text-decoration-none d-block">
+          {% if item.image_url %}
+          <div style="height:160px;overflow:hidden;background:#f5efe0">
+            <img src="/product_images/{{ item.image_url | replace('.jpg','_small.jpg') }}"
+                 alt="{{ item.name }}"
+                 loading="lazy"
+                 decoding="async"
+                 width="300" height="300"
+                 style="width:100%;height:100%;object-fit:cover">
+          </div>
+          {% else %}
+          <div style="height:100px;background:linear-gradient(135deg,#fdf6e3,#f8f3e8);display:flex;align-items:center;justify-content:center">
+            <img src="/static/img/product_placeholder.svg" alt="" style="height:60px;opacity:.4">
+          </div>
+          {% endif %}
+        </a>
+
+        <div class="p-3 d-flex flex-column flex-grow-1">
+          <!-- Stock message -->
+          {% if item.stock_status == 'out_of_stock' %}
+          <p class="text-danger small mb-1" style="font-size:.75rem">Out of stock - available on order (longer lead time)</p>
+          {% elif item.stock_status == 'low_stock' %}
+          <p class="text-danger small mb-1" style="font-size:.75rem">Only {{ item.available_qty | round(1) }} left - longer lead time if exceeded</p>
+          {% endif %}
+
+          <h6 class="fw-bold mb-1">
+            <a href="/farmshop/products/{{ item.id }}" class="text-decoration-none" style="color:var(--dd-text)">{{ item.name }}</a>
+          </h6>
+          <p class="text-muted small mb-2">
+            {% if item.sold_by_weight %}
+              R{{ "%.2f"|format(item.price_per_unit or item.price) }}/{{ item.base_unit }}
+            {% else %}
+              R{{ "%.2f"|format(item.price) }}
+            {% endif %}
+          </p>
+          <div class="mt-auto">
+            {% if item.sold_by_weight %}
+            <div class="input-group input-group-sm">
+              <input type="number" class="form-control lc-input" placeholder="{{ item.base_unit }}"
+                     id="weight-{{ item.id }}" min="0" step="100">
+              <button class="btn lc-btn-primary"
+                      onclick="addWeightItem({{ item.id }}, '{{ item.name|e }}', {{ item.price_per_unit or item.price }}, '{{ item.base_unit }}', {{ ('\''+item.image_url+'\'') if item.image_url else 'null' }}, {{ item.available_qty }})">
+                Add
+              </button>
+            </div>
+            {% else %}
+            <button class="btn btn-sm lc-btn-primary w-100"
+                    onclick="addItem({{ item.id }}, '{{ item.name|e }}', {{ item.price }}, {{ ('\''+item.image_url+'\'') if item.image_url else 'null' }}, {{ item.available_qty }})">
+              Add to Cart
+            </button>
+            {% endif %}
+          </div>
+        </div>
+
+      </div>
+    </div>
+    {% else %}
+    <div class="col-12 text-center text-muted py-5">No products found.</div>
+    {% endfor %}
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
+
+
+
+function addItem(id, name, price, image_url, available_qty) {
+  const existing = cart.find(i => i.id === id && !i.sold_by_weight);
+  if (existing) { existing.qty += 1; }
+  else { cart.push({id, name, price, qty: 1, sold_by_weight: false, image_url, available_qty}); }
+  saveCart();
+  showToast(`${name} added to cart`);
+}
+
+function addWeightItem(id, name, pricePerUnit, baseUnit, image_url, available_qty) {
+  const input = document.getElementById(`weight-${id}`);
+  const grams = parseFloat(input.value);
+  if (!grams || grams <= 0) { alert('Enter a quantity'); return; }
+  const price = (grams * pricePerUnit) / (baseUnit === 'kg' ? 1000 : 1);
+  cart.push({id, name, price: parseFloat(price.toFixed(2)), qty: grams,
+             sold_by_weight: true, base_unit: baseUnit,
+             display: `${grams}${baseUnit}`, image_url, available_qty});
+  saveCart();
+  input.value = '';
+  showToast(`${grams}${baseUnit} ${name} added`);
+}
+
+function saveCart() {
+  localStorage.setItem('lc_cart', JSON.stringify(cart));
+  
+  if (window._updateCartBadge) window._updateCartBadge();
+}
+
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.className = 'position-fixed bottom-0 end-0 m-3 alert alert-success';
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2000);
+}
+</script>
+{% endblock %}

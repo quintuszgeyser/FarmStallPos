@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Nunito, Arial, sans-serif; color: #2a1f0e; padding: 40px; font-size: 13px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; border-bottom: 3px solid #c9a96e; padding-bottom: 20px; }
+  .brand h1 { color: #927f57; font-size: 22px; font-weight: 800; margin-bottom: 2px; }
+  .brand p { color: #7a6944; font-size: 12px; }
+  .invoice-meta { text-align: right; }
+  .invoice-meta h2 { color: #927f57; font-size: 18px; font-weight: 800; }
+  .invoice-meta p { color: #4a3a28; font-size: 12px; }
+  .bill-to { margin-bottom: 24px; }
+  .bill-to h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #927f57; margin-bottom: 6px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  thead th { background: #f8f3e8; color: #4a3a28; font-weight: 700; padding: 8px 10px; border-bottom: 2px solid #c9a96e; font-size: 12px; }
+  tbody td { padding: 8px 10px; border-bottom: 1px solid #f0e8d8; }
+  .total-row td { font-weight: 700; font-size: 14px; padding-top: 12px; }
+  .amount { text-align: right; }
+  .footer { margin-top: 32px; padding-top: 16px; border-top: 1px dashed #c9a96e; font-size: 11px; color: #7a6944; text-align: center; }
+  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 4px; font-size: 11px; font-weight: 700; }
+  .status-paid { background: #dcfce7; color: #166534; }
+  .status-draft { background: #f3f4f6; color: #374151; }
+  .status-sent { background: #dbeafe; color: #1e40af; }
+</style>
+</head>
+<body>
+<div class="header">
+  <div class="brand">
+    <h1>Lady Coleen</h1>
+    <p>Boutique Farmstall</p>
+  </div>
+  <div class="invoice-meta">
+    <h2>INVOICE</h2>
+    <p><strong>{{ invoice.invoice_number }}</strong></p>
+    <p>Date: {{ invoice.created_at.strftime('%d %B %Y') if invoice.created_at else '' }}</p>
+    {% if invoice.due_date %}<p>Due: {{ invoice.due_date }}</p>{% endif %}
+    <p><span class="status-badge status-{{ invoice.status }}">{{ invoice.status.upper() }}</span></p>
+  </div>
+</div>
+
+<div class="bill-to">
+  <h4>Bill To</h4>
+  <p><strong>{{ invoice.customer_name or '—' }}</strong></p>
+  {% if invoice.customer_email %}<p>{{ invoice.customer_email }}</p>{% endif %}
+  {% if invoice.customer_phone %}<p>{{ invoice.customer_phone }}</p>{% endif %}
+  {% if invoice.customer_address %}<p>{{ invoice.customer_address }}</p>{% endif %}
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th style="width:60%">Description</th>
+      <th class="amount">Qty</th>
+      <th class="amount">Unit Price</th>
+      <th class="amount">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for line in lines %}
+    <tr>
+      <td>{{ line.get('description', '') }}</td>
+      <td class="amount">{{ line.get('qty', 1) }}</td>
+      <td class="amount">R{{ "%.2f"|format(line.get('unit_price', 0)) }}</td>
+      <td class="amount">R{{ "%.2f"|format(line.get('total', 0)) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+  <tfoot>
+    {% if invoice.discount_pct and invoice.discount_pct > 0 %}
+    <tr>
+      <td colspan="3" class="amount">Subtotal</td>
+      <td class="amount">R{{ "%.2f"|format(invoice.subtotal) }}</td>
+    </tr>
+    <tr>
+      <td colspan="3" class="amount">Discount ({{ invoice.discount_pct }}%)</td>
+      <td class="amount">-R{{ "%.2f"|format(invoice.subtotal * invoice.discount_pct / 100) }}</td>
+    </tr>
+    {% endif %}
+    <tr class="total-row">
+      <td colspan="3" class="amount" style="color:#927f57">TOTAL</td>
+      <td class="amount" style="color:#927f57">R{{ "%.2f"|format(invoice.total) }}</td>
+    </tr>
+  </tfoot>
+</table>
+
+{% if invoice.bank_details %}
+<div style="background:#f8f3e8;border-radius:6px;padding:12px;margin-bottom:16px;font-size:12px">
+  <strong>Payment Details:</strong> {{ invoice.bank_details }}
+</div>
+{% endif %}
+
+{% if invoice.notes %}
+<div style="font-size:12px;color:#4a3a28;margin-bottom:16px">
+  <strong>Notes:</strong> {{ invoice.notes }}
+</div>
+{% endif %}
+
+<div class="footer">Lady Coleen Boutique Farmstall · Thank you for your business!</div>
+</body>
+</html>

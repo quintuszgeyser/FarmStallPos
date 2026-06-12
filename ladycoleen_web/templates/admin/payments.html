@@ -1,0 +1,94 @@
+{% extends "admin/base.html" %}
+{% block title %}Payments{% endblock %}
+{% block content %}
+<h2 class="lc-heading fw-bold mb-4">Payments</h2>
+
+<div class="btn-group mb-3">
+  <a href="?status=pending" class="btn btn-sm {% if status_filter=='pending' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">Pending</a>
+  <a href="?status=paid"    class="btn btn-sm {% if status_filter=='paid'    %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">Paid</a>
+  <a href="?status=all"     class="btn btn-sm {% if status_filter=='all'     %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">All</a>
+</div>
+
+{% if payments %}
+<div class="table-responsive">
+  <table class="table lc-table">
+    <thead><tr>
+      <th>Order</th><th>Type</th><th>Amount</th><th>Method</th><th>Status</th><th>Created</th><th>Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for p in payments %}
+    <tr>
+      <td><strong>{{ p.order_type|upper }}-{{ "%06d"|format(p.order_id) }}</strong><br>
+          {% if p.reference %}<small class="text-muted">ref: {{ p.reference }}</small>{% endif %}
+      </td>
+      <td>{{ p.order_type.title() }}</td>
+      <td><strong>R{{ "%.2f"|format(p.amount) }}</strong></td>
+      <td>{{ p.method.upper() }}</td>
+      <td><span class="badge lc-status-{{ p.status }}">{{ p.status.title() }}</span></td>
+      <td>{{ p.created_at.strftime('%d %b %Y') }}</td>
+      <td>
+        {% if p.status == 'pending' %}
+        <button class="btn btn-sm btn-success" onclick="markPaid({{ p.id }})">Mark Paid</button>
+        {% endif %}
+        {% if p.proof_path %}
+        <a href="/uploads/{{ p.proof_path }}" target="_blank" class="btn btn-sm lc-btn-outline ms-1">Proof</a>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="lc-card p-4 text-center text-muted">No payments found.</div>
+{% endif %}
+
+<!-- Mark Paid Modal -->
+<div class="modal fade" id="paidModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content lc-card">
+      <div class="modal-header border-0"><h5 class="modal-title fw-bold">Mark as Paid</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Bank Reference</label>
+          <input type="text" class="form-control lc-input" id="pm-ref" placeholder="Customer's EFT reference">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Notes</label>
+          <input type="text" class="form-control lc-input" id="pm-notes">
+        </div>
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn lc-btn-outline" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-success" id="pm-submit">Confirm Payment</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let paidPaymentId = null;
+const paidModal = new bootstrap.Modal(document.getElementById('paidModal'));
+
+function markPaid(id) {
+  paidPaymentId = id;
+  document.getElementById('pm-ref').value = '';
+  document.getElementById('pm-notes').value = '';
+  paidModal.show();
+}
+
+document.getElementById('pm-submit').addEventListener('click', async () => {
+  const ref   = document.getElementById('pm-ref').value;
+  const notes = document.getElementById('pm-notes').value;
+  const r = await fetch(`/api/admin/payments/${paidPaymentId}/mark_paid`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reference: ref, notes})
+  });
+  if (r.ok) { paidModal.hide(); location.reload(); }
+  else { alert('Error marking payment'); }
+});
+</script>
+{% endblock %}

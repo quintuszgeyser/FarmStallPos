@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Sign In - Lady Coleen{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:420px">
+  <h2 class="lc-heading fw-bold mb-1">Sign In</h2>
+  <p class="text-muted mb-4">Track your orders and manage your account.</p>
+
+  <div id="form-error" class="alert alert-danger d-none"></div>
+
+  <form id="login-form" class="lc-card p-4">
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Email</label>
+      <input type="email" class="form-control lc-input" id="f-email" required autofocus>
+    </div>
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Password</label>
+      <input type="password" class="form-control lc-input" id="f-password" required>
+    </div>
+    <button type="submit" class="btn lc-btn-primary w-100" id="submit-btn">Sign In</button>
+    <p class="text-center mt-3 mb-0"><a href="/forgot-password" class="text-muted small">Forgot your password?</a></p>
+  </form>
+
+  <p class="text-center mt-3 text-muted small">No account? <a href="/register">Create one free</a></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  document.getElementById('form-error').classList.add('d-none');
+
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      email:    document.getElementById('f-email').value,
+      password: document.getElementById('f-password').value,
+    })
+  });
+  const data = await res.json();
+
+  if (res.ok) {
+    LC.setToken(data.token);
+    const next = new URLSearchParams(location.search).get('next') || '/account';
+    window.location = next;
+  } else {
+    document.getElementById('form-error').textContent = data.error || 'Invalid credentials';
+    document.getElementById('form-error').classList.remove('d-none');
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+});
+</script>
+{% endblock %}

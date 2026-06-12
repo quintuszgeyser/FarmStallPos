@@ -1,0 +1,59 @@
+{% extends "admin/base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h2 class="lc-heading fw-bold mb-4">Dashboard</h2>
+
+<div class="row g-3 mb-5">
+  <div class="col-6 col-md-3">
+    <div class="lc-stat-card text-center p-3">
+      <div class="lc-stat-num text-warning">{{ pending_cakes }}</div>
+      <div class="small">Cakes Needing Quote</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="lc-stat-card text-center p-3">
+      <div class="lc-stat-num text-primary">{{ active_cakes }}</div>
+      <div class="small">Cakes In Progress</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="lc-stat-card text-center p-3">
+      <div class="lc-stat-num text-danger">{{ pending_payments }}</div>
+      <div class="small">Pending Payments</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="lc-stat-card text-center p-3">
+      <div class="lc-stat-num text-success">R{{ "%.0f"|format(revenue_7d) }}</div>
+      <div class="small">Revenue (7 days)</div>
+    </div>
+  </div>
+</div>
+
+<h5 class="fw-bold mb-3">Recent Cake Orders</h5>
+{% if recent_cake_orders %}
+<div class="table-responsive">
+  <table class="table lc-table">
+    <thead><tr>
+      <th>Reference</th><th>Customer</th><th>Date Required</th>
+      <th>Size</th><th>Status</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for o in recent_cake_orders %}
+    <tr>
+      <td><a href="/admin/cakes/{{ o.id }}">{{ o.reference }}</a></td>
+      <td>{{ o.customer_name }}</td>
+      <td>{{ o.date_required.strftime('%d %b %Y') }}</td>
+      <td>{{ o.size }}</td>
+      <td><span class="badge lc-status-{{ o.status }}">{{ o.status.replace('_',' ').title() }}</span></td>
+      <td><a href="/admin/cakes/{{ o.id }}" class="btn btn-sm lc-btn-outline">View</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted">No orders yet.</p>
+{% endif %}
+<a href="/admin/cakes" class="btn lc-btn-outline mt-2">All Cake Orders →</a>
+{% endblock %}

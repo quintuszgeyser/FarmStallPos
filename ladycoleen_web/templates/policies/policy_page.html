@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} - Lady Coleen{% endblock %}
+
+{% block content %}
+<div class="container py-5" style="max-width:780px">
+
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb" style="font-size:.9rem">
+      <li class="breadcrumb-item"><a href="/" style="color:var(--lc-gold)">Home</a></li>
+      <li class="breadcrumb-item active">{{ title }}</li>
+    </ol>
+  </nav>
+
+  <div class="lc-card p-4 p-md-5">
+    <h1 class="lc-heading mb-1" style="font-size:1.7rem">{{ title }}</h1>
+    <p class="text-muted small mb-4">{{ subtitle }}</p>
+
+    {% for section in sections %}
+    <h2 style="font-size:1.1rem;font-weight:800;color:var(--lc-gold);margin-top:2rem;margin-bottom:.6rem">
+      {{ section.heading }}
+    </h2>
+    {{ section.body | safe }}
+    {% endfor %}
+
+    <hr style="border-color:var(--lc-gold-border);margin-top:2.5rem">
+    <p class="text-muted small mb-0">
+      Lady Coleen Boutique Farmstall - <a href="mailto:orders@ladycoleen.co.za" style="color:var(--lc-gold)">orders@ladycoleen.co.za</a>
+    </p>
+  </div>
+
+  <!-- Quick links to other policies -->
+  <div class="mt-4 d-flex flex-wrap gap-2">
+    <a href="/policies/refund"   class="btn lc-btn-outline btn-sm">Refund Policy</a>
+    <a href="/policies/privacy"  class="btn lc-btn-outline btn-sm">Privacy Policy</a>
+    <a href="/policies/terms"    class="btn lc-btn-outline btn-sm">Terms &amp; Conditions</a>
+    <a href="/policies/shipping" class="btn lc-btn-outline btn-sm">Shipping Policy</a>
+    <a href="/policies/returns"  class="btn lc-btn-outline btn-sm">Returns &amp; Exchanges</a>
+  </div>
+
+</div>
+{% endblock %}

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html><body style="font-family:Nunito,Arial,sans-serif;background:#fffdf7;margin:0;padding:20px">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;border:2px solid #c9a96e">
+  <img src="https://ladycoleen.co.za/static/logo.svg" alt="Lady Coleen" height="56" style="display:block;margin:0 auto 24px">
+  <h2 style="color:#16A34A;text-align:center;margin:0 0 8px">Order Confirmed!</h2>
+  <p style="color:#4a3a28;text-align:center;margin:0 0 24px">Hi {{ order.customer_name }}, your cake is confirmed.</p>
+
+  <div style="background:#f8f3e8;border-radius:8px;padding:16px;margin-bottom:24px">
+    <p style="margin:0 0 4px"><strong>Reference:</strong> {{ order.reference }}</p>
+    <p style="margin:0 0 4px"><strong>Date Required:</strong> {{ order.date_required.strftime('%d %B %Y') }}</p>
+    <p style="margin:0 0 4px"><strong>Amount Due:</strong> <strong style="color:#16A34A">R{{ "%.2f"|format(order.quoted_price) }}</strong></p>
+  </div>
+
+  <p style="color:#4a3a28"><strong>Payment:</strong> Please make an EFT payment to:</p>
+  <div style="background:#f8f3e8;border-radius:8px;padding:12px;margin-bottom:24px;font-size:14px">
+    <p style="margin:0 0 4px">Bank: <strong>ABSA / FNB</strong></p>
+    <p style="margin:0 0 4px">Account Name: <strong>Lady Coleen</strong></p>
+    <p style="margin:0 0 4px">Account Number: <strong>— contact us for details —</strong></p>
+    <p style="margin:0">Reference: <strong>{{ order.reference }}</strong></p>
+  </div>
+
+  <p style="color:#4a3a28">Once payment is received we'll confirm and start baking.</p>
+
+  <hr style="border:none;border-top:1px dashed #c9a96e;margin:24px 0">
+  <p style="color:#7a6944;font-size:13px;text-align:center;margin:0">Lady Coleen Boutique Farmstall</p>
+</div>
+</body></html>

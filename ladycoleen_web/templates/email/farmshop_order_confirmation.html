@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html><body style="font-family:Nunito,Arial,sans-serif;background:#fffdf7;margin:0;padding:20px">
+<div style="max-width:580px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;border:2px solid #c9a96e">
+
+  <div style="text-align:center;margin-bottom:24px">
+    <span style="display:inline-block;background:#16A34A;color:#fff;padding:6px 18px;border-radius:20px;font-size:13px;font-weight:700">✓ Payment Confirmed</span>
+  </div>
+
+  <h2 style="color:#927f57;text-align:center;margin:0 0 4px">Order Confirmed!</h2>
+  <p style="color:#4a3a28;text-align:center;margin:0 0 24px;font-size:14px">Reference: <strong>{{ order.reference }}</strong></p>
+
+  <!-- Order lines -->
+  <table style="width:100%;font-size:14px;border-collapse:collapse;margin-bottom:16px">
+    <thead>
+      <tr style="border-bottom:2px solid #c9a96e">
+        <th style="padding:6px 0;text-align:left;color:#4a3a28">Item</th>
+        <th style="padding:6px 0;text-align:right;color:#4a3a28">Qty</th>
+        <th style="padding:6px 0;text-align:right;color:#4a3a28">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for line in lines %}
+    <tr>
+      <td style="padding:5px 0;color:#4a3a28">{{ line.product_name_snapshot }}</td>
+      <td style="padding:5px 0;text-align:right;color:#4a3a28">× {{ line.qty }}</td>
+      <td style="padding:5px 0;text-align:right;color:#4a3a28">R{{ "%.2f"|format(line.line_total) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr style="border-top:1px dashed #c9a96e">
+        <td colspan="2" style="padding:8px 0 0;font-weight:700;color:#4a3a28">Order Total</td>
+        <td style="padding:8px 0 0;text-align:right;font-weight:700;color:#927f57;font-size:16px">R{{ "%.2f"|format(order.total) }}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <!-- Payment & delivery -->
+  <table style="width:100%;font-size:13px;margin-bottom:20px;background:#fdf6e3;border-radius:8px;padding:12px;border-collapse:collapse">
+    <tr><td style="padding:3px 8px;color:#7a6944;font-weight:700;width:130px">Payment ref</td><td style="padding:3px 8px;color:#4a3a28;font-family:monospace">{{ pay_ref }}</td></tr>
+    <tr><td style="padding:3px 8px;color:#7a6944;font-weight:700">Delivery</td><td style="padding:3px 8px;color:#4a3a28">{{ delivery_note }}</td></tr>
+  </table>
+
+  <!-- What happens next -->
+  <div style="background:#f0fdf4;border-left:4px solid #16A34A;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:20px">
+    <p style="margin:0 0 6px;font-weight:700;color:#166534;font-size:13px">What happens next</p>
+    <p style="margin:0;color:#166534;font-size:13px">We'll prepare your order and notify you when it's ready.
+    {% if order.delivery_method == 'collection' %}Come collect at the farm stall.
+    {% elif order.delivery_method == 'pudo' %}We'll arrange your Pudo shipment and send tracking details.
+    {% else %}We'll contact you to arrange delivery.{% endif %}</p>
+  </div>
+
+  <p style="text-align:center;margin:0 0 8px">
+    <a href="http://10.0.0.101:5001/farmshop/orders/{{ order.reference }}"
+       style="display:inline-block;background:#927f57;color:#fff;padding:10px 28px;border-radius:6px;text-decoration:none;font-weight:700">Track My Order</a>
+  </p>
+
+  <hr style="border:none;border-top:1px dashed #c9a96e;margin:24px 0">
+  <p style="color:#7a6944;font-size:12px;text-align:center;margin:0">Lady Coleen Boutique Farmstall</p>
+</div>
+</body></html>

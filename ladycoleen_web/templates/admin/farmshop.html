@@ -1,0 +1,38 @@
+{% extends "admin/base.html" %}
+{% block title %}Farmshop Orders{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h2 class="lc-heading fw-bold mb-0">Farmshop Orders</h2>
+  <div class="btn-group">
+    <a href="?status=active" class="btn btn-sm {% if status_filter=='active' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">Active</a>
+    <a href="?status=all"    class="btn btn-sm {% if status_filter=='all'    %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">All</a>
+  </div>
+</div>
+
+{% if orders %}
+<div class="table-responsive">
+  <table class="table lc-table">
+    <thead><tr>
+      <th>Reference</th><th>Customer</th><th>Total</th>
+      <th>Delivery</th><th>Status</th><th>Created</th><th>Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for o in orders %}
+    <tr>
+      <td><a href="/admin/farmshop/{{ o.id }}" class="fw-semibold">{{ o.reference }}</a></td>
+      <td>{{ o.guest_name or '—' }}<br>
+          <small class="text-muted">{{ o.guest_email or '' }}</small></td>
+      <td><strong>R{{ "%.2f"|format(o.total) }}</strong></td>
+      <td>{{ o.delivery_method.title() }}</td>
+      <td><span class="badge lc-status-{{ o.status }}">{{ o.status.title() }}</span></td>
+      <td>{{ o.created_at.strftime('%d %b %H:%M') }}</td>
+      <td><a href="/admin/farmshop/{{ o.id }}" class="btn btn-sm lc-btn-outline">Manage</a></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="lc-card p-4 text-center text-muted">No orders found.</div>
+{% endif %}
+{% endblock %}

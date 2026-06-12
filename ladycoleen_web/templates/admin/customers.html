@@ -1,0 +1,74 @@
+{% extends "admin/base.html" %}
+{% block title %}Customers{% endblock %}
+{% block content %}
+<h2 class="lc-heading fw-bold mb-4">Customers</h2>
+
+<div class="btn-group mb-4">
+  <a href="?tab=all"
+     class="btn btn-sm {% if tab == 'all' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">
+    All Web Customers
+  </a>
+  <a href="?tab=online"
+     class="btn btn-sm {% if tab == 'online' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">
+    Online Only
+    <span class="ms-1 text-muted small fw-normal" title="Web customers not yet merged with a POS customer">⚬</span>
+  </a>
+</div>
+
+{% if tab == 'online' %}
+<p class="text-muted small mb-3">
+  These customers registered or ordered online and have their own POS profile.
+  Once merged with an existing POS customer in the POS system they will no longer appear here.
+</p>
+{% endif %}
+
+{% if customers.items %}
+<div class="table-responsive">
+  <table class="table lc-table">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Phone</th>
+        <th>Joined</th>
+        <th>Cake Orders</th>
+        <th>POS Linked</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in customers.items %}
+    <tr>
+      <td>{{ c.name }}</td>
+      <td>{{ c.email }}</td>
+      <td>{{ c.phone or '—' }}</td>
+      <td>{{ c.created_at.strftime('%d %b %Y') }}</td>
+      <td>{{ c.cake_orders.count() }}</td>
+      <td>
+        {% if c.pos_customer_id %}
+        <span class="badge bg-success">POS #{{ c.pos_customer_id }}</span>
+        {% else %}
+        <span class="badge bg-secondary">None</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% if customers.pages > 1 %}
+<nav><ul class="pagination">
+  {% for p in range(1, customers.pages + 1) %}
+  <li class="page-item {% if p == customers.page %}active{% endif %}">
+    <a class="page-link" href="?tab={{ tab }}&page={{ p }}">{{ p }}</a>
+  </li>
+  {% endfor %}
+</ul></nav>
+{% endif %}
+
+{% else %}
+<div class="lc-card p-4 text-center text-muted">
+  {% if tab == 'online' %}No unmerged online customers.{% else %}No customers yet.{% endif %}
+</div>
+{% endif %}
+{% endblock %}

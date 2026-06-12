@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Lady Coleen Cakes - Custom Cakes{% endblock %}
+{% block content %}
+<div class="lc-hero text-center py-5">
+  <div class="container">
+    <h1 class="lc-heading display-5 fw-bold mb-3">Custom Cakes, Made with Love</h1>
+    <p class="lead mb-4">Tell us your dream cake - we'll make it a reality.</p>
+    <a href="/cakes/order" class="btn lc-btn-primary btn-lg px-5">Order Your Cake</a>
+  </div>
+</div>
+
+<div class="container py-5">
+  <h2 class="lc-heading text-center mb-4">How It Works</h2>
+  <div class="row g-4 text-center">
+    <div class="col-md-4">
+      <div class="lc-card p-4">
+        <div class="lc-step-num">1</div>
+        <h5 class="fw-bold mt-3">Submit Your Order</h5>
+        <p class="text-muted">Fill in your cake details - size, flavour, date and design ideas. Upload a reference image if you have one.</p>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="lc-card p-4">
+        <div class="lc-step-num">2</div>
+        <h5 class="fw-bold mt-3">Receive Your Quote</h5>
+        <p class="text-muted">We'll send you a personalised quote via email, usually same day.</p>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="lc-card p-4">
+        <div class="lc-step-num">3</div>
+        <h5 class="fw-bold mt-3">Confirm &amp; Collect</h5>
+        <p class="text-muted">Confirm your order, make payment via EFT, and collect your cake on the agreed date.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="container pb-5">
+  <div class="lc-card p-4 text-center">
+    <h4 class="fw-bold mb-2">Pricing Guide</h4>
+    <p class="text-muted mb-3">Every cake is custom-quoted. These are starting-from prices.</p>
+    <div class="row g-3 justify-content-center">
+      <div class="col-6 col-md-3"><div class="lc-price-pill">6" Round<br><strong>from R350</strong></div></div>
+      <div class="col-6 col-md-3"><div class="lc-price-pill">8" Round<br><strong>from R450</strong></div></div>
+      <div class="col-6 col-md-3"><div class="lc-price-pill">2-Tier<br><strong>from R750</strong></div></div>
+      <div class="col-6 col-md-3"><div class="lc-price-pill">3-Tier<br><strong>from R1 100</strong></div></div>
+    </div>
+    <a href="/cakes/order" class="btn lc-btn-primary mt-4">Get My Quote</a>
+  </div>
+</div>
+{% endblock %}

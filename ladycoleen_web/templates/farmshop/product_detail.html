@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}{{ product.name }} - Lady Coleen Farm Shop{% endblock %}
+
+{% block head %}
+{% if images | length > 1 %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css">
+{% endif %}
+<style>
+.product-main-img { width:100%; max-height:480px; object-fit:contain; border-radius:8px; background:#fdf6e3 }
+.swiper-thumb .swiper-slide { width:72px; cursor:pointer; opacity:.6; transition:opacity .2s }
+.swiper-thumb .swiper-slide-thumb-active { opacity:1; outline:2px solid var(--lc-gold) }
+.swiper-button-next, .swiper-button-prev { color: var(--lc-gold) }
+.swiper-pagination-bullet-active { background: var(--lc-gold) }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4" style="max-width:900px">
+
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="/farmshop/products" class="text-decoration-none" style="color:var(--lc-gold)">Farm Shop</a></li>
+      <li class="breadcrumb-item active">{{ product.name }}</li>
+    </ol>
+  </nav>
+
+  <div class="row g-4">
+
+    <!-- ── Image column ── -->
+    <div class="col-md-6">
+
+      {% if not images %}
+        <!-- No images -->
+        <img src="/static/img/product_placeholder.svg" alt="{{ product.name }}"
+             class="product-main-img" style="opacity:.5">
+
+      {% elif images | length == 1 %}
+        <!-- Single image - no carousel -->
+        <img src="/product_images/{{ images[0].filename }}"
+             alt="{{ product.name }}" class="product-main-img">
+
+      {% else %}
+        <!-- Multi-image Swiper carousel -->
+        <div class="swiper swiper-main mb-2" id="swiperMain">
+          <div class="swiper-wrapper">
+            {% for img in images %}
+            <div class="swiper-slide">
+              <img src="/product_images/{{ img.filename }}"
+                   alt="{{ product.name }}"
+                   class="product-main-img"
+                   loading="{{ 'eager' if loop.first else 'lazy' }}">
+            </div>
+            {% endfor %}
+          </div>
+          <div class="swiper-button-prev"></div>
+          <div class="swiper-button-next"></div>
+          <div class="swiper-pagination"></div>
+        </div>
+
+        <!-- Thumbnail strip -->
+        <div class="swiper swiper-thumb" id="swiperThumb" style="height:76px">
+          <div class="swiper-wrapper">
+            {% for img in images %}
+            <div class="swiper-slide">
+              <img src="/product_images/{{ img.filename | replace('.jpg','_thumb.jpg') }}"
+                   alt="" width="64" height="64"
+                   style="object-fit:cover;border-radius:4px;width:64px;height:64px"
+                   loading="lazy">
+            </div>
+            {% endfor %}
+          </div>
+        </div>
+      {% endif %}
+
+    </div>
+
+    <!-- ── Info column ── -->
+    <div class="col-md-6">
+      <h1 class="lc-heading fw-bold fs-3 mb-1">{{ product.name }}</h1>
+
+      <p class="fs-4 fw-bold mb-3" style="color:var(--lc-gold)">
+        {% if product.sold_by_weight and product.price_per_unit %}
+          R{{ "%.2f"|format(product.price_per_unit) }}/{{ product.base_unit }}
+        {% else %}
+          R{{ "%.2f"|format(product.price) }}
+        {% endif %}
+      </p>
+
+      {% if product.description %}
+      <p class="text-muted mb-4" style="white-space:pre-line">{{ product.description }}</p>
+      {% endif %}
+
+      <!-- Stock info -->
+      {% if available_qty > 0 %}
+      <p class="small text-muted mb-2">{{ available_qty | round(1) }} in stock</p>
+      {% endif %}
+
+      <!-- Dynamic stock warning (JS-controlled) -->
+      <p id="detail-stock-warning" class="small text-danger mb-2" style="display:none"></p>
+
+      <!-- Add to cart - always shown, no hard block -->
+      {% if product.sold_by_weight %}
+      <div class="input-group mb-3" style="max-width:300px">
+        <input type="number" class="form-control lc-input" id="detail-weight"
+               placeholder="{{ product.base_unit }}" min="0" step="100"
+               oninput="updateDetailStockWarning(this.value)">
+        <button class="btn lc-btn-primary"
+                onclick="addWeightItemDetail()">Add to Cart</button>
+      </div>
+      {% else %}
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <div class="input-group" style="max-width:140px">
+          <button class="btn lc-btn-outline" onclick="changeDetailQty(-1)">−</button>
+          <input type="number" id="detail-qty" class="form-control text-center lc-input" value="1" min="1"
+                 oninput="updateDetailStockWarning(this.value)">
+          <button class="btn lc-btn-outline" onclick="changeDetailQty(1)">+</button>
+        </div>
+        <button class="btn lc-btn-primary px-4"
+                onclick="addItemDetail()">Add to Cart</button>
+      </div>
+      {% endif %}
+
+      <a href="/farmshop/products" class="btn lc-btn-outline mt-2">← Back to Shop</a>
+    </div>
+  </div>
+
+</div>
+
+<div id="detail-toast" class="position-fixed bottom-0 end-0 m-3 alert alert-success d-none"></div>
+{% endblock %}
+
+{% block scripts %}
+{% if images | length > 1 %}
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+<script>
+  // Only init if images > 1
+  const thumbSwiper = new Swiper('#swiperThumb', {
+    spaceBetween: 8,
+    slidesPerView: 'auto',
+    freeMode: true,
+    watchSlidesProgress: true,
+  });
+  const mainSwiper = new Swiper('#swiperMain', {
+    spaceBetween: 10,
+    navigation: { nextEl: '.swiper-button-next', prevEl: '.swiper-button-prev' },
+    pagination: { el: '.swiper-pagination', clickable: true },
+    thumbs: { swiper: thumbSwiper },
+  });
+</script>
+{% endif %}
+
+<script>
+const _detailProduct = {
+  id:            {{ product.id }},
+  name:          {{ product.name | tojson }},
+  price:         {{ product.price }},
+  price_per_unit: {{ product.price_per_unit or 'null' }},
+  base_unit:     {{ product.base_unit | tojson if product.base_unit else 'null' }},
+  sold_by_weight: {{ 'true' if product.sold_by_weight else 'false' }},
+  image_url:     {{ (images[0].filename if images else None) | tojson }},
+  available_qty: {{ available_qty }},
+};
+
+function updateDetailStockWarning(val) {
+  const qty   = parseFloat(val) || 0;
+  const avail = _detailProduct.available_qty;
+  const el    = document.getElementById('detail-stock-warning');
+  if (!el) return;
+  if (avail <= 0) {
+    el.textContent = 'Out of stock - available on order (longer lead time)';
+    el.style.display = '';
+  } else if (qty > avail) {
+    const extra = (qty - avail).toFixed(_detailProduct.sold_by_weight ? 0 : 0);
+    el.textContent = `Only ${avail} in stock - ${extra} will be ordered (longer lead time)`;
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
+}
+
+// Show warning immediately on page load if out of stock
+document.addEventListener('DOMContentLoaded', () => updateDetailStockWarning(1));
+
+function _showToast(msg) {
+  const t = document.getElementById('detail-toast');
+  t.textContent = msg;
+  t.classList.remove('d-none');
+  setTimeout(() => t.classList.add('d-none'), 2000);
+}
+
+function addItemDetail() {
+  const qty = parseInt(document.getElementById('detail-qty')?.value || '1', 10);
+  if (qty < 1) return;
+  const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
+  const existing = cart.find(i => i.id === _detailProduct.id && !i.sold_by_weight);
+  if (existing) { existing.qty += qty; }
+  else { cart.push({id: _detailProduct.id, name: _detailProduct.name, price: _detailProduct.price,
+                    qty, sold_by_weight: false, image_url: _detailProduct.image_url,
+                    available_qty: _detailProduct.available_qty}); }
+  localStorage.setItem('lc_cart', JSON.stringify(cart));
+  if (window._updateCartBadge) window._updateCartBadge();
+  _showToast(`${_detailProduct.name} added to cart`);
+}
+
+function changeDetailQty(delta) {
+  const inp = document.getElementById('detail-qty');
+  if (inp) {
+    inp.value = Math.max(1, parseInt(inp.value || '1') + delta);
+    updateDetailStockWarning(inp.value);
+  }
+}
+
+function addWeightItemDetail() {
+  const input = document.getElementById('detail-weight');
+  const grams = parseFloat(input?.value);
+  if (!grams || grams <= 0) { alert('Enter a quantity'); return; }
+  const price = (grams * _detailProduct.price_per_unit) / (_detailProduct.base_unit === 'kg' ? 1000 : 1);
+  const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
+  cart.push({id: _detailProduct.id, name: _detailProduct.name,
+             price: parseFloat(price.toFixed(2)), qty: grams,
+             sold_by_weight: true, base_unit: _detailProduct.base_unit,
+             display: `${grams}${_detailProduct.base_unit}`,
+             image_url: _detailProduct.image_url,
+             available_qty: _detailProduct.available_qty});
+  localStorage.setItem('lc_cart', JSON.stringify(cart));
+  if (input) input.value = '';
+  _showToast(`${grams}${_detailProduct.base_unit} ${_detailProduct.name} added`);
+}
+</script>
+{% endblock %}

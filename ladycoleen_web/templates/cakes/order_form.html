@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}Order a Cake - Lady Coleen Cakes{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:700px">
+  <h1 class="lc-heading fw-bold mb-1">Order Your Custom Cake</h1>
+  <p class="text-muted mb-4">Fill in the details below and we'll send you a quote.</p>
+
+  <div id="form-error" class="alert alert-danger d-none"></div>
+  <div id="form-success" class="d-none">
+    <div class="lc-card p-4 text-center">
+      <h3 class="fw-bold text-success mb-2">Order Submitted!</h3>
+      <p>Your order reference is <strong id="order-ref"></strong></p>
+      <p class="text-muted">We'll send you a quote via email. You can track your order at:</p>
+      <a id="order-link" href="#" class="btn lc-btn-primary mt-2">Track My Order</a>
+    </div>
+  </div>
+
+  <form id="cake-form" class="lc-card p-4" enctype="multipart/form-data">
+    <h5 class="fw-bold mb-3">Your Details</h5>
+    <div id="guest-fields">
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Your Name *</label>
+        <input type="text" class="form-control lc-input" name="guest_name" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Email Address *</label>
+        <input type="email" class="form-control lc-input" name="guest_email" required>
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Phone Number</label>
+        <input type="tel" class="form-control lc-input" name="guest_phone" placeholder="Optional">
+      </div>
+    </div>
+
+    <hr class="my-4">
+    <h5 class="fw-bold mb-3">Cake Details</h5>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Date Required *</label>
+      <input type="date" class="form-control lc-input" name="date_required" min="{{ min_date }}" required>
+      <div class="form-text">We need at least 2 days notice.</div>
+    </div>
+
+    <div class="row g-3 mb-3">
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Size / Shape *</label>
+        <select class="form-select lc-input" name="size" required>
+          <option value="">Select…</option>
+          <option>6" Round</option>
+          <option>8" Round</option>
+          <option>10" Round</option>
+          <option>12" Round</option>
+          <option>2-Tier (6" &amp; 8")</option>
+          <option>2-Tier (8" &amp; 10")</option>
+          <option>3-Tier</option>
+          <option>Sheet Cake (quarter)</option>
+          <option>Sheet Cake (half)</option>
+          <option>Other (describe below)</option>
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label fw-semibold">Serves (approx.)</label>
+        <input type="number" class="form-control lc-input" name="serves" min="4" max="300" placeholder="e.g. 20">
+      </div>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Flavour *</label>
+      <select class="form-select lc-input" name="flavor" required>
+        <option value="">Select…</option>
+        <option>Vanilla</option>
+        <option>Chocolate</option>
+        <option>Red Velvet</option>
+        <option>Lemon</option>
+        <option>Carrot</option>
+        <option>Marble</option>
+        <option>Funfetti</option>
+        <option>Other (describe below)</option>
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label class="form-label fw-semibold">Design Description</label>
+      <textarea class="form-control lc-input" name="design_description" rows="4"
+        placeholder="Describe your cake design - colours, theme, wording, decorations…"></textarea>
+    </div>
+
+    <div class="mb-4">
+      <label class="form-label fw-semibold">Reference Image <span class="text-muted">(optional)</span></label>
+      <input type="file" class="form-control lc-input" name="image" accept="image/jpeg,image/png">
+      <div class="form-text">JPG or PNG, max 5MB.</div>
+    </div>
+
+    <button type="submit" class="btn lc-btn-primary w-100" id="submit-btn">
+      Submit Order Request
+    </button>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Pre-fill guest fields if logged in
+document.addEventListener('DOMContentLoaded', async () => {
+  if (!LC.isLoggedIn()) return;
+  const res = await LC.api('/api/auth/me');
+  if (!res.ok) return;
+  const { customer } = await res.json();
+  if (customer.name)  document.querySelector('[name="guest_name"]').value  = customer.name;
+  if (customer.email) document.querySelector('[name="guest_email"]').value = customer.email;
+  if (customer.phone) document.querySelector('[name="guest_phone"]').value = customer.phone;
+  // Hide the guest fields label since they're pre-filled
+  document.getElementById('guest-fields').querySelectorAll('input').forEach(el => {
+    el.closest('.mb-3').querySelector('.form-label').innerHTML +=
+      ' <span class="text-muted small fw-normal">(from your account)</span>';
+  });
+});
+
+document.getElementById('cake-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Submitting…';
+  document.getElementById('form-error').classList.add('d-none');
+
+  const fd = new FormData(this);
+  const res = await fetch('/api/cakes/orders', { method: 'POST', body: fd });
+  const data = await res.json();
+
+  if (res.ok) {
+    document.getElementById('cake-form').classList.add('d-none');
+    document.getElementById('order-ref').textContent = data.reference;
+    document.getElementById('order-link').href = '/cakes/orders/' + data.reference;
+    document.getElementById('form-success').classList.remove('d-none');
+  } else {
+    const msg = data.errors ? Object.values(data.errors).join(' ') : (data.error || 'Something went wrong');
+    document.getElementById('form-error').textContent = msg;
+    document.getElementById('form-error').classList.remove('d-none');
+    btn.disabled = false;
+    btn.textContent = 'Submit Order Request';
+  }
+});
+</script>
+{% endblock %}

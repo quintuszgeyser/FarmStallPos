@@ -1,0 +1,42 @@
+{% extends "admin/base.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <h2 class="lc-heading fw-bold mb-0">Error Logs</h2>
+  <div class="d-flex gap-2 align-items-center">
+    <span id="test-email-result" class="small text-muted"></span>
+    <button class="btn lc-btn-outline btn-sm" onclick="sendTestEmail()" id="btn-test-email">
+      ✉ Send Test Email
+    </button>
+  </div>
+</div>
+<div class="lc-card p-3" style="font-family:'JetBrains Mono',monospace;font-size:12px;overflow-x:auto;max-height:600px;overflow-y:scroll">
+  {% for line in lines %}
+  <div class="{% if 'ERROR' in line or 'CRITICAL' in line %}text-danger{% elif 'WARNING' in line %}text-warning{% endif %} mb-1">{{ line }}</div>
+  {% else %}
+  <span class="text-muted">No errors in the last 500 log lines.</span>
+  {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function sendTestEmail() {
+  const btn = document.getElementById('btn-test-email');
+  const res  = document.getElementById('test-email-result');
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  const r = await fetch('/api/admin/test-email', { method: 'POST' });
+  const d = await r.json().catch(() => ({}));
+  if (r.ok) {
+    res.textContent = '✅ ' + (d.message || 'Sent!');
+    res.className = 'small text-success';
+  } else {
+    res.textContent = '❌ ' + (d.error || 'Failed - check logs');
+    res.className = 'small text-danger';
+  }
+  btn.disabled = false;
+  btn.textContent = '✉ Send Test Email';
+}
+</script>
+{% endblock %}

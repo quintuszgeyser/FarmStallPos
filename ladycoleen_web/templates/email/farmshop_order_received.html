@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html><body style="font-family:Nunito,Arial,sans-serif;background:#fffdf7;margin:0;padding:20px">
+<div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;border:2px solid #c9a96e">
+  <h2 style="color:#927f57;text-align:center;margin:0 0 8px">Order Received!</h2>
+  <p style="color:#4a3a28;text-align:center;margin:0 0 24px">Reference: <strong>{{ reference }}</strong></p>
+
+  <table style="width:100%;font-size:14px;border-collapse:collapse;margin-bottom:16px">
+    {% for line in lines %}
+    <tr>
+      <td style="padding:4px 0;color:#4a3a28">{{ line.product_name_snapshot }} × {{ line.qty }}</td>
+      <td style="padding:4px 0;text-align:right;color:#4a3a28">R{{ "%.2f"|format(line.line_total) }}</td>
+    </tr>
+    {% endfor %}
+    <tr style="border-top:1px dashed #c9a96e">
+      <td style="padding:8px 0 0;font-weight:700">Total</td>
+      <td style="padding:8px 0 0;text-align:right;font-weight:700;color:#927f57">R{{ "%.2f"|format(total) }}</td>
+    </tr>
+  </table>
+
+  <p style="color:#4a3a28">{{ 'Collection from farm stall' if delivery_method == 'collection' else 'Delivery requested' }} - we\'ll confirm your order and send payment details shortly.</p>
+  <p style="color:#4a3a28">Track your order: <a href="http://10.0.0.101:5001/farmshop/orders/{{ reference }}" style="color:#927f57">{{ reference }}</a></p>
+
+  <hr style="border:none;border-top:1px dashed #c9a96e;margin:24px 0">
+  <p style="color:#7a6944;font-size:13px;text-align:center;margin:0">Lady Coleen Boutique Farmstall</p>
+</div>
+</body></html>

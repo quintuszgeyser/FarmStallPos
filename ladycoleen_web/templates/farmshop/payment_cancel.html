@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Payment Cancelled - Lady Coleen Farm Shop{% endblock %}
+{% block content %}
+<div class="container py-5" style="max-width:560px">
+  <div class="lc-card p-4 text-center">
+    <span class="badge bg-warning text-dark mb-3" style="font-size:.9rem;padding:8px 16px">Payment Cancelled</span>
+    <h2 class="lc-heading fw-bold mb-2">No charge made</h2>
+    <p class="text-muted mb-4">Your payment was cancelled. Your cart items are still available.</p>
+    <a href="/farmshop/cart" class="btn lc-btn-primary me-2">Back to Cart</a>
+    <a href="/farmshop/products" class="btn lc-btn-outline mt-2">Browse Products</a>
+  </div>
+</div>
+{% endblock %}

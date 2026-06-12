@@ -1,0 +1,144 @@
+{% extends "admin/base.html" %}
+{% block title %}{{ order.reference }}{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-4">
+  <a href="/admin/cakes" class="btn lc-btn-outline">← Back</a>
+  <h2 class="lc-heading fw-bold mb-0">{{ order.reference }}</h2>
+  <span class="badge lc-status-{{ order.status }} fs-6">{{ order.status.replace('_',' ').title() }}</span>
+</div>
+
+<div class="row g-4">
+  <!-- Order Details -->
+  <div class="col-md-7">
+    <div class="lc-card p-4 mb-4">
+      <h5 class="fw-bold mb-3">Order Details</h5>
+      <table class="table table-sm lc-table">
+        <tr><th width="140">Customer</th><td>{{ order.customer_name }}</td></tr>
+        <tr><th>Email</th><td>{{ order.customer_email }}</td></tr>
+        {% if order.customer_phone %}<tr><th>Phone</th><td>{{ order.customer_phone }}</td></tr>{% endif %}
+        <tr><th>Date Required</th><td><strong>{{ order.date_required.strftime('%d %B %Y') }}</strong></td></tr>
+        <tr><th>Size</th><td>{{ order.size }}</td></tr>
+        <tr><th>Flavour</th><td>{{ order.flavor }}</td></tr>
+        {% if order.serves %}<tr><th>Serves</th><td>{{ order.serves }}</td></tr>{% endif %}
+        {% if order.design_description %}<tr><th>Design</th><td>{{ order.design_description }}</td></tr>{% endif %}
+        <tr><th>Submitted</th><td>{{ order.created_at.strftime('%d %b %Y %H:%M') }}</td></tr>
+      </table>
+      {% if order.image_path %}
+      <p class="fw-semibold mb-1">Reference Image</p>
+      <img src="/uploads/{{ order.image_path }}" class="img-fluid rounded" style="max-height:250px">
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Actions -->
+  <div class="col-md-5">
+    <!-- Quote -->
+    <div class="lc-card p-4 mb-3">
+      <h5 class="fw-bold mb-3">Quote</h5>
+      {% if order.quoted_price %}
+      <p class="mb-1">Current quote: <strong class="text-success">R{{ "%.2f"|format(order.quoted_price) }}</strong></p>
+      {% endif %}
+      {% if order.status in ('pending','quoted') %}
+      <div class="mb-2">
+        <label class="form-label fw-semibold">Price (R)</label>
+        <input type="number" class="form-control lc-input" id="price-input" value="{{ order.quoted_price or '' }}" min="0" step="0.01">
+      </div>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Notes to Customer</label>
+        <textarea class="form-control lc-input" id="notes-input" rows="2">{{ order.admin_notes or '' }}</textarea>
+      </div>
+      <button class="btn lc-btn-primary w-100" onclick="sendQuote()">Send Quote →</button>
+      {% endif %}
+    </div>
+
+    <!-- Status -->
+    <div class="lc-card p-4 mb-3">
+      <h5 class="fw-bold mb-3">Update Status</h5>
+      {% set transitions = {
+        'pending':            [('quoted','Send Quote')],
+        'quoted':             [('customer_confirmed','Mark Customer Confirmed'),('confirmed','Confirm Order'),('cancelled','Cancel')],
+        'customer_confirmed': [('in_production','Start Baking'),('cancelled','Cancel')],
+        'confirmed':          [('in_production','Start Baking'),('cancelled','Cancel')],
+        'in_production':      [('completed','Mark Complete')],
+      } %}
+      {% set buttons = transitions.get(order.status, []) %}
+      {% if buttons %}
+        {% for new_status, label in buttons %}
+        <button class="btn {% if new_status=='cancelled' %}btn-outline-danger{% else %}lc-btn-primary{% endif %} w-100 mb-2"
+          onclick="updateStatus('{{ new_status }}', '{{ label }}')">{{ label }}</button>
+        {% endfor %}
+      {% else %}
+      <p class="text-muted small">No further transitions available.</p>
+      {% endif %}
+    </div>
+
+    <!-- Invoice -->
+    <div class="lc-card p-4">
+      <h5 class="fw-bold mb-3">POS Invoice</h5>
+      {% if order.invoice_id %}
+      <p class="text-success mb-1">✅ Invoice in POS (ID: {{ order.invoice_id }})</p>
+      <p class="small text-muted mb-3">View in POS → Invoices tab → search <code>{{ order.reference }}</code></p>
+      <a href="/admin/cakes/{{ order.id }}/invoice/pdf" class="btn lc-btn-primary w-100" target="_blank">
+        ↓ Download PDF Invoice
+      </a>
+      {% elif order.status in ('customer_confirmed','confirmed','in_production','completed') and order.quoted_price %}
+      <button class="btn lc-btn-primary w-100" onclick="createInvoice()">Create POS Invoice</button>
+      {% else %}
+      <p class="text-muted small">A draft invoice was created in POS when the order was placed. After quoting, the price will be updated automatically.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div id="action-error" class="alert alert-danger mt-3 d-none"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const orderId = {{ order.id }};
+
+async function sendQuote() {
+  const price = document.getElementById('price-input').value;
+  const notes = document.getElementById('notes-input').value;
+  if (!confirm(`Send quote of R${parseFloat(price).toFixed(2)} to customer?`)) return;
+  const r = await fetch(`/api/admin/cakes/${orderId}/quote`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({price:parseFloat(price),notes})
+  });
+  const d = await r.json();
+  if (r.ok) location.reload();
+  else showError(d.error);
+}
+
+async function updateStatus(status, label) {
+  const warnings = {
+    cancelled: 'Are you sure you want to cancel this order?',
+    confirmed: `Confirm this order? This will lock in the quote of R{{ order.quoted_price or 0 }}.`,
+    completed: 'Mark this cake as completed and ready for collection?'
+  };
+  const msg = warnings[status] || `Update status to "${label}"?`;
+  if (!confirm(msg)) return;
+  const r = await fetch(`/api/admin/cakes/${orderId}/status`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({status})
+  });
+  const d = await r.json();
+  if (r.ok) location.reload();
+  else showError(d.error);
+}
+
+async function createInvoice() {
+  if (!confirm('Create a POS invoice for R{{ order.quoted_price }}? This will appear in the POS Invoices tab.')) return;
+  const r = await fetch(`/api/admin/cakes/${orderId}/invoice`, {method:'POST'});
+  const d = await r.json();
+  if (r.ok) location.reload();
+  else showError(d.error);
+}
+
+function showError(msg) {
+  const el = document.getElementById('action-error');
+  el.textContent = msg || 'Something went wrong';
+  el.classList.remove('d-none');
+}
+</script>
+{% endblock %}
