@@ -31,18 +31,30 @@ C:\Python314\python.exe -m pip install <package> --trusted-host pypi.org --trust
 
 The production system runs on an Ubuntu 24.04 server (`farmpc` in `~/.ssh/config`) via Docker Compose at `~/farmpos-docker/`. SSH requires a jump host — see `~/.ssh/config`.
 
-```bash
-# SSH to server
-ssh farmpc
+**Monorepo:** Both apps live in `https://github.com/quintuszgeyser/FarmStallPos.git`
+- `farm_pos_web/` — POS (this folder, git root)
+- `ladycoleen_web/` — Lady Coleen website (subfolder)
 
-# Rebuild and redeploy POS after pushing to main
+```bash
+# Deploy POS — push to GitHub first, then:
 ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh pos'
+
+# Deploy website — push to GitHub first, then:
+ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh web'
+
+# Deploy recognition — SCP file first, then:
+cat recognition_service_v2.py | ssh farmpc 'cat > ~/farmpos-docker/recognition/recognition_service_v2.py'
+ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh recognition'
 
 # Check container health
 ssh farmpc 'docker compose -f ~/farmpos-docker/docker-compose.yml ps'
 ```
 
-The POS Dockerfile does a fresh `git clone https://github.com/quintuszgeyser/FarmStallPos.git` on every build — push to `main` first, then run `deploy.sh pos`.
+**Critical deploy rules:**
+- POS and web pull from GitHub on every build (`--no-cache`) — always push to `main` before deploying
+- Recognition uses local SCP — GitHub push alone does nothing for recognition
+- NEVER `docker compose up` directly — always use `deploy.sh`
+- After deploy, verify new code: `docker exec ladycoleen-web grep -c "some_new_string" /app/blueprints/farmshop.py`
 
 ## Environment
 
@@ -139,6 +151,29 @@ Key conventions:
 `sold_by_weight=True` on a `stock_item` — weighed at point of sale.
 `is_for_sale=False` — internal ingredient, hidden at teller.
 `is_prepared=True` — sends to kitchen queue on sale.
+
+### Lady Coleen Website (`ladycoleen_web/`)
+
+Separate Flask app serving `ladycoleen.co.za` via Cloudflare Tunnel. JWT auth (Bearer tokens in localStorage as `lc_token`).
+
+**Key files:**
+- `app.py` — factory, 6 blueprints: auth, cakes, admin, farmshop, invoices, policies
+- `migrate.py` — idempotent migrations, runs on startup (same pattern as POS `strong_migrate`)
+- `services/payfast.py` — PayFast form builder + ITN verification. `_signature(data, passphrase, skip_empty=True)` — set `skip_empty=False` for ITN verification (PayFast sends empty fields)
+- `services/stock.py` — `check_and_deduct_order()` — deducts stock and creates POS sale records
+- `services/customers.py` — `ensure_pos_customer()` — finds or creates a POS `customers` record for web orders
+
+**PayFast flow:**
+1. `POST /api/farmshop/payfast/initiate` — validates cart, stores `payment_sessions` row, returns form fields
+2. Browser POSTs to `https://www.payfast.co.za/eng/process` (or sandbox)
+3. PayFast POSTs ITN to `POST /api/farmshop/payfast/notify` — verifies signature, creates order + invoice + POS sale
+
+**Critical:** `ensure_pos_customer` must run **before** `check_and_deduct_order` so `web_customers.pos_customer_id` is set when the POS sale is inserted. The sale's `customer_id` is looked up via `web_customers.pos_customer_id` — NOT the web customer ID directly.
+
+**Shared with POS:**
+- Product images served from `/product_images/` (shared Docker volume `~/farmpos-docker/data/product-images/`)
+- POS `customers` table — web orders create/link POS customer records
+- POS `invoices` table — online orders create paid invoices visible in POS
 
 ### Recognition System
 
