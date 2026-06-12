@@ -77,6 +77,14 @@ def check_and_deduct_order(db, online_order_id: int, admin_user_id: int) -> str:
         {"id": online_order_id}
     ).scalar()
 
+    # Resolve to POS customer ID — web_customer_id is NOT the same as POS customers.id
+    pos_customer_id = None
+    if web_customer_id:
+        pos_customer_id = db.session.execute(
+            text("SELECT pos_customer_id FROM web_customers WHERE id = :id"),
+            {"id": web_customer_id}
+        ).scalar()
+
     for line in lines:
         qty = Decimal(str(line.qty))
         unit_price = db.session.execute(
@@ -94,7 +102,7 @@ def check_and_deduct_order(db, online_order_id: int, admin_user_id: int) -> str:
             "pid":     line.product_id,
             "qty":     float(qty),
             "price":   float(unit_price),
-            "cid":     web_customer_id,
+            "cid":     pos_customer_id,
             "uid":     online_user_id,
         })
 
