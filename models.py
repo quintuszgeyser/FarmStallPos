@@ -58,8 +58,8 @@ class Product(db.Model):
     scale_shelf_life     = db.Column(db.Integer, nullable=True)           # days
     scale_pack_qty       = db.Column(db.Integer, nullable=True)           # pack quantity
     scale_open_price     = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
-    scale_msg1           = db.Column(db.Integer, nullable=True)           # extra message number
-    scale_msg2           = db.Column(db.Integer, nullable=True)
+    scale_msg1           = db.Column(db.String(80), nullable=True)         # extra message text
+    scale_msg2           = db.Column(db.String(80), nullable=True)
     scale_prohibit       = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     scale_last_synced_at = db.Column(db.DateTime(timezone=True), nullable=True)
     scale_last_sync_status = db.Column(db.String(20), nullable=True)     # ok / error / pending

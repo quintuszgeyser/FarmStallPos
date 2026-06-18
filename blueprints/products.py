@@ -159,9 +159,9 @@ def api_products_post():
     try:
         scale_tare       = float(data['scale_tare']) if data.get('scale_tare') not in (None, '') else None
         scale_shelf_life = int(data['scale_shelf_life']) if data.get('scale_shelf_life') not in (None, '') else None
-        scale_pack_qty   = int(data['scale_pack_qty']) if data.get('scale_pack_qty') not in (None, '') else None
-        scale_msg1       = int(data['scale_msg1']) if data.get('scale_msg1') not in (None, '') else None
-        scale_msg2       = int(data['scale_msg2']) if data.get('scale_msg2') not in (None, '') else None
+        scale_pack_qty   = None  # removed
+        scale_msg1       = str(data['scale_msg1'])[:80] if data.get('scale_msg1') not in (None, '') else None
+        scale_msg2       = str(data['scale_msg2'])[:80] if data.get('scale_msg2') not in (None, '') else None
     except Exception:
         return jsonify({'error': 'Invalid scale field value'}), 400
     scale_open_price = bool(data.get('scale_open_price', False))
@@ -273,11 +273,18 @@ def api_products_update():
         p.scale_open_price = bool(data['scale_open_price'])
     if 'scale_prohibit' in data:
         p.scale_prohibit = bool(data['scale_prohibit'])
-    for sf in ('scale_tare', 'scale_shelf_life', 'scale_pack_qty', 'scale_msg1', 'scale_msg2'):
+    for sf in ('scale_tare', 'scale_shelf_life', 'scale_msg1', 'scale_msg2'):
         if sf in data:
             try:
                 v = data[sf]
-                setattr(p, sf, (float(v) if sf == 'scale_tare' else int(v)) if v not in (None, '') else None)
+                if v in (None, ''):
+                    setattr(p, sf, None)
+                elif sf == 'scale_tare':
+                    setattr(p, sf, float(v))
+                elif sf == 'scale_shelf_life':
+                    setattr(p, sf, int(v))
+                else:  # msg1, msg2 are text
+                    setattr(p, sf, str(v)[:80])
             except Exception:
                 return jsonify({'error': f'Invalid {sf}'}), 400
     # Any scale field change invalidates the hash so sync service picks it up

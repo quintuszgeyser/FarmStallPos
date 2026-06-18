@@ -962,8 +962,11 @@ def strong_migrate():
         pg_try("ALTER TABLE products ADD COLUMN scale_shelf_life INTEGER")
         pg_try("ALTER TABLE products ADD COLUMN scale_pack_qty INTEGER")
         pg_try("ALTER TABLE products ADD COLUMN scale_open_price BOOLEAN NOT NULL DEFAULT FALSE")
-        pg_try("ALTER TABLE products ADD COLUMN scale_msg1 INTEGER")
-        pg_try("ALTER TABLE products ADD COLUMN scale_msg2 INTEGER")
+        pg_try("ALTER TABLE products ADD COLUMN scale_msg1 VARCHAR(80)")
+        pg_try("ALTER TABLE products ADD COLUMN scale_msg2 VARCHAR(80)")
+        # Migrate existing integer msg fields to varchar if needed
+        pg_try("ALTER TABLE products ALTER COLUMN scale_msg1 TYPE VARCHAR(80) USING scale_msg1::VARCHAR")
+        pg_try("ALTER TABLE products ALTER COLUMN scale_msg2 TYPE VARCHAR(80) USING scale_msg2::VARCHAR")
         pg_try("ALTER TABLE products ADD COLUMN scale_prohibit BOOLEAN NOT NULL DEFAULT FALSE")
         pg_try("ALTER TABLE products ADD COLUMN scale_last_synced_at TIMESTAMPTZ")
         pg_try("ALTER TABLE products ADD COLUMN scale_last_sync_status VARCHAR(20)")
