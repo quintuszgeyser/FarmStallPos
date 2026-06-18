@@ -19,6 +19,9 @@ from helpers import (
     require_role, current_user,
     _assign_product_code, _gen_barcode_from_code, _plu_range,
 )
+
+# Unit conversion (grams/ml base)
+_UNIT_CONV = {'g': 1, 'kg': 1000, 'ml': 1, 'L': 1000, 'unit': 1}
 from models import db, Product, ProductImportRun
 
 bp = Blueprint('imports', __name__)
@@ -380,7 +383,6 @@ def _process_row(raw, existing, idx, warnings, mode):
 
 def _build_product_fields(raw, sold_by_weight, utype, ptype, existing=None):
     """Build dict of field values to apply to product."""
-    from helpers import _UNIT_CONV
     fields = {}
     fields['name']         = raw['name']
     fields['product_type'] = ptype
