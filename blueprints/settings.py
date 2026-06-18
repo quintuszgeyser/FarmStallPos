@@ -27,6 +27,8 @@ def api_settings():
             'kiosk_inactivity_minutes':  int(get_setting('kiosk_inactivity_minutes', 0) or 0),
             'kiosk_url':                 str(get_setting('kiosk_url', '') or ''),
             'visit_min_gap_seconds':     int(get_setting('visit_min_gap_seconds', 180) or 180),
+            'scale_ip':                  str(get_setting('scale_ip', '10.0.0.103') or '10.0.0.103'),
+            'scale_port':                int(get_setting('scale_port', 7061) or 7061),
         })
 
     data  = request.json or {}
@@ -39,6 +41,7 @@ def api_settings():
         ('kiosk_api_key', str), ('kiosk_port', int),
         ('kiosk_inactivity_minutes', int), ('kiosk_url', str),
         ('visit_min_gap_seconds', int),
+        ('scale_ip', str), ('scale_port', int),
     ]:
         if key in data:
             try:
