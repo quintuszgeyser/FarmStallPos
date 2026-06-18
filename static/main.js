@@ -3260,6 +3260,45 @@ document.getElementById('search')?.addEventListener('input', function() {
 // ═══════════════════════════════════════════════════════
 // USB / BLUETOOTH BARCODE SCANNER (keyboard wedge)
 // ═══════════════════════════════════════════════════════
+// Variable weight barcode parser (BC-4000 scale labels)
+// Format: PP IIIII WWWWW C  (13 digits)
+//   PP    = prefix 20-29 (variable weight indicator)
+//   IIIII = item code (product ID, zero-padded)
+//   WWWWW = weight in grams × 100 (e.g. 07202 = 72.02g)
+//   C     = EAN check digit
+function handleScannedCode(code) {
+  if (/^2[0-9]\d{11}$/.test(code)) {
+    const itemCode = parseInt(code.substring(2, 7), 10);
+    const weightRaw = parseInt(code.substring(7, 12), 10);
+    const qty_base = weightRaw / 100; // grams (2 decimal places)
+    const p = STATE.products.find(x => x.id === itemCode && x.sold_by_weight);
+    if (p && qty_base > 0) {
+      const pricePerUnit = parseFloat(p.price_per_unit || 0);
+      const total = qty_base * pricePerUnit;
+      const label = `${p.name} ${displayQty(qty_base, p.unit_type || 'weight')}`;
+      const key = `${p.id}_${Date.now()}`;
+      STATE.cart[key] = {
+        _key: key, product_id: p.id, name: label,
+        unit_price: pricePerUnit, qty: qty_base,
+        is_weight: true, _display_total: total,
+      };
+      STATE.scanHistory.push(p.id);
+      renderCart();
+      detectAndOfferSpecials();
+      beep(80, 880); flashOK();
+      toast(`Added: ${label} — R${fmt(total)}`, 'success', 1500);
+      return true;
+    }
+  }
+  // Fixed barcode or PLU number lookup
+  const p = STATE.products.find(x => x.barcode === code)
+         || STATE.products.find(x => String(x.id) === code)
+         || STATE.products.find(x => x.name.toLowerCase() === code.toLowerCase());
+  if (p) { beep(80, 880); flashOK(); addToCart(p); return true; }
+  toast(`Barcode not found: ${code}`, 'warning');
+  return false;
+}
+
 let _scanBuffer = '', _scanBufferTimer = null;
 
 document.addEventListener('keydown', (e) => {
@@ -3272,11 +3311,7 @@ document.addEventListener('keydown', (e) => {
     const code = _scanBuffer.trim();
     _scanBuffer = ''; clearTimeout(_scanBufferTimer);
     if (code.length < 3) return;
-    const p = STATE.products.find(x => x.barcode === code)
-           || STATE.products.find(x => String(x.id) === code)
-           || STATE.products.find(x => x.name.toLowerCase() === code.toLowerCase());
-    if (p) { beep(80, 880); flashOK(); addToCart(p); }
-    else toast(`Barcode not found: ${code}`, 'warning');
+    if (handleScannedCode(code)) return;
     return;
   }
   if (e.key.length === 1) {
@@ -3312,11 +3347,7 @@ async function startScanner() {
       const code = result.getText();
       flashOK(); beep(120, 880);
       SCAN.cooldown = true; setTimeout(() => SCAN.cooldown = false, 1500);
-      const p = STATE.products.find(x => x.barcode === code)
-             || STATE.products.find(x => String(x.id) === code)
-             || STATE.products.find(x => x.name.toLowerCase() === code.toLowerCase());
-      if (p) addToCart(p);
-      else toast(`Barcode not found: ${code}`, 'warning');
+      handleScannedCode(code);
     });
     SCAN.running = true;
   } catch (e) { console.warn('Scanner error', e); stopScanner(); }
