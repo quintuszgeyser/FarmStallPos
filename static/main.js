@@ -3289,15 +3289,17 @@ document.getElementById('search')?.addEventListener('input', function() {
 // ═══════════════════════════════════════════════════════
 // Variable weight barcode parser (BC-4000 scale labels)
 // Format: PP IIIII WWWWW C  (13 digits)
-//   PP    = prefix 20-29 (variable weight indicator)
-//   IIIII = product_code (zero-padded, range 00001-19999 for weight items)
-//   WWWWW = weight in grams × 100 (e.g. 07202 = 72.02g)
+//   PP    = prefix 10-29 (variable weight/volume — scale uses 10 or 20 range)
+//   IIIII = product_code (zero-padded, range 00001-19999 for weight/volume items)
+//   WWWWW = weight/volume × 100 (e.g. 00070 = 70ml or 70g)
 //   C     = EAN check digit
 function handleScannedCode(code) {
-  if (/^2[0-9]\d{11}$/.test(code)) {
+  // Variable weight/volume scale label: 13 digits, prefix 10-29, value field non-zero
+  const isScaleLabel = /^[12][0-9]\d{11}$/.test(code) && parseInt(code.substring(7, 12), 10) > 0;
+  if (isScaleLabel) {
     const productCode = parseInt(code.substring(2, 7), 10);
     const weightRaw = parseInt(code.substring(7, 12), 10);
-    const qty_base = weightRaw / 100; // grams (2 decimal places)
+    const qty_base = weightRaw / 100; // grams or ml (2 decimal places)
     const p = STATE.products.find(x => x.product_code === productCode && x.sold_by_weight);
     if (p && qty_base > 0) {
       const pricePerUnit = parseFloat(p.price_per_unit || 0);
