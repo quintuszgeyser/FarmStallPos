@@ -979,10 +979,10 @@ def strong_migrate():
 
             for row in needs_code:
                 pid, sbw, unit_type, ptype = row
-                if sbw:
-                    code = next_weight; next_weight += 1
-                elif unit_type == 'volume':
+                if sbw and unit_type == 'volume':
                     code = next_volume; next_volume += 1
+                elif sbw:
+                    code = next_weight; next_weight += 1
                 elif ptype in ('simple', 'stock_item'):
                     code = next_fixed; next_fixed += 1
                 else:

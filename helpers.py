@@ -272,13 +272,13 @@ def _gen_barcode_from_code(product_code):
 
 def _assign_product_code(sold_by_weight, unit_type, product_type):
     """Assign the next available product_code for the given product type.
-    Ranges: weight=1-19999, fixed=20000-29999, volume=30000-39999, other=40000-49999
+    Ranges: weight(g)=1-19999, fixed=20000-29999, volume(ml)=30000-39999, other=40000-49999
     """
     from sqlalchemy import func as sqlfunc
-    if sold_by_weight:
-        lo, hi = 1, 19999
-    elif unit_type == 'volume':
+    if sold_by_weight and unit_type == 'volume':
         lo, hi = 30000, 39999
+    elif sold_by_weight:
+        lo, hi = 1, 19999
     elif product_type in ('simple', 'stock_item'):
         lo, hi = 20000, 29999
     else:
