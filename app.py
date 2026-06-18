@@ -981,7 +981,7 @@ def strong_migrate():
 
         # Scale audit tables
         pg_try("""
-            CREATE TABLE scale_sync_runs (
+            CREATE TABLE IF NOT EXISTS scale_sync_runs (
               id               SERIAL PRIMARY KEY,
               started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               completed_at     TIMESTAMPTZ,
@@ -997,7 +997,7 @@ def strong_migrate():
             )
         """)
         pg_try("""
-            CREATE TABLE scale_snapshots (
+            CREATE TABLE IF NOT EXISTS scale_snapshots (
               id            SERIAL PRIMARY KEY,
               captured_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
               run_id        INTEGER REFERENCES scale_sync_runs(id),
