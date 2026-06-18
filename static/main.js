@@ -287,7 +287,7 @@ function ean13Check(code12) {
 function genBarcode(id) {
   for (let a = 0; a < 20; a++) {
     const rnd  = String(Math.floor(Math.random() * 100000)).padStart(5, '0');
-    const core = `200${String(id).padStart(5,'0')}${rnd}`.slice(0, 12);
+    const core = `100${String(id).padStart(5,'0')}${rnd}`.slice(0, 12);
     const cand = core + ean13Check(core);
     if (!STATE.products.some(p => (p.barcode + '') === cand)) return cand;
   }
