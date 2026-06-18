@@ -56,17 +56,17 @@ def _price_cents(p) -> int:
 
 
 def _compute_hash(p) -> str:
+    """Must match compute_scale_hash() in scale_sync/plu_formatter.py exactly."""
     parts = [
         str(p.product_code or ''),
         (p.name or '').strip().upper()[:MAX_NAME_LEN],
         str(_price_cents(p)),
         str(1 if p.sold_by_weight else 0),
-        str(p.scale_tare or 0),
+        str(float(p.scale_tare) if p.scale_tare is not None else 0),
         str(p.scale_shelf_life or 0),
-        str(p.scale_pack_qty or 0),
         str(1 if p.scale_open_price else 0),
-        str(p.scale_msg1 or 0),
-        str(p.scale_msg2 or 0),
+        str((p.scale_msg1 or '').strip()[:20]),
+        str((p.scale_msg2 or '').strip()[:20]),
         str(1 if p.scale_prohibit else 0),
     ]
     return hashlib.sha256('|'.join(parts).encode()).hexdigest()
