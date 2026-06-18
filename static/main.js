@@ -3366,19 +3366,22 @@ document.getElementById('search')?.addEventListener('input', function() {
 // Format: PP IIII VVVVVV C  (13 digits) — confirmed from printed label
 //   PP     = prefix 20 (variable weight)
 //   IIII   = product_code (4 digits, e.g. 0007 = product_code 7)
-//   VVVVVV = weight × 10 in 0.1g units (e.g. 003072 = 307.2g)
+//   VVVVVV = total price in cents (e.g. 003072 = R30.72)
 //   C      = EAN-13 check digit
+//   Weight is derived: total_price_rands / price_per_unit_rands_per_g
 function handleScannedCode(code) {
   // Variable weight scale label: 13 digits starting with 20
   const isScaleLabel = /^20\d{11}$/.test(code) && parseInt(code.substring(6, 12), 10) > 0;
   if (isScaleLabel) {
-    const productCode = parseInt(code.substring(2, 6), 10);   // 4-digit item code
-    const weightRaw = parseInt(code.substring(6, 12), 10);    // 6-digit value
-    const qty_base = weightRaw / 10;  // ÷10 → grams (0.1g resolution)
+    const productCode = parseInt(code.substring(2, 6), 10);         // 4-digit item code
+    const totalCents  = parseInt(code.substring(6, 12), 10);        // 6-digit price in cents
+    const totalRands  = totalCents / 100;
     const p = STATE.products.find(x => x.product_code === productCode && x.sold_by_weight);
-    if (p && qty_base > 0) {
-      const pricePerUnit = parseFloat(p.price_per_unit || 0);
-      const total = qty_base * pricePerUnit;
+    if (p && totalRands > 0) {
+      const pricePerUnit = parseFloat(p.price_per_unit || 0);       // R per gram
+      const qty_base = pricePerUnit > 0 ? totalRands / pricePerUnit : 0;  // grams
+      if (qty_base <= 0) { toast(`Cannot calculate weight for ${p.name}`, 'warning'); return false; }
+      const total = totalRands;
       const label = `${p.name} ${displayQty(qty_base, p.unit_type || 'weight')}`;
       const key = `${p.id}_${Date.now()}`;
       STATE.cart[key] = {
