@@ -10,7 +10,7 @@ from sqlalchemy import text, func
 from helpers import (
     require_login, require_role, current_user,
     get_setting, get_stock_level, get_fifo_cost_per_unit,
-    sync_sell_packages, _gen_barcode, _serialize_product,
+    sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code, _serialize_product,
     consume_fifo,
 )
 from models import (
@@ -106,9 +106,6 @@ def api_products_post():
         return jsonify({'error': 'Barcode exists'}), 409
     if Product.query.filter_by(name=name).first():
         return jsonify({'error': 'Product name exists'}), 409
-    if not barcode:
-        next_id = (db.session.query(func.max(Product.id)).scalar() or 0) + 1
-        barcode = _gen_barcode(next_id)
 
     price               = data.get('price')
     stock_qty           = int(data.get('stock_qty', 0) or 0)
@@ -145,6 +142,18 @@ def api_products_post():
     except Exception:
         margin_pct = None
 
+    # Assign product_code and derive barcode
+    try:
+        product_code = _assign_product_code(sold_by_weight, unit_type, product_type)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    # Weight/volume: no stored barcode — scale generates dynamically from product_code
+    # Fixed/recipe: deterministic EAN-13 from product_code (unless manually provided)
+    if not barcode:
+        if not sold_by_weight and unit_type != 'volume':
+            barcode = _gen_barcode_from_code(product_code)
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -155,6 +164,7 @@ def api_products_post():
         price_per_unit=price_per_unit, low_stock_threshold=low_stock_threshold,
         package_size=package_size, package_size_unit=package_size_unit,
         package_unit=package_unit, margin_pct=margin_pct,
+        product_code=product_code,
     )
     db.session.add(p)
     db.session.flush()

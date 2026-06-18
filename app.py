@@ -27,7 +27,7 @@ from helpers import (
     seed_first_admin, get_online_user_id,
     consume_fifo, reverse_fifo,
     get_stock_level, get_fifo_cost_per_unit,
-    sync_sell_packages, _gen_barcode, _ean13_check, _serialize_product,
+    sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code, _ean13_check, _serialize_product,
     _parse_dt,
 )
 
@@ -954,6 +954,52 @@ def strong_migrate():
             # Embedding quality + camera source for per-angle quality upgrade and camera boost
             pg_try("ALTER TABLE customer_faces ADD COLUMN quality NUMERIC(4,3)")
             pg_try("ALTER TABLE customer_faces ADD COLUMN camera_source VARCHAR(20)")
+
+        # product_code: sequential code by type for scale/barcode integration
+        pg_try("ALTER TABLE products ADD COLUMN product_code INTEGER UNIQUE")
+        pg_try("CREATE UNIQUE INDEX IF NOT EXISTS ix_products_product_code ON products (product_code)")
+
+        # Backfill product_code for existing products that don't have one yet
+        # Ranges: weight=00001-19999, fixed=20000-29999, volume=30000-39999, other=40000-49999
+        needs_code = conn.execute(text(
+            "SELECT id, sold_by_weight, unit_type, product_type FROM products WHERE product_code IS NULL ORDER BY id"
+        )).fetchall()
+        if needs_code:
+            # Find max codes already assigned per range
+            def max_in_range(lo, hi):
+                r = conn.execute(text(
+                    "SELECT MAX(product_code) FROM products WHERE product_code >= :lo AND product_code <= :hi"
+                ), {'lo': lo, 'hi': hi}).scalar()
+                return r or (lo - 1)
+
+            next_weight = max_in_range(1, 19999) + 1
+            next_fixed  = max_in_range(20000, 29999) + 1
+            next_volume = max_in_range(30000, 39999) + 1
+            next_other  = max_in_range(40000, 49999) + 1
+
+            for row in needs_code:
+                pid, sbw, unit_type, ptype = row
+                if sbw:
+                    code = next_weight; next_weight += 1
+                elif unit_type == 'volume':
+                    code = next_volume; next_volume += 1
+                elif ptype in ('simple', 'stock_item'):
+                    code = next_fixed; next_fixed += 1
+                else:
+                    code = next_other; next_other += 1
+                conn.exec_driver_sql(
+                    "UPDATE products SET product_code = %s WHERE id = %s", (code, pid)
+                )
+
+            # Also update barcode for fixed/recipe products to be deterministic from product_code
+            # Weight/volume products have no stored barcode (scale generates dynamically)
+            fixed_no_code = conn.execute(text("""
+                SELECT id, product_code FROM products
+                WHERE sold_by_weight = FALSE
+                  AND product_code IS NOT NULL
+                  AND (barcode IS NULL OR barcode NOT LIKE '1%')
+            """)).fetchall()
+            # We'll let helpers._gen_barcode_from_code handle this at runtime
 
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()

@@ -285,13 +285,12 @@ function ean13Check(code12) {
   return String((10 - s % 10) % 10);
 }
 function genBarcode(id) {
-  for (let a = 0; a < 20; a++) {
-    const rnd  = String(Math.floor(Math.random() * 100000)).padStart(5, '0');
-    const core = `100${String(id).padStart(5,'0')}${rnd}`.slice(0, 12);
-    const cand = core + ean13Check(core);
-    if (!STATE.products.some(p => (p.barcode + '') === cand)) return cand;
-  }
-  return String(Date.now()).slice(-13);
+  // Deterministic EAN-13 from product_code: 1 + PPPPP + 000000 + check
+  // product_code is server-assigned; use id as fallback for preview before save
+  const p = STATE.products.find(x => x.id === id);
+  const code = p?.product_code || id;
+  const core = `1${String(code).padStart(5,'0')}000000`;
+  return core + ean13Check(core);
 }
 function nextLocalId() {
   return Math.max(0, ...STATE.products.map(p => Number(p.id) || 0)) + 1;
@@ -1048,7 +1047,7 @@ document.getElementById('btn-new-product')?.addEventListener('click', () => {
   const nextId = nextLocalId();
   openProductEditor(null);
   document.getElementById('p-id').value      = String(nextId);
-  document.getElementById('p-barcode').value = genBarcode(nextId);
+  document.getElementById('p-barcode').value = ''; // server assigns barcode from product_code
 });
 
 // btn-remove-image removed — image deletion now handled per-image via renderImageList()
@@ -3263,15 +3262,15 @@ document.getElementById('search')?.addEventListener('input', function() {
 // Variable weight barcode parser (BC-4000 scale labels)
 // Format: PP IIIII WWWWW C  (13 digits)
 //   PP    = prefix 20-29 (variable weight indicator)
-//   IIIII = item code (product ID, zero-padded)
+//   IIIII = product_code (zero-padded, range 00001-19999 for weight items)
 //   WWWWW = weight in grams × 100 (e.g. 07202 = 72.02g)
 //   C     = EAN check digit
 function handleScannedCode(code) {
   if (/^2[0-9]\d{11}$/.test(code)) {
-    const itemCode = parseInt(code.substring(2, 7), 10);
+    const productCode = parseInt(code.substring(2, 7), 10);
     const weightRaw = parseInt(code.substring(7, 12), 10);
     const qty_base = weightRaw / 100; // grams (2 decimal places)
-    const p = STATE.products.find(x => x.id === itemCode && x.sold_by_weight);
+    const p = STATE.products.find(x => x.product_code === productCode && x.sold_by_weight);
     if (p && qty_base > 0) {
       const pricePerUnit = parseFloat(p.price_per_unit || 0);
       const total = qty_base * pricePerUnit;

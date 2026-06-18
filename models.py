@@ -51,6 +51,7 @@ class Product(db.Model):
     description          = db.Column(db.Text, nullable=True)
     is_archived          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     archived_reason      = db.Column(db.String(200), nullable=True)
+    product_code         = db.Column(db.Integer, unique=True, nullable=True)
 
 
 class ProductImage(db.Model):

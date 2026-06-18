@@ -256,20 +256,54 @@ def sync_sell_packages(product_id, packages):
             ))
 
 
+def _ean13_check(code12):
+    s = sum(int(code12[i]) * (1 if i % 2 == 0 else 3) for i in range(12))
+    return str((10 - s % 10) % 10)
+
+
+def _gen_barcode_from_code(product_code):
+    """Generate deterministic EAN-13 for fixed-price products from product_code.
+    Format: 1 + PPPPP (5-digit code) + 000000 (6 zeros) + check digit.
+    Weight/volume products don't get a stored barcode — scale generates dynamically.
+    """
+    core = f"1{str(product_code).zfill(5)}000000"
+    return core + _ean13_check(core)
+
+
+def _assign_product_code(sold_by_weight, unit_type, product_type):
+    """Assign the next available product_code for the given product type.
+    Ranges: weight=1-19999, fixed=20000-29999, volume=30000-39999, other=40000-49999
+    """
+    from sqlalchemy import func as sqlfunc
+    if sold_by_weight:
+        lo, hi = 1, 19999
+    elif unit_type == 'volume':
+        lo, hi = 30000, 39999
+    elif product_type in ('simple', 'stock_item'):
+        lo, hi = 20000, 29999
+    else:
+        lo, hi = 40000, 49999
+
+    current_max = db.session.query(sqlfunc.max(Product.product_code)).filter(
+        Product.product_code >= lo, Product.product_code <= hi
+    ).scalar() or (lo - 1)
+
+    next_code = current_max + 1
+    if next_code > hi:
+        raise ValueError(f"Product code range {lo}-{hi} exhausted")
+    return next_code
+
+
 def _gen_barcode(seed_id):
+    """Legacy fallback — generates random EAN-13 with prefix 100."""
     for _ in range(30):
         rnd = str(random.randint(0, 99999)).zfill(5)
-        core = f"200{str(seed_id).zfill(5)}{rnd}"[:12]
+        core = f"100{str(seed_id).zfill(5)}{rnd}"[:12]
         check = _ean13_check(core)
         candidate = core + check
         if not Product.query.filter_by(barcode=candidate).first():
             return candidate
     return str(uuid.uuid4().int)[:13]
-
-
-def _ean13_check(code12):
-    s = sum(int(code12[i]) * (1 if i % 2 == 0 else 3) for i in range(12))
-    return str((10 - s % 10) % 10)
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +337,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'name':         p.name,
         'price':        float(p.price) if p.price is not None else None,
         'barcode':      p.barcode,
+        'product_code': p.product_code,
         'stock_qty':    p.stock_qty,
         'product_type': p.product_type,
         'unit_type':    p.unit_type,
