@@ -271,10 +271,12 @@ def _gen_barcode_from_code(product_code):
 
 
 def _assign_product_code(sold_by_weight, unit_type, product_type):
-    """Assign the next available product_code for the given product type.
+    """Assign the smallest available product_code gap for the given product type.
     Ranges: weight(g)=1-19999, fixed=20000-29999, volume(ml)=30000-39999, other=40000-49999
+
+    Uses a gap-scan inside the current transaction. Caller must hold a row lock or
+    flush before this returns to prevent two concurrent products getting the same code.
     """
-    from sqlalchemy import func as sqlfunc
     if sold_by_weight and unit_type == 'volume':
         lo, hi = 30000, 39999
     elif sold_by_weight:
@@ -284,14 +286,20 @@ def _assign_product_code(sold_by_weight, unit_type, product_type):
     else:
         lo, hi = 40000, 49999
 
-    current_max = db.session.query(sqlfunc.max(Product.product_code)).filter(
-        Product.product_code >= lo, Product.product_code <= hi
-    ).scalar() or (lo - 1)
+    # Find smallest gap using a generate_series / NOT EXISTS query (PostgreSQL)
+    from sqlalchemy import text as _text
+    row = db.session.execute(_text("""
+        SELECT s.code FROM generate_series(:lo, :hi) AS s(code)
+        WHERE NOT EXISTS (
+            SELECT 1 FROM products WHERE product_code = s.code
+        )
+        ORDER BY s.code
+        LIMIT 1
+    """), {'lo': lo, 'hi': hi}).fetchone()
 
-    next_code = current_max + 1
-    if next_code > hi:
+    if not row:
         raise ValueError(f"Product code range {lo}-{hi} exhausted")
-    return next_code
+    return row[0]
 
 
 def _gen_barcode(seed_id):
@@ -357,6 +365,18 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'description':          p.description,
         'is_archived':          p.is_archived,
         'archived_reason':      p.archived_reason,
+        # Scale sync fields
+        'sync_to_scale':           p.sync_to_scale,
+        'scale_tare':              float(p.scale_tare) if p.scale_tare is not None else 0,
+        'scale_shelf_life':        p.scale_shelf_life or 0,
+        'scale_pack_qty':          p.scale_pack_qty or 0,
+        'scale_open_price':        p.scale_open_price,
+        'scale_msg1':              p.scale_msg1 or 0,
+        'scale_msg2':              p.scale_msg2 or 0,
+        'scale_prohibit':          p.scale_prohibit,
+        'scale_last_synced_at':    p.scale_last_synced_at.isoformat() if p.scale_last_synced_at else None,
+        'scale_last_sync_status':  p.scale_last_sync_status,
+        'scale_last_sync_error':   p.scale_last_sync_error,
         'images': [{
             'id':            img.id,
             'filename':      img.filename,

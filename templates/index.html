@@ -465,6 +465,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Configuration</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleStatus()">&#9878; Scale</button></li>
   </ul>
 
   <div id="tab-contents" class="tab-content hidden mt-3">
@@ -1340,6 +1341,60 @@
       <div id="invoices-list"></div>
     </div>
 
+    <!-- ═══════════════ SCALE MONITOR ═══════════════ -->
+    <div class="tab-pane fade" id="scale-monitor">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">⚖ Scale Monitor</h5>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleStatus()">↺ Refresh</button>
+          <button class="btn btn-outline-primary btn-sm" onclick="scaleTestConnection()">Test Connection</button>
+          <button class="btn btn-outline-warning btn-sm" onclick="scalePreview()">Preview Sync</button>
+          <button class="btn btn-success btn-sm" onclick="scaleForceResync()">⟳ Force Full Resync</button>
+        </div>
+      </div>
+
+      <!-- Status banner -->
+      <div id="scale-status-banner" class="alert alert-secondary mb-3 d-flex gap-4 flex-wrap">
+        <span>Scale: <strong id="scale-ip-display">—</strong></span>
+        <span>Reachable: <strong id="scale-reachable-display">—</strong></span>
+        <span>In sync: <strong id="scale-insync-count">—</strong></span>
+        <span>Pending: <strong id="scale-pending-count">—</strong></span>
+        <span>Errors: <strong id="scale-error-count">—</strong></span>
+        <span>Last run: <strong id="scale-last-run">—</strong></span>
+      </div>
+
+      <!-- Preview result -->
+      <div id="scale-preview-result" class="mb-3" style="display:none">
+        <h6>Sync Preview</h6>
+        <div id="scale-preview-body"></div>
+      </div>
+
+      <!-- Products table -->
+      <div id="scale-products-section">
+        <h6>Scale Products <small class="text-muted">(sync_to_scale = true)</small></h6>
+        <table class="table table-sm table-hover" id="scale-products-table">
+          <thead class="table-light">
+            <tr>
+              <th>PLU</th><th>Name</th><th>Price</th><th>Tare</th><th>Shelf Life</th>
+              <th>Pack Qty</th><th>Status</th><th>Last Synced</th><th>Error</th>
+            </tr>
+          </thead>
+          <tbody id="scale-products-body"></tbody>
+        </table>
+      </div>
+
+      <!-- Sync run history -->
+      <div class="mt-4">
+        <h6>Recent Sync Runs</h6>
+        <table class="table table-sm" id="scale-runs-table">
+          <thead class="table-light">
+            <tr><th>Time</th><th>Type</th><th>Status</th><th>Sent</th><th>Failed</th><th>Orphans</th></tr>
+          </thead>
+          <tbody id="scale-runs-body"></tbody>
+        </table>
+      </div>
+    </div>
+
   </div><!-- /tab-contents -->
 </div><!-- /container -->
 
@@ -1688,6 +1743,52 @@
           <div id="recipe-cost-total" class="text-muted small"></div>
         </div>
 
+
+        <!-- ── Scale Settings ── -->
+        <div id="section-scale" class="border rounded p-3 mb-3" style="background:#f8f9fa">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">⚖ Scale Settings</h6>
+            <div class="form-check form-switch mb-0">
+              <input class="form-check-input" type="checkbox" id="p-sync-to-scale">
+              <label class="form-check-label small" for="p-sync-to-scale">Sync to scale</label>
+            </div>
+          </div>
+          <div id="scale-fields-body">
+            <div class="row g-2">
+              <div class="col-6">
+                <label class="form-label small mb-1">Tare weight (g)</label>
+                <input id="p-scale-tare" type="number" step="0.001" min="0" class="form-control form-control-sm" placeholder="0">
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-1">Shelf life (days)</label>
+                <input id="p-scale-shelf-life" type="number" min="0" class="form-control form-control-sm" placeholder="0">
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-1">Pack quantity</label>
+                <input id="p-scale-pack-qty" type="number" min="0" class="form-control form-control-sm" placeholder="0">
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-1">Message 1 #</label>
+                <input id="p-scale-msg1" type="number" min="0" class="form-control form-control-sm" placeholder="0">
+              </div>
+              <div class="col-6">
+                <label class="form-label small mb-1">Message 2 #</label>
+                <input id="p-scale-msg2" type="number" min="0" class="form-control form-control-sm" placeholder="0">
+              </div>
+            </div>
+            <div class="d-flex gap-3 mt-2">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="p-scale-open-price">
+                <label class="form-check-label small" for="p-scale-open-price">Open price</label>
+              </div>
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="p-scale-prohibit">
+                <label class="form-check-label small text-danger" for="p-scale-prohibit">Prohibit on scale</label>
+              </div>
+            </div>
+            <div id="scale-sync-status-row" class="mt-2 small text-muted hidden"></div>
+          </div>
+        </div>
 
         <hr class="my-2">
         <div class="d-flex gap-2 mb-2">

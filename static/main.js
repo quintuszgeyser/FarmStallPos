@@ -952,6 +952,25 @@ function openProductEditor(p) {
   document.getElementById('p-stock').value     = p?.stock_qty ?? '';
   document.getElementById('p-type').value      = p?.product_type ?? 'stock_item';
   document.getElementById('p-unit-type').value = p?.unit_type ?? 'weight';
+
+  // Scale fields
+  const syncEl = document.getElementById('p-sync-to-scale');
+  if (syncEl) syncEl.checked = p ? !!p.sync_to_scale : !!p?.sold_by_weight;
+  document.getElementById('p-scale-tare')?.setAttribute('value', p?.scale_tare || '');
+  document.getElementById('p-scale-shelf-life')?.setAttribute('value', p?.scale_shelf_life || '');
+  document.getElementById('p-scale-pack-qty')?.setAttribute('value', p?.scale_pack_qty || '');
+  document.getElementById('p-scale-msg1')?.setAttribute('value', p?.scale_msg1 || '');
+  document.getElementById('p-scale-msg2')?.setAttribute('value', p?.scale_msg2 || '');
+  if (document.getElementById('p-scale-open-price')) document.getElementById('p-scale-open-price').checked = !!p?.scale_open_price;
+  if (document.getElementById('p-scale-prohibit')) document.getElementById('p-scale-prohibit').checked = !!p?.scale_prohibit;
+  // Show sync status if editing
+  const statusRow = document.getElementById('scale-sync-status-row');
+  if (statusRow && p) {
+    if (p.scale_last_sync_status) {
+      statusRow.textContent = `Last sync: ${p.scale_last_sync_status}${p.scale_last_synced_at ? ' at ' + new Date(p.scale_last_synced_at).toLocaleString() : ''}${p.scale_last_sync_error ? ' — ' + p.scale_last_sync_error : ''}`;
+      statusRow.classList.remove('hidden');
+    } else { statusRow.classList.add('hidden'); }
+  } else if (statusRow) { statusRow.classList.add('hidden'); }
   document.getElementById('p-low-stock').value = p?.low_stock_threshold ?? '';
   document.getElementById('p-is-for-sale').checked          = p?.is_for_sale !== false;
   document.getElementById('p-is-prepared').checked          = !!p?.is_prepared;
@@ -1773,6 +1792,13 @@ function buildProductPayload() {
     finalPricePerUnit = price != null ? price / conv : null;
   }
 
+  // Scale fields
+  const scaleTareRaw = document.getElementById('p-scale-tare')?.value;
+  const scaleShelfRaw = document.getElementById('p-scale-shelf-life')?.value;
+  const scalePackRaw = document.getElementById('p-scale-pack-qty')?.value;
+  const scaleMsg1Raw = document.getElementById('p-scale-msg1')?.value;
+  const scaleMsg2Raw = document.getElementById('p-scale-msg2')?.value;
+
   return {
     name, barcode,
     price:       finalPrice,
@@ -1797,6 +1823,15 @@ function buildProductPayload() {
     description:   document.getElementById('p-description')?.value?.trim() || null,
     recipe_lines:  type === 'recipe'     ? getRecipeLinesForSubmit()  : [],
     sell_packages: type === 'stock_item' ? getSellPackagesForSubmit() : [],
+    // Scale settings
+    sync_to_scale:     document.getElementById('p-sync-to-scale')?.checked || false,
+    scale_tare:        scaleTareRaw ? parseFloat(scaleTareRaw) : null,
+    scale_shelf_life:  scaleShelfRaw ? parseInt(scaleShelfRaw) : null,
+    scale_pack_qty:    scalePackRaw ? parseInt(scalePackRaw) : null,
+    scale_msg1:        scaleMsg1Raw ? parseInt(scaleMsg1Raw) : null,
+    scale_msg2:        scaleMsg2Raw ? parseInt(scaleMsg2Raw) : null,
+    scale_open_price:  document.getElementById('p-scale-open-price')?.checked || false,
+    scale_prohibit:    document.getElementById('p-scale-prohibit')?.checked || false,
   };
 }
 
@@ -4684,6 +4719,100 @@ document.getElementById('btn-export-suppliers')?.addEventListener('click', () =>
 document.getElementById('btn-export-staff')?.addEventListener('click', () => {
   window.open(`/admin/export/staff?${_exportParams()}`, '_blank', 'noopener');
 });
+
+// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════
+// SCALE MONITOR
+// ═══════════════════════════════════════════════════════
+
+async function loadScaleStatus() {
+  try {
+    const d = await api('/api/scale/status');
+    document.getElementById('scale-ip-display').textContent = `${d.scale_ip}:${d.scale_port}`;
+    document.getElementById('scale-reachable-display').textContent = d.scale_reachable ? '✅ Yes' : '❌ No';
+    document.getElementById('scale-insync-count').textContent = d.products_in_sync;
+    document.getElementById('scale-pending-count').textContent = d.products_pending;
+    document.getElementById('scale-error-count').textContent = d.products_error;
+    const lr = d.last_run;
+    document.getElementById('scale-last-run').textContent = lr
+      ? `${lr.status} — ${new Date(lr.started_at).toLocaleTimeString()} (${lr.products_sent} sent, ${lr.products_failed} failed)`
+      : 'Never';
+
+    const statusBanner = document.getElementById('scale-status-banner');
+    statusBanner.className = `alert mb-3 d-flex gap-4 flex-wrap ${d.scale_reachable ? 'alert-success' : 'alert-warning'}`;
+
+    // Products table
+    const tbody = document.getElementById('scale-products-body');
+    tbody.innerHTML = d.products.map(p => {
+      const statusBadge = p.validation_error
+        ? `<span class="badge bg-danger">Error</span>`
+        : p.in_sync
+          ? `<span class="badge bg-success">In Sync</span>`
+          : `<span class="badge bg-warning text-dark">Pending</span>`;
+      return `<tr class="${p.validation_error ? 'table-danger' : p.pending_change ? 'table-warning' : ''}">
+        <td>${p.product_code || '—'}</td>
+        <td>${p.name}</td>
+        <td>${p.sold_by_weight ? `R${((p.price_per_unit||0)*1000).toFixed(2)}/kg` : `R${(p.price||0).toFixed(2)}`}</td>
+        <td>${p.scale_tare || 0}g</td>
+        <td>${p.scale_shelf_life || 0}d</td>
+        <td>${p.scale_pack_qty || 0}</td>
+        <td>${statusBadge}</td>
+        <td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : 'Never'}</td>
+        <td class="small text-danger">${p.validation_error || p.last_sync_error || ''}</td>
+      </tr>`;
+    }).join('');
+
+    // Sync runs
+    const runsData = await api('/api/scale/sync-runs');
+    document.getElementById('scale-runs-body').innerHTML = runsData.map(r => `
+      <tr>
+        <td class="small">${new Date(r.started_at).toLocaleString()}</td>
+        <td>${r.run_type}</td>
+        <td><span class="badge ${r.status === 'ok' ? 'bg-success' : r.status === 'running' ? 'bg-primary' : 'bg-danger'}">${r.status}</span></td>
+        <td>${r.products_sent}</td>
+        <td>${r.products_failed}</td>
+        <td>${r.orphans_detected}</td>
+      </tr>`).join('');
+  } catch (e) {
+    toast('Scale status error: ' + e.message, 'danger');
+  }
+}
+
+async function scaleTestConnection() {
+  try {
+    const d = await api('/api/scale/test-connection', {method:'POST'});
+    toast(d.reachable ? `Scale reachable at ${d.ip}:${d.port}` : `Scale NOT reachable at ${d.ip}:${d.port}`, d.reachable ? 'success' : 'warning');
+  } catch (e) { toast('Connection test failed: ' + e.message, 'danger'); }
+}
+
+async function scalePreview() {
+  try {
+    const d = await api('/api/scale/preview', {method:'POST'});
+    const el = document.getElementById('scale-preview-result');
+    const body = document.getElementById('scale-preview-body');
+    el.style.display = '';
+    body.innerHTML = `
+      <div class="d-flex gap-3 flex-wrap mb-2">
+        <span class="badge bg-primary fs-6">Send: ${d.will_send.length}</span>
+        <span class="badge bg-secondary fs-6">Skip (in sync): ${d.will_skip.length}</span>
+        <span class="badge bg-danger fs-6">Delete orphans: ${d.will_delete.length}</span>
+        <span class="badge bg-warning text-dark fs-6">Errors: ${d.will_error.length}</span>
+      </div>
+      ${d.will_send.length ? `<div class="mb-1"><strong>Will send:</strong> ${d.will_send.map(p=>`PLU ${p.product_code} ${p.name} (${p.reason})`).join(', ')}</div>` : ''}
+      ${d.will_delete.length ? `<div class="mb-1 text-danger"><strong>Will delete (orphans):</strong> ${d.will_delete.map(p=>`PLU ${p.product_code} ${p.name}`).join(', ')}</div>` : ''}
+      ${d.will_error.length ? `<div class="mb-1 text-danger"><strong>Errors (will skip):</strong> ${d.will_error.map(p=>`PLU ${p.product_code||'?'} ${p.name}: ${p.error}`).join(', ')}</div>` : ''}
+    `;
+  } catch (e) { toast('Preview failed: ' + e.message, 'danger'); }
+}
+
+async function scaleForceResync() {
+  if (!confirm('This will mark all scale products as needing resync. The sync service will push all of them on the next cycle. Continue?')) return;
+  try {
+    const d = await api('/api/scale/force-resync', {method:'POST'});
+    toast(`Marked ${d.products_marked} products for resync`, 'success');
+    loadScaleStatus();
+  } catch (e) { toast('Force resync failed: ' + e.message, 'danger'); }
+}
 
 // ═══════════════════════════════════════════════════════
 // SETTINGS

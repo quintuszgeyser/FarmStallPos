@@ -154,6 +154,19 @@ def api_products_post():
         if not sold_by_weight and unit_type != 'volume':
             barcode = _gen_barcode_from_code(product_code)
 
+    # Scale fields — auto-enable sync for weight/volume products
+    sync_to_scale = bool(data.get('sync_to_scale', sold_by_weight))
+    try:
+        scale_tare       = float(data['scale_tare']) if data.get('scale_tare') not in (None, '') else None
+        scale_shelf_life = int(data['scale_shelf_life']) if data.get('scale_shelf_life') not in (None, '') else None
+        scale_pack_qty   = int(data['scale_pack_qty']) if data.get('scale_pack_qty') not in (None, '') else None
+        scale_msg1       = int(data['scale_msg1']) if data.get('scale_msg1') not in (None, '') else None
+        scale_msg2       = int(data['scale_msg2']) if data.get('scale_msg2') not in (None, '') else None
+    except Exception:
+        return jsonify({'error': 'Invalid scale field value'}), 400
+    scale_open_price = bool(data.get('scale_open_price', False))
+    scale_prohibit   = bool(data.get('scale_prohibit', False))
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -165,6 +178,10 @@ def api_products_post():
         package_size=package_size, package_size_unit=package_size_unit,
         package_unit=package_unit, margin_pct=margin_pct,
         product_code=product_code,
+        sync_to_scale=sync_to_scale,
+        scale_tare=scale_tare, scale_shelf_life=scale_shelf_life,
+        scale_pack_qty=scale_pack_qty, scale_open_price=scale_open_price,
+        scale_msg1=scale_msg1, scale_msg2=scale_msg2, scale_prohibit=scale_prohibit,
     )
     db.session.add(p)
     db.session.flush()
@@ -248,6 +265,26 @@ def api_products_update():
 
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
+
+    # Scale fields
+    if 'sync_to_scale' in data:
+        p.sync_to_scale = bool(data['sync_to_scale'])
+    if 'scale_open_price' in data:
+        p.scale_open_price = bool(data['scale_open_price'])
+    if 'scale_prohibit' in data:
+        p.scale_prohibit = bool(data['scale_prohibit'])
+    for sf in ('scale_tare', 'scale_shelf_life', 'scale_pack_qty', 'scale_msg1', 'scale_msg2'):
+        if sf in data:
+            try:
+                v = data[sf]
+                setattr(p, sf, (float(v) if sf == 'scale_tare' else int(v)) if v not in (None, '') else None)
+            except Exception:
+                return jsonify({'error': f'Invalid {sf}'}), 400
+    # Any scale field change invalidates the hash so sync service picks it up
+    if any(sf in data for sf in ('sync_to_scale','scale_tare','scale_shelf_life',
+                                  'scale_pack_qty','scale_open_price','scale_msg1',
+                                  'scale_msg2','scale_prohibit','name','price','price_per_unit')):
+        p.scale_hash = None  # force resync
 
     if 'recipe_lines' in data:
         RecipeLine.query.filter_by(product_id=p.id).delete()

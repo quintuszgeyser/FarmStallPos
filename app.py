@@ -19,6 +19,7 @@ from models import (
     Purchase, Sale, Special, SpecialLine, Invoice, KitchenOrder,
     Customer, CustomerPlate, CustomerFace, CustomerGait,
     CustomerVisit, PlateDetection, Supplier,
+    ScaleSyncRun, ScaleSnapshot,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
@@ -955,6 +956,56 @@ def strong_migrate():
             pg_try("ALTER TABLE customer_faces ADD COLUMN quality NUMERIC(4,3)")
             pg_try("ALTER TABLE customer_faces ADD COLUMN camera_source VARCHAR(20)")
 
+        # scale sync fields on products — POS is single source of truth
+        pg_try("ALTER TABLE products ADD COLUMN sync_to_scale BOOLEAN NOT NULL DEFAULT FALSE")
+        pg_try("ALTER TABLE products ADD COLUMN scale_tare NUMERIC(8,3)")
+        pg_try("ALTER TABLE products ADD COLUMN scale_shelf_life INTEGER")
+        pg_try("ALTER TABLE products ADD COLUMN scale_pack_qty INTEGER")
+        pg_try("ALTER TABLE products ADD COLUMN scale_open_price BOOLEAN NOT NULL DEFAULT FALSE")
+        pg_try("ALTER TABLE products ADD COLUMN scale_msg1 INTEGER")
+        pg_try("ALTER TABLE products ADD COLUMN scale_msg2 INTEGER")
+        pg_try("ALTER TABLE products ADD COLUMN scale_prohibit BOOLEAN NOT NULL DEFAULT FALSE")
+        pg_try("ALTER TABLE products ADD COLUMN scale_last_synced_at TIMESTAMPTZ")
+        pg_try("ALTER TABLE products ADD COLUMN scale_last_sync_status VARCHAR(20)")
+        pg_try("ALTER TABLE products ADD COLUMN scale_last_sync_error TEXT")
+        pg_try("ALTER TABLE products ADD COLUMN scale_hash VARCHAR(64)")
+
+        # Backfill sync_to_scale=true for existing weight/volume products that are for sale
+        pg_try("""
+            UPDATE products SET sync_to_scale = TRUE
+            WHERE sold_by_weight = TRUE
+              AND is_for_sale = TRUE
+              AND is_archived = FALSE
+              AND sync_to_scale = FALSE
+        """)
+
+        # Scale audit tables
+        pg_try("""
+            CREATE TABLE scale_sync_runs (
+              id               SERIAL PRIMARY KEY,
+              started_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              completed_at     TIMESTAMPTZ,
+              run_type         VARCHAR(20) NOT NULL,
+              status           VARCHAR(20) NOT NULL DEFAULT 'running',
+              products_total   INTEGER NOT NULL DEFAULT 0,
+              products_sent    INTEGER NOT NULL DEFAULT 0,
+              products_failed  INTEGER NOT NULL DEFAULT 0,
+              orphans_detected INTEGER NOT NULL DEFAULT 0,
+              orphans_removed  INTEGER NOT NULL DEFAULT 0,
+              error_message    TEXT,
+              triggered_by     INTEGER REFERENCES users(id)
+            )
+        """)
+        pg_try("""
+            CREATE TABLE scale_snapshots (
+              id            SERIAL PRIMARY KEY,
+              captured_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              run_id        INTEGER REFERENCES scale_sync_runs(id),
+              plu_count     INTEGER NOT NULL DEFAULT 0,
+              snapshot_json TEXT
+            )
+        """)
+
         # product_code: sequential code by type for scale/barcode integration
         pg_try("ALTER TABLE products ADD COLUMN product_code INTEGER UNIQUE")
         pg_try("CREATE UNIQUE INDEX IF NOT EXISTS ix_products_product_code ON products (product_code)")
@@ -1144,6 +1195,7 @@ def _register_routes(_app):
     from blueprints.invoices     import bp as invoices_bp
     from blueprints.recognition  import bp as recognition_bp
     from blueprints.core         import bp as core_bp
+    from blueprints.scale        import bp as scale_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1158,6 +1210,7 @@ def _register_routes(_app):
     _app.register_blueprint(invoices_bp)
     _app.register_blueprint(recognition_bp)
     _app.register_blueprint(core_bp)
+    _app.register_blueprint(scale_bp)
 
 
 # Module-level app instance — used by gunicorn (`app:app`) and @app.route decorators.

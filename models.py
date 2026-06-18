@@ -52,6 +52,44 @@ class Product(db.Model):
     is_archived          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     archived_reason      = db.Column(db.String(200), nullable=True)
     product_code         = db.Column(db.Integer, unique=True, nullable=True)
+    # Scale sync fields — POS is single source of truth, scale is downstream cache
+    sync_to_scale        = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    scale_tare           = db.Column(Numeric(8, 3), nullable=True)        # tare in grams
+    scale_shelf_life     = db.Column(db.Integer, nullable=True)           # days
+    scale_pack_qty       = db.Column(db.Integer, nullable=True)           # pack quantity
+    scale_open_price     = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    scale_msg1           = db.Column(db.Integer, nullable=True)           # extra message number
+    scale_msg2           = db.Column(db.Integer, nullable=True)
+    scale_prohibit       = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    scale_last_synced_at = db.Column(db.DateTime(timezone=True), nullable=True)
+    scale_last_sync_status = db.Column(db.String(20), nullable=True)     # ok / error / pending
+    scale_last_sync_error  = db.Column(db.Text, nullable=True)
+    scale_hash           = db.Column(db.String(64), nullable=True)       # SHA-256 of last sent payload
+
+
+class ScaleSyncRun(db.Model):
+    __tablename__ = 'scale_sync_runs'
+    id               = db.Column(db.Integer, primary_key=True)
+    started_at       = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    completed_at     = db.Column(db.DateTime(timezone=True), nullable=True)
+    run_type         = db.Column(db.String(20), nullable=False)  # full / incremental / preview / read
+    status           = db.Column(db.String(20), nullable=False, default='running')  # running/ok/error
+    products_total   = db.Column(db.Integer, nullable=False, default=0)
+    products_sent    = db.Column(db.Integer, nullable=False, default=0)
+    products_failed  = db.Column(db.Integer, nullable=False, default=0)
+    orphans_detected = db.Column(db.Integer, nullable=False, default=0)
+    orphans_removed  = db.Column(db.Integer, nullable=False, default=0)
+    error_message    = db.Column(db.Text, nullable=True)
+    triggered_by     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
+class ScaleSnapshot(db.Model):
+    __tablename__ = 'scale_snapshots'
+    id           = db.Column(db.Integer, primary_key=True)
+    captured_at  = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    run_id       = db.Column(db.Integer, db.ForeignKey('scale_sync_runs.id'), nullable=True)
+    plu_count    = db.Column(db.Integer, nullable=False, default=0)
+    snapshot_json = db.Column(db.Text, nullable=True)   # JSON list of PLUs on scale
 
 
 class ProductImage(db.Model):
