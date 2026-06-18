@@ -34,6 +34,12 @@ from helpers import (
 
 APP_VERSION = '1.6.0'
 
+# Environment configuration — explicit, never guessed
+APP_ENV  = os.environ.get('APP_ENV', 'prod').lower()
+IS_QA    = APP_ENV == 'qa'
+DB_NAME  = os.environ.get('POSTGRES_DB', os.environ.get('DATABASE_URL', 'unknown').split('/')[-1])
+LOG_PREFIX = f"[{APP_ENV.upper()}][{DB_NAME}]"
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -1073,6 +1079,19 @@ def strong_migrate():
             """)).fetchall()
             # We'll let helpers._gen_barcode_from_code handle this at runtime
 
+        # Performance indexes for import
+        pg_try("CREATE INDEX IF NOT EXISTS idx_products_product_code ON products(product_code)")
+        pg_try("CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)")
+
+        # Settings: add updated_at for TTL-based import lock
+        pg_try("ALTER TABLE settings ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW()")
+
+        # Import in-progress flag (atomic lock for CSV imports)
+        pg_try("INSERT INTO settings (key, value) VALUES ('import_in_progress', 'false') ON CONFLICT DO NOTHING")
+
+        # DB constraints
+        pg_try("ALTER TABLE products ADD CONSTRAINT chk_product_code_positive CHECK (product_code IS NULL OR product_code > 0)")
+
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
         if sales_count == 0:
@@ -1121,6 +1140,40 @@ def create_app():
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
     db.init_app(app)
+
+    # Inject environment into Jinja2 globals — used by QA banner in index.html
+    app.jinja_env.globals['app_env'] = APP_ENV
+    app.jinja_env.globals['is_qa']   = IS_QA
+
+    logger.info(f"{LOG_PREFIX} POS starting — ENV={APP_ENV} DB={DB_NAME} IS_QA={IS_QA}")
+
+    # /api/env — environment info for frontend
+    @app.route('/api/env')
+    def _api_env():
+        return jsonify({'env': APP_ENV, 'is_qa': IS_QA})
+
+    # /api/health — non-blocking health check with cached scale check
+    _health_cache = {'scale': False, 'checked_at': 0}
+    @app.route('/api/health')
+    def _api_health():
+        import time as _t, socket as _s
+        now = _t.time()
+        if not IS_QA and now - _health_cache['checked_at'] > 30:
+            try:
+                scale_ip = os.environ.get('SCALE_IP', '10.0.0.103')
+                c = _s.create_connection((scale_ip, 7061), timeout=2); c.close()
+                _health_cache.update({'scale': True, 'checked_at': now})
+            except Exception:
+                _health_cache.update({'scale': False, 'checked_at': now})
+        with db.engine.connect() as conn:
+            imp = conn.execute(text(
+                "SELECT COALESCE((SELECT value FROM settings WHERE key='import_in_progress'),'false')"
+            )).scalar()
+        return jsonify({
+            'env': APP_ENV, 'db': DB_NAME, 'is_qa': IS_QA,
+            'scale_reachable': _health_cache['scale'] if not IS_QA else False,
+            'import_in_progress': (imp or 'false').lower() == 'true',
+        })
 
     # Request / response logging
     @app.before_request

@@ -391,10 +391,11 @@
 <div id="toast-container"></div>
 
 
-{% if app_env == 'qa' %}
-<div style="background:#fef3c7;color:#78350f;text-align:center;font-weight:700;font-size:13px;padding:4px 0;letter-spacing:.05em;border-bottom:2px dashed #d97706;font-family:'Delius Swash Caps',cursive;">
-  ✏ QA / TESTING ENVIRONMENT — Not for live sales
+{% if is_qa %}
+<div id="qa-banner" style="background:#f0ad4e;color:#000;text-align:center;padding:6px 4px;font-weight:bold;font-size:13px;position:fixed;top:0;left:0;right:0;z-index:9999;border-bottom:3px solid #d9534f;letter-spacing:1px">
+  ⚠ QA MODE — TEST DATA ONLY — Scale sync disabled — Not for live use
 </div>
+<style>body { margin-top: 36px !important; }</style>
 {% endif %}
 <div class="container" style="background:var(--dd-surface);">
 
