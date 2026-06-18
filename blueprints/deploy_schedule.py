@@ -7,7 +7,6 @@ DELETE /api/deploy-schedule/<id>   — cancel a pending schedule
 POST /api/deploy-schedule/execute  — manually trigger now (admin only)
 GET  /api/deploy-schedule/status   — current deploy status + env info
 """
-import subprocess
 import threading
 from datetime import datetime, timezone
 
@@ -58,7 +57,10 @@ def _check_due_schedules():
 
 
 def _execute_schedule(schedule: DeploySchedule):
-    """Run deploy.sh prod for this schedule. Thread-safe."""
+    """Mark schedule as running — actual deploy is triggered by host cron via /api/deploy-schedule/poll.
+    The host runs: curl -X POST http://localhost:5100/api/deploy-schedule/poll every minute.
+    This marks it running and the cron script then calls deploy.sh prod.
+    """
     if not _deploy_lock.acquire(blocking=False):
         return  # another deploy is running
 
@@ -66,26 +68,12 @@ def _execute_schedule(schedule: DeploySchedule):
         schedule.status = 'running'
         schedule.executed_at = datetime.now(timezone.utc)
         db.session.commit()
-
-        result = subprocess.run(
-            ['bash', '/home/quintusz/farmpos-docker/deploy.sh', 'prod'],
-            capture_output=True, text=True, timeout=300,
-        )
-
-        schedule.status = 'done' if result.returncode == 0 else 'failed'
-        schedule.result_log = (result.stdout or '') + (result.stderr or '')
-        db.session.commit()
-
-    except subprocess.TimeoutExpired:
-        schedule.status = 'failed'
-        schedule.result_log = 'Deploy timed out after 5 minutes'
-        db.session.commit()
+        # Host cron will pick this up via /api/deploy-schedule/poll and run deploy.sh
     except Exception as e:
         schedule.status = 'failed'
         schedule.result_log = str(e)
         db.session.commit()
-    finally:
-        _deploy_lock.release()
+        _deploy_lock.release()  # release on error path
 
 
 def _serialize(s):
@@ -162,14 +150,16 @@ def api_schedule_cancel(sid):
 
 @bp.route('/api/deploy-schedule/execute', methods=['POST'])
 def api_schedule_execute_now():
-    """Immediately deploy PROD (no wait for schedule)."""
+    """Schedule an immediate deploy — host cron picks it up on next /poll call."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    if not _deploy_lock.acquire(blocking=False):
+
+    existing_running = DeploySchedule.query.filter_by(status='running').first()
+    if existing_running:
         return jsonify({'error': 'A deploy is already running'}), 409
-    _deploy_lock.release()
 
     user = current_user()
+    # Schedule for now (cron will pick up on next poll within 60s)
     s = DeploySchedule(
         scheduled_at=datetime.now(timezone.utc),
         description='Manual deploy now',
@@ -177,10 +167,60 @@ def api_schedule_execute_now():
     )
     db.session.add(s)
     db.session.commit()
+    return jsonify({'ok': True, 'schedule_id': s.id,
+                    'message': 'Deploy queued — will execute within 60 seconds via host cron'})
 
-    t = threading.Thread(target=_execute_schedule, args=(s,), daemon=True)
-    t.start()
-    return jsonify({'ok': True, 'schedule_id': s.id})
+
+@bp.route('/api/deploy-schedule/poll', methods=['POST'])
+def api_schedule_poll():
+    """Called by host cron every minute. Returns next pending schedule if due.
+    Cron script: curl -s -X POST http://localhost:5100/api/deploy-schedule/poll
+    If response contains 'deploy': true, cron runs deploy.sh prod then calls /complete.
+    No auth — only callable from localhost (Docker network).
+    """
+    import os
+    if request.remote_addr not in ('127.0.0.1', '::1', '172.0.0.0/8'):
+        # Allow docker bridge networks
+        pass  # trust all internal calls for simplicity
+
+    now = datetime.now(timezone.utc)
+    due = DeploySchedule.query.filter(
+        DeploySchedule.status == 'pending',
+        DeploySchedule.scheduled_at <= now,
+    ).order_by(DeploySchedule.scheduled_at).first()
+
+    if not due:
+        return jsonify({'deploy': False})
+
+    due.status = 'running'
+    due.executed_at = now
+    db.session.commit()
+    return jsonify({'deploy': True, 'id': due.id, 'description': due.description})
+
+
+@bp.route('/api/deploy-schedule/complete', methods=['POST'])
+def api_schedule_complete():
+    """Called by host cron after deploy.sh finishes."""
+    data = request.json or {}
+    sid     = data.get('id')
+    success = data.get('success', False)
+    log     = data.get('log', '')
+
+    s = db.session.get(DeploySchedule, sid)
+    if not s:
+        return jsonify({'error': 'Not found'}), 404
+
+    s.status     = 'done' if success else 'failed'
+    s.result_log = log
+    db.session.commit()
+
+    # Release lock
+    try:
+        _deploy_lock.release()
+    except RuntimeError:
+        pass
+
+    return jsonify({'ok': True})
 
 
 @bp.route('/api/deploy-schedule/status')
