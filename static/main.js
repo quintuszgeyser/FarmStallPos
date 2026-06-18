@@ -956,11 +956,10 @@ function openProductEditor(p) {
   // Scale fields
   const syncEl = document.getElementById('p-sync-to-scale');
   if (syncEl) syncEl.checked = p ? !!p.sync_to_scale : !!p?.sold_by_weight;
-  document.getElementById('p-scale-tare')?.setAttribute('value', p?.scale_tare || '');
-  document.getElementById('p-scale-shelf-life')?.setAttribute('value', p?.scale_shelf_life || '');
-  document.getElementById('p-scale-pack-qty')?.setAttribute('value', p?.scale_pack_qty || '');
-  document.getElementById('p-scale-msg1')?.setAttribute('value', p?.scale_msg1 || '');
-  document.getElementById('p-scale-msg2')?.setAttribute('value', p?.scale_msg2 || '');
+  const _st = document.getElementById('p-scale-tare'); if (_st) _st.value = p?.scale_tare || '';
+  const _ssl = document.getElementById('p-scale-shelf-life'); if (_ssl) _ssl.value = p?.scale_shelf_life || '';
+  const _sm1 = document.getElementById('p-scale-msg1'); if (_sm1) _sm1.value = p?.scale_msg1 || '';
+  const _sm2 = document.getElementById('p-scale-msg2'); if (_sm2) _sm2.value = p?.scale_msg2 || '';
   if (document.getElementById('p-scale-open-price')) document.getElementById('p-scale-open-price').checked = !!p?.scale_open_price;
   if (document.getElementById('p-scale-prohibit')) document.getElementById('p-scale-prohibit').checked = !!p?.scale_prohibit;
   // Show sync status if editing
