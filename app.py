@@ -65,7 +65,7 @@ logger = logging.getLogger('pos')
 # Strong startup migration
 # -----------------------------
 def strong_migrate():
-    db.create_all()
+    db.create_all(checkfirst=True)  # skip tables that already exist
     engine = db.engine
     engine_name = engine.dialect.name
 
