@@ -65,7 +65,10 @@ logger = logging.getLogger('pos')
 # Strong startup migration
 # -----------------------------
 def strong_migrate():
-    db.create_all()  # creates missing tables; existing tables are skipped by SQLAlchemy
+    try:
+        db.create_all()  # creates missing tables; skip on conflict (postgres type collision)
+    except Exception as e:
+        logger.warning(f"db.create_all() skipped: {e} — continuing with pg_try migrations")
     engine = db.engine
     engine_name = engine.dialect.name
 
