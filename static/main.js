@@ -4798,6 +4798,130 @@ document.getElementById('btn-export-staff')?.addEventListener('click', () => {
 
 // ═══════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════
+// CSV PRODUCT IMPORT
+// ═══════════════════════════════════════════════════════
+
+let _importPreviewData = null;
+
+function openImportModal() {
+  _importPreviewData = null;
+  document.getElementById('import-file').value = '';
+  document.getElementById('import-preview-section').style.display = 'none';
+  document.getElementById('import-loading').style.display = 'none';
+  document.getElementById('btn-import-valid').style.display = 'none';
+  document.getElementById('btn-import-strict').style.display = 'none';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('importModal')).show();
+}
+
+document.getElementById('import-file')?.addEventListener('change', async function() {
+  if (!this.files[0]) return;
+  await previewImport();
+});
+
+async function previewImport() {
+  const fileEl = document.getElementById('import-file');
+  if (!fileEl.files[0]) return;
+
+  document.getElementById('import-loading').style.display = '';
+  document.getElementById('import-preview-section').style.display = 'none';
+  document.getElementById('btn-import-valid').style.display = 'none';
+  document.getElementById('btn-import-strict').style.display = 'none';
+
+  try {
+    const formData = new FormData();
+    formData.append('file', fileEl.files[0]);
+    const allowName = document.getElementById('import-allow-name-match').checked;
+    const resp = await fetch(`/api/products/import?mode=preview&allow_name_match=${allowName}`, {
+      method: 'POST', body: formData,
+    });
+    const data = await resp.json();
+    if (!resp.ok) { toast(data.error || 'Preview failed', 'danger'); return; }
+
+    _importPreviewData = data;
+    renderImportPreview(data);
+  } catch (e) {
+    toast('Preview failed: ' + e.message, 'danger');
+  } finally {
+    document.getElementById('import-loading').style.display = 'none';
+  }
+}
+
+function renderImportPreview(data) {
+  const s = data.summary;
+  const summaryEl = document.getElementById('import-summary');
+  summaryEl.innerHTML = `
+    <strong>${data.rows?.length || 0} rows parsed</strong> —
+    <span class="text-success">🟢 ${s.create} create</span>
+    <span class="text-warning ms-2">🟡 ${s.update} update</span>
+    <span class="text-secondary ms-2">⬜ ${s.unchanged} unchanged</span>
+    <span class="text-danger ms-2">🔴 ${s.error} errors</span>
+    ${s.skip ? `<span class="text-muted ms-2">⏭ ${s.skip} skip</span>` : ''}
+  `;
+
+  const dupWarn = document.getElementById('import-duplicate-warning');
+  if (data.duplicate_warning) {
+    dupWarn.textContent = '⚠ ' + data.duplicate_warning;
+    dupWarn.style.display = '';
+  } else {
+    dupWarn.style.display = 'none';
+  }
+
+  const tbody = document.getElementById('import-preview-body');
+  tbody.innerHTML = (data.rows || []).map(r => {
+    const actionClass = r.action === 'error' ? 'table-danger' : r.action === 'update' ? 'table-warning' :
+      r.action === 'create' ? 'table-success' : '';
+    const actionBadge = r.action === 'error' ? '<span class="badge bg-danger">Error</span>'
+      : r.action === 'update' ? '<span class="badge bg-warning text-dark">Update</span>'
+      : r.action === 'create' ? '<span class="badge bg-success">Create</span>'
+      : r.action === 'unchanged' ? '<span class="badge bg-secondary">Unchanged</span>'
+      : '<span class="badge bg-light text-dark">Skip</span>';
+    const detail = r.action === 'error'
+      ? `<span class="text-danger">${r.error}</span>`
+      : r.changes ? Object.entries(r.changes).map(([k,v]) => `<small><b>${k}:</b> ${v}</small>`).join(' &nbsp; ')
+      : '';
+    const warnings = (r.warnings || []).length ? `<small class="text-warning ms-1">⚠ ${r.warnings.join(', ')}</small>` : '';
+    return `<tr class="${actionClass}">
+      <td class="text-muted small">${r.row}</td>
+      <td>${r.name || ''}</td>
+      <td>${actionBadge}</td>
+      <td>${detail}${warnings}</td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('import-preview-section').style.display = '';
+  if (s.create + s.update > 0) {
+    document.getElementById('btn-import-valid').style.display = '';
+    document.getElementById('btn-import-strict').style.display = '';
+  }
+}
+
+async function doImport(mode) {
+  const fileEl = document.getElementById('import-file');
+  if (!fileEl.files[0]) return;
+  if (!confirm(`${mode === 'strict' ? 'Strict import (all-or-nothing)' : 'Import valid rows'}?\nErrors will be ${mode === 'strict' ? 'rejected (nothing saved)' : 'skipped'}.`)) return;
+
+  const formData = new FormData();
+  formData.append('file', fileEl.files[0]);
+  const allowName = document.getElementById('import-allow-name-match').checked;
+
+  try {
+    const resp = await fetch(`/api/products/import?mode=${mode}&allow_name_match=${allowName}`, {
+      method: 'POST', body: formData,
+    });
+    const data = await resp.json();
+    if (!resp.ok) { toast(data.error || 'Import failed', 'danger'); return; }
+
+    const s = data.summary;
+    toast(`Import done: ${s.create} created, ${s.update} updated, ${s.error} errors (${data.duration_ms}ms)`,
+      s.error > 0 ? 'warning' : 'success', 5000);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('importModal')).hide();
+    await loadProducts();
+  } catch (e) {
+    toast('Import failed: ' + e.message, 'danger');
+  }
+}
+
+// ═══════════════════════════════════════════════════════
 // SCALE MONITOR
 // ═══════════════════════════════════════════════════════
 

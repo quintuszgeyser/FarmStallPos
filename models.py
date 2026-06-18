@@ -67,6 +67,26 @@ class Product(db.Model):
     scale_hash           = db.Column(db.String(64), nullable=True)       # SHA-256 of last sent payload
 
 
+class ProductImportRun(db.Model):
+    """Audit log for CSV bulk product imports."""
+    __tablename__ = 'product_import_runs'
+    id             = db.Column(db.Integer, primary_key=True)
+    imported_at    = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    file_name      = db.Column(db.String(200), nullable=True)
+    file_hash      = db.Column(db.String(64), nullable=True)
+    mode           = db.Column(db.String(20), nullable=False)  # preview/import/strict
+    allow_name_match = db.Column(db.Boolean, nullable=False, default=False)
+    duration_ms    = db.Column(db.Integer, nullable=True)
+    rows_total     = db.Column(db.Integer, nullable=False, default=0)
+    rows_created   = db.Column(db.Integer, nullable=False, default=0)
+    rows_updated   = db.Column(db.Integer, nullable=False, default=0)
+    rows_unchanged = db.Column(db.Integer, nullable=False, default=0)
+    rows_skipped   = db.Column(db.Integer, nullable=False, default=0)
+    rows_error     = db.Column(db.Integer, nullable=False, default=0)
+    imported_by    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    error_log      = db.Column(db.Text, nullable=True)
+
+
 class ScalePluLog(db.Model):
     """Audit log for PLU (product_code) changes. Prevents ghost products on scale."""
     __tablename__ = 'scale_plu_log'

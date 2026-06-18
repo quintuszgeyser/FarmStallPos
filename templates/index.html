@@ -572,6 +572,7 @@
         <div class="d-flex gap-2 align-items-center">
           <input id="products-filter" class="form-control form-control-sm" placeholder="Filter…" style="width:180px">
           <button id="btn-new-product" class="btn btn-outline-primary btn-sm">+ New Product</button>
+          <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()">⬆ Import CSV</button>
           <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
         </div>
       </div>
@@ -1398,6 +1399,49 @@
 
   </div><!-- /tab-contents -->
 </div><!-- /container -->
+
+<!-- ═══════════ CSV IMPORT MODAL ═══════════ -->
+<div class="modal fade" id="importModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">⬆ Import Products from CSV</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 mb-3 align-items-center">
+          <input type="file" id="import-file" accept=".csv" class="form-control" style="max-width:320px">
+          <div class="form-check ms-2">
+            <input class="form-check-input" type="checkbox" id="import-allow-name-match">
+            <label class="form-check-label small" for="import-allow-name-match">Update by name if no product_code</label>
+          </div>
+          <a href="/api/products/import-template" download class="btn btn-outline-secondary btn-sm ms-auto">⬇ Download Template</a>
+        </div>
+        <div id="import-preview-section" style="display:none">
+          <div id="import-summary" class="alert alert-info mb-2"></div>
+          <div id="import-duplicate-warning" class="alert alert-warning mb-2" style="display:none"></div>
+          <div style="max-height:400px;overflow-y:auto">
+            <table class="table table-sm table-hover" id="import-preview-table">
+              <thead class="table-light sticky-top">
+                <tr><th>#</th><th>Name</th><th>Action</th><th>Changes / Warnings</th></tr>
+              </thead>
+              <tbody id="import-preview-body"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="import-loading" style="display:none" class="text-center py-3">
+          <div class="spinner-border text-primary" role="status"></div>
+          <div class="mt-2 text-muted small">Previewing...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="btn-import-valid" class="btn btn-primary" onclick="doImport('import')" style="display:none">Import Valid Rows</button>
+        <button type="button" id="btn-import-strict" class="btn btn-warning" onclick="doImport('strict')" style="display:none">Strict Import (all-or-nothing)</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- ═══════════ CUSTOMER ENROLL MODAL ═══════════ -->
 <div class="modal fade" id="customerEnrollModal" tabindex="-1" aria-hidden="true">

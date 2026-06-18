@@ -19,7 +19,7 @@ from models import (
     Purchase, Sale, Special, SpecialLine, Invoice, KitchenOrder,
     Customer, CustomerPlate, CustomerFace, CustomerGait,
     CustomerVisit, PlateDetection, Supplier,
-    ScaleSyncRun, ScaleSnapshot, ScalePluLog,
+    ScaleSyncRun, ScaleSnapshot, ScalePluLog, ProductImportRun,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
@@ -1079,6 +1079,27 @@ def strong_migrate():
             """)).fetchall()
             # We'll let helpers._gen_barcode_from_code handle this at runtime
 
+        # CSV import audit table
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS product_import_runs (
+              id             SERIAL PRIMARY KEY,
+              imported_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              file_name      VARCHAR(200),
+              file_hash      VARCHAR(64),
+              mode           VARCHAR(20) NOT NULL,
+              allow_name_match BOOLEAN NOT NULL DEFAULT FALSE,
+              duration_ms    INTEGER,
+              rows_total     INTEGER NOT NULL DEFAULT 0,
+              rows_created   INTEGER NOT NULL DEFAULT 0,
+              rows_updated   INTEGER NOT NULL DEFAULT 0,
+              rows_unchanged INTEGER NOT NULL DEFAULT 0,
+              rows_skipped   INTEGER NOT NULL DEFAULT 0,
+              rows_error     INTEGER NOT NULL DEFAULT 0,
+              imported_by    INTEGER REFERENCES users(id),
+              error_log      TEXT
+            )
+        """)
+
         # Performance indexes for import
         pg_try("CREATE INDEX IF NOT EXISTS idx_products_product_code ON products(product_code)")
         pg_try("CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)")
@@ -1270,6 +1291,7 @@ def _register_routes(_app):
     from blueprints.recognition  import bp as recognition_bp
     from blueprints.core         import bp as core_bp
     from blueprints.scale        import bp as scale_bp
+    from blueprints.imports      import bp as imports_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1285,6 +1307,7 @@ def _register_routes(_app):
     _app.register_blueprint(recognition_bp)
     _app.register_blueprint(core_bp)
     _app.register_blueprint(scale_bp)
+    _app.register_blueprint(imports_bp)
 
 
 # Module-level app instance — used by gunicorn (`app:app`) and @app.route decorators.
