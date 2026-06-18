@@ -3363,18 +3363,18 @@ document.getElementById('search')?.addEventListener('input', function() {
 // USB / BLUETOOTH BARCODE SCANNER (keyboard wedge)
 // ═══════════════════════════════════════════════════════
 // Variable weight barcode parser (BC-4000 scale labels)
-// Format: PP IIIII WWWWW C  (13 digits)
-//   PP    = prefix 10-29 (variable weight/volume — scale uses 10 or 20 range)
-//   IIIII = product_code (zero-padded, range 00001-19999 for weight/volume items)
-//   WWWWW = weight/volume × 100 (e.g. 00070 = 70ml or 70g)
-//   C     = EAN check digit
+// Format: PP IIII VVVVVV C  (13 digits) — confirmed from printed label
+//   PP     = prefix 20 (variable weight)
+//   IIII   = product_code (4 digits, e.g. 0007 = product_code 7)
+//   VVVVVV = weight × 10 in 0.1g units (e.g. 003072 = 307.2g)
+//   C      = EAN-13 check digit
 function handleScannedCode(code) {
-  // Variable weight/volume scale label: 13 digits, prefix 10-29, value field non-zero
-  const isScaleLabel = /^[12][0-9]\d{11}$/.test(code) && parseInt(code.substring(7, 12), 10) > 0;
+  // Variable weight scale label: 13 digits starting with 20
+  const isScaleLabel = /^20\d{11}$/.test(code) && parseInt(code.substring(6, 12), 10) > 0;
   if (isScaleLabel) {
-    const productCode = parseInt(code.substring(2, 7), 10);
-    const weightRaw = parseInt(code.substring(7, 12), 10);
-    const qty_base = weightRaw / 100; // grams or ml (2 decimal places)
+    const productCode = parseInt(code.substring(2, 6), 10);   // 4-digit item code
+    const weightRaw = parseInt(code.substring(6, 12), 10);    // 6-digit value
+    const qty_base = weightRaw / 10;  // ÷10 → grams (0.1g resolution)
     const p = STATE.products.find(x => x.product_code === productCode && x.sold_by_weight);
     if (p && qty_base > 0) {
       const pricePerUnit = parseFloat(p.price_per_unit || 0);
