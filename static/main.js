@@ -1257,6 +1257,10 @@ function updateProductTypeSections(type) {
   const scaleSection = el('section-scale');
   if (scaleSection) autoSoldByWeight ? show(scaleSection) : hide(scaleSection);
 
+  // Barcode field: hidden for weight/volume (scale generates dynamically)
+  const barcodeRow = el('row-barcode');
+  if (barcodeRow) autoSoldByWeight ? hide(barcodeRow) : show(barcodeRow);
+
   // PLU range hint
   const pluHint = el('p-plu-range-hint');
   if (pluHint) {
