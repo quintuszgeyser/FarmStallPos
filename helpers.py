@@ -270,24 +270,26 @@ def _gen_barcode_from_code(product_code):
     return core + _ean13_check(core)
 
 
+def _plu_range(sold_by_weight, unit_type, product_type):
+    """Return (lo, hi) range for product_code based on type."""
+    if sold_by_weight and unit_type == 'volume':
+        return 30000, 39999
+    elif sold_by_weight:
+        return 1, 19999
+    elif product_type in ('simple', 'stock_item'):
+        return 20000, 29999
+    else:
+        return 40000, 49999
+
+
 def _assign_product_code(sold_by_weight, unit_type, product_type):
     """Assign the smallest available product_code gap for the given product type.
-    Ranges: weight(g)=1-19999, fixed=20000-29999, volume(ml)=30000-39999, other=40000-49999
-
-    Uses a gap-scan inside the current transaction. Caller must hold a row lock or
-    flush before this returns to prevent two concurrent products getting the same code.
+    Uses SELECT FOR UPDATE advisory approach — caller must be inside a transaction.
     """
-    if sold_by_weight and unit_type == 'volume':
-        lo, hi = 30000, 39999
-    elif sold_by_weight:
-        lo, hi = 1, 19999
-    elif product_type in ('simple', 'stock_item'):
-        lo, hi = 20000, 29999
-    else:
-        lo, hi = 40000, 49999
-
-    # Find smallest gap using a generate_series / NOT EXISTS query (PostgreSQL)
+    lo, hi = _plu_range(sold_by_weight, unit_type, product_type)
     from sqlalchemy import text as _text
+    # Lock the range to prevent concurrent allocation of the same code
+    db.session.execute(_text("LOCK TABLE products IN SHARE ROW EXCLUSIVE MODE"))
     row = db.session.execute(_text("""
         SELECT s.code FROM generate_series(:lo, :hi) AS s(code)
         WHERE NOT EXISTS (
@@ -296,10 +298,22 @@ def _assign_product_code(sold_by_weight, unit_type, product_type):
         ORDER BY s.code
         LIMIT 1
     """), {'lo': lo, 'hi': hi}).fetchone()
-
     if not row:
         raise ValueError(f"Product code range {lo}-{hi} exhausted")
     return row[0]
+
+
+def validate_product_code(new_code, product_id=None):
+    """Check product_code is available. Returns (ok, conflict_product_name or None)."""
+    if not new_code or new_code <= 0 or new_code > 99999:
+        return False, "Product code must be between 1 and 99999"
+    conflict = Product.query.filter(
+        Product.product_code == new_code,
+        Product.id != product_id if product_id else True
+    ).first()
+    if conflict:
+        return False, f"PLU {new_code} already used by '{conflict.name}'"
+    return True, None
 
 
 def _gen_barcode(seed_id):
@@ -374,6 +388,9 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'scale_msg1':              p.scale_msg1 or '',
         'scale_msg2':              p.scale_msg2 or '',
         'scale_prohibit':          p.scale_prohibit,
+        # Barcode config — used by POS scanner to decode scale labels
+        'scale_barcode_prefix':    20,    # scale always uses prefix 20
+        'scale_barcode_format':    'price_cents',  # VVVVVV = total price in cents
         'scale_last_synced_at':    p.scale_last_synced_at.isoformat() if p.scale_last_synced_at else None,
         'scale_last_sync_status':  p.scale_last_sync_status,
         'scale_last_sync_error':   p.scale_last_sync_error,

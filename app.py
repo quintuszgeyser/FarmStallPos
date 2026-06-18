@@ -19,7 +19,7 @@ from models import (
     Purchase, Sale, Special, SpecialLine, Invoice, KitchenOrder,
     Customer, CustomerPlate, CustomerFace, CustomerGait,
     CustomerVisit, PlateDetection, Supplier,
-    ScaleSyncRun, ScaleSnapshot,
+    ScaleSyncRun, ScaleSnapshot, ScalePluLog,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
@@ -1008,6 +1008,24 @@ def strong_migrate():
               snapshot_json TEXT
             )
         """)
+
+        # PLU audit log — tracks product_code changes for scale lifecycle management
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS scale_plu_log (
+              id          SERIAL PRIMARY KEY,
+              product_id  INTEGER NOT NULL REFERENCES products(id),
+              old_plu     INTEGER,
+              new_plu     INTEGER,
+              changed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              changed_by  INTEGER REFERENCES users(id),
+              sync_cleared BOOLEAN NOT NULL DEFAULT FALSE
+            )
+        """)
+        pg_try("CREATE INDEX IF NOT EXISTS ix_scale_plu_log_product ON scale_plu_log (product_id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_scale_plu_log_old_plu ON scale_plu_log (old_plu) WHERE old_plu IS NOT NULL")
+
+        # DB constraint: product_code must be positive if set
+        pg_try("ALTER TABLE products ADD CONSTRAINT chk_product_code_positive CHECK (product_code IS NULL OR product_code > 0)")
 
         # product_code: sequential code by type for scale/barcode integration
         pg_try("ALTER TABLE products ADD COLUMN product_code INTEGER UNIQUE")

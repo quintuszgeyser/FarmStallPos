@@ -67,6 +67,18 @@ class Product(db.Model):
     scale_hash           = db.Column(db.String(64), nullable=True)       # SHA-256 of last sent payload
 
 
+class ScalePluLog(db.Model):
+    """Audit log for PLU (product_code) changes. Prevents ghost products on scale."""
+    __tablename__ = 'scale_plu_log'
+    id           = db.Column(db.Integer, primary_key=True)
+    product_id   = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    old_plu      = db.Column(db.Integer, nullable=True)
+    new_plu      = db.Column(db.Integer, nullable=True)
+    changed_at   = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    changed_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    sync_cleared = db.Column(db.Boolean, nullable=False, default=False)  # True once old PLU removed from scale
+
+
 class ScaleSyncRun(db.Model):
     __tablename__ = 'scale_sync_runs'
     id               = db.Column(db.Integer, primary_key=True)

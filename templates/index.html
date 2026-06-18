@@ -1376,7 +1376,7 @@
           <thead class="table-light">
             <tr>
               <th>PLU</th><th>Name</th><th>Price</th><th>Tare</th><th>Shelf Life</th>
-              <th>Pack Qty</th><th>Status</th><th>Last Synced</th><th>Error</th>
+              <th>Status</th><th>Last Synced</th><th>Error</th><th></th>
             </tr>
           </thead>
           <tbody id="scale-products-body"></tbody>
@@ -1752,6 +1752,21 @@
               <input class="form-check-input" type="checkbox" id="p-sync-to-scale">
               <label class="form-check-label small" for="p-sync-to-scale">Sync to scale</label>
             </div>
+          </div>
+          <!-- PLU number field -->
+          <div class="mb-2">
+            <label class="form-label small mb-1">PLU Number <span class="text-muted fw-normal">(scale product number, also PosCode)</span></label>
+            <div class="input-group input-group-sm">
+              <input id="p-product-code" type="number" min="1" max="99999" class="form-control" placeholder="Auto-assigned">
+              <span class="input-group-text text-muted small" id="p-plu-range-hint"></span>
+            </div>
+            <div id="p-plu-conflict" class="text-danger small mt-1 hidden"></div>
+          </div>
+          <!-- Barcode preview for weight/volume products -->
+          <div id="p-scale-barcode-preview" class="mb-2 hidden">
+            <label class="form-label small mb-1">Scale label barcode preview</label>
+            <div class="font-monospace small bg-white rounded p-1 border" id="p-scale-barcode-value"></div>
+            <div class="form-text">Scale prints barcode with actual weight at label time. Prefix 20 + PLU (4 digits) + price in cents (6 digits) + check digit.</div>
           </div>
           <div id="scale-fields-body">
             <div class="row g-2">

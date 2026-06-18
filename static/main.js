@@ -956,6 +956,10 @@ function openProductEditor(p) {
   // Scale fields
   const syncEl = document.getElementById('p-sync-to-scale');
   if (syncEl) syncEl.checked = p ? !!p.sync_to_scale : !!p?.sold_by_weight;
+  // PLU field
+  const pluEl = document.getElementById('p-product-code');
+  if (pluEl) { pluEl.value = p?.product_code || ''; pluEl.dataset.original = p?.product_code || ''; }
+  document.getElementById('p-plu-conflict')?.classList.add('hidden');
   const _st = document.getElementById('p-scale-tare'); if (_st) _st.value = p?.scale_tare || '';
   const _ssl = document.getElementById('p-scale-shelf-life'); if (_ssl) _ssl.value = p?.scale_shelf_life || '';
   const _sm1 = document.getElementById('p-scale-msg1'); if (_sm1) _sm1.value = p?.scale_msg1 || '';
@@ -1078,6 +1082,24 @@ function openProductEditor(p) {
 
 document.getElementById('btn-new-product')?.addEventListener('click', () => {
   openProductEditor(null);
+});
+
+// PLU conflict check on input
+document.getElementById('p-product-code')?.addEventListener('input', async function() {
+  const val = parseInt(this.value, 10);
+  const conflictEl = document.getElementById('p-plu-conflict');
+  const original = parseInt(this.dataset.original || '0', 10);
+  if (!val || val === original) { conflictEl?.classList.add('hidden'); return; }
+  // Check against loaded products
+  const conflict = STATE.products.find(p => p.product_code === val && p.id !== parseInt(document.getElementById('p-id')?.value));
+  if (conflict) {
+    if (conflictEl) { conflictEl.textContent = `PLU ${val} already used by "${conflict.name}"`; conflictEl.classList.remove('hidden'); }
+  } else {
+    conflictEl?.classList.add('hidden');
+  }
+  // Update barcode preview
+  const type = document.getElementById('p-type')?.value;
+  updateProductTypeSections(type);
 });
 
 // Clear auto-generated flag only when user manually types (not scanner or programmatic)
@@ -1234,6 +1256,36 @@ function updateProductTypeSections(type) {
   // Scale section: only relevant for weight/volume stock items
   const scaleSection = el('section-scale');
   if (scaleSection) autoSoldByWeight ? show(scaleSection) : hide(scaleSection);
+
+  // PLU range hint
+  const pluHint = el('p-plu-range-hint');
+  if (pluHint) {
+    if (autoSoldByWeight && isStockItem) {
+      pluHint.textContent = el('p-unit-type')?.value === 'volume' ? 'range 30000-39999' : 'range 1-19999';
+    } else if (type === 'recipe') {
+      pluHint.textContent = 'range 40000-49999';
+    } else {
+      pluHint.textContent = 'range 20000-29999';
+    }
+  }
+
+  // Scale barcode preview (weight/volume only)
+  const previewEl = el('p-scale-barcode-preview');
+  const previewVal = el('p-scale-barcode-value');
+  if (previewEl && previewVal) {
+    if (autoSoldByWeight) {
+      const pluCode = parseInt(el('p-product-code')?.value || '0', 10);
+      if (pluCode > 0) {
+        const pluStr = String(pluCode).padStart(4, '0');
+        previewVal.textContent = `20${pluStr}VVVVVVC  (where VVVVVV = total price cents at print time)`;
+      } else {
+        previewVal.textContent = 'Enter PLU number to see preview';
+      }
+      show(previewEl);
+    } else {
+      hide(previewEl);
+    }
+  }
 
   // Update barcode preview based on product type — always show a value
   const barcodeInput = el('p-barcode');
@@ -1693,7 +1745,7 @@ async function _uploadProductImagesIfSelected(pid) {
 // ── Save / Update / Delete ──
 document.getElementById('btn-add-product')?.addEventListener('click', async () => {
   const payload = buildProductPayload();
-  if (!payload) return;
+  if (!payload || payload._blocked) return;
   try {
     const result = await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
     if (result?.id) await _uploadProductImagesIfSelected(result.id);
@@ -1718,7 +1770,7 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
   const id = parseInt(document.getElementById('p-id').value || '0', 10);
   if (!id) return toast('No product selected', 'warning');
   const payload = buildProductPayload();
-  if (!payload) return;
+  if (!payload || payload._blocked) return;
   payload.id = id;
 
   // Detect is_for_sale change for a meaningful toast
@@ -1831,6 +1883,16 @@ function buildProductPayload() {
     description:   document.getElementById('p-description')?.value?.trim() || null,
     recipe_lines:  type === 'recipe'     ? getRecipeLinesForSubmit()  : [],
     sell_packages: type === 'stock_item' ? getSellPackagesForSubmit() : [],
+    // Block save if PLU conflict
+    ...((() => {
+      const conflictEl = document.getElementById('p-plu-conflict');
+      if (conflictEl && !conflictEl.classList.contains('hidden')) {
+        toast(conflictEl.textContent, 'danger'); return { _blocked: true };
+      }
+      return {};
+    })()),
+    // PLU (product_code) — only send if explicitly set
+    product_code: (() => { const v = parseInt(document.getElementById('p-product-code')?.value || '0', 10); return v > 0 ? v : undefined; })(),
     // Scale settings
     sync_to_scale:     document.getElementById('p-sync-to-scale')?.checked || false,
     scale_tare:        scaleTareRaw ? parseFloat(scaleTareRaw) : null,
@@ -4765,10 +4827,10 @@ async function loadScaleStatus() {
         <td>${p.sold_by_weight ? `R${((p.price_per_unit||0)*1000).toFixed(2)}/kg` : `R${(p.price||0).toFixed(2)}`}</td>
         <td>${p.scale_tare || 0}g</td>
         <td>${p.scale_shelf_life || 0}d</td>
-        <td>${p.scale_pack_qty || 0}</td>
         <td>${statusBadge}</td>
         <td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : 'Never'}</td>
         <td class="small text-danger">${p.validation_error || p.last_sync_error || ''}</td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="scaleProductSync(${p.id})">↑</button></td>
       </tr>`;
     }).join('');
 
@@ -4813,6 +4875,14 @@ async function scalePreview() {
       ${d.will_error.length ? `<div class="mb-1 text-danger"><strong>Errors (will skip):</strong> ${d.will_error.map(p=>`PLU ${p.product_code||'?'} ${p.name}: ${p.error}`).join(', ')}</div>` : ''}
     `;
   } catch (e) { toast('Preview failed: ' + e.message, 'danger'); }
+}
+
+async function scaleProductSync(productId) {
+  try {
+    const d = await api(`/api/scale/products/${productId}/sync`, {method:'POST'});
+    toast(`PLU ${d.product_code} (${d.name}) queued for sync`, 'success');
+    loadScaleStatus();
+  } catch (e) { toast('Sync failed: ' + e.message, 'danger'); }
 }
 
 async function scaleForceResync() {

@@ -10,13 +10,14 @@ from sqlalchemy import text, func
 from helpers import (
     require_login, require_role, current_user,
     get_setting, get_stock_level, get_fifo_cost_per_unit,
-    sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code, _serialize_product,
+    sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code,
+    _serialize_product, validate_product_code, current_user,
     consume_fifo,
 )
 from models import (
     db,
     Product, ProductImage, RecipeLine,
-    StockBatch, StockAdjustment, Purchase, Sale,
+    StockBatch, StockAdjustment, Purchase, Sale, ScalePluLog,
 )
 
 bp = Blueprint('products', __name__)
@@ -265,6 +266,35 @@ def api_products_update():
 
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
+
+    # PLU (product_code) change — requires lifecycle management
+    if 'product_code' in data and data['product_code'] is not None:
+        try:
+            new_code = int(data['product_code'])
+        except Exception:
+            return jsonify({'error': 'Invalid product_code'}), 400
+        if new_code != p.product_code:
+            ok, conflict_msg = validate_product_code(new_code, p.id)
+            if not ok:
+                return jsonify({'error': conflict_msg}), 409
+            old_code = p.product_code
+            # Log the PLU change for scale lifecycle tracking
+            user = current_user()
+            db.session.add(ScalePluLog(
+                product_id=p.id,
+                old_plu=old_code,
+                new_plu=new_code,
+                changed_by=user.id if user else None,
+            ))
+            # If product was synced to scale under old PLU, mark old PLU for removal
+            # by creating a ghost entry that the sync service will zero-out/prohibit
+            if old_code and p.scale_last_sync_status == 'ok':
+                # Set scale_last_sync_status to 'plu_changed' so sync service
+                # knows to clean up old PLU before sending new one
+                p.scale_last_sync_status = 'plu_changed'
+                p.scale_last_sync_error = f'PLU changed from {old_code} to {new_code}'
+            p.product_code = new_code
+            p.scale_hash = None  # force resync with new PLU
 
     # Scale fields
     if 'sync_to_scale' in data:

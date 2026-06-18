@@ -227,6 +227,19 @@ def api_scale_sync_runs():
     } for r in runs])
 
 
+@bp.route('/api/scale/products/<int:product_id>/sync', methods=['POST'])
+def api_scale_product_sync(product_id):
+    """Force a single product to resync on next cycle by clearing its hash."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = Product.query.get_or_404(product_id)
+    if not p.sync_to_scale:
+        return jsonify({'error': 'Product not marked for scale sync'}), 400
+    p.scale_hash = None
+    db.session.commit()
+    return jsonify({'ok': True, 'product_code': p.product_code, 'name': p.name})
+
+
 @bp.route('/api/scale/force-resync', methods=['POST'])
 def api_scale_force_resync():
     """Mark all sync_to_scale products as needing resync by clearing their hash."""
