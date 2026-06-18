@@ -19,7 +19,7 @@ from models import (
     Purchase, Sale, Special, SpecialLine, Invoice, KitchenOrder,
     Customer, CustomerPlate, CustomerFace, CustomerGait,
     CustomerVisit, PlateDetection, Supplier,
-    ScaleSyncRun, ScaleSnapshot, ScalePluLog, ProductImportRun,
+    ScaleSyncRun, ScaleSnapshot, ScalePluLog, ProductImportRun, DeploySchedule,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
@@ -1082,6 +1082,21 @@ def strong_migrate():
             """)).fetchall()
             # We'll let helpers._gen_barcode_from_code handle this at runtime
 
+        # Scheduled deployments table
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS deploy_schedules (
+              id           SERIAL PRIMARY KEY,
+              scheduled_at TIMESTAMPTZ NOT NULL,
+              description  VARCHAR(200),
+              status       VARCHAR(20) NOT NULL DEFAULT 'pending',
+              created_by   INTEGER REFERENCES users(id),
+              created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              executed_at  TIMESTAMPTZ,
+              result_log   TEXT
+            )
+        """)
+        pg_try("CREATE INDEX IF NOT EXISTS ix_deploy_schedules_status ON deploy_schedules(status)")
+
         # CSV import audit table
         pg_try("""
             CREATE TABLE IF NOT EXISTS product_import_runs (
@@ -1294,7 +1309,8 @@ def _register_routes(_app):
     from blueprints.recognition  import bp as recognition_bp
     from blueprints.core         import bp as core_bp
     from blueprints.scale        import bp as scale_bp
-    from blueprints.imports      import bp as imports_bp
+    from blueprints.imports         import bp as imports_bp
+    from blueprints.deploy_schedule import bp as deploy_schedule_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1311,6 +1327,12 @@ def _register_routes(_app):
     _app.register_blueprint(core_bp)
     _app.register_blueprint(scale_bp)
     _app.register_blueprint(imports_bp)
+    _app.register_blueprint(deploy_schedule_bp)
+
+    # Start background deploy scheduler (only in QA — QA schedules deploys to PROD)
+    if IS_QA:
+        from blueprints.deploy_schedule import _start_scheduler
+        _start_scheduler(_app)
 
 
 # Module-level app instance — used by gunicorn (`app:app`) and @app.route decorators.

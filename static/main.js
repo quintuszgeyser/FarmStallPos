@@ -4798,6 +4798,72 @@ document.getElementById('btn-export-staff')?.addEventListener('click', () => {
 
 // ═══════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════
+// DEPLOY SCHEDULER (QA only)
+// ═══════════════════════════════════════════════════════
+
+async function loadDeployStatus() {
+  try {
+    const d = await api('/api/deploy-schedule/status');
+    const banner = document.getElementById('deploy-status-banner');
+    if (banner) {
+      const pending = d.pending_schedule;
+      const last = d.last_deploy;
+      banner.className = 'alert mb-3 ' + (pending ? 'alert-info' : 'alert-secondary');
+      banner.innerHTML = `
+        <strong>Current:</strong> ${d.current_env.toUpperCase()}
+        ${pending ? `&nbsp;|&nbsp; <strong>⏰ Next deploy:</strong> ${new Date(pending.scheduled_at).toLocaleString()} — ${pending.description || 'no description'}
+          <button class="btn btn-danger btn-sm ms-2" onclick="cancelSchedule(${pending.id})">Cancel</button>` : '&nbsp;|&nbsp; No pending schedule'}
+        ${last ? `<br><small class="text-muted">Last deploy: ${new Date(last.executed_at).toLocaleString()} — <span class="${last.status === 'done' ? 'text-success' : 'text-danger'}">${last.status}</span></small>` : ''}
+      `;
+    }
+    const tbody = document.getElementById('deploy-history-body');
+    if (tbody) {
+      const rows = await api('/api/deploy-schedule');
+      tbody.innerHTML = rows.map(r => `
+        <tr>
+          <td class="small">${new Date(r.scheduled_at).toLocaleString()}</td>
+          <td>${r.description || '—'}</td>
+          <td><span class="badge ${r.status === 'done' ? 'bg-success' : r.status === 'failed' ? 'bg-danger' : r.status === 'pending' ? 'bg-primary' : r.status === 'running' ? 'bg-warning text-dark' : 'bg-secondary'}">${r.status}</span></td>
+          <td class="small">${r.executed_at ? new Date(r.executed_at).toLocaleString() : '—'}</td>
+          <td>${r.status === 'pending' ? `<button class="btn btn-outline-danger btn-sm" onclick="cancelSchedule(${r.id})">Cancel</button>` : ''}</td>
+        </tr>
+      `).join('');
+    }
+  } catch (e) { toast('Deploy status error: ' + e.message, 'danger'); }
+}
+
+async function scheduleDeploySubmit() {
+  const dt = document.getElementById('schedule-datetime')?.value;
+  const desc = document.getElementById('schedule-description')?.value?.trim();
+  if (!dt) { toast('Please select a date and time', 'warning'); return; }
+  const scheduledAt = new Date(dt).toISOString();
+  if (new Date(scheduledAt) <= new Date()) { toast('Scheduled time must be in the future', 'warning'); return; }
+  try {
+    await api('/api/deploy-schedule', { method: 'POST', body: JSON.stringify({ scheduled_at: scheduledAt, description: desc }) });
+    toast(`Deploy scheduled for ${new Date(scheduledAt).toLocaleString()}`, 'success');
+    loadDeployStatus();
+  } catch (e) { toast('Schedule failed: ' + e.message, 'danger'); }
+}
+
+async function cancelSchedule(id) {
+  if (!confirm('Cancel this scheduled deploy?')) return;
+  try {
+    await api(`/api/deploy-schedule/${id}`, { method: 'DELETE' });
+    toast('Schedule cancelled', 'success');
+    loadDeployStatus();
+  } catch (e) { toast('Cancel failed: ' + e.message, 'danger'); }
+}
+
+async function deployNow() {
+  if (!confirm('Deploy QA code to PROD now? PROD will restart (~30s downtime).')) return;
+  try {
+    const d = await api('/api/deploy-schedule/execute', { method: 'POST' });
+    toast('Deploy started — check status for progress', 'info', 5000);
+    setTimeout(loadDeployStatus, 3000);
+  } catch (e) { toast('Deploy failed: ' + e.message, 'danger'); }
+}
+
+// ═══════════════════════════════════════════════════════
 // CSV PRODUCT IMPORT
 // ═══════════════════════════════════════════════════════
 

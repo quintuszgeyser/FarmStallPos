@@ -467,6 +467,7 @@
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Configuration</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleStatus()">&#9878; Scale</button></li>
+    {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()">🚀 Deploy</button></li>{% endif %}
   </ul>
 
   <div id="tab-contents" class="tab-content hidden mt-3">
@@ -1396,6 +1397,54 @@
         </table>
       </div>
     </div>
+
+    <!-- ═══════════════ DEPLOY TAB (QA only) ═══════════════ -->
+    {% if is_qa %}
+    <div class="tab-pane fade" id="deploy-tab">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0">🚀 Deploy QA → PROD</h5>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadDeployStatus()">↺ Refresh</button>
+          <button class="btn btn-danger btn-sm" onclick="deployNow()">⚡ Deploy Now</button>
+        </div>
+      </div>
+
+      <div class="alert alert-warning mb-3">
+        ⚠ This deploys the current QA codebase to PROD. PROD transactions continue uninterrupted during the build. The PROD container restarts briefly (~30s downtime) at switch-over.
+      </div>
+
+      <div id="deploy-status-banner" class="alert alert-secondary mb-3">Loading...</div>
+
+      <!-- Schedule new deploy -->
+      <div class="card mb-3">
+        <div class="card-header fw-semibold">📅 Schedule a Deploy</div>
+        <div class="card-body">
+          <div class="row g-2 align-items-end">
+            <div class="col-md-4">
+              <label class="form-label small mb-1">Date &amp; Time</label>
+              <input type="datetime-local" id="schedule-datetime" class="form-control">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small mb-1">Description (optional)</label>
+              <input type="text" id="schedule-description" class="form-control" placeholder="e.g. v1.7 — new barcode format">
+            </div>
+            <div class="col-md-3">
+              <button class="btn btn-primary w-100" onclick="scheduleDeploySubmit()">Schedule</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scheduled deploys history -->
+      <h6>Deploy History</h6>
+      <table class="table table-sm">
+        <thead class="table-light">
+          <tr><th>Scheduled</th><th>Description</th><th>Status</th><th>Executed</th><th></th></tr>
+        </thead>
+        <tbody id="deploy-history-body"></tbody>
+      </table>
+    </div>
+    {% endif %}
 
   </div><!-- /tab-contents -->
 </div><!-- /container -->

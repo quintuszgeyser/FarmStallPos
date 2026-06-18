@@ -67,6 +67,19 @@ class Product(db.Model):
     scale_hash           = db.Column(db.String(64), nullable=True)       # SHA-256 of last sent payload
 
 
+class DeploySchedule(db.Model):
+    """Scheduled deployments from QA → PROD."""
+    __tablename__ = 'deploy_schedules'
+    id           = db.Column(db.Integer, primary_key=True)
+    scheduled_at = db.Column(db.DateTime(timezone=True), nullable=False)
+    description  = db.Column(db.String(200), nullable=True)
+    status       = db.Column(db.String(20), nullable=False, default='pending')  # pending/running/done/failed
+    created_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at   = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    executed_at  = db.Column(db.DateTime(timezone=True), nullable=True)
+    result_log   = db.Column(db.Text, nullable=True)
+
+
 class ProductImportRun(db.Model):
     """Audit log for CSV bulk product imports."""
     __tablename__ = 'product_import_runs'
