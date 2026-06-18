@@ -65,15 +65,28 @@ logger = logging.getLogger('pos')
 # Strong startup migration
 # -----------------------------
 def strong_migrate():
+    import hashlib as _hl
+    from psycopg.errors import DeadlockDetected as _Deadlock
+    LOCK_ID = int(_hl.sha256(b"farmpos_migration_lock").hexdigest()[:15], 16) % (2**62)
+
     try:
-        db.create_all()  # creates missing tables; skip on conflict (postgres type collision)
+        db.create_all()  # creates missing tables; skip on conflict
     except Exception as e:
-        logger.warning(f"db.create_all() skipped: {e} — continuing with pg_try migrations")
+        logger.warning(f"db.create_all() skipped: {e}")
+
     engine = db.engine
     engine_name = engine.dialect.name
 
-    with engine.begin() as conn:
+    if engine_name != 'sqlite':
+        # Try non-blocking advisory lock — skip if another worker already holds it
+        with engine.connect() as _lc:
+            acquired = _lc.execute(text(f"SELECT pg_try_advisory_lock({LOCK_ID})")).scalar()
+            _lc.commit()
+        if not acquired:
+            logger.info("Migration lock held — skipping (another worker will migrate)")
+            return
 
+    with engine.begin() as conn:
         if engine_name == 'sqlite':
             # ---- sales table ----
             conn.exec_driver_sql("""
@@ -1148,6 +1161,15 @@ def strong_migrate():
                 FROM transaction_lines tl
                 JOIN transactions t ON tl.transaction_id = t.id
                 """)
+
+    # Release advisory lock (PG only)
+    if engine_name != 'sqlite':
+        try:
+            with engine.connect() as _lc:
+                _lc.execute(text(f"SELECT pg_advisory_unlock({LOCK_ID})"))
+                _lc.commit()
+        except Exception:
+            pass
 
 
 def create_app():
