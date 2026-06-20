@@ -3425,6 +3425,17 @@ document.getElementById('search')?.addEventListener('input', function() {
   });
 });
 
+// Bluetooth scanners on mobile focus the search box and send Enter after the code.
+document.getElementById('search')?.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const code = this.value.trim();
+  this.value = '';
+  const host = document.getElementById('product-search-results');
+  if (host) host.innerHTML = '';
+  if (code.length >= 3) handleScannedCode(code);
+});
+
 // ═══════════════════════════════════════════════════════
 // USB / BLUETOOTH BARCODE SCANNER (keyboard wedge)
 // ═══════════════════════════════════════════════════════
