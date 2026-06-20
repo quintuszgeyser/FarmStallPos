@@ -486,9 +486,13 @@
             <div class="col-7">
               <input id="search" class="form-control" placeholder="Search name, ID or barcode">
             </div>
-            <div class="col-5 d-flex gap-1">
+            <div class="col-5 d-flex gap-1 flex-wrap">
               <button id="btn-start-scan" class="btn btn-success btn-lg-touch">Scan</button>
               <button id="btn-stop-scan"  class="btn btn-outline-danger btn-lg-touch hidden">Stop</button>
+              <button id="btn-connect-scanner" class="btn btn-outline-primary btn-lg-touch" style="display:none;position:relative">
+                <span id="scanner-status-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#6c757d"></span>
+                🔌 Scanner
+              </button>
               <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan">↩ Undo</button>
             </div>
           </div>

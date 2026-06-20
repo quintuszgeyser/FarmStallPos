@@ -360,6 +360,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     const tellerTab = document.querySelector('[data-bs-target="#teller"]');
     if (tellerTab) bootstrap.Tab.getOrCreateInstance(tellerTab).show();
     setTimeout(_focusTrap, 400);
+    initSerialSupport();
     await loadProducts();
     await loadTransactions();
     await loadSpecials();
@@ -3593,6 +3594,162 @@ function stopScanner() {
 
 document.getElementById('btn-start-scan')?.addEventListener('click', startScanner);
 document.getElementById('btn-stop-scan')?.addEventListener('click',  stopScanner);
+
+// ═══════════════════════════════════════════════════════
+// WEB SERIAL / BLE SCANNER
+// ═══════════════════════════════════════════════════════
+const _NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const _NUS_TX_CHAR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+let SERIAL = {
+  connected: false,
+  type: null,           // 'webserial' | 'webbluetooth'
+  port: null,
+  device: null,
+  reader: null,
+  characteristic: null,
+  buffer: ''
+};
+
+function initSerialSupport() {
+  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
+  if (!navigator.serial && !navigator.bluetooth) return;
+  const btn = document.getElementById('btn-connect-scanner');
+  if (btn) btn.style.display = '';
+}
+
+function _setScannerDot(state, label) {
+  const btn = document.getElementById('btn-connect-scanner');
+  if (!btn) return;
+  const dot = document.getElementById('scanner-status-dot');
+  if (state === 'connecting') {
+    if (dot) dot.style.background = '#D97706';
+    return;
+  }
+  if (state) {
+    if (dot) dot.style.background = '#16A34A';
+    btn.innerHTML = `<span id="scanner-status-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#16A34A"></span>${label === 'USB' ? '🔌' : '📡'} ${label}`;
+    btn.classList.replace('btn-outline-primary', 'btn-primary');
+  } else {
+    btn.innerHTML = `<span id="scanner-status-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#6c757d"></span>🔌 Scanner`;
+    btn.classList.replace('btn-primary', 'btn-outline-primary');
+  }
+}
+
+async function _connectWebSerial() {
+  const port = await navigator.serial.requestPort();
+  await port.open({ baudRate: 9600 });
+  SERIAL.port = port;
+  SERIAL.type = 'webserial';
+  SERIAL.connected = true;
+  _setScannerDot(true, 'USB');
+  toast('USB scanner connected', 'success', 1500);
+  beep(60, 1200);
+  _readWebSerial();
+}
+
+async function _readWebSerial() {
+  const port = SERIAL.port;
+  if (!port || !port.readable) return;
+  const decoder = new TextDecoderStream();
+  port.readable.pipeTo(decoder.writable).catch(() => {});
+  const reader = decoder.readable.getReader();
+  SERIAL.reader = reader;
+  try {
+    while (SERIAL.connected) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      SERIAL.buffer += value;
+      if (SERIAL.buffer.length > 1000) SERIAL.buffer = '';
+      const lines = SERIAL.buffer.split(/\r\n|\r|\n/);
+      SERIAL.buffer = lines.pop() || '';
+      for (const line of lines) {
+        const code = line.trim();
+        if (code.length >= 3) handleScannedCode(code);
+      }
+    }
+  } catch (e) {
+    if (SERIAL.connected) { toast('USB scanner disconnected', 'warning'); await disconnectScanner(); }
+  } finally {
+    try { reader.releaseLock(); } catch {}
+  }
+}
+
+function _onBLEData(e) {
+  const text = new TextDecoder('utf-8').decode(e.target.value);
+  SERIAL.buffer += text;
+  if (SERIAL.buffer.length > 1000) SERIAL.buffer = '';
+  const lines = SERIAL.buffer.split(/\r\n|\r|\n/);
+  SERIAL.buffer = lines.pop() || '';
+  for (const line of lines) {
+    const code = line.trim();
+    if (code.length >= 3) handleScannedCode(code);
+  }
+}
+
+function _onBLEDisconnect() {
+  if (SERIAL.connected) { toast('Bluetooth scanner disconnected', 'warning'); disconnectScanner(); }
+}
+
+async function _connectWebBluetooth() {
+  const device = await navigator.bluetooth.requestDevice({
+    filters: [{ services: [_NUS_SERVICE] }],
+    optionalServices: [_NUS_SERVICE]
+  });
+  device.addEventListener('gattserverdisconnected', _onBLEDisconnect);
+  const server = await device.gatt.connect();
+  const service = await server.getPrimaryService(_NUS_SERVICE);
+  const char = await service.getCharacteristic(_NUS_TX_CHAR);
+  SERIAL.device = device;
+  SERIAL.characteristic = char;
+  SERIAL.type = 'webbluetooth';
+  SERIAL.connected = true;
+  await char.startNotifications();
+  char.addEventListener('characteristicvaluechanged', _onBLEData);
+  _setScannerDot(true, 'BLE');
+  toast('Bluetooth scanner connected: ' + (device.name || 'BLE Scanner'), 'success', 2000);
+  beep(60, 1200);
+}
+
+async function disconnectScanner() {
+  if (SERIAL.type === 'webserial') {
+    try { if (SERIAL.reader) { await SERIAL.reader.cancel(); } } catch {}
+    try { if (SERIAL.port) { await SERIAL.port.close(); } } catch {}
+  } else if (SERIAL.type === 'webbluetooth') {
+    try {
+      if (SERIAL.characteristic) {
+        await SERIAL.characteristic.stopNotifications();
+        SERIAL.characteristic.removeEventListener('characteristicvaluechanged', _onBLEData);
+      }
+      if (SERIAL.device) {
+        SERIAL.device.removeEventListener('gattserverdisconnected', _onBLEDisconnect);
+        if (SERIAL.device.gatt?.connected) SERIAL.device.gatt.disconnect();
+      }
+    } catch {}
+  }
+  SERIAL = { connected: false, type: null, port: null, device: null, reader: null, characteristic: null, buffer: '' };
+  _setScannerDot(false);
+}
+
+async function connectScanner() {
+  if (SERIAL.connected) { await disconnectScanner(); return; }
+  _setScannerDot('connecting');
+  if (navigator.serial) {
+    try { await _connectWebSerial(); return; } catch (e) {
+      if (e.name !== 'NotFoundError') { toast('USB scanner error: ' + e.message, 'danger'); _setScannerDot(false); return; }
+      // User cancelled USB picker — fall through to BLE
+    }
+  }
+  if (navigator.bluetooth) {
+    try { await _connectWebBluetooth(); } catch (e) {
+      if (e.name !== 'NotFoundError') toast('Bluetooth error: ' + e.message, 'danger');
+      _setScannerDot(false);
+    }
+  }
+}
+
+document.getElementById('btn-connect-scanner')?.addEventListener('click', connectScanner);
+window.addEventListener('DOMContentLoaded', initSerialSupport);
 
 // ═══════════════════════════════════════════════════════
 // TRANSACTIONS
