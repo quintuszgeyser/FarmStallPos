@@ -359,6 +359,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     // Always land on the Teller tab after login
     const tellerTab = document.querySelector('[data-bs-target="#teller"]');
     if (tellerTab) bootstrap.Tab.getOrCreateInstance(tellerTab).show();
+    setTimeout(_focusTrap, 400);
     await loadProducts();
     await loadTransactions();
     await loadSpecials();
@@ -3425,17 +3426,6 @@ document.getElementById('search')?.addEventListener('input', function() {
   });
 });
 
-// Bluetooth scanners on mobile focus the search box and send Enter after the code.
-document.getElementById('search')?.addEventListener('keydown', function(e) {
-  if (e.key !== 'Enter') return;
-  e.preventDefault();
-  const code = this.value.trim();
-  this.value = '';
-  const host = document.getElementById('product-search-results');
-  if (host) host.innerHTML = '';
-  if (code.length >= 3) handleScannedCode(code);
-});
-
 // ═══════════════════════════════════════════════════════
 // USB / BLUETOOTH BARCODE SCANNER (keyboard wedge)
 // ═══════════════════════════════════════════════════════
@@ -3485,17 +3475,67 @@ function handleScannedCode(code) {
 
 let _scanBuffer = '', _scanBufferTimer = null;
 
+// Barcode trap: hidden input that stays focused on the Teller tab so Bluetooth
+// scanners on mobile always have somewhere to send keystrokes without the user
+// needing to tap anything first.
+function _focusTrap() {
+  const trap = document.getElementById('barcode-trap');
+  if (!trap) return;
+  const active = document.querySelector('.tab-pane.active');
+  if (!active || active.id !== 'teller') return;
+  if (!STATE.user) return;
+  // Don't steal focus from inputs the user intentionally tapped
+  const tag = document.activeElement?.tagName;
+  if (['INPUT','TEXTAREA','SELECT'].includes(tag) && document.activeElement.id !== 'barcode-trap') return;
+  trap.focus({ preventScroll: true });
+}
+
+document.getElementById('barcode-trap')?.addEventListener('keydown', (e) => {
+  if (!STATE.user) return;
+  if (e.key === 'Enter') {
+    const code = _scanBuffer.trim();
+    _scanBuffer = ''; clearTimeout(_scanBufferTimer);
+    if (code.length >= 3) handleScannedCode(code);
+    return;
+  }
+  if (e.key.length === 1) {
+    _scanBuffer += e.key;
+    clearTimeout(_scanBufferTimer);
+    _scanBufferTimer = setTimeout(() => { _scanBuffer = ''; }, 500);
+  }
+});
+
+// Re-focus trap when user taps anywhere on the teller screen (not on an input)
+document.getElementById('teller-screen')?.addEventListener('click', _focusTrap);
+document.getElementById('teller-screen')?.addEventListener('touchend', _focusTrap);
+
+// Re-focus trap when search field is cleared/blurred (user finished manual search)
+document.getElementById('search')?.addEventListener('blur', () => setTimeout(_focusTrap, 100));
+
+// Also handle #search Enter for cases where user manually typed a barcode
+document.getElementById('search')?.addEventListener('keydown', function(e) {
+  if (e.key !== 'Enter') return;
+  e.preventDefault();
+  const code = this.value.trim();
+  this.value = '';
+  const host = document.getElementById('product-search-results');
+  if (host) host.innerHTML = '';
+  if (code.length >= 3) handleScannedCode(code);
+  setTimeout(_focusTrap, 100);
+});
+
+// Desktop/USB: global keydown fallback when no input is focused
 document.addEventListener('keydown', (e) => {
   const active = document.querySelector('.tab-pane.active');
   if (!active || active.id !== 'teller') return;
-  if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement?.tagName)) return;
+  const tag = document.activeElement?.tagName;
+  if (['INPUT','TEXTAREA','SELECT'].includes(tag)) return;
   if (!STATE.user) return;
 
   if (e.key === 'Enter') {
     const code = _scanBuffer.trim();
     _scanBuffer = ''; clearTimeout(_scanBufferTimer);
-    if (code.length < 3) return;
-    if (handleScannedCode(code)) return;
+    if (code.length >= 3) handleScannedCode(code);
     return;
   }
   if (e.key.length === 1) {
@@ -7956,6 +7996,7 @@ function stopCustomerPolling() {
 // Start/stop polling when teller tab shown/hidden
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', startCustomerPolling);
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('hidden.bs.tab', stopCustomerPolling);
+document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', () => setTimeout(_focusTrap, 200));
 
 // (System Updates removed — deployment is via Docker rebuild, not Windows updater)
 

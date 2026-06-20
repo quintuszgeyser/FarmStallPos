@@ -474,6 +474,9 @@
 
     <!-- ═══════════════ TELLER ═══════════════ -->
     <div class="tab-pane fade show active" id="teller">
+      <!-- Hidden input that stays focused on mobile to catch Bluetooth scanner input -->
+      <input id="barcode-trap" inputmode="none" autocomplete="off" autocorrect="off"
+             style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;top:0;left:0">
       <div id="teller-screen" class="container-fluid p-0">
         <div class="teller-toolbar">
           <div class="row g-2">
