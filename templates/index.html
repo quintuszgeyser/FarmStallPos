@@ -1403,15 +1403,8 @@
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">PLUs currently on the scale <small id="scale-plu-count-badge" class="text-muted"></small></h6>
             <div class="d-flex gap-2">
-              <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleContents()">↺ DB View</button>
-              <button class="btn btn-primary btn-sm" onclick="scaleReadPlus(this)" title="Sends POS products to scale and reads back the scale's stored PLUs. This ALSO syncs POS products to the scale.">📡 Sync &amp; Read Scale</button>
+              <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleContents()">↺ Refresh</button>
             </div>
-          </div>
-          <div class="alert alert-warning small py-2 mb-2">
-            ⚠️ <strong>Note:</strong> The scale has no read-only command. "Sync &amp; Read Scale" pushes your POS products to the scale AND reads back what the scale stored. It will overwrite the scale with current POS data.
-          </div>
-          <div id="scale-read-alert" class="alert alert-info d-none small py-2">
-            Sending products to scale and reading echo — this may take a few seconds...
           </div>
           <table class="table table-sm table-hover">
             <thead class="table-light">

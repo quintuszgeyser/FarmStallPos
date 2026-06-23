@@ -5290,49 +5290,6 @@ async function loadScaleContents() {
   } catch (e) { toast('Scale contents error: ' + e.message, 'danger'); }
 }
 
-async function scaleReadPlus(btn) {
-  const alert = document.getElementById('scale-read-alert');
-  alert.classList.remove('d-none');
-  btn.disabled = true;
-  try {
-    const d = await api('/api/scale/read-plus', {method: 'POST'});
-    alert.classList.add('d-none');
-    btn.disabled = false;
-
-    document.getElementById('scale-plu-count-badge').textContent =
-      `— ${d.total} PLUs read live from scale (sent ${d.sent} products)`;
-
-    document.getElementById('scale-contents-body').innerHTML = d.plus.map(p => {
-      const inPosOk  = p.in_pos && p.sync_to_scale && !p.is_archived;
-      const orphan   = p.in_pos && (!p.sync_to_scale || p.is_archived);
-      const unknown  = !p.in_pos;
-      const rowCls   = unknown ? 'table-warning' : orphan ? 'table-secondary' : '';
-      const badge    = unknown
-        ? `<span class="badge bg-warning text-dark">Not in POS</span>`
-        : orphan
-          ? `<span class="badge bg-secondary">Orphan</span>`
-          : `<span class="badge bg-success">Active</span>`;
-      const price    = p.sales_mode === 0
-        ? `R${(p.price_cents/1000).toFixed(2)}/kg`
-        : `R${(p.price_cents/100).toFixed(2)}`;
-      return `<tr class="${rowCls}">
-        <td><strong>${p.plu_no}</strong></td>
-        <td>${p.name}</td>
-        <td class="text-muted small">${p.pos_name || '—'}</td>
-        <td>${price}</td>
-        <td>${p.tare}g</td>
-        <td>${p.shelf_life}d</td>
-        <td>${badge}</td>
-        <td><button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.plu_no}, ${p.product_id || 'null'})" title="Delete from scale">✕</button></td>
-      </tr>`;
-    }).join('') || '<tr><td colspan="8" class="text-muted text-center">No PLUs found on scale</td></tr>';
-
-  } catch (e) {
-    alert.classList.add('d-none');
-    btn.disabled = false;
-    toast('Read from scale failed: ' + e.message, 'danger');
-  }
-}
 
 async function scaleDeletePlu(pluNo, productId) {
   if (!confirm(`Delete PLU ${pluNo} from scale? This overwrites it with a blank prohibited record.`)) return;
