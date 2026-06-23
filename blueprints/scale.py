@@ -160,7 +160,8 @@ def _scale_poll_status(ip, port) -> dict:
         struct.pack_into('>H', hdr, 6, 18)
         sock.sendall(bytes(hdr))
         raw = _recv_exact(sock, 20)
-        plu_count = struct.unpack_from('>H', raw, 12)[0]
+        # PLU count is at bytes 6-7 (confirmed from live Wireshark capture 2026-06-23)
+        plu_count = struct.unpack_from('>H', raw, 6)[0]
         ack = bytearray(8)
         ack[0:2] = _num2bcd(26, 4)
         struct.pack_into('>H', ack, 6, 2)
@@ -370,23 +371,23 @@ def api_scale_contents():
         if result['ok']:
             plu_count = result['plu_count']
 
-    # Products known to be on scale (synced successfully)
-    on_scale = Product.query.filter(
-        Product.scale_last_sync_status == 'ok',
+    # All products with sync_to_scale=TRUE or previously synced
+    all_scale_products = Product.query.filter(
         Product.product_code.isnot(None),
+        db.or_(
+            Product.sync_to_scale == True,
+            Product.scale_last_sync_status.in_(['ok', 'removed', 'error']),
+        )
     ).order_by(Product.product_code).all()
 
-    # Also include removed/orphaned entries still tracked
-    removed = Product.query.filter(
-        Product.scale_last_sync_status == 'removed',
-        Product.product_code.isnot(None),
-    ).order_by(Product.product_code).all()
-
-    def fmt(p, status):
+    def fmt(p):
+        status = p.scale_last_sync_status or 'pending'
+        if p.is_archived or not p.sync_to_scale:
+            status = 'orphan' if p.scale_last_sync_status == 'ok' else 'disabled'
         return {
-            'id':           p.id,
-            'product_code': p.product_code,
-            'name':         p.name,
+            'id':            p.id,
+            'product_code':  p.product_code,
+            'name':          p.name,
             'sold_by_weight': p.sold_by_weight,
             'price':         float(p.price) if p.price else None,
             'price_per_unit': float(p.price_per_unit) if p.price_per_unit else None,
@@ -397,11 +398,13 @@ def api_scale_contents():
             'is_archived':   p.is_archived,
         }
 
+    on_scale_count = len([p for p in all_scale_products if p.scale_last_sync_status == 'ok'])
+
     return jsonify({
-        'scale_reachable': reachable,
+        'scale_reachable':   reachable,
         'plu_count_on_scale': plu_count,
-        'plu_count_tracked': len(on_scale),
-        'plus': [fmt(p, 'on_scale') for p in on_scale] + [fmt(p, 'removed') for p in removed],
+        'plu_count_tracked': on_scale_count,
+        'plus': [fmt(p) for p in all_scale_products],
     })
 
 
