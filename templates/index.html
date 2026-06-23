@@ -1353,55 +1353,95 @@
 
     <!-- ═══════════════ SCALE MONITOR ═══════════════ -->
     <div class="tab-pane fade" id="scale-monitor">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">⚖ Scale Monitor</h5>
-        <div class="d-flex gap-2">
-          <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleStatus()">↺ Refresh</button>
-          <button class="btn btn-outline-primary btn-sm" onclick="scaleTestConnection()">Test Connection</button>
-          <button class="btn btn-outline-warning btn-sm" onclick="scalePreview()">Preview Sync</button>
-          <button class="btn btn-success btn-sm" onclick="scaleForceResync()">⟳ Force Full Resync</button>
-        </div>
-      </div>
-
       <!-- Status banner -->
-      <div id="scale-status-banner" class="alert alert-secondary mb-3 d-flex gap-4 flex-wrap">
+      <div id="scale-status-banner" class="alert alert-secondary mb-3 d-flex gap-4 flex-wrap align-items-center">
         <span>Scale: <strong id="scale-ip-display">—</strong></span>
         <span>Reachable: <strong id="scale-reachable-display">—</strong></span>
         <span>In sync: <strong id="scale-insync-count">—</strong></span>
         <span>Pending: <strong id="scale-pending-count">—</strong></span>
         <span>Errors: <strong id="scale-error-count">—</strong></span>
         <span>Last run: <strong id="scale-last-run">—</strong></span>
+        <div class="ms-auto d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleTab()">↺ Refresh</button>
+          <button class="btn btn-outline-primary btn-sm" onclick="scaleTestConnection()">Test Connection</button>
+        </div>
       </div>
 
-      <!-- Preview result -->
-      <div id="scale-preview-result" class="mb-3" style="display:none">
-        <h6>Sync Preview</h6>
-        <div id="scale-preview-body"></div>
-      </div>
+      <!-- Sub-tabs -->
+      <ul class="nav nav-tabs mb-3" id="scale-sub-tabs">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#scale-tab-products" onclick="loadScaleStatus()">Products</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-contents" onclick="loadScaleContents()">Scale Contents</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-keyboard" onclick="loadScaleKeyboard()">Keyboard Presets</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-adverts" onclick="loadScaleAdverts()">Advertisements</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-runs">Sync Runs</a></li>
+      </ul>
 
-      <!-- Products table -->
-      <div id="scale-products-section">
-        <h6>Scale Products <small class="text-muted">(sync_to_scale = true)</small></h6>
-        <table class="table table-sm table-hover" id="scale-products-table">
-          <thead class="table-light">
-            <tr>
-              <th>PLU</th><th>Name</th><th>Price</th><th>Tare</th><th>Shelf Life</th>
-              <th>Status</th><th>Last Synced</th><th>Error</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="scale-products-body"></tbody>
-        </table>
-      </div>
+      <div class="tab-content">
 
-      <!-- Sync run history -->
-      <div class="mt-4">
-        <h6>Recent Sync Runs</h6>
-        <table class="table table-sm" id="scale-runs-table">
-          <thead class="table-light">
-            <tr><th>Time</th><th>Type</th><th>Status</th><th>Sent</th><th>Failed</th><th>Orphans</th></tr>
-          </thead>
-          <tbody id="scale-runs-body"></tbody>
-        </table>
+        <!-- ── Products sub-tab ── -->
+        <div class="tab-pane fade show active" id="scale-tab-products">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Products marked for scale sync</h6>
+            <div class="d-flex gap-2">
+              <button class="btn btn-outline-warning btn-sm" onclick="scalePreview()">Preview</button>
+              <button class="btn btn-success btn-sm" onclick="scaleForceResync()">⟳ Force Full Resync</button>
+            </div>
+          </div>
+          <div id="scale-preview-result" class="mb-3" style="display:none">
+            <div id="scale-preview-body"></div>
+          </div>
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr><th>PLU</th><th>Name</th><th>Price</th><th>Tare</th><th>Shelf Life</th><th>Status</th><th>Last Synced</th><th>Error</th><th></th></tr>
+            </thead>
+            <tbody id="scale-products-body"></tbody>
+          </table>
+        </div>
+
+        <!-- ── Scale Contents sub-tab ── -->
+        <div class="tab-pane fade" id="scale-tab-contents">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">PLUs currently on the scale <small id="scale-plu-count-badge" class="text-muted"></small></h6>
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleContents()">↺ Refresh</button>
+          </div>
+          <table class="table table-sm table-hover">
+            <thead class="table-light">
+              <tr><th>PLU</th><th>Name</th><th>Price</th><th>Tare</th><th>Last Synced</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="scale-contents-body"></tbody>
+          </table>
+        </div>
+
+        <!-- ── Keyboard Presets sub-tab ── -->
+        <div class="tab-pane fade" id="scale-tab-keyboard">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Keyboard Preset Layout <small class="text-muted">170 keys — assign PLUs to shortcut keys</small></h6>
+            <button class="btn btn-success btn-sm" onclick="saveScaleKeyboard()">Save &amp; Sync to Scale</button>
+          </div>
+          <p class="text-muted small mb-2">Click a key to assign a product. Empty keys are sent as blank slots.</p>
+          <div id="scale-keyboard-grid" class="d-flex flex-wrap gap-1 mb-3" style="max-width:900px"></div>
+        </div>
+
+        <!-- ── Advertisements sub-tab ── -->
+        <div class="tab-pane fade" id="scale-tab-adverts">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <h6 class="mb-0">Advertisement Messages <small class="text-muted">43 slots shown on scale display</small></h6>
+            <button class="btn btn-success btn-sm" onclick="saveScaleAdverts()">Save &amp; Sync to Scale</button>
+          </div>
+          <div id="scale-adverts-list" class="row g-2"></div>
+        </div>
+
+        <!-- ── Sync Runs sub-tab ── -->
+        <div class="tab-pane fade" id="scale-tab-runs">
+          <h6 class="mb-2">Recent Sync Runs</h6>
+          <table class="table table-sm">
+            <thead class="table-light">
+              <tr><th>Time</th><th>Type</th><th>Status</th><th>Sent</th><th>Failed</th><th>Orphans</th><th>Error</th></tr>
+            </thead>
+            <tbody id="scale-runs-body"></tbody>
+          </table>
+        </div>
+
       </div>
     </div>
 

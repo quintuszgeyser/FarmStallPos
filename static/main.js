@@ -5199,7 +5199,11 @@ async function doImport(mode) {
 // SCALE MONITOR
 // ═══════════════════════════════════════════════════════
 
-async function loadScaleStatus() {
+let _scaleKeyboardData = [];
+let _scaleAdvertData   = [];
+let _scaleProducts     = [];  // for keyboard preset product picker
+
+async function _updateScaleBanner() {
   try {
     const d = await api('/api/scale/status');
     document.getElementById('scale-ip-display').textContent = `${d.scale_ip}:${d.scale_port}`;
@@ -5211,14 +5215,26 @@ async function loadScaleStatus() {
     document.getElementById('scale-last-run').textContent = lr
       ? `${lr.status} — ${new Date(lr.started_at).toLocaleTimeString()} (${lr.products_sent} sent, ${lr.products_failed} failed)`
       : 'Never';
+    document.getElementById('scale-status-banner').className =
+      `alert mb-3 d-flex gap-4 flex-wrap align-items-center ${d.scale_reachable ? 'alert-success' : 'alert-warning'}`;
+    return d;
+  } catch (e) {
+    toast('Scale status error: ' + e.message, 'danger');
+    return null;
+  }
+}
 
-    const statusBanner = document.getElementById('scale-status-banner');
-    statusBanner.className = `alert mb-3 d-flex gap-4 flex-wrap ${d.scale_reachable ? 'alert-success' : 'alert-warning'}`;
+async function loadScaleTab() {
+  await _updateScaleBanner();
+  await loadScaleStatus();
+}
 
-    // Products table
-    const tbody = document.getElementById('scale-products-body');
-    tbody.innerHTML = d.products.map(p => {
-      const statusBadge = p.validation_error
+async function loadScaleStatus() {
+  try {
+    const d = await api('/api/scale/status');
+    _scaleProducts = d.products;
+    document.getElementById('scale-products-body').innerHTML = d.products.map(p => {
+      const badge = p.validation_error
         ? `<span class="badge bg-danger">Error</span>`
         : p.in_sync
           ? `<span class="badge bg-success">In Sync</span>`
@@ -5229,27 +5245,158 @@ async function loadScaleStatus() {
         <td>${p.sold_by_weight ? `R${((p.price_per_unit||0)*1000).toFixed(2)}/kg` : `R${(p.price||0).toFixed(2)}`}</td>
         <td>${p.scale_tare || 0}g</td>
         <td>${p.scale_shelf_life || 0}d</td>
-        <td>${statusBadge}</td>
+        <td>${badge}</td>
         <td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : 'Never'}</td>
         <td class="small text-danger">${p.validation_error || p.last_sync_error || ''}</td>
-        <td><button class="btn btn-outline-secondary btn-sm" onclick="scaleProductSync(${p.id})">↑</button></td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="scaleProductSync(${p.id})" title="Queue for sync">↑</button></td>
       </tr>`;
     }).join('');
+  } catch (e) { toast('Scale status error: ' + e.message, 'danger'); }
+}
 
-    // Sync runs
-    const runsData = await api('/api/scale/sync-runs');
-    document.getElementById('scale-runs-body').innerHTML = runsData.map(r => `
-      <tr>
-        <td class="small">${new Date(r.started_at).toLocaleString()}</td>
-        <td>${r.run_type}</td>
-        <td><span class="badge ${r.status === 'ok' ? 'bg-success' : r.status === 'running' ? 'bg-primary' : 'bg-danger'}">${r.status}</span></td>
-        <td>${r.products_sent}</td>
-        <td>${r.products_failed}</td>
-        <td>${r.orphans_detected}</td>
-      </tr>`).join('');
-  } catch (e) {
-    toast('Scale status error: ' + e.message, 'danger');
+async function loadScaleContents() {
+  try {
+    const d = await api('/api/scale/contents');
+    const badge = document.getElementById('scale-plu-count-badge');
+    badge.textContent = d.plu_count_on_scale !== null
+      ? `— ${d.plu_count_on_scale} PLUs reported by scale, ${d.plu_count_tracked} tracked`
+      : `— ${d.plu_count_tracked} tracked (scale not reachable)`;
+
+    document.getElementById('scale-contents-body').innerHTML = d.plus.map(p => {
+      const isOrphan = !p.sync_to_scale || p.is_archived;
+      const price = p.sold_by_weight
+        ? `R${((p.price_per_unit||0)*1000).toFixed(2)}/kg`
+        : `R${(p.price||0).toFixed(2)}`;
+      const statusBadge = p.sync_status === 'removed'
+        ? `<span class="badge bg-secondary">Removed</span>`
+        : isOrphan
+          ? `<span class="badge bg-warning text-dark">Orphan</span>`
+          : `<span class="badge bg-success">Active</span>`;
+      return `<tr class="${p.sync_status === 'removed' ? 'table-secondary' : isOrphan ? 'table-warning' : ''}">
+        <td><strong>${p.product_code}</strong></td>
+        <td>${p.name}</td>
+        <td>${price}</td>
+        <td>${p.scale_tare || 0}g</td>
+        <td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : '—'}</td>
+        <td>${statusBadge}</td>
+        <td>
+          ${p.sync_status !== 'removed' ? `<button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.product_code}, ${p.id})" title="Delete from scale">✕ Delete</button>` : ''}
+        </td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7" class="text-muted text-center">No PLUs tracked on scale</td></tr>';
+  } catch (e) { toast('Scale contents error: ' + e.message, 'danger'); }
+}
+
+async function scaleDeletePlu(pluNo, productId) {
+  if (!confirm(`Delete PLU ${pluNo} from scale? This overwrites it with a blank prohibited record.`)) return;
+  try {
+    const d = await api('/api/scale/delete-plu', {method:'POST', body: JSON.stringify({plu_no: pluNo, product_id: productId})});
+    toast(`PLU ${pluNo} deleted from scale`, 'success');
+    loadScaleContents();
+  } catch (e) { toast('Delete failed: ' + e.message, 'danger'); }
+}
+
+async function loadScaleKeyboard() {
+  try {
+    const d = await api('/api/scale/keyboard');
+    _scaleKeyboardData = d.slots;
+    _renderKeyboardGrid();
+  } catch (e) { toast('Keyboard load error: ' + e.message, 'danger'); }
+}
+
+function _renderKeyboardGrid() {
+  const grid = document.getElementById('scale-keyboard-grid');
+  grid.innerHTML = _scaleKeyboardData.map((slot, i) => {
+    const prod = slot.product;
+    const label = prod ? prod.name.substring(0, 10) : '';
+    const plu   = prod ? `PLU ${prod.product_code}` : '';
+    const cls   = prod ? 'btn-primary' : 'btn-outline-secondary';
+    return `<button class="btn btn-sm ${cls}" style="width:90px;height:54px;font-size:10px;line-height:1.2;overflow:hidden"
+      onclick="scaleKeyAssign(${i})" title="Key ${slot.key_id}${prod ? ': '+prod.name : ' (empty)'}">
+      <div style="font-size:9px;color:#aaa">K${slot.key_id}</div>
+      <div>${label}</div>
+      <div style="font-size:9px">${plu}</div>
+    </button>`;
+  }).join('');
+}
+
+function scaleKeyAssign(idx) {
+  const slot = _scaleKeyboardData[idx];
+  // Build picker from scale products
+  const prods = _scaleProducts.length
+    ? _scaleProducts
+    : [];
+  const options = prods.map(p =>
+    `<option value="${p.id}" ${slot.plu_no === p.id ? 'selected' : ''}>PLU ${p.product_code} — ${p.name}</option>`
+  ).join('');
+  const html = `
+    <select id="kb-picker-select" class="form-select mb-2">
+      <option value="">— Empty (clear key) —</option>
+      ${options}
+    </select>
+    <button class="btn btn-primary btn-sm" onclick="scaleKeyConfirm(${idx})">Assign</button>
+    <button class="btn btn-outline-secondary btn-sm ms-1" onclick="document.getElementById('kb-picker-modal-body').innerHTML=''">Cancel</button>
+  `;
+  // Simple inline modal using existing modal if available, else alert-style
+  let el = document.getElementById('kb-picker-modal-body');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'kb-picker-modal-body';
+    el.className = 'p-2 border rounded bg-white shadow mb-2';
+    document.getElementById('scale-keyboard-grid').before(el);
   }
+  el.innerHTML = `<strong>Key ${slot.key_id}</strong><br>${html}`;
+}
+
+function scaleKeyConfirm(idx) {
+  const sel = document.getElementById('kb-picker-select');
+  const productId = sel.value ? parseInt(sel.value) : null;
+  const prod = productId ? _scaleProducts.find(p => p.id === productId) : null;
+  _scaleKeyboardData[idx].plu_no  = productId;
+  _scaleKeyboardData[idx].product = prod ? {id: prod.id, name: prod.name, product_code: prod.product_code} : null;
+  document.getElementById('kb-picker-modal-body').innerHTML = '';
+  _renderKeyboardGrid();
+}
+
+async function saveScaleKeyboard() {
+  try {
+    const d = await api('/api/scale/keyboard', {method:'POST', body: JSON.stringify({slots: _scaleKeyboardData})});
+    toast(`Keyboard layout saved (${d.saved} slots). Scale will sync on next cycle.`, 'success');
+  } catch (e) { toast('Save failed: ' + e.message, 'danger'); }
+}
+
+async function loadScaleAdverts() {
+  try {
+    const d = await api('/api/scale/adverts');
+    _scaleAdvertData = d.slots;
+    _renderAdvertList();
+  } catch (e) { toast('Advert load error: ' + e.message, 'danger'); }
+}
+
+function _renderAdvertList() {
+  document.getElementById('scale-adverts-list').innerHTML = _scaleAdvertData.map((slot, i) =>
+    `<div class="col-md-6 col-lg-4">
+      <div class="card card-body p-2">
+        <div class="d-flex align-items-center gap-2 mb-1">
+          <span class="badge bg-secondary">#${slot.slot}</span>
+          <input type="checkbox" class="form-check-input" id="adv-en-${i}" ${slot.enabled ? 'checked' : ''}
+            onchange="_scaleAdvertData[${i}].enabled = this.checked">
+          <label class="form-check-label small" for="adv-en-${i}">Enabled</label>
+        </div>
+        <input type="text" class="form-control form-control-sm" maxlength="100"
+          value="${slot.text.replace(/"/g,'&quot;')}"
+          placeholder="Message text..."
+          oninput="_scaleAdvertData[${i}].text = this.value">
+      </div>
+    </div>`
+  ).join('');
+}
+
+async function saveScaleAdverts() {
+  try {
+    const d = await api('/api/scale/adverts', {method:'POST', body: JSON.stringify({slots: _scaleAdvertData})});
+    toast(`Adverts saved (${d.saved} slots). Scale will sync on next cycle.`, 'success');
+  } catch (e) { toast('Save failed: ' + e.message, 'danger'); }
 }
 
 async function scaleTestConnection() {
@@ -5262,20 +5409,17 @@ async function scaleTestConnection() {
 async function scalePreview() {
   try {
     const d = await api('/api/scale/preview', {method:'POST'});
-    const el = document.getElementById('scale-preview-result');
-    const body = document.getElementById('scale-preview-body');
-    el.style.display = '';
-    body.innerHTML = `
+    document.getElementById('scale-preview-result').style.display = '';
+    document.getElementById('scale-preview-body').innerHTML = `
       <div class="d-flex gap-3 flex-wrap mb-2">
         <span class="badge bg-primary fs-6">Send: ${d.will_send.length}</span>
-        <span class="badge bg-secondary fs-6">Skip (in sync): ${d.will_skip.length}</span>
+        <span class="badge bg-secondary fs-6">Skip: ${d.will_skip.length}</span>
         <span class="badge bg-danger fs-6">Delete orphans: ${d.will_delete.length}</span>
         <span class="badge bg-warning text-dark fs-6">Errors: ${d.will_error.length}</span>
       </div>
       ${d.will_send.length ? `<div class="mb-1"><strong>Will send:</strong> ${d.will_send.map(p=>`PLU ${p.product_code} ${p.name} (${p.reason})`).join(', ')}</div>` : ''}
-      ${d.will_delete.length ? `<div class="mb-1 text-danger"><strong>Will delete (orphans):</strong> ${d.will_delete.map(p=>`PLU ${p.product_code} ${p.name}`).join(', ')}</div>` : ''}
-      ${d.will_error.length ? `<div class="mb-1 text-danger"><strong>Errors (will skip):</strong> ${d.will_error.map(p=>`PLU ${p.product_code||'?'} ${p.name}: ${p.error}`).join(', ')}</div>` : ''}
-    `;
+      ${d.will_delete.length ? `<div class="mb-1 text-danger"><strong>Will delete:</strong> ${d.will_delete.map(p=>`PLU ${p.product_code} ${p.name}`).join(', ')}</div>` : ''}
+      ${d.will_error.length ? `<div class="mb-1 text-danger"><strong>Errors:</strong> ${d.will_error.map(p=>`PLU ${p.product_code||'?'} ${p.name}: ${p.error}`).join(', ')}</div>` : ''}`;
   } catch (e) { toast('Preview failed: ' + e.message, 'danger'); }
 }
 
@@ -5288,13 +5432,32 @@ async function scaleProductSync(productId) {
 }
 
 async function scaleForceResync() {
-  if (!confirm('This will mark all scale products as needing resync. The sync service will push all of them on the next cycle. Continue?')) return;
+  if (!confirm('This will mark all scale products as needing resync. Continue?')) return;
   try {
     const d = await api('/api/scale/force-resync', {method:'POST'});
     toast(`Marked ${d.products_marked} products for resync`, 'success');
     loadScaleStatus();
   } catch (e) { toast('Force resync failed: ' + e.message, 'danger'); }
 }
+
+// Load sync runs when that tab is clicked
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelector('[href="#scale-tab-runs"]')?.addEventListener('click', async () => {
+    try {
+      const runs = await api('/api/scale/sync-runs');
+      document.getElementById('scale-runs-body').innerHTML = runs.map(r => `
+        <tr>
+          <td class="small">${new Date(r.started_at).toLocaleString()}</td>
+          <td>${r.run_type}</td>
+          <td><span class="badge ${r.status==='ok'?'bg-success':r.status==='running'?'bg-primary':'bg-danger'}">${r.status}</span></td>
+          <td>${r.products_sent}</td>
+          <td>${r.products_failed}</td>
+          <td>${r.orphans_detected}</td>
+          <td class="small text-danger">${r.error_message||''}</td>
+        </tr>`).join('');
+    } catch (e) { toast('Runs load error: ' + e.message, 'danger'); }
+  });
+});
 
 // ═══════════════════════════════════════════════════════
 // SETTINGS

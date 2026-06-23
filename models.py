@@ -137,6 +137,27 @@ class ScaleSnapshot(db.Model):
     snapshot_json = db.Column(db.Text, nullable=True)   # JSON list of PLUs on scale
 
 
+class ScaleKeyboardPreset(db.Model):
+    """Keyboard shortcut layout for BC-4000 scale (MsgNo 1024). 170 key slots."""
+    __tablename__ = 'scale_keyboard_presets'
+    id       = db.Column(db.Integer, primary_key=True)
+    key_id   = db.Column(db.Integer, nullable=False, unique=True)  # 1–170
+    plu_no   = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)  # None = empty slot
+    label    = db.Column(db.String(20), nullable=True)  # display label (optional, informational)
+
+    product  = db.relationship('Product', foreign_keys=[plu_no])
+
+
+class ScaleAdvertMessage(db.Model):
+    """Advertisement messages shown on BC-4000 scale display (MsgNo 1029). 43 slots."""
+    __tablename__ = 'scale_advert_messages'
+    id         = db.Column(db.Integer, primary_key=True)
+    slot       = db.Column(db.Integer, nullable=False, unique=True)  # 1–43
+    display_no = db.Column(db.Integer, nullable=False, default=2)    # screen (2=main)
+    text       = db.Column(db.String(100), nullable=False, default='')
+    enabled    = db.Column(db.Boolean, nullable=False, default=True)
+
+
 class ProductImage(db.Model):
     __tablename__ = 'product_images'
     id            = db.Column(db.Integer, primary_key=True)

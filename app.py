@@ -19,7 +19,8 @@ from models import (
     Purchase, Sale, Special, SpecialLine, Invoice, KitchenOrder,
     Customer, CustomerPlate, CustomerFace, CustomerGait,
     CustomerVisit, PlateDetection, Supplier,
-    ScaleSyncRun, ScaleSnapshot, ScalePluLog, ProductImportRun, DeploySchedule,
+    ScaleSyncRun, ScaleSnapshot, ScalePluLog, ScaleKeyboardPreset, ScaleAdvertMessage,
+    ProductImportRun, DeploySchedule,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
