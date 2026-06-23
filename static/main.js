@@ -5259,7 +5259,7 @@ async function loadScaleContents() {
     const d = await api('/api/scale/contents');
     const badge = document.getElementById('scale-plu-count-badge');
     badge.textContent = d.plu_count_on_scale !== null
-      ? `— ${d.plu_count_on_scale} PLUs reported by scale, ${d.plu_count_tracked} tracked`
+      ? `— ${d.plu_count_on_scale} PLUs on scale, ${d.plu_count_tracked} tracked in POS`
       : `— ${d.plu_count_tracked} tracked (scale not reachable)`;
 
     document.getElementById('scale-contents-body').innerHTML = d.plus.map(p => {
@@ -5269,22 +5269,69 @@ async function loadScaleContents() {
         : `R${(p.price||0).toFixed(2)}`;
       const statusBadge = p.sync_status === 'removed'
         ? `<span class="badge bg-secondary">Removed</span>`
-        : isOrphan
-          ? `<span class="badge bg-warning text-dark">Orphan</span>`
-          : `<span class="badge bg-success">Active</span>`;
+        : p.sync_status === 'ok'
+          ? `<span class="badge bg-success">Synced</span>`
+          : p.sync_status === 'error'
+            ? `<span class="badge bg-danger">Error</span>`
+            : isOrphan
+              ? `<span class="badge bg-warning text-dark">Orphan</span>`
+              : `<span class="badge bg-info text-dark">Pending</span>`;
       return `<tr class="${p.sync_status === 'removed' ? 'table-secondary' : isOrphan ? 'table-warning' : ''}">
         <td><strong>${p.product_code}</strong></td>
         <td>${p.name}</td>
+        <td>—</td>
         <td>${price}</td>
         <td>${p.scale_tare || 0}g</td>
-        <td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : '—'}</td>
+        <td>${p.scale_shelf_life || 0}d</td>
         <td>${statusBadge}</td>
-        <td>
-          ${p.sync_status !== 'removed' ? `<button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.product_code}, ${p.id})" title="Delete from scale">✕ Delete</button>` : ''}
-        </td>
+        <td>${p.sync_status !== 'removed' ? `<button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.product_code}, ${p.id})" title="Delete from scale">✕</button>` : ''}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="7" class="text-muted text-center">No PLUs tracked on scale</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="text-muted text-center">No PLUs tracked — click "Read from Scale" to get live data</td></tr>';
   } catch (e) { toast('Scale contents error: ' + e.message, 'danger'); }
+}
+
+async function scaleReadPlus(btn) {
+  const alert = document.getElementById('scale-read-alert');
+  alert.classList.remove('d-none');
+  btn.disabled = true;
+  try {
+    const d = await api('/api/scale/read-plus', {method: 'POST'});
+    alert.classList.add('d-none');
+    btn.disabled = false;
+
+    document.getElementById('scale-plu-count-badge').textContent =
+      `— ${d.total} PLUs read live from scale (sent ${d.sent} products)`;
+
+    document.getElementById('scale-contents-body').innerHTML = d.plus.map(p => {
+      const inPosOk  = p.in_pos && p.sync_to_scale && !p.is_archived;
+      const orphan   = p.in_pos && (!p.sync_to_scale || p.is_archived);
+      const unknown  = !p.in_pos;
+      const rowCls   = unknown ? 'table-warning' : orphan ? 'table-secondary' : '';
+      const badge    = unknown
+        ? `<span class="badge bg-warning text-dark">Not in POS</span>`
+        : orphan
+          ? `<span class="badge bg-secondary">Orphan</span>`
+          : `<span class="badge bg-success">Active</span>`;
+      const price    = p.sales_mode === 0
+        ? `R${(p.price_cents/1000).toFixed(2)}/kg`
+        : `R${(p.price_cents/100).toFixed(2)}`;
+      return `<tr class="${rowCls}">
+        <td><strong>${p.plu_no}</strong></td>
+        <td>${p.name}</td>
+        <td class="text-muted small">${p.pos_name || '—'}</td>
+        <td>${price}</td>
+        <td>${p.tare}g</td>
+        <td>${p.shelf_life}d</td>
+        <td>${badge}</td>
+        <td><button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.plu_no}, ${p.product_id || 'null'})" title="Delete from scale">✕</button></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="8" class="text-muted text-center">No PLUs found on scale</td></tr>';
+
+  } catch (e) {
+    alert.classList.add('d-none');
+    btn.disabled = false;
+    toast('Read from scale failed: ' + e.message, 'danger');
+  }
 }
 
 async function scaleDeletePlu(pluNo, productId) {
