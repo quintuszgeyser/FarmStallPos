@@ -291,7 +291,7 @@ def _assign_product_code(sold_by_weight, unit_type, product_type):
     # Lock the range to prevent concurrent allocation of the same code
     db.session.execute(_text("LOCK TABLE products IN SHARE ROW EXCLUSIVE MODE"))
     row = db.session.execute(_text("""
-        SELECT s.code FROM generate_series(:lo::int, :hi::int) AS s(code)
+        SELECT s.code FROM generate_series(CAST(:lo AS int), CAST(:hi AS int)) AS s(code)
         WHERE NOT EXISTS (
             SELECT 1 FROM products WHERE product_code = s.code
         )
