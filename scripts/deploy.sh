@@ -32,17 +32,48 @@ wait_healthy() {  # $1 = container name, $2 = label. Never fails the script (war
   echo "[deploy] WARNING: $2 did not report healthy in 120s"; return 0
 }
 
-# Compare prod schema against qa schema. Anything QA has that prod lacks = drift = failure.
+# Parity-AND-REPAIR: make prod schema match qa (QA is source of truth). Missing columns
+# are auto-added from QA's own definitions; missing tables are a hard failure (need full DDL).
 schema_parity_check() {
   echo "[deploy] Schema parity check (prod vs qa)..."
-  local Q="SELECT table_name||'.'||column_name FROM information_schema.columns WHERE table_schema='public' UNION ALL SELECT 'TBL:'||tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1"
-  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_qa   -t -A -c "$Q" | sort > /tmp/parity_qa.txt
-  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_prod -t -A -c "$Q" | sort > /tmp/parity_prod.txt
-  local missing
-  missing=$(comm -23 /tmp/parity_qa.txt /tmp/parity_prod.txt)
-  if [ -n "$missing" ]; then
-    echo "[deploy] !!! SCHEMA DRIFT — prod is missing objects QA has:"
-    echo "$missing" | sed 's/^/    /'
+  local COLQ="SELECT table_name||'.'||column_name FROM information_schema.columns WHERE table_schema='public' ORDER BY 1"
+  local TBLQ="SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1"
+  qa_cols()  { docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_qa   -t -A -c "$COLQ" | sort; }
+  pr_cols()  { docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_prod -t -A -c "$COLQ" | sort; }
+
+  qa_cols > /tmp/pa_qa_cols.txt; pr_cols > /tmp/pa_prod_cols.txt
+  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_qa   -t -A -c "$TBLQ" | sort > /tmp/pa_qa_tbl.txt
+  docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_prod -t -A -c "$TBLQ" | sort > /tmp/pa_prod_tbl.txt
+
+  local miss_tbl miss_col
+  miss_tbl=$(comm -23 /tmp/pa_qa_tbl.txt /tmp/pa_prod_tbl.txt)
+  miss_col=$(comm -23 /tmp/pa_qa_cols.txt /tmp/pa_prod_cols.txt)
+
+  if [ -n "$miss_col" ]; then
+    echo "[deploy] Auto-repairing columns prod is missing (from QA definitions):"
+    echo "$miss_col" | sed 's/^/    + /'
+    local inlist
+    inlist=$(echo "$miss_col" | sed "s/.*/'&'/" | paste -sd, -)
+    local GEN="SELECT format('ALTER TABLE %I ADD COLUMN IF NOT EXISTS %I %s%s;', table_name, column_name,
+      CASE WHEN data_type='character varying' THEN 'varchar('||character_maximum_length||')'
+           WHEN data_type='character' THEN 'char('||character_maximum_length||')'
+           WHEN data_type='numeric' AND numeric_precision IS NOT NULL THEN 'numeric('||numeric_precision||','||numeric_scale||')'
+           WHEN data_type='timestamp with time zone' THEN 'timestamptz'
+           WHEN data_type='timestamp without time zone' THEN 'timestamp'
+           ELSE data_type END,
+      CASE WHEN column_default IS NOT NULL THEN ' DEFAULT '||column_default ELSE '' END)
+      FROM information_schema.columns WHERE table_schema='public' AND (table_name||'.'||column_name) IN ($inlist)"
+    docker exec "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_qa -t -A -c "$GEN" > /tmp/pa_fix.sql
+    sed 's/^/    /' /tmp/pa_fix.sql
+    docker exec -i "$PG_CONTAINER" psql -U "$PG_USER" -d farm_pos_prod -v ON_ERROR_STOP=0 < /tmp/pa_fix.sql
+    pr_cols > /tmp/pa_prod_cols.txt
+    miss_col=$(comm -23 /tmp/pa_qa_cols.txt /tmp/pa_prod_cols.txt)
+  fi
+
+  if [ -n "$miss_tbl" ] || [ -n "$miss_col" ]; then
+    echo "[deploy] !!! SCHEMA DRIFT remains after auto-repair:"
+    [ -n "$miss_tbl" ] && { echo "  missing TABLES (need manual DDL):"; echo "$miss_tbl" | sed 's/^/    /'; }
+    [ -n "$miss_col" ] && { echo "  missing COLUMNS:"; echo "$miss_col" | sed 's/^/    /'; }
     echo "[deploy] !!! Investigate or run rollback.sh. (DB snapshot is in $BACKUP_DIR)"
     return 1
   fi
