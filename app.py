@@ -808,7 +808,7 @@ def strong_migrate():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_sales_datetime_customer ON sales(date_time, customer_id)")
 
             # Physical attributes tracking
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS customer_physical_attributes (
                 id SERIAL PRIMARY KEY,
                 customer_id INTEGER NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -825,14 +825,17 @@ def strong_migrate():
                 camera_source VARCHAR(50),
                 confidence NUMERIC(3,2)
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_customer ON customer_physical_attributes(customer_id)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_height ON customer_physical_attributes(height_cm)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_hair ON customer_physical_attributes(hair_color)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_physical_attrs_build ON customer_physical_attributes(build)")
-            conn.exec_driver_sql("ALTER TABLE customer_physical_attributes ADD COLUMN IF NOT EXISTS height_category VARCHAR(10)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_physical_attrs_customer ON customer_physical_attributes(customer_id)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_physical_attrs_height ON customer_physical_attributes(height_cm)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_physical_attrs_hair ON customer_physical_attributes(hair_color)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_physical_attrs_build ON customer_physical_attributes(build)")
+            pg_try("ALTER TABLE customer_physical_attributes ADD COLUMN IF NOT EXISTS height_category VARCHAR(10)")
 
             # Visit sessions (dwell time tracking)
-            conn.exec_driver_sql("""
+            # NOTE: these recognition tables go through pg_try (savepoint-isolated) so a
+            # single failing statement can't abort the migration transaction and silently
+            # skip every table after it. See 2026-06-26 prod schema-drift fix.
+            pg_try("""
             CREATE TABLE IF NOT EXISTS visit_sessions (
                 id SERIAL PRIMARY KEY,
                 customer_id INTEGER NOT NULL REFERENCES customers(id),
@@ -845,11 +848,11 @@ def strong_migrate():
                 sale_ids TEXT,
                 created_at TIMESTAMP DEFAULT NOW()
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_visit_sessions_customer ON visit_sessions(customer_id)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_visit_sessions_start ON visit_sessions(session_start)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_visit_sessions_customer ON visit_sessions(customer_id)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_visit_sessions_start ON visit_sessions(session_start)")
 
             # Signal confidence history
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS customer_signal_history (
                 id SERIAL PRIMARY KEY,
                 customer_id INTEGER NOT NULL REFERENCES customers(id),
@@ -858,10 +861,10 @@ def strong_migrate():
                 camera_source VARCHAR(50),
                 detected_at TIMESTAMP DEFAULT NOW()
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_signal_history_customer ON customer_signal_history(customer_id, signal_type)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_signal_history_customer ON customer_signal_history(customer_id, signal_type)")
 
             # Detection events stream
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS detection_events (
                 id SERIAL PRIMARY KEY,
                 event_id VARCHAR(50) UNIQUE,
@@ -880,13 +883,13 @@ def strong_migrate():
                 tracked_person_id INTEGER,
                 created_at TIMESTAMP DEFAULT NOW()
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_time ON detection_events(detected_at)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_camera_zone ON detection_events(camera_zone, detected_at)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_person ON detection_events(tracked_person_id)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_detection_events_unprocessed ON detection_events(processed) WHERE processed = FALSE")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_detection_events_time ON detection_events(detected_at)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_detection_events_camera_zone ON detection_events(camera_zone, detected_at)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_detection_events_person ON detection_events(tracked_person_id)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_detection_events_unprocessed ON detection_events(processed) WHERE processed = FALSE")
 
             # Person tracking across cameras
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS person_tracks (
                 id SERIAL PRIMARY KEY,
                 track_uuid VARCHAR(36) UNIQUE,
@@ -909,22 +912,22 @@ def strong_migrate():
                 session_active BOOLEAN DEFAULT TRUE,
                 created_at TIMESTAMP DEFAULT NOW()
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_person_tracks_active ON person_tracks(session_active, last_seen)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_person_tracks_plate ON person_tracks(associated_plate)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_person_tracks_customer ON person_tracks(customer_id)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_person_tracks_active ON person_tracks(session_active, last_seen)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_person_tracks_plate ON person_tracks(associated_plate)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_person_tracks_customer ON person_tracks(customer_id)")
 
             # Till detections for purchase linking
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS till_detections (
                 id SERIAL PRIMARY KEY,
                 customer_id INTEGER NOT NULL REFERENCES customers(id),
                 detected_at TIMESTAMP DEFAULT NOW(),
                 camera_source VARCHAR(50)
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_till_detections_time ON till_detections(detected_at DESC)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_till_detections_time ON till_detections(detected_at DESC)")
 
             # Customer conflicts for reconciliation
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS customer_conflicts (
                 id SERIAL PRIMARY KEY,
                 customer_id_a INTEGER NOT NULL REFERENCES customers(id),
@@ -935,14 +938,14 @@ def strong_migrate():
                 resolved BOOLEAN DEFAULT FALSE,
                 merged_into INTEGER REFERENCES customers(id)
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_conflicts_unresolved ON customer_conflicts(resolved) WHERE resolved = FALSE")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_conflicts_unresolved ON customer_conflicts(resolved) WHERE resolved = FALSE")
             pg_try("""CREATE UNIQUE INDEX idx_conflicts_pair ON customer_conflicts(
                 LEAST(customer_id_a, customer_id_b),
                 GREATEST(customer_id_a, customer_id_b)
             ) WHERE resolved = FALSE""")
 
             # Customer exclusions (for identical twins, etc.)
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS customer_exclusions (
                 id SERIAL PRIMARY KEY,
                 customer_id_a INTEGER NOT NULL REFERENCES customers(id),
@@ -950,11 +953,11 @@ def strong_migrate():
                 reason VARCHAR(200),
                 created_at TIMESTAMP DEFAULT NOW()
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_excl_a ON customer_exclusions(customer_id_a)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_excl_b ON customer_exclusions(customer_id_b)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_excl_a ON customer_exclusions(customer_id_a)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_excl_b ON customer_exclusions(customer_id_b)")
 
             # Merge audit log — one row per merge operation, survives unmerge
-            conn.exec_driver_sql("""
+            pg_try("""
             CREATE TABLE IF NOT EXISTS customer_merge_log (
                 id SERIAL PRIMARY KEY,
                 primary_id INTEGER NOT NULL REFERENCES customers(id),
@@ -968,8 +971,8 @@ def strong_migrate():
                 source_face_photo      BYTEA,
                 unmerged_at            TIMESTAMP
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_merge_log_primary ON customer_merge_log(primary_id)")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_merge_log_source  ON customer_merge_log(source_id)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_merge_log_primary ON customer_merge_log(primary_id)")
+            pg_try("CREATE INDEX IF NOT EXISTS idx_merge_log_source  ON customer_merge_log(source_id)")
 
             # Track which customer originally owned each face/gait row — needed for unmerge
             pg_try("ALTER TABLE customer_faces ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
