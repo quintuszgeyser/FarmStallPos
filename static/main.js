@@ -2986,9 +2986,25 @@ function renderCart() {
     // Label — show strikethrough original if discounted
     const label = item.is_weight ? `${item.name}` : `${item.name} × ${fmtQty(item.qty)}`;
     const left  = document.createElement('span');
-    left.innerHTML = label + (hasDiscount
+    left.style.cssText = 'display:flex;align-items:center;gap:10px';
+
+    // Product image thumbnail (if the product has one)
+    const prod = STATE.products.find(pr => pr.id === item.product_id);
+    if (prod?.image_url) {
+      const img = document.createElement('img');
+      img.src = imgVariant(prod.image_url, 'thumb');
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.width = 44; img.height = 44;
+      img.style.cssText = 'width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0';
+      left.appendChild(img);
+    }
+
+    const labelSpan = document.createElement('span');
+    labelSpan.innerHTML = label + (hasDiscount
       ? ` <span class="text-muted text-decoration-line-through small">R${fmt(basePrice)}</span>`
       : '');
+    left.appendChild(labelSpan);
 
     const mid = document.createElement('span');
     mid.className = hasDiscount ? 'text-success fw-semibold' : '';
@@ -3003,7 +3019,7 @@ function renderCart() {
     const btns = document.createElement('div');
 
     if (!item.is_weight) {
-      const p = STATE.products.find(pr => pr.id === item.product_id);
+      const p = prod;
       const pricePerUnit = (item.subs || item.extras?.length)
         ? item.unit_price
         : parseFloat(p?.price || 0);
