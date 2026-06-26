@@ -83,6 +83,7 @@ def _serialize(s):
         'id':           s.id,
         'scheduled_at': s.scheduled_at.isoformat(),
         'description':  s.description,
+        'action':       getattr(s, 'action', 'deploy') or 'deploy',
         'status':       s.status,
         'created_at':   s.created_at.isoformat(),
         'executed_at':  s.executed_at.isoformat() if s.executed_at else None,
@@ -165,12 +166,36 @@ def api_schedule_execute_now():
     s = DeploySchedule(
         scheduled_at=datetime.now(timezone.utc),
         description='Manual deploy now',
+        action='deploy',
         created_by=user.id if user else None,
     )
     db.session.add(s)
     db.session.commit()
     return jsonify({'ok': True, 'schedule_id': s.id,
                     'message': 'Deploy queued — will execute within 60 seconds via host cron'})
+
+
+@bp.route('/api/deploy-schedule/rollback', methods=['POST'])
+def api_schedule_rollback_now():
+    """Queue an immediate PROD rollback to the previous image — host cron runs rollback.sh."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    existing_running = DeploySchedule.query.filter_by(status='running').first()
+    if existing_running:
+        return jsonify({'error': 'A deploy/rollback is already running'}), 409
+
+    user = current_user()
+    s = DeploySchedule(
+        scheduled_at=datetime.now(timezone.utc),
+        description='Manual ROLLBACK now',
+        action='rollback',
+        created_by=user.id if user else None,
+    )
+    db.session.add(s)
+    db.session.commit()
+    return jsonify({'ok': True, 'schedule_id': s.id,
+                    'message': 'Rollback queued — will execute within 60 seconds via host cron'})
 
 
 @bp.route('/api/deploy-schedule/poll', methods=['POST'])
@@ -202,7 +227,8 @@ def api_schedule_poll():
     due.status = 'running'
     due.executed_at = now
     db.session.commit()
-    return jsonify({'deploy': True, 'id': due.id, 'description': due.description})
+    return jsonify({'deploy': True, 'id': due.id, 'description': due.description,
+                    'action': getattr(due, 'action', 'deploy') or 'deploy'})
 
 
 @bp.route('/api/deploy-schedule/complete', methods=['POST'])

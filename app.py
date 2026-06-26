@@ -1113,6 +1113,7 @@ def strong_migrate():
             )
         """)
         pg_try("CREATE INDEX IF NOT EXISTS ix_deploy_schedules_status ON deploy_schedules(status)")
+        pg_try("ALTER TABLE deploy_schedules ADD COLUMN IF NOT EXISTS action VARCHAR(20) NOT NULL DEFAULT 'deploy'")  # deploy/rollback
 
         # CSV import audit table
         pg_try("""

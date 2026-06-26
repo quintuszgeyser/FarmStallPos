@@ -5071,6 +5071,15 @@ async function deployNow() {
   } catch (e) { toast('Deploy failed: ' + e.message, 'danger'); }
 }
 
+async function rollbackNow() {
+  if (!confirm('Roll PROD back to the PREVIOUS image? PROD restarts (~30s downtime). The database is NOT changed.')) return;
+  try {
+    const d = await api('/api/deploy-schedule/rollback', { method: 'POST' });
+    toast('Rollback queued — runs within 60s via host. Check status for progress.', 'info', 5000);
+    setTimeout(loadDeployStatus, 3000);
+  } catch (e) { toast('Rollback failed: ' + e.message, 'danger'); }
+}
+
 // ═══════════════════════════════════════════════════════
 // CSV PRODUCT IMPORT
 // ═══════════════════════════════════════════════════════
