@@ -543,7 +543,10 @@ def payfast_initiate():
         customer_email=customer_email,
     )
 
-    return jsonify(payfast_url=form["action"], fields=form["fields"]), 200
+    # Send fields as an ORDERED list of [key, value] pairs, NOT a dict.
+    # jsonify sorts dict keys alphabetically, which scrambles the field order
+    # PayFast rebuilds the signature from — causing a guaranteed signature mismatch.
+    return jsonify(payfast_url=form["action"], fields=list(form["fields"].items())), 200
 
 
 @farmshop_bp.route("/api/farmshop/payfast/notify", methods=["POST"])
@@ -595,6 +598,17 @@ def payfast_notify():
     pudo_point_id    = deliv_data.get("pudo_point_id")
     total            = float(sess.amount)
     pay_ref          = form_data.get("pf_payment_id", session_id)
+
+    # Verify the amount PayFast charged matches our expected order total (within 1c).
+    # Guards against a tampered/mismatched notification before we mark anything paid.
+    try:
+        if abs(total - float(pf_amount)) > 0.01:
+            log.warning("PayFast ITN: amount mismatch session=%s expected=%.2f gross=%s",
+                        session_id, total, pf_amount)
+            return "OK", 200   # 200 so PayFast stops retrying; investigate manually
+    except (TypeError, ValueError):
+        log.warning("PayFast ITN: unparseable amount_gross=%s session=%s", pf_amount, session_id)
+        return "OK", 200
 
     # Convert line_data back to Decimal
     for ld in line_data:

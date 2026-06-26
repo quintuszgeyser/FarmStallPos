@@ -353,7 +353,7 @@ document.getElementById('checkout-form').addEventListener('submit', async (e) =>
     if (window._updateCartBadge) window._updateCartBadge();
     const form = document.createElement('form');
     form.method = 'POST'; form.action = data.payfast_url;
-    Object.entries(data.fields).forEach(([k, v]) => {
+    data.fields.forEach(([k, v]) => {
       const input = document.createElement('input');
       input.type = 'hidden'; input.name = k; input.value = v;
       form.appendChild(input);
