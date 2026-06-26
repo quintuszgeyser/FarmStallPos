@@ -8,9 +8,10 @@ POST /api/deploy-schedule/execute  — manually trigger now (admin only)
 GET  /api/deploy-schedule/status   — current deploy status + env info
 """
 import threading
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy import or_
 
 from helpers import require_role, current_user, get_setting
 from models import db, DeploySchedule
@@ -45,15 +46,16 @@ def _start_scheduler(app):
 
 
 def _check_due_schedules():
-    """Run any pending schedules that are due."""
-    now = datetime.now(timezone.utc)
-    due = DeploySchedule.query.filter(
-        DeploySchedule.status == 'pending',
-        DeploySchedule.scheduled_at <= now,
-    ).order_by(DeploySchedule.scheduled_at).all()
+    """No-op by design.
 
-    for schedule in due:
-        _execute_schedule(schedule)
+    The host cron (`deploy_cron.sh` → POST /api/deploy-schedule/poll) is the SINGLE
+    authority that claims a due schedule (pending → running) AND runs deploy.sh.
+    This background thread used to ALSO mark schedules 'running' here, which raced the
+    cron poll: when the thread won, it flipped the row to 'running' without ever
+    triggering a deploy, leaving it stuck forever (and holding _deploy_lock). Leaving
+    this as a no-op removes that race. (2026-06-26)
+    """
+    return
 
 
 def _execute_schedule(schedule: DeploySchedule):
@@ -184,9 +186,14 @@ def api_schedule_poll():
         pass  # trust all internal calls for simplicity
 
     now = datetime.now(timezone.utc)
+    # Self-heal: a schedule stuck in 'running' for >15 min means a prior deploy never
+    # reported back (crash, lost cron, killed mid-run). Reclaim it so deploys never wedge.
+    stuck_before = now - timedelta(minutes=15)
     due = DeploySchedule.query.filter(
-        DeploySchedule.status == 'pending',
-        DeploySchedule.scheduled_at <= now,
+        or_(
+            (DeploySchedule.status == 'pending') & (DeploySchedule.scheduled_at <= now),
+            (DeploySchedule.status == 'running') & (DeploySchedule.executed_at <= stuck_before),
+        )
     ).order_by(DeploySchedule.scheduled_at).first()
 
     if not due:
