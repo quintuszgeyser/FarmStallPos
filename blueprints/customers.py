@@ -317,14 +317,26 @@ def api_customers_cleanup_empty():
 def api_customers_delete_permanent(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     try:
+        # 1) delete the customer's own child detail rows
         for tbl in ['customer_physical_attributes', 'customer_faces', 'customer_gaits',
                     'customer_visits', 'customer_plates', 'visit_sessions',
                     'till_detections', 'customer_signal_history']:
             db.session.execute(text(f'DELETE FROM {tbl} WHERE customer_id = :cid'), {'cid': cid})
+        # 2) clear merge-provenance back-refs left on the PRIMARY's rows by a prior merge
+        #    (these reference the now-deleted source via original_customer_id)
+        for tbl in ['customer_faces', 'customer_gaits', 'customer_physical_attributes']:
+            db.session.execute(text(f'UPDATE {tbl} SET original_customer_id = NULL WHERE original_customer_id = :cid'), {'cid': cid})
+        # 3) delete relationship rows that reference this customer
         db.session.execute(text('DELETE FROM customer_merge_log WHERE source_id = :cid OR primary_id = :cid'), {'cid': cid})
         db.session.execute(text('DELETE FROM customer_exclusions WHERE customer_id_a = :cid OR customer_id_b = :cid'), {'cid': cid})
-        db.session.execute(text('UPDATE sales SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
-        db.session.execute(text('UPDATE customers SET merged_into = NULL WHERE merged_into = :cid'), {'cid': cid})
+        db.session.execute(text('DELETE FROM customer_conflicts WHERE customer_id_a = :cid OR customer_id_b = :cid OR merged_into = :cid'), {'cid': cid})
+        # 4) unlink references on records we keep (transactions / tracks / plates)
+        db.session.execute(text('UPDATE person_tracks    SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
+        db.session.execute(text('UPDATE plate_detections SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
+        db.session.execute(text('UPDATE sales            SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
+        db.session.execute(text('UPDATE invoices         SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
+        db.session.execute(text('UPDATE customers        SET merged_into = NULL WHERE merged_into = :cid'), {'cid': cid})
+        # 5) finally remove the customer
         db.session.execute(text('DELETE FROM customers WHERE id = :cid'), {'cid': cid})
         db.session.commit()
         try:
