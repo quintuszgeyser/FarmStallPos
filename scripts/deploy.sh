@@ -127,12 +127,19 @@ deploy_prod() {
   # 1) Pre-deploy DB snapshot (rollback safety net)
   backup_prod_db
 
-  # 2) Tag current prod image as :previous for image rollback
-  if docker image inspect "$PROD_IMAGE" >/dev/null 2>&1; then
-    docker tag "$PROD_IMAGE" "$PROD_PREV_IMAGE"
-    echo "[deploy] Saved rollback image: $PROD_PREV_IMAGE ($(docker image inspect "$PROD_PREV_IMAGE" --format '{{.Id}}'))"
+  # 2) Save current prod image as :previous for rollback — but ONLY when we're
+  #    actually promoting a DIFFERENT image. A redundant deploy (QA image already
+  #    live on prod) must NOT overwrite :previous, or the real rollback target is lost.
+  local qa_id prod_id
+  qa_id=$(docker image inspect "$QA_IMAGE" --format '{{.Id}}' 2>/dev/null)
+  prod_id=$(docker image inspect "$PROD_IMAGE" --format '{{.Id}}' 2>/dev/null || echo none)
+  if [ "$prod_id" = "none" ]; then
+    echo "[deploy] No existing prod image (first promotion) — no rollback target yet."
+  elif [ "$qa_id" = "$prod_id" ]; then
+    echo "[deploy] QA image already live on prod — nothing new to promote; preserving existing rollback target ($(docker image inspect "$PROD_PREV_IMAGE" --format '{{.Id}}' 2>/dev/null | cut -c1-19))."
   else
-    echo "[deploy] No existing prod image to save as previous (first promotion)."
+    docker tag "$PROD_IMAGE" "$PROD_PREV_IMAGE"
+    echo "[deploy] Saved rollback image: $PROD_PREV_IMAGE ($(echo "$prod_id" | cut -c1-19))"
   fi
 
   # 3) Promote the exact tested bits
