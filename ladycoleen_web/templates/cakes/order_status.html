@@ -11,7 +11,7 @@
     'customer_confirmed': ('Quote Accepted',          'primary',   'You\'ve accepted the quote! We\'ll confirm your order shortly.'),
     'confirmed':          ('Confirmed',               'primary',   'Your order is confirmed. We\'ll start baking soon!'),
     'in_production':      ('Being Made',              'info',      'Your cake is in production!'),
-    'completed':          ('Ready for Collection',    'success',   'Your cake is ready! Come collect at the farm stall.'),
+    'completed':          ('Ready for Collection',    'success',   'Your cake is ready! Come collect at the farm shop.'),
     'cancelled':          ('Cancelled',               'danger',    'This order has been cancelled. Please contact us if you have questions.'),
   } %}
   {% set label, color, message = status_map.get(order.status, ('Unknown', 'secondary', '')) %}

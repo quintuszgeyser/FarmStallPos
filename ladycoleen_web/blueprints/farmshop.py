@@ -574,7 +574,7 @@ def payfast_initiate():
     form = build_payfast_form(
         session_id=session_id,
         amount=total,
-        item_name="Lady Coleen Farmshop Order",
+        item_name="Lady Coleen Boutique Farm Shop Order",
         customer_name=customer_name,
         customer_email=customer_email,
     )
@@ -1110,7 +1110,7 @@ def _create_draft_invoice(reference, customer_name, customer_phone,
 
 def _delivery_note(method, address, pudo_name, pudo_suburb, pudo_city) -> str:
     if method == "collection":
-        return "Delivery: Collection from farm stall"
+        return "Delivery: Collection from farm shop"
     if method == "pudo":
         return f"Delivery: Pudo — {pudo_name}, {pudo_suburb}, {pudo_city}"
     return f"Delivery: {address or 'Address not provided'}"

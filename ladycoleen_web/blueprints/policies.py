@@ -56,7 +56,7 @@ def privacy_policy():
             {
                 "heading": "Who We Are",
                 "body": """
-                    <p>Lady Coleen Boutique Farmstall ("we", "our", "us") operates the website <strong>ladycoleen.co.za</strong>.
+                    <p>Lady Coleen Boutique Farm Shop ("we", "our", "us") operates the website <strong>ladycoleen.co.za</strong>.
                     We are committed to protecting your personal information in accordance with the
                     <strong>Protection of Personal Information Act, 2013 (POPIA)</strong> of South Africa.</p>
                 """
@@ -137,7 +137,7 @@ def terms():
             {
                 "heading": "Acceptance of Terms",
                 "body": """
-                    <p>By accessing and using the Lady Coleen Boutique Farmstall website (<strong>ladycoleen.co.za</strong>),
+                    <p>By accessing and using the Lady Coleen Boutique Farm Shop website (<strong>ladycoleen.co.za</strong>),
                     you agree to be bound by these Terms and Conditions. If you do not agree, please do not use this website.</p>
                 """
             },
@@ -169,14 +169,14 @@ def terms():
             {
                 "heading": "Intellectual Property",
                 "body": """
-                    <p>All content on this website, including text, images, logos, and designs, is the property of Lady Coleen Boutique Farmstall
+                    <p>All content on this website, including text, images, logos, and designs, is the property of Lady Coleen Boutique Farm Shop
                     and may not be reproduced without prior written permission.</p>
                 """
             },
             {
                 "heading": "Limitation of Liability",
                 "body": """
-                    <p>To the fullest extent permitted by law, Lady Coleen Boutique Farmstall shall not be liable for any indirect,
+                    <p>To the fullest extent permitted by law, Lady Coleen Boutique Farm Shop shall not be liable for any indirect,
                     incidental, or consequential damages arising from the use of this website or our products.</p>
                 """
             },
@@ -215,7 +215,7 @@ def shipping_policy():
                 "body": """
                     <p>We offer the following delivery methods:</p>
                     <ul>
-                        <li><strong>Collection:</strong> Free collection from our farm stall. You will be notified by email when your order is ready.</li>
+                        <li><strong>Collection:</strong> Free collection from our farm shop. You will be notified by email when your order is ready.</li>
                         <li><strong>Local Delivery:</strong> We offer local delivery at a fee, which will be calculated at checkout based on your address.</li>
                         <li><strong>Pudo:</strong> We partner with <strong>Pudo</strong> for convenient locker-to-locker and door-to-door delivery across South Africa.</li>
                     </ul>
