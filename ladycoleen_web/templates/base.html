@@ -16,24 +16,23 @@
       <a class="navbar-brand lc-brand" href="/">
         <img src="/static/logo.svg" alt="Lady Coleen" height="140">
       </a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="nav">
+      <!-- Collapsible nav links (burger on mobile) -->
+      <div class="collapse navbar-collapse order-lg-1" id="nav">
         <ul class="navbar-nav ms-auto align-items-center">
-          <li class="nav-item"><a class="nav-link" href="/cakes">Cakes</a></li>
           <li class="nav-item"><a class="nav-link" href="/farmshop">Farm Shop</a></li>
           <li class="nav-item" id="nav-account">
             <a class="nav-link" href="#" id="nav-account-link">My Orders</a>
           </li>
-          <li class="nav-item ms-2">
-            <a href="/farmshop/cart" class="btn lc-btn-primary position-relative" style="padding:.4rem .9rem">
-              🛒 Cart
-              <span id="nav-cart-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;display:none">0</span>
-            </a>
-          </li>
         </ul>
       </div>
+      <!-- Cart: always visible (kept OUT of the burger menu so it's reachable on mobile) -->
+      <a href="/farmshop/cart" class="btn lc-btn-primary position-relative ms-auto me-2 order-lg-2" style="padding:.4rem .9rem">
+        🛒 Cart
+        <span id="nav-cart-count" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.65rem;display:none">0</span>
+      </a>
+      <button class="navbar-toggler order-lg-3" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+        <span class="navbar-toggler-icon"></span>
+      </button>
     </div>
   </nav>
 

@@ -58,7 +58,8 @@ def create_app():
     @app.route("/")
     def index():
         from flask import redirect, url_for
-        return redirect("/cakes")
+        # Cakes hidden for now — land on the farm shop
+        return redirect("/farmshop")
 
     # Serve product images from shared volume mounted at /app/product_images
     @app.route("/product_images/<path:filename>")

@@ -15,15 +15,19 @@ cakes_bp = Blueprint("cakes", __name__)
 
 # ── Public pages ──────────────────────────────────────────────────────────────
 
+# Cakes hidden for now — public cake pages redirect to the farm shop.
+# Order-status tracking (/cakes/orders/<ref>), admin, and APIs stay live so
+# existing cake orders and their email links keep working.
 @cakes_bp.route("/cakes")
 def landing():
-    return render_template("cakes/landing.html")
+    from flask import redirect
+    return redirect("/farmshop")
 
 
 @cakes_bp.route("/cakes/order")
 def order_form():
-    return render_template("cakes/order_form.html",
-                           min_date=(date.today() + timedelta(days=current_app.config["CAKE_MIN_NOTICE_DAYS"])).isoformat())
+    from flask import redirect
+    return redirect("/farmshop")
 
 
 @cakes_bp.route("/cakes/orders/<reference>")
