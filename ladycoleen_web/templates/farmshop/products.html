@@ -7,16 +7,26 @@
   </div>
 
   <!-- Search -->
-  <form method="GET" class="mb-4">
+  <form method="GET" class="mb-3">
     <div class="input-group" style="max-width:400px">
       <input type="text" class="form-control lc-input" name="q" value="{{ search }}" placeholder="Search products…">
       <button class="btn lc-btn-primary">Search</button>
     </div>
   </form>
 
+  <!-- Category filter (multi-select) -->
+  {% if categories %}
+  <div class="mb-4 d-flex flex-wrap gap-2" id="category-filter">
+    <button type="button" class="btn btn-sm lc-cat-pill lc-btn-primary" data-cat="all">All</button>
+    {% for c in categories %}
+    <button type="button" class="btn btn-sm lc-cat-pill btn-outline-secondary" data-cat="{{ c.id }}">{{ c.name }} <span class="badge bg-secondary">{{ c.count }}</span></button>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <div class="row g-3" id="product-grid">
     {% for item in items %}
-    <div class="col-6 col-md-4 col-lg-3">
+    <div class="col-6 col-md-4 col-lg-3 lc-product-col" data-category-id="{{ item.category_id or 0 }}">
       <div class="lc-card p-0 h-100 d-flex flex-column overflow-hidden">
 
         <!-- Product image (links to detail page) -->
@@ -79,6 +89,7 @@
     {% else %}
     <div class="col-12 text-center text-muted py-5">No products found.</div>
     {% endfor %}
+    <div class="col-12 text-center text-muted py-5" id="no-category-msg" style="display:none">No products in this category.</div>
   </div>
 
 </div>
@@ -124,5 +135,54 @@ function showToast(msg) {
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 2000);
 }
+
+// ── Category filter (multi-select, client-side) ──
+(function () {
+  const bar = document.getElementById('category-filter');
+  if (!bar) return;
+  const pills    = Array.from(bar.querySelectorAll('.lc-cat-pill'));
+  const cols     = Array.from(document.querySelectorAll('.lc-product-col'));
+  const emptyMsg = document.getElementById('no-category-msg');
+  const selected = new Set();
+
+  const setActive = (pill, on) => {
+    pill.classList.toggle('lc-btn-primary', on);
+    pill.classList.toggle('btn-outline-secondary', !on);
+  };
+
+  function apply() {
+    const allPill = bar.querySelector('[data-cat="all"]');
+    setActive(allPill, selected.size === 0);
+    let shown = 0;
+    cols.forEach(col => {
+      const cid = parseInt(col.dataset.categoryId || '0', 10);
+      const show = selected.size === 0 || selected.has(cid);
+      col.style.display = show ? '' : 'none';
+      if (show) shown++;
+    });
+    if (emptyMsg) emptyMsg.style.display = (shown === 0 && selected.size > 0) ? '' : 'none';
+  }
+
+  pills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      const v = pill.dataset.cat;
+      if (v === 'all') {
+        selected.clear();
+        pills.forEach(p => { if (p.dataset.cat !== 'all') setActive(p, false); });
+      } else {
+        const id = parseInt(v, 10);
+        if (selected.has(id)) { selected.delete(id); setActive(pill, false); }
+        else { selected.add(id); setActive(pill, true); }
+      }
+      apply();
+    });
+  });
+
+  // Pre-select from ?category=<id>
+  {% if sel_category %}
+  const pre = bar.querySelector('[data-cat="{{ sel_category }}"]');
+  if (pre) pre.click();
+  {% endif %}
+})();
 </script>
 {% endblock %}

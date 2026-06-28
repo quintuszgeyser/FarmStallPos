@@ -52,6 +52,7 @@ class Product(db.Model):
     is_archived          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     archived_reason      = db.Column(db.String(200), nullable=True)
     product_code         = db.Column(db.Integer, unique=True, nullable=True)
+    category_id          = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True, index=True)
     # Scale sync fields — POS is single source of truth, scale is downstream cache
     sync_to_scale        = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     scale_tare           = db.Column(Numeric(8, 3), nullable=True)        # tare in grams
@@ -65,6 +66,21 @@ class Product(db.Model):
     scale_last_sync_status = db.Column(db.String(20), nullable=True)     # ok / error / pending
     scale_last_sync_error  = db.Column(db.Text, nullable=True)
     scale_hash           = db.Column(db.String(64), nullable=True)       # SHA-256 of last sent payload
+
+
+class Category(db.Model):
+    """Central product category. One category per product (Product.category_id).
+    name      = display form, as entered (trimmed).
+    name_norm = lower(trim(name)), UNIQUE — enforces case/whitespace de-duplication.
+    """
+    __tablename__ = 'categories'
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(80), nullable=False)
+    name_norm  = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+    products   = db.relationship('Product', backref='category', lazy='dynamic',
+                                 foreign_keys='Product.category_id')
 
 
 class DeploySchedule(db.Model):

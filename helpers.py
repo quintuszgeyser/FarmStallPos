@@ -4,6 +4,7 @@ Import order: helpers → models → db. Never import from app.py here.
 """
 
 import os
+import re
 import uuid
 import random
 from decimal import Decimal
@@ -15,11 +16,37 @@ from werkzeug.security import generate_password_hash
 from models import (
     db,
     User, UserSession, Setting,
-    Product, ProductImage, RecipeLine,
+    Product, ProductImage, RecipeLine, Category,
     StockBatch, StockConsumption,
     Sale,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
+
+
+# ---------------------------------------------------------------------------
+# Category helpers
+# ---------------------------------------------------------------------------
+
+def normalize_category_name(name):
+    """Trim and collapse internal whitespace. Returns '' for None/blank."""
+    return re.sub(r'\s+', ' ', (name or '').strip())
+
+
+def get_or_create_category(name):
+    """Resolve a category by case-insensitive normalized name, creating it if
+    it does not yet exist. Returns the Category row, or None when name is blank.
+    Does NOT commit — caller's transaction owns the flush/commit."""
+    clean = normalize_category_name(name)
+    if not clean:
+        return None
+    norm = clean.lower()
+    cat = Category.query.filter_by(name_norm=norm).first()
+    if cat:
+        return cat
+    cat = Category(name=clean, name_norm=norm)
+    db.session.add(cat)
+    db.session.flush()
+    return cat
 
 
 # ---------------------------------------------------------------------------
@@ -379,6 +406,8 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'description':          p.description,
         'is_archived':          p.is_archived,
         'archived_reason':      p.archived_reason,
+        'category_id':          p.category_id,
+        'category_name':        p.category.name if p.category else None,
         # Scale sync fields
         'sync_to_scale':           p.sync_to_scale,
         'scale_tare':              float(p.scale_tare) if p.scale_tare is not None else 0,

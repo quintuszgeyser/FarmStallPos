@@ -129,9 +129,11 @@ def strong_migrate():
                 ('is_available_online', 'INTEGER NOT NULL DEFAULT 0'),
                 ('image_url',   'TEXT'),
                 ('description', 'TEXT'),
+                ('category_id', 'INTEGER'),
             ]:
                 if col not in existing_prod:
                     conn.exec_driver_sql(f"ALTER TABLE products ADD COLUMN {col} {defn}")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_products_category_id ON products (category_id)")
 
             # updated_at for scale sync change detection
             if 'updated_at' not in existing_prod:
@@ -1149,6 +1151,11 @@ def strong_migrate():
         # DB constraints
         pg_try("ALTER TABLE products ADD CONSTRAINT chk_product_code_positive CHECK (product_code IS NULL OR product_code > 0)")
 
+        # Product categories (categories table is created by db.create_all above)
+        pg_try("ALTER TABLE products ADD COLUMN category_id INTEGER")
+        pg_try("ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_products_category_id ON products (category_id)")
+
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
         if sales_count == 0:
@@ -1328,6 +1335,7 @@ def _register_routes(_app):
     from blueprints.specials     import bp as specials_bp
     from blueprints.suppliers    import bp as suppliers_bp
     from blueprints.products     import bp as products_bp
+    from blueprints.categories   import bp as categories_bp
     from blueprints.stock        import bp as stock_bp
     from blueprints.transactions import bp as transactions_bp
     from blueprints.customers    import bp as customers_bp
@@ -1345,6 +1353,7 @@ def _register_routes(_app):
     _app.register_blueprint(specials_bp)
     _app.register_blueprint(suppliers_bp)
     _app.register_blueprint(products_bp)
+    _app.register_blueprint(categories_bp)
     _app.register_blueprint(stock_bp)
     _app.register_blueprint(transactions_bp)
     _app.register_blueprint(customers_bp)

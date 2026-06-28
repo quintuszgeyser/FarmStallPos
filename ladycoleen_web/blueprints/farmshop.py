@@ -25,9 +25,18 @@ def landing():
 def products():
     search = (request.args.get("q") or "").strip()
 
-    sql = """
+    # category_id only exists once the POS app has migrated the shared DB.
+    # Detect it so the shop still renders during a deploy window where the
+    # column/table is not yet present.
+    has_categories = db.session.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'products' AND column_name = 'category_id'"
+    )).first() is not None
+
+    cat_col = "category_id" if has_categories else "NULL AS category_id"
+    sql = f"""
         SELECT id, name, COALESCE(price, 0) AS price, product_type, unit_type, base_unit,
-               sold_by_weight, price_per_unit, stock_qty, image_url, description
+               sold_by_weight, price_per_unit, stock_qty, image_url, description, {cat_col}
         FROM products
         WHERE is_for_sale = true AND is_available_online = true AND is_archived = false
     """
@@ -55,9 +64,30 @@ def products():
             "available_qty":  avail,
             "stock_status":   _stock_status(avail, r.product_type),
             "image_url":      r.image_url,
+            "category_id":    r.category_id,
         })
 
-    return render_template("farmshop/products.html", items=items, search=search)
+    # Categories that actually have a visible product (for the filter bar)
+    categories = []
+    if has_categories:
+        cat_rows = db.session.execute(text("""
+            SELECT c.id, c.name, COUNT(p.id) AS n
+            FROM categories c
+            JOIN products p ON p.category_id = c.id
+            WHERE p.is_for_sale = true AND p.is_available_online = true AND p.is_archived = false
+            GROUP BY c.id, c.name
+            ORDER BY c.name ASC
+        """)).fetchall()
+        categories = [{"id": cr.id, "name": cr.name, "count": cr.n} for cr in cat_rows]
+
+    # Pre-selected category from a shareable link (?category=<id>)
+    try:
+        sel_category = int(request.args.get("category")) if request.args.get("category") else None
+    except (TypeError, ValueError):
+        sel_category = None
+
+    return render_template("farmshop/products.html", items=items, search=search,
+                           categories=categories, sel_category=sel_category)
 
 
 @farmshop_bp.route("/farmshop/cart")
@@ -129,9 +159,14 @@ def order_status(reference):
 @farmshop_bp.route("/api/farmshop/products")
 def api_products():
     from services.stock import get_available_qty
-    rows = db.session.execute(text("""
+    has_categories = db.session.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'products' AND column_name = 'category_id'"
+    )).first() is not None
+    cat_col = "category_id" if has_categories else "NULL AS category_id"
+    rows = db.session.execute(text(f"""
         SELECT id, name, COALESCE(price, 0) AS price, product_type, unit_type, base_unit,
-               sold_by_weight, price_per_unit, image_url, description
+               sold_by_weight, price_per_unit, image_url, description, {cat_col}
         FROM products
         WHERE is_for_sale = true AND is_available_online = true AND is_archived = false
         ORDER BY name ASC
@@ -150,6 +185,7 @@ def api_products():
             "available_qty":  avail,
             "stock_status":   _stock_status(avail, r.product_type),
             "image_url":      r.image_url,
+            "category_id":    r.category_id,
         })
     return jsonify(products=result)
 

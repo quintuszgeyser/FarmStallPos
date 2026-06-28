@@ -20,7 +20,9 @@ let STATE = {
   users:            [],
   currentTx:        null,
   receiveProductId: null,   // stock item being received
-  productsSubTab:   'active',  // 'active' | 'ingredients' | 'archived'
+  productsSubTab:   'active',  // 'active' | 'ingredients' | 'recipes' | 'specials' | 'archived' | 'categories'
+  categories:       [],     // [{id, name, product_count}]
+  selectedCategoryIds: new Set(),  // active category filters on the products tab
   customers:        [],
   activeCustomer:   null,   // customer detected at till
   customerPollInterval: null,  // interval ID for till customer polling
@@ -78,6 +80,10 @@ function buildUnitOptions(unitType, packageSize, packageUnit) {
 // ═══════════════════════════════════════════════════════
 function show(el) { el && el.classList.remove('hidden'); }
 function hide(el) { el && el.classList.add('hidden'); }
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
 function fmt(n)   { return (Math.round(n * 100) / 100).toFixed(2); }
 function fmtQty(n) { return n % 1 === 0 ? String(n) : n.toFixed(3); }
 function isAdmin() { const r = STATE.user?.roles || [STATE.user?.role]; return r.includes('admin'); }
@@ -407,9 +413,20 @@ async function loadProducts() {
   if (!STATE.user) return;
   try {
     STATE.products = await api('/api/products?full=1');
+    await loadCategories();
     renderProductsCards();
     renderProductDropdown();
   } catch (e) { console.error('loadProducts', e); }
+}
+
+async function loadCategories() {
+  if (!STATE.user) return;
+  try {
+    STATE.categories = await api('/api/categories');
+    // Drop any selected filters whose category no longer exists
+    const live = new Set(STATE.categories.map(c => c.id));
+    STATE.selectedCategoryIds.forEach(id => { if (!live.has(id)) STATE.selectedCategoryIds.delete(id); });
+  } catch (e) { console.error('loadCategories', e); STATE.categories = []; }
 }
 
 function renderProductDropdown() {
@@ -447,18 +464,29 @@ function renderProductsCards() {
 
   const tab = STATE.productsSubTab;
 
+  const selectedCats = STATE.selectedCategoryIds;
+  const catFilterActive = selectedCats.size > 0;
+  const UNCATEGORISED = 0;  // sentinel for "no category" pill
+
   let items = STATE.products.filter(p => {
     const matchesSearch = !q ||
       p.name.toLowerCase().includes(q) ||
       String(p.id) === q ||
       (p.barcode?.toLowerCase().includes(q));
     if (!matchesSearch) return false;
+    // Category filter (multi-select; matches any selected)
+    if (catFilterActive) {
+      const key = p.category_id || UNCATEGORISED;
+      if (!selectedCats.has(key)) return false;
+    }
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
     if (tab === 'recipes')      return p.is_archived !== true && p.product_type === 'recipe' && p.is_for_sale !== false;
     // 'active' (Single Items) = for sale, not archived, not a recipe
     return p.is_archived !== true && p.is_for_sale !== false && p.product_type !== 'recipe';
   });
+
+  renderCategoryFilterPills();
 
   // Update count badges
   const singleCount   = STATE.products.filter(p => !p.is_archived && p.is_for_sale !== false && p.product_type !== 'recipe').length;
@@ -472,6 +500,7 @@ function renderProductsCards() {
   setBadge('recipes-count-badge',    recipeCount);
   setBadge('specials-count-badge',   specialsCount);
   setBadge('archived-count-badge',   archivedCount);
+  setBadge('categories-count-badge', (STATE.categories || []).length);
 
   wrap.innerHTML = '';
   if (items.length === 0) {
@@ -617,6 +646,188 @@ function renderProductsCards() {
   const productsPane = document.getElementById('products');
   if (productsPane && productsPane.classList.contains('active')) {
     _renderBarcodes(items);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+// CATEGORIES — autocomplete, filter pills, management
+// ═══════════════════════════════════════════════════════
+
+// ── Editor autocomplete (fuzzy, case-insensitive; free text = new category) ──
+function hideCategorySuggestions() {
+  const box = document.getElementById('p-category-suggestions');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
+
+function _categoryMatches(query) {
+  const q = (query || '').trim().toLowerCase();
+  const cats = STATE.categories || [];
+  if (!q) return cats.slice(0, 8);
+  // Substring (contains) match, case-insensitive — "veg" → "Vegetables"
+  return cats.filter(c => c.name.toLowerCase().includes(q)).slice(0, 8);
+}
+
+function renderCategorySuggestions() {
+  const input = document.getElementById('p-category');
+  const box   = document.getElementById('p-category-suggestions');
+  if (!input || !box) return;
+  const val     = input.value.trim();
+  const matches = _categoryMatches(val);
+  const exact   = (STATE.categories || []).some(c => c.name.toLowerCase() === val.toLowerCase());
+
+  let html = matches.map(c =>
+    `<button type="button" class="list-group-item list-group-item-action py-1" data-cat-pick="${escapeHtml(c.name)}">
+       ${escapeHtml(c.name)} <span class="text-muted small">(${c.product_count})</span>
+     </button>`).join('');
+  if (val && !exact) {
+    html += `<button type="button" class="list-group-item list-group-item-action py-1 text-success" data-cat-pick="${escapeHtml(val)}">
+       + Create “${escapeHtml(val)}”
+     </button>`;
+  }
+  if (!html) { hideCategorySuggestions(); return; }
+  box.innerHTML = html;
+  box.style.display = '';
+  box.querySelectorAll('[data-cat-pick]').forEach(btn => {
+    btn.addEventListener('mousedown', e => {   // mousedown beats input blur
+      e.preventDefault();
+      input.value = btn.dataset.catPick;
+      hideCategorySuggestions();
+    });
+  });
+}
+
+(function wireCategoryAutocomplete() {
+  const input = document.getElementById('p-category');
+  if (!input || input._catBound) return;
+  input.addEventListener('input', renderCategorySuggestions);
+  input.addEventListener('focus', renderCategorySuggestions);
+  input.addEventListener('blur', () => setTimeout(hideCategorySuggestions, 150));
+  input._catBound = true;
+})();
+
+// ── Multi-select filter pills above the product cards ──
+function renderCategoryFilterPills() {
+  const wrap = document.getElementById('products-category-filter');
+  if (!wrap) return;
+  const tab = STATE.productsSubTab;
+  // Only show the filter on product-listing sub-tabs
+  if (tab === 'specials' || tab === 'categories') { wrap.style.display = 'none'; return; }
+
+  const cats = STATE.categories || [];
+  const uncatCount = STATE.products.filter(p => !p.category_id && !p.is_archived).length;
+  if (cats.length === 0) { wrap.style.display = 'none'; return; }
+
+  const sel = STATE.selectedCategoryIds;
+  const pill = (id, label, count, active) =>
+    `<button type="button" class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" data-cat-filter="${id}">
+       ${escapeHtml(label)}${count != null ? ` <span class="badge ${active ? 'bg-light text-dark' : 'bg-secondary'}">${count}</span>` : ''}
+     </button>`;
+
+  let html = pill('all', 'All', null, sel.size === 0);
+  html += cats.map(c => pill(c.id, c.name, c.product_count, sel.has(c.id))).join('');
+  if (uncatCount > 0) html += pill('0', 'Uncategorised', uncatCount, sel.has(0));
+
+  wrap.innerHTML = html;
+  wrap.style.display = 'flex';
+  wrap.querySelectorAll('[data-cat-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = btn.dataset.catFilter;
+      if (v === 'all') { sel.clear(); }
+      else {
+        const id = parseInt(v, 10);
+        if (sel.has(id)) sel.delete(id); else sel.add(id);
+      }
+      renderProductsCards();
+    });
+  });
+}
+
+// ── Management view (rename / delete / merge) ──
+function renderCategoriesManage() {
+  const wrap = document.getElementById('categories-manage');
+  if (!wrap) return;
+  const cats = STATE.categories || [];
+  const uncatCount = STATE.products.filter(p => !p.category_id).length;
+
+  const options = cats.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+
+  let rows = cats.map(c => `
+    <tr data-cat-row="${c.id}">
+      <td><input class="form-control form-control-sm" value="${escapeHtml(c.name)}" data-cat-name="${c.id}"></td>
+      <td class="text-center align-middle">${c.product_count}</td>
+      <td class="text-end">
+        <button class="btn btn-outline-primary btn-sm" data-cat-save="${c.id}">Save</button>
+        <button class="btn btn-outline-danger btn-sm" data-cat-del="${c.id}" data-cat-del-name="${escapeHtml(c.name)}" data-cat-del-count="${c.product_count}">Delete</button>
+      </td>
+    </tr>`).join('');
+  if (!rows) rows = `<tr><td colspan="3" class="text-muted">No categories yet — add one below or type a new category when editing a product.</td></tr>`;
+
+  wrap.innerHTML = `
+    <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
+      <div>
+        <label class="form-label small mb-1">New category</label>
+        <input id="new-category-name" class="form-control form-control-sm" placeholder="Category name" style="width:220px">
+      </div>
+      <button id="btn-add-category" class="btn btn-success btn-sm">+ Add</button>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Name</th><th class="text-center" style="width:90px">Products</th><th class="text-end" style="width:170px">Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div class="text-muted small mb-3">${uncatCount} product${uncatCount === 1 ? '' : 's'} with no category. Deleting a category leaves its products uncategorised.</div>
+    ${cats.length >= 2 ? `
+    <div class="border-top pt-3">
+      <h6 class="mb-2">Merge categories</h6>
+      <div class="d-flex flex-wrap gap-2 align-items-end">
+        <div><label class="form-label small mb-1">Move all products from</label>
+          <select id="merge-source" class="form-select form-select-sm" style="width:200px">${options}</select></div>
+        <div><label class="form-label small mb-1">into</label>
+          <select id="merge-target" class="form-select form-select-sm" style="width:200px">${options}</select></div>
+        <button id="btn-merge-categories" class="btn btn-outline-warning btn-sm">Merge</button>
+      </div>
+      <div class="form-text">The source category is removed; its products move to the target.</div>
+    </div>` : ''}
+  `;
+
+  wrap.querySelector('#btn-add-category')?.addEventListener('click', async () => {
+    const name = wrap.querySelector('#new-category-name')?.value?.trim();
+    if (!name) { toast('Category name required', 'warning'); return; }
+    await _categoryApi('/api/categories', { name });
+  });
+  wrap.querySelectorAll('[data-cat-save]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = parseInt(btn.dataset.catSave, 10);
+    const name = wrap.querySelector(`[data-cat-name="${id}"]`)?.value?.trim();
+    if (!name) { toast('Category name required', 'warning'); return; }
+    await _categoryApi('/api/categories/update', { id, name });
+  }));
+  wrap.querySelectorAll('[data-cat-del]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = parseInt(btn.dataset.catDel, 10);
+    const n  = parseInt(btn.dataset.catDelCount, 10) || 0;
+    const msg = n > 0
+      ? `Delete “${btn.dataset.catDelName}”? ${n} product${n === 1 ? '' : 's'} will become uncategorised.`
+      : `Delete “${btn.dataset.catDelName}”?`;
+    if (!confirm(msg)) return;
+    await _categoryApi('/api/categories/delete', { id });
+  }));
+  wrap.querySelector('#btn-merge-categories')?.addEventListener('click', async () => {
+    const source_id = parseInt(wrap.querySelector('#merge-source')?.value, 10);
+    const target_id = parseInt(wrap.querySelector('#merge-target')?.value, 10);
+    if (source_id === target_id) { toast('Pick two different categories', 'warning'); return; }
+    if (!confirm('Merge these categories? This cannot be undone.')) return;
+    await _categoryApi('/api/categories/merge', { source_id, target_id });
+  });
+}
+
+async function _categoryApi(url, body) {
+  try {
+    await api(url, { method: 'POST', body: JSON.stringify(body) });
+    await loadProducts();          // refresh products (category_name may have changed) + categories
+    renderCategoriesManage();
+    toast('Categories updated', 'success');
+  } catch (e) {
+    toast(e?.message || 'Category update failed', 'danger');
   }
 }
 
@@ -903,21 +1114,26 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
     b.classList.toggle('active', b.dataset.productsSub === STATE.productsSubTab);
   });
 
-  const isSpecials = STATE.productsSubTab === 'specials';
+  const isSpecials   = STATE.productsSubTab === 'specials';
+  const isCategories = STATE.productsSubTab === 'categories';
+  const isProductList = !isSpecials && !isCategories;
 
-  // Toggle specials vs product list
   const specialsList = document.getElementById('specials-list');
+  const catManage    = document.getElementById('categories-manage');
   const cardList     = document.getElementById('products-card-list');
   const newProduct   = document.getElementById('btn-new-product');
   const newSpecial   = document.getElementById('btn-new-special');
   const filterInput  = document.getElementById('products-filter');
+  const catFilter    = document.getElementById('products-category-filter');
   if (specialsList) specialsList.classList.toggle('hidden', !isSpecials);
-  if (cardList)     cardList.style.display = isSpecials ? 'none' : '';
-  if (newProduct)   newProduct.classList.toggle('hidden', isSpecials);
+  if (catManage)    catManage.classList.toggle('hidden', !isCategories);
+  if (cardList)     cardList.style.display = isProductList ? '' : 'none';
+  if (catFilter && !isProductList) catFilter.style.display = 'none';
+  if (newProduct)   newProduct.classList.toggle('hidden', !isProductList);
   if (newSpecial)   newSpecial.classList.toggle('hidden', !isSpecials);
-  if (filterInput)  filterInput.classList.toggle('hidden', isSpecials);
+  if (filterInput)  filterInput.classList.toggle('hidden', !isProductList);
 
-  if (!isSpecials) {
+  if (isProductList) {
     // Hide +New Product button on archived tab — you can't create archived products
     if (newProduct) newProduct.classList.toggle('hidden', STATE.productsSubTab === 'archived');
     renderProductsCards();
@@ -927,8 +1143,10 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
       const wrap = document.getElementById('products-card-list');
       if (wrap?._pendingBarcodeItems) _renderBarcodes(wrap._pendingBarcodeItems);
     }, 50);
-  } else {
+  } else if (isSpecials) {
     renderSpecialsList();
+  } else {
+    renderCategoriesManage();
   }
 });
 
@@ -985,6 +1203,11 @@ function openProductEditor(p) {
   // Description
   const descEl = document.getElementById('p-description');
   if (descEl) descEl.value = p?.description ?? '';
+
+  // Category (autocomplete text input — shows the current category name)
+  const catEl = document.getElementById('p-category');
+  if (catEl) catEl.value = p?.category_name ?? '';
+  hideCategorySuggestions();
 
   // Multi-image list
   const _fileInp = document.getElementById('p-image-files');
@@ -1887,6 +2110,8 @@ function buildProductPayload() {
     margin_pct:    document.getElementById('calc-markup')?.value ? parseFloat(document.getElementById('calc-markup').value) : null,
     is_prepared:   document.getElementById('p-is-prepared')?.checked || false,
     description:   document.getElementById('p-description')?.value?.trim() || null,
+    // Category name — backend resolves/auto-creates; '' clears the category
+    category:      document.getElementById('p-category')?.value?.trim() || '',
     recipe_lines:  type === 'recipe'     ? getRecipeLinesForSubmit()  : [],
     sell_packages: type === 'stock_item' ? getSellPackagesForSubmit() : [],
     // Block save if PLU conflict

@@ -12,11 +12,11 @@ from helpers import (
     get_setting, get_stock_level, get_fifo_cost_per_unit,
     sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code,
     _serialize_product, validate_product_code, current_user,
-    consume_fifo,
+    consume_fifo, get_or_create_category,
 )
 from models import (
     db,
-    Product, ProductImage, RecipeLine,
+    Product, ProductImage, RecipeLine, Category,
     StockBatch, StockAdjustment, Purchase, Sale, ScalePluLog,
 )
 
@@ -70,6 +70,22 @@ def _sync_primary_image_url(pid):
     p = db.session.get(Product, pid)
     if p:
         p.image_url = primary.filename if primary else None
+
+
+def _resolve_category_id(data):
+    """Resolve a category from request data into a category_id (or None).
+    Prefers an explicit 'category_id'; otherwise treats 'category' as a name
+    and auto-creates it (normalised, de-duplicated case-insensitively)."""
+    if data.get('category_id'):
+        try:
+            cat = db.session.get(Category, int(data['category_id']))
+        except (TypeError, ValueError):
+            cat = None
+        return cat.id if cat else None
+    if data.get('category'):
+        cat = get_or_create_category(data['category'])
+        return cat.id if cat else None
+    return None
 
 
 @bp.route('/api/products', methods=['GET'])
@@ -168,6 +184,8 @@ def api_products_post():
     scale_open_price = bool(data.get('scale_open_price', False))
     scale_prohibit   = bool(data.get('scale_prohibit', False))
 
+    category_id = _resolve_category_id(data)
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -178,7 +196,7 @@ def api_products_post():
         price_per_unit=price_per_unit, low_stock_threshold=low_stock_threshold,
         package_size=package_size, package_size_unit=package_size_unit,
         package_unit=package_unit, margin_pct=margin_pct,
-        product_code=product_code,
+        product_code=product_code, category_id=category_id,
         sync_to_scale=sync_to_scale,
         scale_tare=scale_tare, scale_shelf_life=scale_shelf_life,
         scale_pack_qty=scale_pack_qty, scale_open_price=scale_open_price,
@@ -266,6 +284,13 @@ def api_products_update():
 
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
+
+    # Category — explicit id, a name (auto-created), or cleared when both blank
+    if 'category_id' in data or 'category' in data:
+        if data.get('category_id') or data.get('category'):
+            p.category_id = _resolve_category_id(data)
+        else:
+            p.category_id = None
 
     # PLU (product_code) change — requires lifecycle management
     if 'product_code' in data and data['product_code'] is not None:
