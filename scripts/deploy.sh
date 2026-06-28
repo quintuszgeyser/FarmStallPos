@@ -16,6 +16,9 @@ PROJECT="farmpos-docker"          # docker compose project prefix (image name pr
 QA_IMAGE="${PROJECT}-qa-pos:latest"
 PROD_IMAGE="${PROJECT}-pos:latest"
 PROD_PREV_IMAGE="${PROJECT}-pos:previous"
+QA_WEB_IMAGE="${PROJECT}-qa-web:latest"
+PROD_WEB_IMAGE="${PROJECT}-ladycoleen-web:latest"
+PROD_WEB_PREV_IMAGE="${PROJECT}-ladycoleen-web:previous"
 PG_CONTAINER="farmpos-postgres"
 PG_USER="farmstall"
 BACKUP_DIR="$HOME/backups/pre-deploy"
@@ -115,41 +118,69 @@ deploy_qa() {
   # Record the artifact that QA validated, for traceable promotion.
   docker image inspect "$QA_IMAGE" --format '{{.Id}}' > /tmp/qa_image_id.txt 2>/dev/null || true
   echo "[deploy] QA artifact: $QA_IMAGE ($(cat /tmp/qa_image_id.txt 2>/dev/null))"
+
+  echo "[deploy] Deploying QA WEB (qa-web container, port 5101)..."
+  docker rm -f qa-ladycoleen-web 2>/dev/null || true
+  docker compose build --no-cache qa-web
+  docker compose up -d qa-web
+  wait_healthy qa-ladycoleen-web "QA WEB"
+  docker image inspect "$QA_WEB_IMAGE" --format '{{.Id}}' > /tmp/qa_web_image_id.txt 2>/dev/null || true
+  echo "[deploy] QA web artifact: $QA_WEB_IMAGE ($(cat /tmp/qa_web_image_id.txt 2>/dev/null))"
 }
 
-# PROMOTE the exact QA-tested image to prod — no rebuild. Prod == QA functionally, own DB.
+# PROMOTE the exact QA-tested images to prod — no rebuild. Prod == QA functionally, own DB.
+# Promotes BOTH the POS app and the website together.
 deploy_prod() {
-  echo "[deploy] Promoting QA artifact to PROD (no rebuild)..."
+  echo "[deploy] Promoting QA artifacts (POS + WEB) to PROD (no rebuild)..."
   if ! docker image inspect "$QA_IMAGE" >/dev/null 2>&1; then
     echo "[deploy] ERROR: $QA_IMAGE not found — deploy QA first (deploy.sh qa)."; exit 1
+  fi
+  if ! docker image inspect "$QA_WEB_IMAGE" >/dev/null 2>&1; then
+    echo "[deploy] ERROR: $QA_WEB_IMAGE not found — deploy QA first (deploy.sh qa)."; exit 1
   fi
 
   # 1) Pre-deploy DB snapshot (rollback safety net)
   backup_prod_db
 
-  # 2) Save current prod image as :previous for rollback — but ONLY when we're
-  #    actually promoting a DIFFERENT image. A redundant deploy (QA image already
-  #    live on prod) must NOT overwrite :previous, or the real rollback target is lost.
-  local qa_id prod_id
+  # 2) Save current prod images as :previous for rollback — but ONLY when we're
+  #    actually promoting DIFFERENT bits, so a redundant deploy doesn't clobber the
+  #    real rollback target.
+  local qa_id prod_id qaw_id prodw_id
   qa_id=$(docker image inspect "$QA_IMAGE" --format '{{.Id}}' 2>/dev/null)
   prod_id=$(docker image inspect "$PROD_IMAGE" --format '{{.Id}}' 2>/dev/null || echo none)
   if [ "$prod_id" = "none" ]; then
-    echo "[deploy] No existing prod image (first promotion) — no rollback target yet."
+    echo "[deploy] No existing prod POS image (first promotion) — no rollback target yet."
   elif [ "$qa_id" = "$prod_id" ]; then
-    echo "[deploy] QA image already live on prod — nothing new to promote; preserving existing rollback target ($(docker image inspect "$PROD_PREV_IMAGE" --format '{{.Id}}' 2>/dev/null | cut -c1-19))."
+    echo "[deploy] QA POS image already live on prod — preserving existing rollback target."
   else
     docker tag "$PROD_IMAGE" "$PROD_PREV_IMAGE"
-    echo "[deploy] Saved rollback image: $PROD_PREV_IMAGE ($(echo "$prod_id" | cut -c1-19))"
+    echo "[deploy] Saved POS rollback image: $PROD_PREV_IMAGE ($(echo "$prod_id" | cut -c1-19))"
   fi
 
-  # 3) Promote the exact tested bits
+  qaw_id=$(docker image inspect "$QA_WEB_IMAGE" --format '{{.Id}}' 2>/dev/null)
+  prodw_id=$(docker image inspect "$PROD_WEB_IMAGE" --format '{{.Id}}' 2>/dev/null || echo none)
+  if [ "$prodw_id" = "none" ]; then
+    echo "[deploy] No existing prod WEB image (first promotion) — no rollback target yet."
+  elif [ "$qaw_id" = "$prodw_id" ]; then
+    echo "[deploy] QA WEB image already live on prod — preserving existing rollback target."
+  else
+    docker tag "$PROD_WEB_IMAGE" "$PROD_WEB_PREV_IMAGE"
+    echo "[deploy] Saved WEB rollback image: $PROD_WEB_PREV_IMAGE ($(echo "$prodw_id" | cut -c1-19))"
+  fi
+
+  # 3) Promote the exact tested bits (POS + WEB)
   docker tag "$QA_IMAGE" "$PROD_IMAGE"
   echo "[deploy] Promoted $QA_IMAGE -> $PROD_IMAGE ($(docker image inspect "$PROD_IMAGE" --format '{{.Id}}'))"
+  docker tag "$QA_WEB_IMAGE" "$PROD_WEB_IMAGE"
+  echo "[deploy] Promoted $QA_WEB_IMAGE -> $PROD_WEB_IMAGE ($(docker image inspect "$PROD_WEB_IMAGE" --format '{{.Id}}'))"
 
-  # 4) Restart prod from the promoted image (no build). Startup migration runs against farm_pos_prod.
+  # 4) Restart prod from the promoted images (no build). Startup migration runs against farm_pos_prod.
   docker rm -f farmpos-app 2>/dev/null || true
   docker compose up -d --no-build pos
   wait_healthy farmpos-app "PROD POS"
+  docker rm -f ladycoleen-web 2>/dev/null || true
+  docker compose up -d --no-build ladycoleen-web
+  wait_healthy ladycoleen-web "PROD WEB"
 
   # 5) Post-deploy parity gate — fail loudly on drift so it shows in the Deploy tab
   schema_parity_check || PARITY_FAIL=1
