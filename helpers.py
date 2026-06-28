@@ -11,6 +11,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta
 
 from flask import session
+from sqlalchemy import func
 from werkzeug.security import generate_password_hash
 
 from models import (
@@ -18,7 +19,7 @@ from models import (
     User, UserSession, Setting,
     Product, ProductImage, RecipeLine, Category,
     StockBatch, StockConsumption,
-    Sale,
+    Sale, Purchase,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 
@@ -436,6 +437,14 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
             p.low_stock_threshold is not None and
             d['stock_level'] < float(p.low_stock_threshold)
         )
+    if p.product_type == 'simple':
+        # Weighted-average purchase cost per unit — lets the product page show
+        # margin/markup for resale goods (no stock batches, costed from purchases).
+        total_value, total_qty = db.session.query(
+            func.coalesce(func.sum(Purchase.qty_added * Purchase.purchase_price), 0),
+            func.coalesce(func.sum(Purchase.qty_added), 0),
+        ).filter(Purchase.product_id == p.id).one()
+        d['unit_cost'] = float(total_value) / float(total_qty) if total_qty else None
     if include_recipe and p.product_type in ('recipe',):
         lines = RecipeLine.query.filter_by(product_id=p.id).all()
         d['recipe_lines'] = []

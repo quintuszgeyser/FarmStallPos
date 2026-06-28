@@ -440,7 +440,7 @@ function renderProductDropdown() {
       const opt  = document.createElement('option');
       opt.value  = String(p.id);
       const label = p.sold_by_weight
-        ? `${p.name} (by ${p.base_unit || 'weight'})`
+        ? `${p.name} — PLU ${p.product_code ?? '—'} (by ${p.base_unit || 'weight'})`
         : `${p.name} — R${fmt(p.price || 0)}`;
       opt.textContent = label;
       sel.appendChild(opt);
@@ -1593,8 +1593,13 @@ function calcProductMargins(p) {
   } else if (p.product_type === 'recipe') {
     cost  = getIngredientCost(p.id, 1);
     price = parseFloat(p.price);
+  } else if (p.product_type === 'simple') {
+    // Resale goods — cost is the weighted-average purchase cost from the API
+    if (p.unit_cost == null) return null;
+    cost  = parseFloat(p.unit_cost);
+    price = parseFloat(p.price);
   } else {
-    return null; // simple products have no COGS
+    return null;
   }
 
   if (!cost || !price || isNaN(cost) || isNaN(price) || cost <= 0 || price <= 0) return null;
@@ -3565,6 +3570,18 @@ function openWeightModal(p) {
   document.getElementById('weight-modal-title').textContent = p.name;
   document.getElementById('weight-qty').value                = '';
   document.getElementById('weight-price-preview').textContent = '';
+
+  // Show the PLU the teller must key into the scale for this weighed product
+  const pluCallout = document.getElementById('weight-plu-callout');
+  const pluNumber  = document.getElementById('weight-plu-number');
+  if (pluCallout && pluNumber) {
+    if (p.product_code != null) {
+      pluNumber.textContent = p.product_code;
+      pluCallout.classList.remove('d-none');
+    } else {
+      pluCallout.classList.add('d-none');
+    }
+  }
 
   const unitSel = document.getElementById('weight-unit');
   unitSel.innerHTML = '';
