@@ -64,6 +64,10 @@ def send_email(to: str, subject: str, template: str, **ctx):
         log.warning("SMTP not configured — skipping email to %s (subject: %s)", to, subject)
         return
 
+    # Make the environment's public base URL available to every email template so
+    # order/track/admin links resolve to the right site (prod vs QA), not a 404.
+    ctx.setdefault("site_url", (cfg.get("SITE_URL") or "https://ladycoleen.co.za").rstrip("/"))
+
     try:
         html_body = render_template(f"email/{template}.html", **ctx)
     except Exception as e:
