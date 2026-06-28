@@ -1,10 +1,12 @@
+import os
+import uuid
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
 from helpers import require_login, require_role, current_user, _gen_barcode
-from models import db, Supplier, StockBatch, Product
+from models import db, Supplier, StockBatch, Product, SupplierDocument
 
 bp = Blueprint('suppliers', __name__)
 
@@ -210,3 +212,90 @@ def api_suppliers_purchase_run(sid):
         'created_products': created_products,
         'batches_created':  batches_created,
     })
+
+
+_ALLOWED_DOC_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt'}
+_MAX_DOC_SIZE = 20 * 1024 * 1024  # 20 MB
+
+
+def _doc_dir():
+    d = os.path.join(current_app.static_folder, 'supplier_docs')
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+@bp.route('/api/suppliers/<int:sid>/documents', methods=['GET'])
+def api_supplier_docs_list(sid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    s = db.session.get(Supplier, sid)
+    if not s:
+        return jsonify({'error': 'Not found'}), 404
+    docs = SupplierDocument.query.filter_by(supplier_id=sid).order_by(SupplierDocument.uploaded_at.desc()).all()
+    return jsonify([{
+        'id': d.id,
+        'original_name': d.original_name,
+        'filename': d.filename,
+        'uploaded_at': d.uploaded_at.date().isoformat() if d.uploaded_at else None,
+    } for d in docs])
+
+
+@bp.route('/api/suppliers/<int:sid>/documents', methods=['POST'])
+def api_supplier_docs_upload(sid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    s = db.session.get(Supplier, sid)
+    if not s:
+        return jsonify({'error': 'Not found'}), 404
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({'error': 'No file provided'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in _ALLOWED_DOC_EXTENSIONS:
+        return jsonify({'error': f'File type {ext} not allowed'}), 400
+    content = f.read()
+    if len(content) > _MAX_DOC_SIZE:
+        return jsonify({'error': 'File too large (max 20 MB)'}), 400
+    stored_name = f'{uuid.uuid4().hex}{ext}'
+    path = os.path.join(_doc_dir(), stored_name)
+    with open(path, 'wb') as fh:
+        fh.write(content)
+    u = current_user()
+    doc = SupplierDocument(
+        supplier_id=sid,
+        filename=stored_name,
+        original_name=f.filename,
+        uploaded_by=u.id if u else None,
+    )
+    db.session.add(doc)
+    db.session.commit()
+    return jsonify({'ok': True, 'id': doc.id, 'original_name': doc.original_name,
+                    'filename': doc.filename, 'uploaded_at': doc.uploaded_at.date().isoformat()})
+
+
+@bp.route('/api/suppliers/<int:sid>/documents/<int:did>/download', methods=['GET'])
+def api_supplier_docs_download(sid, did):
+    if not require_role('admin'):
+        abort(403)
+    doc = db.session.get(SupplierDocument, did)
+    if not doc or doc.supplier_id != sid:
+        abort(404)
+    return send_from_directory(_doc_dir(), doc.filename, as_attachment=True,
+                               download_name=doc.original_name)
+
+
+@bp.route('/api/suppliers/<int:sid>/documents/<int:did>', methods=['DELETE'])
+def api_supplier_docs_delete(sid, did):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    doc = db.session.get(SupplierDocument, did)
+    if not doc or doc.supplier_id != sid:
+        return jsonify({'error': 'Not found'}), 404
+    path = os.path.join(_doc_dir(), doc.filename)
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+    db.session.delete(doc)
+    db.session.commit()
+    return jsonify({'ok': True})

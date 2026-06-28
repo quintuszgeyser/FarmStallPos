@@ -2747,7 +2747,58 @@ function openSupplierDetail(supplier) {
   document.getElementById('supplier-detail-contact').innerHTML = rows || '<span class="text-muted small">No contact details</span>';
 
   loadSupplierProducts(supplier.id);
+  loadSupplierDocs(supplier.id);
 }
+
+async function loadSupplierDocs(sid) {
+  const host = document.getElementById('supplier-docs-list');
+  if (!host) return;
+  host.innerHTML = '<div class="list-group-item text-muted small">Loading...</div>';
+  try {
+    const docs = await api(`/api/suppliers/${sid}/documents`);
+    if (!docs.length) {
+      host.innerHTML = '<div class="list-group-item text-muted small">No documents yet.</div>';
+      return;
+    }
+    host.innerHTML = docs.map(d => `
+      <div class="list-group-item d-flex align-items-center gap-2 py-1 px-2" data-doc-id="${d.id}">
+        <span class="small flex-fill text-truncate" title="${escapeHtml(d.original_name)}">${escapeHtml(d.original_name)}</span>
+        <span class="small text-muted">${d.uploaded_at || ''}</span>
+        <a href="/api/suppliers/${sid}/documents/${d.id}/download" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Download">⬇</a>
+        <button class="btn btn-outline-danger btn-sm py-0 px-1 btn-doc-delete" data-doc-id="${d.id}" title="Delete">✕</button>
+      </div>`).join('');
+    host.querySelectorAll('.btn-doc-delete').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this document?')) return;
+        const did = btn.dataset.docId;
+        await api(`/api/suppliers/${sid}/documents/${did}`, { method: 'DELETE' });
+        loadSupplierDocs(sid);
+      });
+    });
+  } catch (e) {
+    host.innerHTML = '<div class="list-group-item text-danger small">Failed to load documents.</div>';
+  }
+}
+
+document.getElementById('supplier-doc-upload-input')?.addEventListener('change', async function () {
+  const file = this.files[0];
+  if (!file || !_currentSupplier) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  this.value = '';
+  try {
+    const res = await fetch(`/api/suppliers/${_currentSupplier.id}/documents`, { method: 'POST', body: fd, credentials: 'same-origin' });
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      toast(j.error || 'Upload failed', 'error');
+      return;
+    }
+    loadSupplierDocs(_currentSupplier.id);
+    toast('Document uploaded', 'success');
+  } catch (e) {
+    toast('Upload failed', 'error');
+  }
+});
 
 async function loadSupplierProducts(sid) {
   const host = document.getElementById('supplier-products-list');

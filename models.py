@@ -211,6 +211,16 @@ class Supplier(db.Model):
     notes   = db.Column(db.String(500), nullable=True)
 
 
+class SupplierDocument(db.Model):
+    __tablename__ = 'supplier_documents'
+    id           = db.Column(db.Integer, primary_key=True)
+    supplier_id  = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False)
+    filename     = db.Column(db.String(200), nullable=False)   # stored filename on disk
+    original_name = db.Column(db.String(200), nullable=False)  # original upload name
+    uploaded_at  = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    uploaded_by  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
 class RecipeLine(db.Model):
     __tablename__ = 'recipe_lines'
     id            = db.Column(db.Integer, primary_key=True)

@@ -202,6 +202,17 @@ def strong_migrate():
             )""")
 
             conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS supplier_documents (
+              id            INTEGER PRIMARY KEY AUTOINCREMENT,
+              supplier_id   INTEGER NOT NULL REFERENCES suppliers(id),
+              filename      TEXT NOT NULL,
+              original_name TEXT NOT NULL,
+              uploaded_at   TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              uploaded_by   INTEGER
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_supplier_docs_supplier ON supplier_documents (supplier_id)")
+
+            conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS recipe_lines (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               product_id INTEGER NOT NULL,
@@ -586,6 +597,17 @@ def strong_migrate():
             pg_try("ALTER TABLE suppliers ADD COLUMN email   VARCHAR(120)")
             pg_try("ALTER TABLE suppliers ADD COLUMN website VARCHAR(200)")
             pg_try("UPDATE suppliers SET phone = contact WHERE contact IS NOT NULL AND email IS NULL AND website IS NULL")
+
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS supplier_documents (
+              id            SERIAL PRIMARY KEY,
+              supplier_id   INTEGER NOT NULL REFERENCES suppliers(id),
+              filename      VARCHAR(200) NOT NULL,
+              original_name VARCHAR(200) NOT NULL,
+              uploaded_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              uploaded_by   INTEGER REFERENCES users(id)
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_supplier_docs_supplier ON supplier_documents (supplier_id)")
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS recipe_lines (
