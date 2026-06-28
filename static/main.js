@@ -1585,7 +1585,8 @@ function calcProductMargins(p) {
       price = parseFloat(p.price_per_unit);
     } else {
       // Sold per package — cost is costPerBase × package_size (stored in base units)
-      const pkgBase = parseFloat(p.package_size);
+      // Count products (unit_type=count, base_unit=unit) have package_size=1 implicitly
+      const pkgBase = parseFloat(p.package_size) || (p.unit_type === 'count' ? 1 : null);
       if (!pkgBase) return null;
       cost  = costPerBase * pkgBase;
       price = parseFloat(p.price);
