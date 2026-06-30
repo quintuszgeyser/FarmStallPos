@@ -5545,7 +5545,7 @@ async function _updateScaleBanner() {
 
 async function loadScaleTab() {
   await _updateScaleBanner();
-  await loadScaleStatus();
+  await Promise.all([loadScaleStatus(), loadScaleSyncSource()]);
 }
 
 async function loadScaleStatus() {
@@ -5761,6 +5761,39 @@ async function scaleForceResync() {
     toast(`Marked ${d.products_marked} products for resync`, 'success');
     loadScaleStatus();
   } catch (e) { toast('Force resync failed: ' + e.message, 'danger'); }
+}
+
+async function loadScaleSyncSource() {
+  try {
+    const d = await api('/api/scale/sync-source');
+    _applyScaleSyncSource(d.source);
+  } catch (e) { console.warn('Could not load sync source', e); }
+}
+
+function _applyScaleSyncSource(source) {
+  const labels = { prod: 'Syncing from PROD', qa: 'Syncing from QA', none: 'Sync disabled' };
+  const note = { prod: 'Scale receives live product data', qa: 'Scale receives QA test data', none: 'Scale sync is paused' };
+  document.getElementById('sync-source-note').textContent = note[source] || '';
+  ['prod','qa','none'].forEach(s => {
+    const btn = document.getElementById(`sync-src-${s}`);
+    if (!btn) return;
+    btn.classList.toggle('active', s === source);
+    if (s === source) {
+      btn.classList.remove('btn-outline-success','btn-outline-primary','btn-outline-secondary');
+      btn.classList.add(s === 'prod' ? 'btn-success' : s === 'qa' ? 'btn-primary' : 'btn-secondary');
+    } else {
+      btn.classList.remove('btn-success','btn-primary','btn-secondary');
+      btn.classList.add(s === 'prod' ? 'btn-outline-success' : s === 'qa' ? 'btn-outline-primary' : 'btn-outline-secondary');
+    }
+  });
+}
+
+async function setScaleSyncSource(source) {
+  try {
+    const d = await api('/api/scale/sync-source', {method:'POST', body: JSON.stringify({source})});
+    _applyScaleSyncSource(d.source);
+    toast(`Scale sync source set to: ${source.toUpperCase()}`, 'success');
+  } catch (e) { toast('Failed to set sync source: ' + e.message, 'danger'); }
 }
 
 // Load sync runs when that tab is clicked

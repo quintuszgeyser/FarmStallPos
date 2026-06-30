@@ -17,16 +17,36 @@ Scale is a downstream cache. This blueprint provides:
 """
 import hashlib
 import json
+import os
 import socket
 import logging
 import struct
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
+from pathlib import Path
 
 from flask import Blueprint, jsonify, request
 
 from helpers import require_role, get_setting
 from models import db, Product, ScaleSyncRun, ScaleSnapshot, ScaleKeyboardPreset, ScaleAdvertMessage
+
+SYNC_SOURCE_FILE = Path(os.environ.get('SCALE_DATA_DIR', '/scale_data')) / 'sync_source.json'
+
+
+def _read_sync_source() -> str:
+    try:
+        data = json.loads(SYNC_SOURCE_FILE.read_text())
+        src = data.get('source', 'prod')
+        if src in ('prod', 'qa', 'none'):
+            return src
+    except Exception:
+        pass
+    return 'prod'
+
+
+def _write_sync_source(source: str):
+    SYNC_SOURCE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    SYNC_SOURCE_FILE.write_text(json.dumps({'source': source}))
 
 logger = logging.getLogger('scale_bp')
 bp = Blueprint('scale', __name__)
@@ -366,6 +386,28 @@ def api_scale_force_resync():
     count = Product.query.filter_by(sync_to_scale=True).update({'scale_hash': None})
     db.session.commit()
     return jsonify({'ok': True, 'products_marked': count})
+
+
+@bp.route('/api/scale/sync-source', methods=['GET'])
+def api_scale_sync_source_get():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    return jsonify({'source': _read_sync_source()})
+
+
+@bp.route('/api/scale/sync-source', methods=['POST'])
+def api_scale_sync_source_set():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json() or {}
+    source = data.get('source')
+    if source not in ('prod', 'qa', 'none'):
+        return jsonify({'error': 'source must be prod, qa, or none'}), 400
+    try:
+        _write_sync_source(source)
+        return jsonify({'ok': True, 'source': source})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
