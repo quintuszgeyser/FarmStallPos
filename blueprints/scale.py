@@ -268,7 +268,7 @@ def _scale_delete_plu(ip, port, plu_no: int) -> dict:
 
 @bp.route('/api/scale/status')
 def api_scale_status():
-    if not require_role('admin'):
+    if not require_role('admin', 'teller'):
         return jsonify({'error': 'Forbidden'}), 403
 
     cfg = _get_scale_config()
