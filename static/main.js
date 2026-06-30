@@ -5589,9 +5589,9 @@ async function loadScaleStatus() {
         <td>${p.scale_tare || 0}g</td>
         <td>${p.scale_shelf_life || 0}d</td>
         <td>${badge}</td>
-        <td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : 'Never'}</td>
+        ${isAdmin() ? `<td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : 'Never'}</td>
         <td class="small text-danger">${p.validation_error || p.last_sync_error || ''}</td>
-        <td><button class="btn btn-outline-secondary btn-sm" onclick="scaleProductSync(${p.id})" title="Queue for sync">↑</button></td>
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="scaleProductSync(${p.id})" title="Queue for sync">↑</button></td>` : ''}
       </tr>`;
     }).join('');
   } catch (e) { toast('Scale status error: ' + e.message, 'danger'); }

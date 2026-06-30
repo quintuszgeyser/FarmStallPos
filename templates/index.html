@@ -466,7 +466,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Configuration</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>
-    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleStatus()">&#9878; Scale</button></li>
+    <li class="nav-item pos-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()">&#9878; Scale</button></li>
     {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()">🚀 Deploy</button></li>{% endif %}
   </ul>
 
@@ -1359,14 +1359,14 @@
         <span>Pending: <strong id="scale-pending-count">—</strong></span>
         <span>Errors: <strong id="scale-error-count">—</strong></span>
         <span>Last run: <strong id="scale-last-run">—</strong></span>
-        <div class="ms-auto d-flex gap-2">
+        <div class="ms-auto d-flex gap-2 admin-only">
           <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleTab()">↺ Refresh</button>
           <button class="btn btn-outline-primary btn-sm" onclick="scaleTestConnection()">Test Connection</button>
         </div>
       </div>
 
       <!-- Sync source control -->
-      <div class="card mb-3 border-warning">
+      <div class="card mb-3 border-warning admin-only">
         <div class="card-body py-2 px-3 d-flex align-items-center gap-3 flex-wrap">
           <span class="fw-semibold text-warning-emphasis">Scale Sync Source:</span>
           <div class="btn-group btn-group-sm" role="group" id="sync-source-btns">
@@ -1381,10 +1381,10 @@
       <!-- Sub-tabs -->
       <ul class="nav nav-tabs mb-3" id="scale-sub-tabs">
         <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#scale-tab-products" onclick="loadScaleStatus()">Products</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-contents" onclick="loadScaleContents()">Scale Contents</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-keyboard" onclick="loadScaleKeyboard()">Keyboard Presets</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-adverts" onclick="loadScaleAdverts()">Advertisements</a></li>
-        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-runs">Sync Runs</a></li>
+        <li class="nav-item admin-only"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-contents" onclick="loadScaleContents()">Scale Contents</a></li>
+        <li class="nav-item admin-only"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-keyboard" onclick="loadScaleKeyboard()">Keyboard Presets</a></li>
+        <li class="nav-item admin-only"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-adverts" onclick="loadScaleAdverts()">Advertisements</a></li>
+        <li class="nav-item admin-only"><a class="nav-link" data-bs-toggle="tab" href="#scale-tab-runs">Sync Runs</a></li>
       </ul>
 
       <div class="tab-content">
@@ -1393,7 +1393,7 @@
         <div class="tab-pane fade show active" id="scale-tab-products">
           <div class="d-flex justify-content-between align-items-center mb-2">
             <h6 class="mb-0">Products marked for scale sync</h6>
-            <div class="d-flex gap-2">
+            <div class="d-flex gap-2 admin-only">
               <button class="btn btn-outline-warning btn-sm" onclick="scalePreview()">Preview</button>
               <button class="btn btn-success btn-sm" onclick="scaleForceResync()">⟳ Force Full Resync</button>
             </div>
@@ -1403,7 +1403,7 @@
           </div>
           <table class="table table-sm table-hover">
             <thead class="table-light">
-              <tr><th>PLU</th><th>Name</th><th>Price</th><th>Tare</th><th>Shelf Life</th><th>Status</th><th>Last Synced</th><th>Error</th><th></th></tr>
+              <tr><th>PLU</th><th>Name</th><th>Price</th><th>Tare</th><th>Shelf Life</th><th>Status</th><th class="admin-only">Last Synced</th><th class="admin-only">Error</th><th class="admin-only"></th></tr>
             </thead>
             <tbody id="scale-products-body"></tbody>
           </table>
@@ -2496,6 +2496,6 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260630g"></script>
+<script src="/static/main.js?v=20260630h"></script>
 </body>
 </html>
