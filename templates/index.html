@@ -470,13 +470,14 @@
     {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()">🚀 Deploy</button></li>{% endif %}
   </ul>
 
+  <!-- Global barcode trap: outside tab panes so it stays focusable on any tab -->
+  <input id="barcode-trap" inputmode="none" autocomplete="off" autocorrect="off"
+         style="position:fixed;opacity:0;width:1px;height:1px;pointer-events:none;top:0;left:0">
+
   <div id="tab-contents" class="tab-content hidden mt-3">
 
     <!-- ═══════════════ TELLER ═══════════════ -->
     <div class="tab-pane fade show active" id="teller">
-      <!-- Hidden input that stays focused on mobile to catch Bluetooth scanner input -->
-      <input id="barcode-trap" inputmode="none" autocomplete="off" autocorrect="off"
-             style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none;top:0;left:0">
       <div id="teller-screen" class="container-fluid p-0">
         <div class="teller-toolbar">
           <div class="row g-2">
