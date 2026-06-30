@@ -3786,11 +3786,13 @@ function handleScannedCode(code) {
 
 let _scanBuffer = '', _scanBufferTimer = null;
 
-// Barcode trap: hidden input that stays focused globally so HID scanners on mobile
-// can add to cart from any tab without the user needing to tap an input field first.
+// Barcode trap: hidden input kept focused on the Teller tab for HID scanner input.
+// On other tabs the global keydown handler catches scanner events directly.
 function _focusTrap() {
   const trap = document.getElementById('barcode-trap');
   if (!trap || !STATE.user) return;
+  const active = document.querySelector('.tab-pane.active');
+  if (!active || active.id !== 'teller') return;
   // Don't steal focus from inputs the user intentionally tapped
   const tag = document.activeElement?.tagName;
   if (['INPUT','TEXTAREA','SELECT'].includes(tag) && document.activeElement.id !== 'barcode-trap') return;
@@ -3815,12 +3817,6 @@ document.getElementById('barcode-trap')?.addEventListener('keydown', (e) => {
 // Re-focus trap when user taps anywhere on the teller screen (not on an input)
 document.getElementById('teller-screen')?.addEventListener('click', _focusTrap);
 document.getElementById('teller-screen')?.addEventListener('touchend', _focusTrap);
-
-// Re-focus trap on any tap outside an input on any tab (keeps HID scanner active globally)
-document.addEventListener('pointerup', (e) => {
-  const tag = e.target?.tagName;
-  if (!['INPUT','TEXTAREA','SELECT'].includes(tag)) setTimeout(_focusTrap, 80);
-});
 
 // Re-focus trap when search field is cleared/blurred (user finished manual search)
 document.getElementById('search')?.addEventListener('blur', () => setTimeout(_focusTrap, 100));
@@ -6091,7 +6087,6 @@ document.getElementById('btn-kitchen-history')?.addEventListener('click', async 
 document.addEventListener('shown.bs.tab', async (evt) => {
   const target = evt.target?.getAttribute('data-bs-target');
   if (!target || !STATE.user) return;
-  setTimeout(_focusTrap, 200);  // keep scanner trap focused on every tab
 
   // Stop kitchen auto-refresh when leaving kitchen tab
   if (target !== '#kitchen' && _kitchenRefreshTimer) {
