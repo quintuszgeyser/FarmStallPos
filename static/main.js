@@ -3904,8 +3904,11 @@ document.getElementById('btn-stop-scan')?.addEventListener('click',  stopScanner
 // ═══════════════════════════════════════════════════════
 // WEB SERIAL / BLE SCANNER
 // ═══════════════════════════════════════════════════════
-const _NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-const _NUS_TX_CHAR = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+const _NUS_SERVICE  = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';  // Nordic UART
+const _NUS_TX_CHAR  = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+// HM-10 / HC-08 style (common on budget scanners)
+const _HM10_SERVICE = '0000ffe0-0000-1000-8000-00805f9b34fb';
+const _HM10_CHAR    = '0000ffe1-0000-1000-8000-00805f9b34fb';
 
 let SERIAL = {
   connected: false,
@@ -3998,14 +4001,24 @@ function _onBLEDisconnect() {
 }
 
 async function _connectWebBluetooth() {
+  // Accept all BLE devices — budget scanners use various UART service UUIDs
   const device = await navigator.bluetooth.requestDevice({
-    filters: [{ services: [_NUS_SERVICE] }],
-    optionalServices: [_NUS_SERVICE]
+    acceptAllDevices: true,
+    optionalServices: [_NUS_SERVICE, _HM10_SERVICE]
   });
   device.addEventListener('gattserverdisconnected', _onBLEDisconnect);
   const server = await device.gatt.connect();
-  const service = await server.getPrimaryService(_NUS_SERVICE);
-  const char = await service.getCharacteristic(_NUS_TX_CHAR);
+
+  // Try Nordic UART first, then HM-10 style
+  let char = null;
+  try {
+    const svc = await server.getPrimaryService(_NUS_SERVICE);
+    char = await svc.getCharacteristic(_NUS_TX_CHAR);
+  } catch {
+    const svc = await server.getPrimaryService(_HM10_SERVICE);
+    char = await svc.getCharacteristic(_HM10_CHAR);
+  }
+
   SERIAL.device = device;
   SERIAL.characteristic = char;
   SERIAL.type = 'webbluetooth';
