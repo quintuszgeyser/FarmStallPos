@@ -3922,9 +3922,8 @@ let SERIAL = {
 
 function initSerialSupport() {
   if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
-  if (!navigator.serial && !navigator.bluetooth) return;
   const btn = document.getElementById('btn-connect-scanner');
-  if (btn) btn.style.display = '';
+  if (btn) btn.style.display = '';  // always show — error on click if APIs unavailable
 }
 
 function _setScannerDot(state, label) {
@@ -4052,6 +4051,10 @@ async function disconnectScanner() {
 
 async function connectScanner() {
   if (SERIAL.connected) { await disconnectScanner(); return; }
+  if (!navigator.serial && !navigator.bluetooth) {
+    toast('Bluetooth/Serial not supported in this browser. Open the POS in Chrome for scanner support.', 'warning', 6000);
+    return;
+  }
   _setScannerDot('connecting');
   if (navigator.serial) {
     try { await _connectWebSerial(); return; } catch (e) {
