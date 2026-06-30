@@ -3772,6 +3772,7 @@ function handleScannedCode(code) {
       detectAndOfferSpecials();
       beep(80, 880); flashOK();
       toast(`Added: ${label} — R${fmt(total)}`, 'success', 1500);
+      _releaseScanFocus();
       return true;
     }
   }
@@ -3779,9 +3780,20 @@ function handleScannedCode(code) {
   const p = STATE.products.find(x => x.barcode === code)
          || STATE.products.find(x => String(x.id) === code)
          || STATE.products.find(x => x.name.toLowerCase() === code.toLowerCase());
-  if (p) { beep(80, 880); flashOK(); addToCart(p); return true; }
+  if (p) { beep(80, 880); flashOK(); addToCart(p); _releaseScanFocus(); return true; }
   toast(`Barcode not found: ${code}`, 'warning');
   return false;
+}
+
+// After a scan on non-teller tabs, blur any input that grabbed focus so the next
+// scan is caught by the global keydown handler without needing a tap first.
+function _releaseScanFocus() {
+  const active = document.querySelector('.tab-pane.active');
+  if (!active || active.id === 'teller') return;
+  setTimeout(() => {
+    const el = document.activeElement;
+    if (el && ['INPUT','TEXTAREA','SELECT'].includes(el.tagName)) el.blur();
+  }, 200);
 }
 
 let _scanBuffer = '', _scanBufferTimer = null;
