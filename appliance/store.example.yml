@@ -31,6 +31,12 @@ backup:
   target: ""          # e.g. "b2:farmpos-backups"
   time: "02:00"
 
+# Tailscale remote access. Get a reusable auth key from tailscale.com/admin/settings/keys.
+# The box joins as farmpos-<store_id> so you can SSH it from anywhere via Tailscale.
+tailscale:
+  enabled: false
+  auth_key: ""   # tskey-auth-...
+
 # Where fleet-health heartbeats POST (blank = monitoring not wired yet).
 control_center_url: ""
 

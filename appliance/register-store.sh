@@ -40,16 +40,18 @@ if [ ! -f "$STORE_YML" ]; then
     read -rp "Store ID (kebab-case, e.g. boer-and-butcher): " IN_ID
     read -rp "Store display name: " IN_NAME
     read -rp "Scale IP (blank = no scale): " IN_SCALE
-    read -rp "Image version tag [v2.1.0]: " IN_VER
+    read -rp "Image version tag [v2.1.2]: " IN_VER
+    read -rp "Tailscale auth key (tskey-auth-..., blank = skip): " IN_TS_KEY
     cp "$HERE/store.example.yml" "$STORE_YML"
-    python3 - "$STORE_YML" "$IN_ID" "$IN_NAME" "${IN_SCALE:-}" "${IN_VER:-v2.1.0}" <<'PY'
+    python3 - "$STORE_YML" "$IN_ID" "$IN_NAME" "${IN_SCALE:-}" "${IN_VER:-v2.1.2}" "${IN_TS_KEY:-}" <<'PY'
 import sys, yaml
-f, sid, name, scale, ver = sys.argv[1:6]
+f, sid, name, scale, ver, ts_key = sys.argv[1:7]
 d = yaml.safe_load(open(f))
 d['store_id'] = sid; d['store_name'] = name
 d['store_tagline'] = name; d['store_legal'] = name; d['store_subtitle'] = ''
 d['farmpos_version'] = ver
 d['scale'] = {'enabled': bool(scale), 'ip': scale, 'port': 7061}
+d['tailscale'] = {'enabled': bool(ts_key), 'auth_key': ts_key}
 yaml.safe_dump(d, open(f,'w'), sort_keys=False)
 PY
   else
@@ -108,6 +110,33 @@ else
   c_red "      Generate it on your support machine and commit it (see support_age.pub.example)."
 fi
 
+# --- 2c. Tailscale (install + join if configured in store.yml) ------------------
+TS_ENABLED="$(yaml_get "$STORE_YML" tailscale.enabled)"
+TS_AUTH_KEY="$(yaml_get "$STORE_YML" tailscale.auth_key)"
+if [ "$TS_ENABLED" = "True" ] || [ "$TS_ENABLED" = "true" ]; then
+  if ! command -v tailscale >/dev/null 2>&1; then
+    c_bold "Installing Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+  fi
+  # Only join if not already connected
+  if ! tailscale status >/dev/null 2>&1 || tailscale status | grep -q 'not logged in'; then
+    if [ -n "$TS_AUTH_KEY" ]; then
+      c_bold "Joining Tailscale network as farmpos-${STORE_ID}..."
+      tailscale up --authkey "$TS_AUTH_KEY" --hostname "farmpos-${STORE_ID}" --accept-routes
+      c_green "Tailscale: connected as farmpos-${STORE_ID}"
+      tailscale ip -4 2>/dev/null | xargs -I{} c_green "Tailscale IP: {}"
+    else
+      c_red "WARN: tailscale.enabled=true but no auth_key in store.yml - skipping Tailscale join."
+      c_red "      Get a key from tailscale.com/admin/settings/keys and re-run register-store.sh."
+    fi
+  else
+    c_green "Tailscale already connected - skipping join."
+    tailscale ip -4 2>/dev/null | xargs -I{} c_green "Tailscale IP: {}"
+  fi
+else
+  c_bold "Tailscale: not configured (set tailscale.enabled + auth_key in store.yml to enable)."
+fi
+
 # --- 3. Render .env + compose + init --------------------------------------------
 export STORE_ID STORE_NAME STORE_TAGLINE STORE_LEGAL STORE_SUBTITLE TZ \
        FARMPOS_VERSION POS_IMAGE POSTGRES_PASSWORD POSTGRES_PASSWORD_URLENC \
@@ -160,6 +189,8 @@ c_green " READY - $STORE_NAME is trading."
 c_green "   POS:      http://${LAN_IP:-<lan-ip>}:5000"
 c_green "   Admin:    admin  /  $ADMIN_PASS   (change on first login)"
 [ -n "$SCALE_IP" ] && c_green "   Scale:    $SCALE_IP:$SCALE_PORT"
+TS_IP="$(tailscale ip -4 2>/dev/null || true)"
+[ -n "$TS_IP" ] && c_green "   Tailscale: $TS_IP  (ssh farmtest@$TS_IP)"
 c_green "   Secrets:  $SECRETS_DIR (mode 600 - back these up)"
 c_green "================================================================"
 if [ "${KEY_JUST_MADE:-0}" = "1" ]; then
