@@ -8,6 +8,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/doodle.css">
+  {# Runtime website branding: derive the whole palette from ONE chosen colour. Only
+     emitted when set (else the default Lady Coleen look). web_primary is pre-validated hex. #}
+  {% if web_primary %}
+  <style>
+    :root {
+      --lc-gold:        {{ web_primary }};
+      --lc-gold-hover:  color-mix(in srgb, {{ web_primary }} 78%, #000);
+      --lc-gold-border: color-mix(in srgb, {{ web_primary }} 65%, #fff);
+      --lc-gold-light:  color-mix(in srgb, {{ web_primary }} 12%, #fff);
+      --on-primary:     {{ web_on_primary }};
+      {% if web_font %}--dd-font: '{{ web_font }}', system-ui, sans-serif;{% endif %}
+    }
+    .lc-btn-primary { color: var(--on-primary, #fff); }
+  </style>
+  {% elif web_font %}
+  <style>:root { --dd-font: '{{ web_font }}', system-ui, sans-serif; }</style>
+  {% endif %}
   {% block head %}{% endblock %}
 </head>
 <body>

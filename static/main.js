@@ -8224,30 +8224,57 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
 
     // Branding (white-label)
     const _bset = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    _brandFillFontSelects();
+    _bset('brand-store-name', s.branding_store_name);
     _bset('brand-primary-hex', s.branding_primary);
-    if (s.branding_primary && /^#[0-9a-fA-F]{6}$/.test(s.branding_primary)) {
-      const p = document.getElementById('brand-primary-picker'); if (p) p.value = s.branding_primary;
-    }
-    _bset('brand-font', s.branding_font);
+    _bset('brand-font', s.branding_font || 'Nunito');
     _bset('brand-invoice-legal', s.branding_invoice_legal);
     _bset('brand-invoice-subtitle', s.branding_invoice_subtitle);
     _bset('brand-invoice-footer', s.branding_invoice_footer);
+    _bset('web-primary-hex', s.web_branding_primary);
+    _bset('web-font', s.web_branding_font || 'Nunito');
+    // sync the two colour pickers to their hex fields
+    for (const [pick, hex] of [['brand-primary-picker','brand-primary-hex'],['web-primary-picker','web-primary-hex']]) {
+      const hv = document.getElementById(hex)?.value;
+      if (hv && /^#[0-9a-fA-F]{6}$/.test(hv)) { const p = document.getElementById(pick); if (p) p.value = hv; }
+    }
   } catch(e) { console.error('loadConfigSettings', e); }
 });
 
-// Colour picker mirrors into the hex field (live)
+// Font <select> options rendered IN their own font so the owner sees a live sample.
+const _BRAND_FONTS = ['Nunito','Arial','Helvetica','Verdana','Tahoma','Georgia','Times New Roman','Courier New','system-ui'];
+function _brandFillFontSelects() {
+  for (const id of ['brand-font','web-font']) {
+    const sel = document.getElementById(id);
+    if (!sel || sel.options.length) continue;   // fill once
+    for (const f of _BRAND_FONTS) {
+      const o = document.createElement('option');
+      o.value = f; o.textContent = f; o.style.fontFamily = "'" + f + "'";
+      sel.appendChild(o);
+    }
+  }
+}
+
+// Colour pickers mirror into their hex fields (live)
 document.getElementById('brand-primary-picker')?.addEventListener('input', (e) => {
   const hex = document.getElementById('brand-primary-hex'); if (hex) hex.value = e.target.value;
 });
+document.getElementById('web-primary-picker')?.addEventListener('input', (e) => {
+  const hex = document.getElementById('web-primary-hex'); if (hex) hex.value = e.target.value;
+});
 
 document.getElementById('btn-save-branding')?.addEventListener('click', async () => {
+  const _v = id => (document.getElementById(id)?.value || '').trim();
   try {
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
-      branding_primary:           (document.getElementById('brand-primary-hex')?.value || '').trim(),
-      branding_font:              (document.getElementById('brand-font')?.value || '').trim(),
-      branding_invoice_legal:     (document.getElementById('brand-invoice-legal')?.value || '').trim(),
-      branding_invoice_subtitle:  (document.getElementById('brand-invoice-subtitle')?.value || '').trim(),
-      branding_invoice_footer:    (document.getElementById('brand-invoice-footer')?.value || '').trim(),
+      branding_store_name:        _v('brand-store-name'),
+      branding_primary:           _v('brand-primary-hex'),
+      branding_font:              _v('brand-font'),
+      branding_invoice_legal:     _v('brand-invoice-legal'),
+      branding_invoice_subtitle:  _v('brand-invoice-subtitle'),
+      branding_invoice_footer:    _v('brand-invoice-footer'),
+      web_branding_primary:       _v('web-primary-hex'),
+      web_branding_font:          _v('web-font'),
     })});
     _flashSaved('branding-saved');
     toast('Branding saved - reload to see it (applies within 30s everywhere)', 'success', 3500);

@@ -67,10 +67,27 @@ else:
 import re as _re, time as _t_mod
 
 _BRANDING_KEYS = (
-    'branding_logo_file', 'branding_primary', 'branding_primary_dark',
-    'branding_primary_border', 'branding_font', 'branding_invoice_legal',
+    'branding_store_name',                       # runtime display-name override (all UI)
+    'branding_logo_file', 'branding_primary',    # ONE colour - all shades derived from it
+    'branding_font', 'branding_invoice_legal',
     'branding_invoice_subtitle', 'branding_invoice_footer',
+    # Website appearance (read by ladycoleen_web too, from the same settings table)
+    'web_branding_primary', 'web_branding_font',
 )
+
+def brand_contrast(hexval):
+    """Return '#ffffff' or '#1a1a1a' for readable text on a given brand colour, chosen
+    by perceived luminance. So a pale-yellow brand gets dark text, a navy brand gets white."""
+    v = (hexval or '').strip().lstrip('#')
+    if len(v) == 3:
+        v = ''.join(c * 2 for c in v)
+    try:
+        r, g, b = int(v[0:2], 16), int(v[2:4], 16), int(v[4:6], 16)
+    except (ValueError, IndexError):
+        return '#ffffff'
+    # perceived luminance (sRGB weights); >0.6 => light colour => dark text
+    lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255.0
+    return '#1a1a1a' if lum > 0.6 else '#ffffff'
 _BRANDING_SENTINEL = os.path.join(os.path.dirname(__file__), 'static', 'branding', '.cache_bust')
 _branding_cache = {'data': None, 'expires': 0.0, 'sentinel_mtime': 0.0}
 _HEX_RE  = _re.compile(r'^#[0-9a-fA-F]{3,8}$')
@@ -1298,9 +1315,7 @@ def strong_migrate():
         # White-label branding keys (seed as '' = use Lady Coleen / env fallback, so the
         # LC box and any un-customised store render byte-identical). See White-Label
         # Branding Plan. Runtime-editable via /api/settings + the Branding UI card.
-        for _bk in ('branding_logo_file', 'branding_primary', 'branding_primary_dark',
-                    'branding_primary_border', 'branding_font', 'branding_invoice_legal',
-                    'branding_invoice_subtitle', 'branding_invoice_footer'):
+        for _bk in _BRANDING_KEYS:
             pg_try(f"INSERT INTO settings (key, value) VALUES ('{_bk}', '') ON CONFLICT DO NOTHING")
 
         # DB constraints
@@ -1397,6 +1412,11 @@ def create_app():
         return {
             'branding': b,
             'branding_logo_url': ('/static/branding/' + logo_file) if logo_file else '/static/logo.svg',
+            # Runtime display name - overrides the startup Jinja global EVERYWHERE {{ store_name }}
+            # is used (context processor wins over jinja_env.globals). Empty = env/LC default.
+            'store_name':  (b.get('branding_store_name') or '').strip() or STORE_NAME,
+            # Auto-contrast text colour for the chosen primary (readable on light OR dark).
+            'brand_on_primary': brand_contrast(b.get('branding_primary') or '#927f57'),
             # invoice text: DB value if set, else the env-driven Jinja global fallback
             'brand_invoice_legal':    (b.get('branding_invoice_legal') or '').strip()    or STORE_LEGAL,
             'brand_invoice_subtitle': (b.get('branding_invoice_subtitle') or '').strip() or STORE_SUBTITLE,

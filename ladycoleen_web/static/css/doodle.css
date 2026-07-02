@@ -15,10 +15,11 @@
   --dd-danger:      #DC2626;
   --dd-warning:     #D97706;
   --dd-info:        #0284C7;
+  --dd-font:        'Nunito', sans-serif;   /* overridable via runtime web branding */
 }
 
 body {
-  font-family: 'Nunito', sans-serif;
+  font-family: var(--dd-font);
   background: var(--dd-surface);
   color: var(--dd-text);
 }

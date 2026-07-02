@@ -9,11 +9,16 @@ bp = Blueprint('settings', __name__)
 
 # Runtime branding keys (see White-Label Branding Plan). Validated server-side before
 # store so a malicious colour/font value can never reach the <style> block (XSS).
+# branding_logo_file is set only via the upload endpoint. The rest are editable here.
+# ONE colour per surface (primary) - all shades are derived in CSS, so no secondary/
+# border/background keys. branding_store_name overrides the display name everywhere.
 _BRANDING_KEYS = (
-    'branding_logo_file', 'branding_primary', 'branding_primary_dark',
-    'branding_primary_border', 'branding_font', 'branding_invoice_legal',
-    'branding_invoice_subtitle', 'branding_invoice_footer',
+    'branding_store_name', 'branding_logo_file', 'branding_primary', 'branding_font',
+    'branding_invoice_legal', 'branding_invoice_subtitle', 'branding_invoice_footer',
+    'web_branding_primary', 'web_branding_font',
 )
+_COLOUR_KEYS = {'branding_primary', 'web_branding_primary'}
+_FONT_KEYS   = {'branding_font', 'web_branding_font'}
 _HEX_RE = re.compile(r'^#[0-9a-fA-F]{3,8}$')
 _SAFE_FONTS = {
     'system-ui', 'sans-serif', 'serif', 'monospace', 'Arial', 'Helvetica',
@@ -22,7 +27,8 @@ _SAFE_FONTS = {
 # Max stored length per key (independent of the 2000-char DB column).
 _BRANDING_MAXLEN = {
     'branding_invoice_footer': 500, 'branding_invoice_legal': 100,
-    'branding_invoice_subtitle': 100, 'branding_font': 80,
+    'branding_invoice_subtitle': 100, 'branding_store_name': 80,
+    'branding_font': 80, 'web_branding_font': 80,
 }
 
 def _validate_branding(key, raw):
@@ -32,14 +38,14 @@ def _validate_branding(key, raw):
         return '', None
     if len(v) > _BRANDING_MAXLEN.get(key, 200):
         return None, f'{key} too long'
-    if key in ('branding_primary', 'branding_primary_dark', 'branding_primary_border'):
+    if key in _COLOUR_KEYS:
         if not _HEX_RE.match(v):
             return None, f'{key} must be a hex colour like #927f57'
-    elif key == 'branding_font':
+    elif key in _FONT_KEYS:
         if any(c in v for c in '<>{};/"\\') or v.split(',')[0].strip().strip("'\"") not in _SAFE_FONTS:
-            return None, 'branding_font must be a known system font'
+            return None, f'{key} must be a known system font'
     else:
-        # free text (invoice legal/subtitle/footer, logo filename) - forbid HTML/CSS breakers
+        # free text (store name, invoice legal/subtitle/footer) - forbid HTML/CSS breakers
         if any(c in v for c in '<>'):
             return None, f'{key} may not contain < or >'
     return v, None

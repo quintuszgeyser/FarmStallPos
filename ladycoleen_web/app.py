@@ -50,6 +50,46 @@ def create_app():
     app.register_blueprint(invoices_bp)
     app.register_blueprint(policies_bp)
 
+    # ── Runtime website branding ────────────────────────────────────────────
+    # Reads web_branding_* from the SHARED settings table (same DB as the POS) and
+    # injects them into every template. One colour -> all shades derived in CSS via
+    # color-mix(). 30s per-worker cache. Empty = the default Lady Coleen look.
+    import re as _re, time as _time
+    _HEXRE = _re.compile(r'^#[0-9a-fA-F]{3,8}$')
+    _SAFE_FONTS = {'system-ui','sans-serif','serif','monospace','Arial','Helvetica',
+                   'Verdana','Tahoma','Georgia','Times New Roman','Courier New','Nunito'}
+    _wb_cache = {'data': None, 'exp': 0.0}
+
+    def _contrast(hx):
+        v = (hx or '').strip().lstrip('#')
+        if len(v) == 3: v = ''.join(c*2 for c in v)
+        try: r,g,b = int(v[0:2],16),int(v[2:4],16),int(v[4:6],16)
+        except Exception: return '#ffffff'
+        return '#1a1a1a' if (0.299*r+0.587*g+0.114*b)/255.0 > 0.6 else '#ffffff'
+
+    @app.context_processor
+    def _inject_web_branding():
+        now = _time.monotonic()
+        if _wb_cache['data'] is None or now >= _wb_cache['exp']:
+            data = {}
+            try:
+                from sqlalchemy import text as _text
+                rows = db.session.execute(_text(
+                    "SELECT key, value FROM settings WHERE key IN ('web_branding_primary','web_branding_font')"
+                )).fetchall()
+                data = {k: (v or '') for k, v in rows}
+            except Exception:
+                data = _wb_cache['data'] or {}
+            _wb_cache.update({'data': data, 'exp': now + 30.0})
+        d = _wb_cache['data'] or {}
+        prim = (d.get('web_branding_primary') or '').strip()
+        font = (d.get('web_branding_font') or '').strip()
+        return {
+            'web_primary':  prim if _HEXRE.match(prim) else '',
+            'web_on_primary': _contrast(prim) if _HEXRE.match(prim) else '#ffffff',
+            'web_font': font if (font in _SAFE_FONTS) else '',
+        }
+
     # Health check - required by Docker healthcheck
     @app.route("/health")
     def health():
