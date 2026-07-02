@@ -77,6 +77,9 @@ services:
       - ./data/product-images:/app/static/product_images
       - ./data/web-uploads:/app/uploads
       - ./data/web-logs:/app/logs
+      # Runtime white-label logo uploaded via the POS - the web app serves it from
+      # /app/brand_logos (see serve_brand_logo). Same dir the POS writes to.
+      - ./data/branding:/app/brand_logos:ro
     ports:
       - "5001:5001"
     networks: [farmpos_network]
