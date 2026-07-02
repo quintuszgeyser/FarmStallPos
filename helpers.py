@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 
 from flask import session
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
 
 from models import (
@@ -109,6 +110,11 @@ def require_role(*roles):
 # ---------------------------------------------------------------------------
 
 def seed_first_admin():
+    # NOTE: this runs in EVERY gunicorn worker at startup. On a fresh (empty) DB all
+    # workers race — several see count()==0 and try to INSERT the same admin. The loser
+    # hits a UniqueViolation, so each insert is guarded: attempt, and on IntegrityError
+    # roll back and treat it as "another worker already seeded it" (same philosophy as
+    # db.create_all() skip-on-conflict in strong_migrate()).
     if User.query.count() == 0:
         admin_user = os.getenv('ADMIN_USER', 'admin')
         admin_pass = os.getenv('ADMIN_PASS', 'admin123')
@@ -122,13 +128,17 @@ def seed_first_admin():
             )
         hashed = generate_password_hash(admin_pass)
         db.session.add(User(username=admin_user, password_hash=hashed, role='admin', active=True))
-        db.session.commit()
-        default_markup = os.getenv('DEFAULT_MARKUP_PERCENT')
-        if default_markup:
-            try:
-                set_setting('markup_percent', float(default_markup))
-            except Exception:
-                pass
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()  # another worker won the race — fine
+        else:
+            default_markup = os.getenv('DEFAULT_MARKUP_PERCENT')
+            if default_markup:
+                try:
+                    set_setting('markup_percent', float(default_markup))
+                except Exception:
+                    pass
     if not User.query.filter_by(username='Online Shop').first():
         db.session.add(User(
             username='Online Shop',
@@ -136,7 +146,10 @@ def seed_first_admin():
             role='teller',
             active=False,
         ))
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()  # another worker won the race — fine
 
 
 def get_online_user_id():
