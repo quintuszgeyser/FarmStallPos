@@ -22,9 +22,14 @@ scale:
   ip: "10.0.0.50"     # set the router DHCP reservation to this before install
   port: 7061
 
-# Web shop is OFF by default. Enabling it needs a domain + PayFast creds (later phase).
+# Web shop is OFF by default. Enabling it starts the farmpos-web container on port 5001.
+# Requires a domain (for Cloudflare tunnel) + PayFast merchant credentials.
 web_shop:
   enabled: false
+  domain: ""                      # e.g. shop.yourstall.co.za
+  payfast_merchant_id: ""
+  payfast_merchant_key: ""
+  payfast_passphrase: ""          # moves to secrets/ on future hardening pass
 
 # Nightly off-box backup target (rclone remote). Leave blank for local-only.
 backup:

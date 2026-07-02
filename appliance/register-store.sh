@@ -76,7 +76,13 @@ if [ "$SCALE_ENABLED" = "True" ] || [ "$SCALE_ENABLED" = "true" ]; then
   SCALE_PORT="$(yaml_or "$STORE_YML" scale.port 7061)"
 fi
 POS_IMAGE="$REGISTRY/$IMAGE_REPO:$FARMPOS_VERSION"
-c_green "Store: $STORE_NAME ($STORE_ID)  image: $POS_IMAGE  scale: ${SCALE_IP:-<none>}"
+WEB_IMAGE="$REGISTRY/quintuszgeyser/farmpos-web:$FARMPOS_VERSION"
+WEB_ENABLED="$(yaml_get "$STORE_YML" web_shop.enabled)"
+WEB_DOMAIN="$(yaml_get "$STORE_YML" web_shop.domain)"
+PAYFAST_MERCHANT_ID="$(yaml_get "$STORE_YML" web_shop.payfast_merchant_id)"
+PAYFAST_MERCHANT_KEY="$(yaml_get "$STORE_YML" web_shop.payfast_merchant_key)"
+PAYFAST_PASSPHRASE="$(yaml_get "$STORE_YML" web_shop.payfast_passphrase)"
+c_green "Store: $STORE_NAME ($STORE_ID)  image: $POS_IMAGE  scale: ${SCALE_IP:-<none>}  web: ${WEB_ENABLED:-false}"
 
 # --- 2. Secrets (generate once; never regenerate on re-run) ----------------------
 secret_file() {  # $1 = name -> ensures file exists with a generated value, echoes it
@@ -139,8 +145,9 @@ fi
 
 # --- 3. Render .env + compose + init --------------------------------------------
 export STORE_ID STORE_NAME STORE_TAGLINE STORE_LEGAL STORE_SUBTITLE TZ \
-       FARMPOS_VERSION POS_IMAGE POSTGRES_PASSWORD POSTGRES_PASSWORD_URLENC \
-       SECRET_KEY ADMIN_PASS SCALE_IP SCALE_PORT
+       FARMPOS_VERSION POS_IMAGE WEB_IMAGE POSTGRES_PASSWORD POSTGRES_PASSWORD_URLENC \
+       SECRET_KEY ADMIN_PASS SCALE_IP SCALE_PORT \
+       WEB_DOMAIN PAYFAST_MERCHANT_ID PAYFAST_MERCHANT_KEY PAYFAST_PASSPHRASE
 envsubst < "$HERE/env.template" > "$FARMPOS_HOME/.env"
 chmod 600 "$FARMPOS_HOME/.env"
 cp "$HERE/compose.template.yml" "$FARMPOS_HOME/docker-compose.yml"
@@ -159,8 +166,13 @@ fi
 # --- 4. Bring up ----------------------------------------------------------------
 cd "$FARMPOS_HOME"
 c_bold "Pulling pinned image + starting stack..."
-docker compose pull
-docker compose up -d
+if [ "$WEB_ENABLED" = "True" ] || [ "$WEB_ENABLED" = "true" ]; then
+  docker compose pull
+  docker compose --profile web up -d
+else
+  docker compose pull pos postgres
+  docker compose up -d
+fi
 
 # --- 5. Health-gate -------------------------------------------------------------
 c_bold "Waiting for POS to become healthy..."

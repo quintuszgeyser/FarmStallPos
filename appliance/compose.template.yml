@@ -48,6 +48,32 @@ services:
       - "5000:5000"
     networks: [farmpos_network]
 
+  # Web shop - only included when web_shop.enabled=true in store.yml.
+  # register-store.sh renders this block conditionally via WEB_ENABLED flag.
+  web:
+    image: ${WEB_IMAGE}           # ghcr.io/quintuszgeyser/farmpos-web:${FARMPOS_VERSION}
+    container_name: farmpos-web
+    restart: unless-stopped
+    profiles: ["web"]             # only starts when --profile web is passed
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      APP_ENV: prod
+      DATABASE_URL: ${DATABASE_URL}
+      WEB_DOMAIN: ${WEB_DOMAIN:-}
+      PAYFAST_MERCHANT_ID: ${PAYFAST_MERCHANT_ID:-}
+      PAYFAST_MERCHANT_KEY: ${PAYFAST_MERCHANT_KEY:-}
+      PAYFAST_PASSPHRASE: ${PAYFAST_PASSPHRASE:-}
+    volumes:
+      - ./data/product-images:/app/static/product_images
+      - ./data/web-uploads:/app/uploads
+      - ./data/web-logs:/app/logs
+    ports:
+      - "5001:5001"
+    networks: [farmpos_network]
+
 networks:
   farmpos_network:
     driver: bridge
