@@ -3604,7 +3604,7 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   });
 
   // Include customer_id and cart-wide discount if present
-  const payMethod = document.querySelector('input[name="pay-method"]:checked')?.value || 'cash';
+  const payMethod = document.querySelector('input[name="pay-method"]:checked')?.value || 'card';
   const requestBody = {
     cart: payload,
     payment_method: payMethod,   // ISSUE-29: recorded per sale for till reconciliation

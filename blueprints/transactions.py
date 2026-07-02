@@ -132,7 +132,7 @@ def api_transactions_post():
     # Tender info (ISSUE-29): the teller's cash/card choice for this whole transaction.
     # Applies to every line of the sale (they share sale_id). Normalised + validated.
     pm_raw       = (data.get('payment_method') or '').strip().lower()
-    payment_method = pm_raw if pm_raw in ('cash', 'card', 'split') else None
+    payment_method = pm_raw if pm_raw in ('cash', 'card', 'qr', 'split') else None
     cash_tendered = None
     if data.get('cash_tendered') not in (None, ''):
         try:
