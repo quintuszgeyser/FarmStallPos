@@ -51,6 +51,12 @@
         {% endfor %}
         </tbody>
         <tfoot>
+          {% if order.shipping_fee and order.shipping_fee > 0 %}
+          <tr><td colspan="3" class="text-end">Subtotal</td>
+              <td>R{{ "%.2f"|format(order.subtotal) }}</td></tr>
+          <tr><td colspan="3" class="text-end">Shipping</td>
+              <td>R{{ "%.2f"|format(order.shipping_fee) }}</td></tr>
+          {% endif %}
           <tr><td colspan="3" class="fw-bold text-end">Total</td>
               <td class="fw-bold">R{{ "%.2f"|format(order.total) }}</td></tr>
         </tfoot>

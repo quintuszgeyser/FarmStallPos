@@ -42,10 +42,25 @@
       <td style="padding:5px 0;text-align:right;color:#4a3a28">R{{ "%.2f"|format(line.line_total) }}</td>
     </tr>
     {% endfor %}
+    {% if order.shipping_fee and order.shipping_fee > 0 %}
+    <tr style="border-top:1px dashed #c9a96e">
+      <td colspan="2" style="padding:8px 0 0;color:#4a3a28">Subtotal</td>
+      <td style="padding:8px 0 0;text-align:right;color:#4a3a28">R{{ "%.2f"|format(order.subtotal) }}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding:2px 0 0;color:#4a3a28">Shipping</td>
+      <td style="padding:2px 0 0;text-align:right;color:#4a3a28">R{{ "%.2f"|format(order.shipping_fee) }}</td>
+    </tr>
+    <tr>
+      <td colspan="2" style="padding:2px 0 0;font-weight:700">Total</td>
+      <td style="padding:2px 0 0;text-align:right;font-weight:700;color:#927f57">R{{ "%.2f"|format(order.total) }}</td>
+    </tr>
+    {% else %}
     <tr style="border-top:1px dashed #c9a96e">
       <td colspan="2" style="padding:8px 0 0;font-weight:700">Total</td>
       <td style="padding:8px 0 0;text-align:right;font-weight:700;color:#927f57">R{{ "%.2f"|format(order.total) }}</td>
     </tr>
+    {% endif %}
     </tbody>
   </table>
 

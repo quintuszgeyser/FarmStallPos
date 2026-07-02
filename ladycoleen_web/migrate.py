@@ -107,6 +107,7 @@ def _create_phase2_tables(conn):
             delivery_address TEXT,
             notes            TEXT,
             subtotal         NUMERIC(10,2),
+            shipping_fee     NUMERIC(10,2) DEFAULT 0,
             total            NUMERIC(10,2),
             pos_sale_id      VARCHAR(36) UNIQUE,
             invoice_id       INTEGER,
@@ -166,6 +167,8 @@ def _create_phase2_tables(conn):
           "online_orders.pudo_point_id")
     _exec(conn, "ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS payment_reference VARCHAR(100)",
           "online_orders.payment_reference")
+    _exec(conn, "ALTER TABLE online_orders ADD COLUMN IF NOT EXISTS shipping_fee NUMERIC(10,2) DEFAULT 0",
+          "online_orders.shipping_fee")
 
     _exec(conn, "CREATE INDEX IF NOT EXISTS idx_online_orders_status ON online_orders(status)",
           "idx_online_orders_status")

@@ -20,6 +20,10 @@
     <p>{{ message }}</p>
     <table class="table table-sm lc-table">
       <tr><th>Delivery</th><td>{{ order.delivery_method.title() }}</td></tr>
+      {% if order.shipping_fee and order.shipping_fee > 0 %}
+      <tr><th>Subtotal</th><td>R{{ "%.2f"|format(order.subtotal) }}</td></tr>
+      <tr><th>Shipping</th><td>R{{ "%.2f"|format(order.shipping_fee) }}</td></tr>
+      {% endif %}
       <tr><th>Total</th><td><strong>R{{ "%.2f"|format(order.total) }}</strong></td></tr>
       <tr><th>Placed</th><td>{{ order.created_at.strftime('%d %b %Y %H:%M') }}</td></tr>
     </table>

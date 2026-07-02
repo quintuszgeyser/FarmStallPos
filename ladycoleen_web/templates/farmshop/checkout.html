@@ -20,6 +20,12 @@
     <div class="lc-card p-3 mb-4">
       <h6 class="fw-bold mb-2">Order Summary</h6>
       <div id="summary-lines"></div>
+      <div class="d-flex justify-content-between small mt-2 pt-2 border-top">
+        <span>Subtotal</span><span id="summary-subtotal">R0.00</span>
+      </div>
+      <div class="d-flex justify-content-between small mt-1">
+        <span>Shipping</span><span id="summary-shipping">R0.00</span>
+      </div>
       <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
         <span>Total</span><span id="summary-total">R0.00</span>
       </div>
@@ -87,15 +93,15 @@
         <div class="mb-3">
           <div class="form-check mb-2">
             <input class="form-check-input" type="radio" name="delivery" id="d-collect" value="collection" checked onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-collect">Collection from farm shop</label>
+            <label class="form-check-label" for="d-collect">Collect from farm shop <span class="text-success fw-semibold">— Free</span></label>
           </div>
           <div class="form-check mb-2">
             <input class="form-check-input" type="radio" name="delivery" id="d-deliver" value="delivery" onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-deliver">Delivery to my address</label>
+            <label class="form-check-label" for="d-deliver">Deliver to my address <span class="text-muted">— R99</span></label>
           </div>
           <div class="form-check">
             <input class="form-check-input" type="radio" name="delivery" id="d-pudo" value="pudo" onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-pudo">Pudo courier</label>
+            <label class="form-check-label" for="d-pudo">Pudo locker-to-locker <span class="text-muted">— R69</span></label>
           </div>
         </div>
 
@@ -146,12 +152,16 @@
 const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
 if (!cart.length) window.location = '/farmshop/products';
 
+// Shipping fees by delivery method (must match SHIPPING_FEES in blueprints/farmshop.py)
+const SHIPPING_FEES = { collection: 0, pudo: 69, delivery: 99 };
+
+let subtotal = 0;
 let total = 0;
 const lines = document.getElementById('summary-lines');
 let anyExceedsStock = false;
 cart.forEach(item => {
   const lineTotal = item.sold_by_weight ? item.price : item.price * item.qty;
-  total += lineTotal;
+  subtotal += lineTotal;
   const thumbSrc = item.image_url ? `/product_images/${item.image_url.replace('.jpg','_thumb.jpg')}` : null;
   const imgHtml  = thumbSrc ? `<img src="${thumbSrc}" alt="" loading="lazy" width="32" height="32" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">` : '';
   let stockNote  = '';
@@ -164,13 +174,25 @@ cart.forEach(item => {
     <span>R${lineTotal.toFixed(2)}</span></div>`;
 });
 document.getElementById('stock-warning-banner').classList.toggle('d-none', !anyExceedsStock);
-document.getElementById('summary-total').textContent = 'R' + total.toFixed(2);
-document.getElementById('btn-total').textContent = total.toFixed(2);
+
+// Recompute subtotal + shipping + total based on the selected delivery method
+function recomputeTotals() {
+  const val = document.querySelector('input[name="delivery"]:checked').value;
+  const shipping = SHIPPING_FEES[val] || 0;
+  total = subtotal + shipping;
+  document.getElementById('summary-subtotal').textContent = 'R' + subtotal.toFixed(2);
+  document.getElementById('summary-shipping').textContent =
+    shipping > 0 ? 'R' + shipping.toFixed(2) : 'Free';
+  document.getElementById('summary-total').textContent = 'R' + total.toFixed(2);
+  document.getElementById('btn-total').textContent = total.toFixed(2);
+}
+recomputeTotals();
 
 function toggleDelivery() {
   const val = document.querySelector('input[name="delivery"]:checked').value;
   document.getElementById('address-block').classList.toggle('d-none', val !== 'delivery');
   document.getElementById('pudo-block').classList.toggle('d-none', val !== 'pudo');
+  recomputeTotals();
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────

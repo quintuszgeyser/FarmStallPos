@@ -269,7 +269,8 @@ def place_order():
             "line_total":            line_total,
         })
 
-    total = subtotal
+    shipping_fee = _shipping_fee(delivery_method)
+    total = subtotal + shipping_fee
 
     # ── Resolve customer info ─────────────────────────────────────────────────
     customer_name  = guest_name
@@ -302,12 +303,12 @@ def place_order():
                 (web_customer_id, guest_name, guest_email, guest_phone,
                  status, delivery_method, delivery_address, notes,
                  pudo_point_name, pudo_suburb, pudo_city, pudo_point_id,
-                 subtotal, total, payment_reference, created_at, updated_at)
+                 subtotal, shipping_fee, total, payment_reference, created_at, updated_at)
             VALUES
                 (:cid, :gname, :gemail, :gphone,
                  'pending', :dm, :da, :notes,
                  :pname, :psuburb, :pcity, :ppid,
-                 :sub, :total, :payref, now(), now())
+                 :sub, :ship, :total, :payref, now(), now())
             RETURNING id
         """), {
             "cid":     customer_id,
@@ -322,6 +323,7 @@ def place_order():
             "pcity":   pudo_city or None,
             "ppid":    pudo_point_id or None,
             "sub":     float(subtotal),
+            "ship":    float(shipping_fee),
             "total":   float(total),
             "payref":  pay_ref,
         })
@@ -372,6 +374,14 @@ def place_order():
             "unit":       "unit",
             "subtotal":   float(ld["line_total"]),
         } for ld in line_data]
+        if shipping_fee > 0:
+            inv_lines.append({
+                "name":       f"Shipping ({delivery_method})",
+                "qty":        1,
+                "unit_price": float(shipping_fee),
+                "unit":       "unit",
+                "subtotal":   float(shipping_fee),
+            })
 
         invoice_id = _create_paid_invoice(
             reference=reference,
@@ -549,7 +559,8 @@ def payfast_initiate():
             "qty": str(qty), "unit_price": str(unit_price), "line_total": str(line_total),
         })
 
-    total = float(subtotal)
+    shipping_fee = _shipping_fee(delivery_method)
+    total = float(subtotal + shipping_fee)
 
     # Store session in DB
     session_id = _uuid.uuid4().hex
@@ -564,6 +575,7 @@ def payfast_initiate():
             "method": delivery_method, "address": delivery_address, "notes": notes,
             "pudo_point_name": pudo_point_name, "pudo_suburb": pudo_suburb,
             "pudo_city": pudo_city, "pudo_point_id": pudo_point_id,
+            "shipping_fee": str(shipping_fee),
         }),
         "amount": total,
     })
@@ -633,6 +645,8 @@ def payfast_notify():
     pudo_city        = deliv_data.get("pudo_city")
     pudo_point_id    = deliv_data.get("pudo_point_id")
     total            = float(sess.amount)
+    shipping_fee     = float(Decimal(str(deliv_data.get("shipping_fee") or "0")))
+    subtotal         = total - shipping_fee
     pay_ref          = form_data.get("pf_payment_id", session_id)
 
     # Verify the amount PayFast charged matches our expected order total (within 1c).
@@ -659,12 +673,12 @@ def payfast_notify():
                 (web_customer_id, guest_name, guest_email, guest_phone,
                  status, delivery_method, delivery_address, notes,
                  pudo_point_name, pudo_suburb, pudo_city, pudo_point_id,
-                 subtotal, total, payment_reference, created_at, updated_at)
+                 subtotal, shipping_fee, total, payment_reference, created_at, updated_at)
             VALUES
                 (:cid, :gname, :gemail, :gphone,
                  'pending', :dm, :da, :notes,
                  :pname, :psuburb, :pcity, :ppid,
-                 :sub, :total, :payref, now(), now())
+                 :sub, :ship, :total, :payref, now(), now())
             RETURNING id
         """), {
             "cid": customer_id, "gname": customer_name or None,
@@ -672,7 +686,7 @@ def payfast_notify():
             "dm": delivery_method, "da": delivery_address or None, "notes": notes or None,
             "pname": pudo_point_name or None, "psuburb": pudo_suburb or None,
             "pcity": pudo_city or None, "ppid": pudo_point_id or None,
-            "sub": total, "total": total, "payref": pay_ref,
+            "sub": subtotal, "ship": shipping_fee, "total": total, "payref": pay_ref,
         })
         order_id  = result.fetchone()[0]
         reference = f"LC-ORD-{order_id:06d}"
@@ -731,11 +745,17 @@ def payfast_notify():
             "unit_price": float(ld["unit_price"]), "unit": "unit",
             "subtotal": float(ld["line_total"]),
         } for ld in line_data]
+        if shipping_fee > 0:
+            inv_lines.append({
+                "name": f"Shipping ({delivery_method})", "qty": 1,
+                "unit_price": shipping_fee, "unit": "unit",
+                "subtotal": shipping_fee,
+            })
 
         invoice_id = _create_paid_invoice(
             reference=reference, customer_name=customer_name,
             customer_phone=customer_phone, customer_email=customer_email,
-            notes=inv_notes, lines=inv_lines, subtotal=total, total=total,
+            notes=inv_notes, lines=inv_lines, subtotal=subtotal, total=total,
             sale_id=sale_uuid,
         )
 
@@ -1106,6 +1126,18 @@ def _create_draft_invoice(reference, customer_name, customer_phone,
         db.session.rollback()
         log.error('{"action":"draft_invoice_failed","reference":"%s","error":"%s"}', reference, e)
         return None
+
+
+# Shipping fees by delivery method (ZAR).
+SHIPPING_FEES = {
+    "collection": Decimal("0"),    # Collect from farm stall — free
+    "pudo":       Decimal("69"),   # Pudo locker-to-locker
+    "delivery":   Decimal("99"),   # Delivery to customer address
+}
+
+
+def _shipping_fee(method) -> Decimal:
+    return SHIPPING_FEES.get(method, Decimal("0"))
 
 
 def _delivery_note(method, address, pudo_name, pudo_suburb, pudo_city) -> str:
