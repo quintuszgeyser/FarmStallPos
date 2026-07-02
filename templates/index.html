@@ -1313,7 +1313,31 @@
     <div class="tab-pane fade" id="invoices">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
         <h5 class="mb-0">Invoices</h5>
-        <button class="btn btn-primary btn-sm" id="btn-new-invoice">+ New Invoice</button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm" id="btn-shipping-fees" data-bs-toggle="modal" data-bs-target="#shippingFeesModal">🚚 Shipping Fees</button>
+          <button class="btn btn-primary btn-sm" id="btn-new-invoice">+ New Invoice</button>
+        </div>
+      </div>
+
+      <!-- Shipping Fees editor modal (online shop delivery pricing) -->
+      <div class="modal fade" id="shippingFeesModal" tabindex="-1">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title">Online Shop Shipping Fees</h5>
+              <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+              <p class="text-muted small">These fees apply to the Lady Coleen online shop checkout. Changes take effect immediately for new orders.</p>
+              <div id="shipping-fees-rows"></div>
+              <div id="shipping-fees-error" class="alert alert-danger d-none py-2 mb-0"></div>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+              <button type="button" class="btn btn-primary" id="btn-save-shipping-fees">Save</button>
+            </div>
+          </div>
+        </div>
       </div>
       <!-- Filter bar -->
       <div class="row g-2 mb-3 align-items-end">

@@ -152,8 +152,8 @@
 const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
 if (!cart.length) window.location = '/farmshop/products';
 
-// Shipping fees by delivery method (must match SHIPPING_FEES in blueprints/farmshop.py)
-const SHIPPING_FEES = { collection: 0, pudo: 69, delivery: 99 };
+// Shipping fees by delivery method — injected from server settings (editable in POS)
+const SHIPPING_FEES = {{ shipping_fees | tojson }};
 
 let subtotal = 0;
 let total = 0;

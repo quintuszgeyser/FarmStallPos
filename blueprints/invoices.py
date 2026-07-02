@@ -6,12 +6,51 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, render_template
 from sqlalchemy import text
 
-from helpers import require_login, require_role, current_user, get_online_user_id, consume_fifo
+from helpers import require_login, require_role, current_user, get_online_user_id, consume_fifo, get_setting, set_setting
 from models import db, Invoice, Customer, Product, RecipeLine, Sale, StockBatch, StockConsumption
 
 bp = Blueprint('invoices', __name__)
 
 _UNIT_TO_BASE = {'weight': {'g': 1, 'kg': 1000}, 'volume': {'ml': 1, 'L': 1000}, 'count': {'unit': 1}}
+
+# Online-shop shipping fees (ZAR). Stored in the shared `settings` table so the
+# Lady Coleen website reads the same values. Defaults match the launch prices.
+_SHIPPING_METHODS = (
+    ('collection', 'Collect from farm stall', 0.0),
+    ('pudo',       'Pudo locker-to-locker',   69.0),
+    ('delivery',   'Deliver to my address',   99.0),
+)
+
+
+@bp.route('/api/invoices/shipping-fees', methods=['GET'])
+def api_shipping_fees_get():
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    return jsonify({
+        'fees': [
+            {'method': m, 'label': label,
+             'fee': float(get_setting(f'shipping_fee_{m}', default) or default)}
+            for m, label, default in _SHIPPING_METHODS
+        ]
+    })
+
+
+@bp.route('/api/invoices/shipping-fees', methods=['POST'])
+def api_shipping_fees_update():
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    fees = data.get('fees') or {}
+    saved = {}
+    for m, _label, _default in _SHIPPING_METHODS:
+        if m in fees:
+            try:
+                val = round(float(fees[m]), 2)
+            except (TypeError, ValueError):
+                return jsonify({'error': f'Invalid fee for {m}'}), 400
+            if val < 0:
+                return jsonify({'error': f'Fee for {m} cannot be negative'}), 400
+            set_setting(f'shipping_fee_{m}', val)
+            saved[m] = val
+    return jsonify({'ok': True, 'saved': saved})
 
 
 def _next_invoice_number():

@@ -97,7 +97,8 @@ def cart():
 
 @farmshop_bp.route("/farmshop/checkout")
 def checkout():
-    return render_template("farmshop/checkout.html")
+    shipping_fees = {m: float(fee) for m, fee in shipping_fees_all().items()}
+    return render_template("farmshop/checkout.html", shipping_fees=shipping_fees)
 
 
 @farmshop_bp.route("/farmshop/products/<int:product_id>")
@@ -1128,8 +1129,10 @@ def _create_draft_invoice(reference, customer_name, customer_phone,
         return None
 
 
-# Shipping fees by delivery method (ZAR).
-SHIPPING_FEES = {
+# Shipping fees by delivery method (ZAR). Editable from the POS Invoices tab —
+# stored in the shared `settings` table (keys: shipping_fee_<method>). These
+# defaults are used only when no setting row exists yet.
+SHIPPING_FEE_DEFAULTS = {
     "collection": Decimal("0"),    # Collect from farm stall — free
     "pudo":       Decimal("69"),   # Pudo locker-to-locker
     "delivery":   Decimal("99"),   # Delivery to customer address
@@ -1137,7 +1140,22 @@ SHIPPING_FEES = {
 
 
 def _shipping_fee(method) -> Decimal:
-    return SHIPPING_FEES.get(method, Decimal("0"))
+    default = SHIPPING_FEE_DEFAULTS.get(method, Decimal("0"))
+    try:
+        row = db.session.execute(
+            text("SELECT value FROM settings WHERE key = :k"),
+            {"k": f"shipping_fee_{method}"}
+        ).fetchone()
+        if row and row.value not in (None, ""):
+            return Decimal(str(row.value))
+    except Exception:
+        log.warning("Could not read shipping_fee_%s from settings; using default", method)
+    return default
+
+
+def shipping_fees_all() -> dict:
+    """All method → fee (Decimal), reading overrides from the shared settings table."""
+    return {m: _shipping_fee(m) for m in SHIPPING_FEE_DEFAULTS}
 
 
 def _delivery_note(method, address, pudo_name, pudo_suburb, pudo_city) -> str:

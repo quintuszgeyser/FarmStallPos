@@ -9673,3 +9673,54 @@ document.querySelector('[data-bs-target="#invoices"]')?.addEventListener('shown.
   if (!STATE.customers.length) await loadCustomers();
   await loadInvoices();
 });
+
+// ── Shipping fees editor (online shop delivery pricing) ──
+async function loadShippingFees() {
+  const rowsEl = document.getElementById('shipping-fees-rows');
+  const errEl  = document.getElementById('shipping-fees-error');
+  if (!rowsEl) return;
+  errEl?.classList.add('d-none');
+  rowsEl.innerHTML = '<div class="text-muted small">Loading…</div>';
+  try {
+    const { fees } = await api('/api/invoices/shipping-fees');
+    rowsEl.innerHTML = '';
+    fees.forEach(f => {
+      const row = document.createElement('div');
+      row.className = 'mb-3';
+      row.innerHTML = `
+        <label class="form-label mb-1">${f.label}</label>
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">R</span>
+          <input type="number" min="0" step="0.01" class="form-control shipping-fee-input"
+                 data-method="${f.method}" value="${f.fee.toFixed(2)}">
+        </div>`;
+      rowsEl.appendChild(row);
+    });
+  } catch (e) {
+    rowsEl.innerHTML = '';
+    if (errEl) { errEl.textContent = 'Could not load shipping fees.'; errEl.classList.remove('d-none'); }
+  }
+}
+
+document.getElementById('btn-shipping-fees')?.addEventListener('click', loadShippingFees);
+
+document.getElementById('btn-save-shipping-fees')?.addEventListener('click', async () => {
+  const btn   = document.getElementById('btn-save-shipping-fees');
+  const errEl = document.getElementById('shipping-fees-error');
+  errEl?.classList.add('d-none');
+  const fees = {};
+  document.querySelectorAll('.shipping-fee-input').forEach(inp => {
+    const v = parseFloat(inp.value);
+    if (!isNaN(v) && v >= 0) fees[inp.dataset.method] = v;
+  });
+  btn.disabled = true;
+  try {
+    await api('/api/invoices/shipping-fees', { method: 'POST', body: JSON.stringify({ fees }) });
+    toast('Shipping fees saved', 'success');
+    bootstrap.Modal.getInstance(document.getElementById('shippingFeesModal'))?.hide();
+  } catch (e) {
+    if (errEl) { errEl.textContent = e.message || 'Could not save shipping fees.'; errEl.classList.remove('d-none'); }
+  } finally {
+    btn.disabled = false;
+  }
+});
