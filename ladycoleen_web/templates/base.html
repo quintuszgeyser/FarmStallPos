@@ -8,19 +8,29 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/doodle.css">
-  {# Runtime website branding: derive the whole palette from ONE chosen colour. Only
-     emitted when set (else the default Lady Coleen look). web_primary is pre-validated hex. #}
+  {# Runtime website branding: derive the palette from ONE chosen colour. Each derived
+     var declares a PLAIN fallback first, then a color-mix() version - browsers that
+     can't parse color-mix keep the fallback, so borders/hovers never break. web_primary
+     is pre-validated hex. #}
   {% if web_primary %}
   <style>
     :root {
       --lc-gold:        {{ web_primary }};
-      --lc-gold-hover:  color-mix(in srgb, {{ web_primary }} 78%, #000);
-      --lc-gold-border: color-mix(in srgb, {{ web_primary }} 65%, #fff);
-      --lc-gold-light:  color-mix(in srgb, {{ web_primary }} 12%, #fff);
       --on-primary:     {{ web_on_primary }};
+      /* fallbacks (used if color-mix unsupported): a readable mid-shade of the primary */
+      --lc-gold-hover:  {{ web_primary }};
+      --lc-gold-border: {{ web_primary }};
+      --lc-gold-light:  #f3f3f3;
       {% if web_font %}--dd-font: '{{ web_font }}', system-ui, sans-serif;{% endif %}
     }
-    .lc-btn-primary { color: var(--on-primary, #fff); }
+    @supports (color: color-mix(in srgb, #000 50%, #fff)) {
+      :root {
+        --lc-gold-hover:  color-mix(in srgb, {{ web_primary }} 78%, #000);
+        --lc-gold-border: color-mix(in srgb, {{ web_primary }} 65%, #fff);
+        --lc-gold-light:  color-mix(in srgb, {{ web_primary }} 12%, #fff);
+      }
+    }
+    .lc-btn-primary { background: var(--lc-gold); color: var(--on-primary, #fff); }
   </style>
   {% elif web_font %}
   <style>:root { --dd-font: '{{ web_font }}', system-ui, sans-serif; }</style>
@@ -31,7 +41,7 @@
   <nav class="navbar navbar-expand-lg lc-navbar">
     <div class="container">
       <a class="navbar-brand lc-brand" href="/">
-        <img src="/static/logo.svg" alt="Lady Coleen" height="140">
+        <img src="{{ web_logo_url }}" alt="Shop logo" height="140">
       </a>
       <!-- Collapsible nav links (burger on mobile) -->
       <div class="collapse navbar-collapse order-lg-1" id="nav">

@@ -75,7 +75,8 @@ def create_app():
             try:
                 from sqlalchemy import text as _text
                 rows = db.session.execute(_text(
-                    "SELECT key, value FROM settings WHERE key IN ('web_branding_primary','web_branding_font')"
+                    "SELECT key, value FROM settings WHERE key IN "
+                    "('web_branding_primary','web_branding_font','branding_logo_file')"
                 )).fetchall()
                 data = {k: (v or '') for k, v in rows}
             except Exception:
@@ -84,10 +85,14 @@ def create_app():
         d = _wb_cache['data'] or {}
         prim = (d.get('web_branding_primary') or '').strip()
         font = (d.get('web_branding_font') or '').strip()
+        logo = (d.get('branding_logo_file') or '').strip()
+        # only serve a logo filename that looks safe (set by the POS upload endpoint)
+        safe_logo = bool(logo) and bool(_re.match(r'^[\w.\-]+$', logo))
         return {
             'web_primary':  prim if _HEXRE.match(prim) else '',
             'web_on_primary': _contrast(prim) if _HEXRE.match(prim) else '#ffffff',
             'web_font': font if (font in _SAFE_FONTS) else '',
+            'web_logo_url': ('/brand-logo/' + logo) if safe_logo else '/static/logo.svg',
         }
 
     # Health check - required by Docker healthcheck
@@ -109,6 +114,20 @@ def create_app():
             abort(404)
         img_dir = os.path.join(os.path.dirname(__file__), "product_images")
         return send_from_directory(img_dir, filename, max_age=31_536_000)
+
+    # Serve the runtime branding logo from the shared branding volume (written by the
+    # POS upload endpoint). Mount ./data/branding -> /app/brand_logos on this container.
+    @app.route("/brand-logo/<path:filename>")
+    def serve_brand_logo(filename):
+        import re
+        if not re.match(r'^[\w.\-]+\.(svg|png|jpg|jpeg|webp)$', filename, re.IGNORECASE):
+            abort(404)
+        logo_dir = os.path.join(os.path.dirname(__file__), "brand_logos")
+        if not os.path.isdir(logo_dir):
+            abort(404)
+        resp = send_from_directory(logo_dir, filename, max_age=300)
+        resp.headers['X-Content-Type-Options'] = 'nosniff'   # SVG safety
+        return resp
 
     # Serve uploaded files
     @app.route("/uploads/cake_images/<path:filename>")
