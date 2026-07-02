@@ -37,9 +37,9 @@ if [ ! -f "$STORE_YML" ]; then
     read -rp "Store ID (kebab-case, e.g. boer-and-butcher): " IN_ID
     read -rp "Store display name: " IN_NAME
     read -rp "Scale IP (blank = no scale): " IN_SCALE
-    read -rp "Image version tag [v1.7.0]: " IN_VER
+    read -rp "Image version tag [v2.1.0]: " IN_VER
     cp "$HERE/store.example.yml" "$STORE_YML"
-    python3 - "$STORE_YML" "$IN_ID" "$IN_NAME" "${IN_SCALE:-}" "${IN_VER:-v1.7.0}" <<'PY'
+    python3 - "$STORE_YML" "$IN_ID" "$IN_NAME" "${IN_SCALE:-}" "${IN_VER:-v2.1.0}" <<'PY'
 import sys, yaml
 f, sid, name, scale, ver = sys.argv[1:6]
 d = yaml.safe_load(open(f))
