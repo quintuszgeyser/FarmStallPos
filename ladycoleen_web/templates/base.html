@@ -21,6 +21,11 @@
       --lc-gold-hover:  {{ web_primary }};
       --lc-gold-border: {{ web_primary }};
       --lc-gold-light:  #f3f3f3;
+      /* Surfaces MUST track the primary too, else the cream navbar/cards clash with a
+         non-gold brand colour. Neutral near-white fallbacks (never the old cream). */
+      --dd-surface:     #fffdfb;
+      --dd-paper:       #fbf7f5;
+      --dd-paper-alt:   #f4eeec;
       {% if web_font %}--dd-font: '{{ web_font }}', system-ui, sans-serif;{% endif %}
     }
     @supports (color: color-mix(in srgb, #000 50%, #fff)) {
@@ -28,6 +33,11 @@
         --lc-gold-hover:  color-mix(in srgb, {{ web_primary }} 78%, #000);
         --lc-gold-border: color-mix(in srgb, {{ web_primary }} 65%, #fff);
         --lc-gold-light:  color-mix(in srgb, {{ web_primary }} 12%, #fff);
+        /* Very light tints of the brand colour - header, cards, hero, footer read as
+           "a shade of the chosen colour" instead of the old Lady Coleen cream. */
+        --dd-surface:     color-mix(in srgb, {{ web_primary }} 4%,  #fff);
+        --dd-paper:       color-mix(in srgb, {{ web_primary }} 7%,  #fff);
+        --dd-paper-alt:   color-mix(in srgb, {{ web_primary }} 12%, #fff);
       }
     }
     .lc-btn-primary { background: var(--lc-gold); color: var(--on-primary, #fff); }
