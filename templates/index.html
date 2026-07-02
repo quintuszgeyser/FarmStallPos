@@ -499,7 +499,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
-    {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Configuration</button></li>{% endif %}
+    <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Configuration</button></li>
     {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>{% endif %}
     <li class="nav-item pos-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()">&#9878; Scale</button></li>
     {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()">🚀 Deploy</button></li>{% endif %}
@@ -1202,7 +1202,8 @@
           </div>
         </div>
 
-        <!-- ── Face Recognition ── -->
+        <!-- ── Face Recognition ── (Lady Coleen only - appliance boxes have no recognition service) -->
+        {% if not is_appliance %}
         <div class="card border">
           <div class="card-header fw-semibold py-2">Face Recognition</div>
           <div class="card-body d-flex flex-column gap-3">
@@ -1296,6 +1297,8 @@
             </div>
           </div>
         </div>
+        {% endif %}
+        <!-- end recognition-only cards (Face Recognition / Customer Merging / Enrollment) -->
 
       </div>
     </div>
