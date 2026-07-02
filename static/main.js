@@ -9682,27 +9682,34 @@ async function loadShippingFees() {
   errEl?.classList.add('d-none');
   rowsEl.innerHTML = '<div class="text-muted small">Loading…</div>';
   try {
-    const { fees } = await api('/api/invoices/shipping-fees');
+    const resp = await api('/api/invoices/shipping-fees');
+    const fees = (resp && resp.fees) || [];
+    if (!fees.length) throw new Error('No shipping fees returned by the server.');
     rowsEl.innerHTML = '';
     fees.forEach(f => {
       const row = document.createElement('div');
       row.className = 'mb-3';
       row.innerHTML = `
-        <label class="form-label mb-1">${f.label}</label>
-        <div class="input-group input-group-sm">
+        <label class="form-label mb-1 fw-semibold">${f.label}</label>
+        <div class="input-group">
           <span class="input-group-text">R</span>
-          <input type="number" min="0" step="0.01" class="form-control shipping-fee-input"
-                 data-method="${f.method}" value="${f.fee.toFixed(2)}">
+          <input type="number" inputmode="decimal" min="0" step="0.01"
+                 class="form-control shipping-fee-input"
+                 data-method="${f.method}" value="${Number(f.fee).toFixed(2)}">
         </div>`;
       rowsEl.appendChild(row);
     });
   } catch (e) {
     rowsEl.innerHTML = '';
-    if (errEl) { errEl.textContent = 'Could not load shipping fees.'; errEl.classList.remove('d-none'); }
+    if (errEl) {
+      errEl.textContent = 'Could not load shipping fees: ' + (e.message || 'unknown error');
+      errEl.classList.remove('d-none');
+    }
   }
 }
 
-document.getElementById('btn-shipping-fees')?.addEventListener('click', loadShippingFees);
+// Populate whenever the modal opens (Bootstrap event — robust on mobile, no click race)
+document.getElementById('shippingFeesModal')?.addEventListener('shown.bs.modal', loadShippingFees);
 
 document.getElementById('btn-save-shipping-fees')?.addEventListener('click', async () => {
   const btn   = document.getElementById('btn-save-shipping-fees');
