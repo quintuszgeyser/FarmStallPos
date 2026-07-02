@@ -182,9 +182,13 @@ def strong_migrate():
     LOCK_ID = int(_hl.sha256(b"farmpos_migration_lock").hexdigest()[:15], 16) % (2**62)
 
     try:
-        db.create_all()  # creates missing tables; skip on conflict
+        db.create_all()  # creates missing tables; idempotent on existing DBs
     except Exception as e:
-        logger.warning(f"db.create_all() skipped: {e}")
+        # On upgrade from an older DB, SQLAlchemy may try to CREATE a table that
+        # already exists as a partial type (e.g. audit_log) and get a
+        # UniqueViolation on the pg_type catalog. The DDL migration below handles
+        # all structural changes idempotently, so this is safe to skip.
+        logger.warning(f"db.create_all() non-fatal: {e.__class__.__name__}: {e}")
 
     engine = db.engine
     engine_name = engine.dialect.name
@@ -565,13 +569,18 @@ def strong_migrate():
 
         else:
             # ---- PostgreSQL ----
+            _pg_try_counter = [0]
             def pg_try(sql):
+                # Use a unique savepoint name per call so concurrent gunicorn workers
+                # running migrations in parallel don't clobber each other's savepoints.
+                _pg_try_counter[0] += 1
+                sp = f"sp_{_pg_try_counter[0]}"
                 try:
-                    conn.exec_driver_sql("SAVEPOINT sp")
+                    conn.exec_driver_sql(f"SAVEPOINT {sp}")
                     conn.exec_driver_sql(sql)
-                    conn.exec_driver_sql("RELEASE SAVEPOINT sp")
+                    conn.exec_driver_sql(f"RELEASE SAVEPOINT {sp}")
                 except Exception:
-                    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT sp")
+                    conn.exec_driver_sql(f"ROLLBACK TO SAVEPOINT {sp}")
 
             # sales table
             conn.exec_driver_sql("""
