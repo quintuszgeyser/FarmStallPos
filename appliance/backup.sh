@@ -77,8 +77,10 @@ fi
 sha256sum "$FINAL" > "$FINAL.sha256"
 
 # 3. Retention: keep last $KEEP local (artifact + its .sha256 + .manifest sidecars).
-{ ls -1t "$BK/${STORE_ID}_"*.sql.gz.age 2>/dev/null; ls -1t "$BK/${STORE_ID}_"*.sql.gz 2>/dev/null; } \
-  | grep -vE '\.sha256$|\.manifest$' | tail -n +$((KEEP+1)) | while read -r old; do
+# Use find so there's no glob-expands-to-nothing error when only one format exists.
+find "$BK" -maxdepth 1 -name "${STORE_ID}_*.sql.gz.age" -o -name "${STORE_ID}_*.sql.gz" 2>/dev/null \
+  | grep -vE '\.sha256$|\.manifest$' | xargs ls -1t 2>/dev/null \
+  | tail -n +$((KEEP+1)) | while read -r old; do
     rm -f "$old" "$old.sha256" "$old.manifest"
   done
 echo "$FINAL" > "$BK/.last"
