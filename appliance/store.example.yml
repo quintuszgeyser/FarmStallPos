@@ -14,7 +14,7 @@ store_subtitle: "Fresh Cuts & Farm Deli"  # invoice sub-line
 timezone: "Africa/Johannesburg"
 
 # Pins the container image tag this box runs. Bump to update; never use :latest.
-farmpos_version: "v2.1.5"
+farmpos_version: "v2.1.6"
 
 # Scale (Ishida BC-4000). enabled:false => POS runs fine with no scale at all.
 scale:
