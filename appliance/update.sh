@@ -30,8 +30,16 @@ fi
 # Re-render .env + compose from current store.yml (no secret regen, no DB init).
 "$HERE/register-store.sh" --update-only
 
-docker compose pull pos
-docker compose up -d --no-deps pos
+# Update the web container too if the store runs the web shop, so a version bump
+# ships POS + web together (matches how register-store.sh brings the stack up).
+WEB_ENABLED="$(yaml_get store.yml web_shop.enabled)"
+if [ "$WEB_ENABLED" = "True" ] || [ "$WEB_ENABLED" = "true" ]; then
+  docker compose --profile web pull pos web
+  docker compose --profile web up -d --no-deps pos web
+else
+  docker compose pull pos
+  docker compose up -d --no-deps pos
+fi
 
 c_bold "Waiting for POS to become healthy..."
 ok=0
@@ -44,4 +52,21 @@ if [ "$ok" != "1" ]; then
   docker compose logs --tail 40 pos
   die "POS unhealthy after update to $NEW_VER. Roll back: set farmpos_version back in store.yml and re-run update.sh."
 fi
-c_green "Updated to $NEW_VER and healthy."
+
+# Web health-gate (only if the web shop runs on this box).
+if [ "$WEB_ENABLED" = "True" ] || [ "$WEB_ENABLED" = "true" ]; then
+  c_bold "Waiting for web shop to become healthy..."
+  wok=0
+  for i in $(seq 1 45); do
+    code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5001/health || true)"
+    [ "$code" = "200" ] && { wok=1; break; }
+    sleep 2
+  done
+  if [ "$wok" != "1" ]; then
+    docker compose logs --tail 40 web
+    die "Web shop unhealthy after update to $NEW_VER. POS is up; investigate web, or roll back."
+  fi
+  c_green "Updated POS + web to $NEW_VER and healthy."
+else
+  c_green "Updated to $NEW_VER and healthy."
+fi

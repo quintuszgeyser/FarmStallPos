@@ -74,7 +74,10 @@ services:
       PAYFAST_PASSPHRASE: ${PAYFAST_PASSPHRASE:-}
       PAYFAST_SANDBOX: "true"
     volumes:
-      - ./data/product-images:/app/static/product_images
+      # The web app's /product_images/<f> route serves from /app/product_images
+      # (os.path.dirname(__file__)/product_images), NOT /app/static/. Mount there
+      # or images 404 on the shop while resolving fine in the POS.
+      - ./data/product-images:/app/product_images
       - ./data/web-uploads:/app/uploads
       - ./data/web-logs:/app/logs
       # Runtime white-label logo uploaded via the POS - the web app serves it from
