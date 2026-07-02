@@ -1,0 +1,117 @@
+name: Release POS image
+
+# Build a pinned, reproducible POS image and push it to GHCR on a version tag.
+# This is the fleet release channel for appliance boxes. A tag is only pushed if
+# the migration smoke test passes, so a bad strong_migrate() can never reach a store.
+#
+# Usage:  git tag v1.7.0 && git push origin v1.7.0
+# Result: ghcr.io/quintuszgeyser/farmpos-pos:v1.7.0  (+ :latest)
+#
+# Does NOT affect the Lady Coleen box, which still builds from its own server-side
+# pos/Dockerfile via deploy.sh.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE: ${{ github.repository_owner }}/farmpos-pos
+
+jobs:
+  build-test-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Derive version from tag
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Build once, load into the local docker daemon so we can smoke-test the exact
+      # bits before they are ever pushed.
+      - name: Build image (local, for testing)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          tags: farmpos-pos:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Migration smoke test — the guardrail for fleet-wide strong_migrate().
+      # Boot the freshly built image against an EMPTY Postgres and assert the app
+      # comes up healthy (which only happens after strong_migrate() + seed succeed).
+      - name: Smoke test — migrate against empty Postgres + /health
+        run: |
+          set -euo pipefail
+          docker network create farmpos-ci
+          docker run -d --name ci-pg --network farmpos-ci \
+            -e POSTGRES_USER=farmstall \
+            -e POSTGRES_PASSWORD=ci-test-pw \
+            -e POSTGRES_DB=farmpos \
+            postgres:16-alpine
+          echo "Waiting for Postgres..."
+          for i in $(seq 1 30); do
+            if docker exec ci-pg pg_isready -U farmstall >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          # STORE_ID set => exercises the strict appliance path (secrets required).
+          docker run -d --name ci-pos --network farmpos-ci -p 5000:5000 \
+            -e APP_ENV=prod \
+            -e STORE_ID=ci-smoke \
+            -e STORE_NAME="CI Smoke Store" \
+            -e SECRET_KEY=ci-secret-key-not-default \
+            -e ADMIN_PASS=ci-admin-not-default \
+            -e DATABASE_URL="postgresql://farmstall:ci-test-pw@ci-pg:5432/farmpos" \
+            farmpos-pos:ci
+          echo "Waiting for POS /health..."
+          ok=0
+          for i in $(seq 1 45); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/health || true)
+            if [ "$code" = "200" ]; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::POS did not become healthy — migration or startup failed."
+            echo "--- ci-pos logs ---"; docker logs ci-pos || true
+            exit 1
+          fi
+          echo "Smoke test passed: image boots healthy against an empty DB."
+          # Prove the strict guards actually fire: a box with the known-bad default
+          # SECRET_KEY and a STORE_ID MUST refuse to start.
+          if docker run --rm --network farmpos-ci \
+              -e APP_ENV=prod -e STORE_ID=guard-test \
+              -e DATABASE_URL="postgresql://farmstall:ci-test-pw@ci-pg:5432/farmpos" \
+              farmpos-pos:ci python -c "import app" 2>/dev/null; then
+            echo "::error::Guard did not fire — a provisioned box booted with dev-secret-key."
+            exit 1
+          fi
+          echo "Guard test passed: provisioned box refuses the dev SECRET_KEY."
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Only reached if the smoke test passed. Push the pinned semver tag + latest.
+      - name: Build and push pinned image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.ver.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

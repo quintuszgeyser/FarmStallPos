@@ -1,3 +1,5 @@
+import os
+
 from flask import Blueprint, jsonify, request
 
 from helpers import get_setting, set_setting, require_role
@@ -27,8 +29,8 @@ def api_settings():
             'kiosk_inactivity_minutes':  int(get_setting('kiosk_inactivity_minutes', 0) or 0),
             'kiosk_url':                 str(get_setting('kiosk_url', '') or ''),
             'visit_min_gap_seconds':     int(get_setting('visit_min_gap_seconds', 180) or 180),
-            'scale_ip':                  str(get_setting('scale_ip', '10.0.0.103') or '10.0.0.103'),
-            'scale_port':                int(get_setting('scale_port', 7061) or 7061),
+            'scale_ip':                  str(get_setting('scale_ip', os.environ.get('SCALE_IP', '' if os.environ.get('STORE_ID', '').strip() else '10.0.0.103')) or ''),
+            'scale_port':                int(get_setting('scale_port', os.environ.get('SCALE_PORT', 7061)) or 7061),
         })
 
     data  = request.json or {}

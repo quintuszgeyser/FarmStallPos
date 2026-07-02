@@ -112,6 +112,14 @@ def seed_first_admin():
     if User.query.count() == 0:
         admin_user = os.getenv('ADMIN_USER', 'admin')
         admin_pass = os.getenv('ADMIN_PASS', 'admin123')
+        # On a provisioned appliance box, refuse to seed the well-known default —
+        # register-store.sh always supplies a unique ADMIN_PASS. Gated on STORE_ID so
+        # the original Lady Coleen box (which seeds admin/admin123) is unchanged.
+        if os.getenv('STORE_ID', '').strip() and admin_pass == 'admin123':
+            raise RuntimeError(
+                "ADMIN_PASS is unset (still 'admin123') on a provisioned store box. "
+                "register-store.sh must generate a unique admin password per store."
+            )
         hashed = generate_password_hash(admin_pass)
         db.session.add(User(username=admin_user, password_hash=hashed, role='admin', active=True))
         db.session.commit()

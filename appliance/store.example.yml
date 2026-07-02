@@ -1,0 +1,38 @@
+# store.yml — per-store identity & flags (NON-secret, safe to keep in git/backup).
+# Copied and filled by register-store.sh. Secrets NEVER live here — they are
+# generated into /opt/farmpos/secrets/ and rendered into .env at provision time.
+
+# Immutable, DNS-safe primary key of this box. Drives hostname, DB, backup path.
+store_id: boer-and-butcher
+
+# Shown in the POS UI, page title, and on invoices.
+store_name: "Boer & Butcher"
+store_tagline: "Butchery & Deli"          # nav sub-line; defaults to store_name
+store_legal: "Boer & Butcher (Pty) Ltd"   # invoice "From" heading; defaults to store_name
+store_subtitle: "Fresh Cuts & Farm Deli"  # invoice sub-line
+
+timezone: "Africa/Johannesburg"
+
+# Pins the container image tag this box runs. Bump to update; never use :latest.
+farmpos_version: "v1.7.0"
+
+# Scale (Ishida BC-4000). enabled:false => POS runs fine with no scale at all.
+scale:
+  enabled: true
+  ip: "10.0.0.50"     # set the router DHCP reservation to this before install
+  port: 7061
+
+# Web shop is OFF by default. Enabling it needs a domain + PayFast creds (later phase).
+web_shop:
+  enabled: false
+
+# Nightly off-box backup target (rclone remote). Leave blank for local-only.
+backup:
+  target: ""          # e.g. "b2:farmpos-backups"
+  time: "02:00"
+
+# Where fleet-health heartbeats POST (blank = monitoring not wired yet).
+control_center_url: ""
+
+alerts:
+  email: "owner@example.co.za"

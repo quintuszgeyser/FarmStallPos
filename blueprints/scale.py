@@ -56,9 +56,13 @@ SCALE_TIMEOUT = 10
 
 
 def _get_scale_config():
+    # Scale IP: DB setting first, then SCALE_IP env (from store.yml). On the original
+    # Lady Coleen box (STORE_ID unset) the fallback stays 10.0.0.103 so nothing changes;
+    # on a provisioned store an unset SCALE_IP means "no scale configured".
+    default_ip = os.environ.get('SCALE_IP', '' if os.environ.get('STORE_ID', '').strip() else '10.0.0.103').strip()
     return {
-        'ip':   get_setting('scale_ip', '10.0.0.103'),
-        'port': int(get_setting('scale_port', '7061')),
+        'ip':   get_setting('scale_ip', default_ip),
+        'port': int(get_setting('scale_port', os.environ.get('SCALE_PORT', '7061'))),
     }
 
 

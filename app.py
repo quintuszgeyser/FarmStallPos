@@ -41,6 +41,24 @@ IS_QA    = APP_ENV == 'qa'
 DB_NAME  = os.environ.get('POSTGRES_DB', os.environ.get('DATABASE_URL', 'unknown').split('/')[-1])
 LOG_PREFIX = f"[{APP_ENV.upper()}][{DB_NAME}]"
 
+# Per-store identity — set from store.yml → .env on each appliance box (multi-store).
+# STORE_ID is the switch: when it is UNSET this is the original Lady Coleen box and
+# every field falls back to the exact historical strings, so that box renders and
+# behaves byte-for-byte as before. A provisioned store (register-store.sh) always
+# sets STORE_ID and drives all branding from its own identity.
+STORE_ID = os.environ.get('STORE_ID', '').strip()
+if STORE_ID:
+    STORE_NAME     = os.environ.get('STORE_NAME', STORE_ID).strip()
+    STORE_TAGLINE  = os.environ.get('STORE_TAGLINE', '').strip()  or STORE_NAME
+    STORE_LEGAL    = os.environ.get('STORE_LEGAL', '').strip()    or STORE_NAME
+    STORE_SUBTITLE = os.environ.get('STORE_SUBTITLE', '').strip()
+else:
+    # Original Lady Coleen box — do NOT change these literals.
+    STORE_NAME     = 'Lady Coleen'
+    STORE_TAGLINE  = 'Lady Coleen Boutique Farmstall'
+    STORE_LEGAL    = 'Lady Coleen Boutique Farm Shop'
+    STORE_SUBTITLE = 'Fresh Farm Produce & Boutique Deli'
+
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
@@ -1217,7 +1235,17 @@ def create_app():
             return super().default(o)
     app.json_provider_class = _JSONProvider
     app.json = _JSONProvider(app)
-    app.secret_key = os.getenv('SECRET_KEY', 'dev-secret-key')
+    # SECRET_KEY must be unique on a provisioned appliance box. Fail loud there rather
+    # than ship a fleet that shares the well-known dev fallback (session-forgery risk).
+    # Gated on STORE_ID so the original Lady Coleen box (which never set SECRET_KEY)
+    # keeps its historical behaviour untouched.
+    _secret = os.getenv('SECRET_KEY', 'dev-secret-key')
+    if STORE_ID and _secret == 'dev-secret-key':
+        raise RuntimeError(
+            f"SECRET_KEY is unset on provisioned store '{STORE_ID}'. "
+            "register-store.sh must generate a unique SECRET_KEY per store."
+        )
+    app.secret_key = _secret
 
     # Trust Cloudflare / nginx reverse proxy headers so Flask sees HTTPS correctly.
     # Required for secure session cookies and PWA install prompt.
@@ -1239,6 +1267,13 @@ def create_app():
     # Inject environment into Jinja2 globals — used by QA banner in index.html
     app.jinja_env.globals['app_env'] = APP_ENV
     app.jinja_env.globals['is_qa']   = IS_QA
+    # Per-store branding — templates render these instead of hardcoded strings.
+    # On the original Lady Coleen box (STORE_ID unset) they resolve to the exact
+    # historical literals, so nothing renders differently there.
+    app.jinja_env.globals['store_name']     = STORE_NAME
+    app.jinja_env.globals['store_tagline']  = STORE_TAGLINE
+    app.jinja_env.globals['store_legal']    = STORE_LEGAL
+    app.jinja_env.globals['store_subtitle'] = STORE_SUBTITLE
 
     logger.info(f"{LOG_PREFIX} POS starting — ENV={APP_ENV} DB={DB_NAME} IS_QA={IS_QA}")
 
@@ -1253,9 +1288,11 @@ def create_app():
     def _api_health():
         import time as _t, socket as _s
         now = _t.time()
-        if not IS_QA and now - _health_cache['checked_at'] > 30:
+        # LC box (STORE_ID unset) keeps its historical 10.0.0.103 fallback; a
+        # provisioned store uses its own SCALE_IP, and empty means "no scale" (skip).
+        scale_ip = os.environ.get('SCALE_IP', '' if STORE_ID else '10.0.0.103').strip()
+        if not IS_QA and scale_ip and now - _health_cache['checked_at'] > 30:
             try:
-                scale_ip = os.environ.get('SCALE_IP', '10.0.0.103')
                 c = _s.create_connection((scale_ip, 7061), timeout=2); c.close()
                 _health_cache.update({'scale': True, 'checked_at': now})
             except Exception:
