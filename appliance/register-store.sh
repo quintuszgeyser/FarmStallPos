@@ -144,8 +144,11 @@ done
 [ "$ok" = "1" ] || { docker compose logs --tail 40 pos; die "POS did not become healthy."; }
 
 # --- 5b. Install the nightly backup cron (idempotent) ---------------------------
+# Use the resolved $HERE path so the cron line is stable whether run interactively
+# or non-interactively (pre-seeded store.yml path). grep on 'backup.sh' alone so
+# a previous cron entry with a different full path is still detected and not doubled.
 CRON_LINE="0 2 * * * $HERE/backup.sh >> $FARMPOS_HOME/data/backup.log 2>&1"
-if ! crontab -l 2>/dev/null | grep -qF "$HERE/backup.sh"; then
+if ! crontab -l 2>/dev/null | grep -qF "backup.sh"; then
   ( crontab -l 2>/dev/null; echo "$CRON_LINE" ) | crontab -
   c_green "Installed nightly backup cron (02:00)."
 fi

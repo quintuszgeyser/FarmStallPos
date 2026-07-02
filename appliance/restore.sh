@@ -42,8 +42,8 @@ fi
 gzip -t "$PLAIN" 2>/dev/null || die "backup is not a valid gzip - refusing to restore"
 SIZE=$(stat -c%s "$PLAIN" 2>/dev/null || echo 0)
 [ "$SIZE" -gt 1024 ] || die "decrypted dump is suspiciously small ($SIZE bytes) - refusing to restore"
-gunzip -c "$PLAIN" | head -c 4096 | grep -qE 'CREATE TABLE|COPY |INSERT INTO' \
-  || die "dump does not look like a pg_dump (no CREATE/COPY/INSERT in header) - refusing"
+gunzip -c "$PLAIN" | head -c 65536 | grep -qE 'CREATE TABLE|COPY |INSERT INTO|PostgreSQL database dump' \
+  || die "dump does not look like a pg_dump (no recognisable pg_dump markers) - refusing"
 
 # 3. Bring up Postgres; stop the app so nothing writes mid-restore.
 docker compose up -d postgres

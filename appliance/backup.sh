@@ -38,9 +38,10 @@ fi
 docker exec farmpos-postgres pg_dump -U farmstall farmpos | gzip > "$DUMP"
 
 # 1a. Size guard - never let a zero/tiny dump (postgres down, broken pipe) overwrite good
-#     backups. A real farmpos dump compresses to well over 10 KB even when nearly empty.
+#     backups. 2 KB is the floor: a fresh store with no products compresses to ~7 KB, so
+#     10 KB was too aggressive and aborted valid first-run backups.
 SIZE=$(stat -c%s "$DUMP" 2>/dev/null || echo 0)
-if [ "$SIZE" -lt 10240 ]; then
+if [ "$SIZE" -lt 2048 ]; then
   rm -f "$DUMP"
   die "dump is suspiciously small ($SIZE bytes) - aborting, keeping previous backups"
 fi
@@ -76,7 +77,7 @@ fi
 sha256sum "$FINAL" > "$FINAL.sha256"
 
 # 3. Retention: keep last $KEEP local (artifact + its .sha256 + .manifest sidecars).
-ls -1t "$BK/${STORE_ID}_"*.sql.gz*.age "$BK/${STORE_ID}_"*.sql.gz 2>/dev/null \
+{ ls -1t "$BK/${STORE_ID}_"*.sql.gz.age 2>/dev/null; ls -1t "$BK/${STORE_ID}_"*.sql.gz 2>/dev/null; } \
   | grep -vE '\.sha256$|\.manifest$' | tail -n +$((KEEP+1)) | while read -r old; do
     rm -f "$old" "$old.sha256" "$old.manifest"
   done
@@ -97,7 +98,7 @@ elif [ -n "$TARGET" ]; then
   echo "$(date -Iseconds) WARN: backup.target set but rclone not installed - no off-box copy" >&2
 fi
 
-# 5. Heartbeat file for backup-health monitoring (support machine reads this).
+# 5. Heartbeat file for backup-health monitoring (always written, regardless of rclone).
 echo "$(date -Iseconds) $(basename "$FINAL") $SIZE bytes" > "$BK/.heartbeat"
 
 # 5b. Write a status file into the POS config volume (mounted into the container at

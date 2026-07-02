@@ -23,8 +23,11 @@ echo "$GHCR_PAT" | docker login ghcr.io -u quintuszgeyser --password-stdin
 
 ## Onboard a store
 ```bash
-sudo mkdir -p /opt/farmpos && cd /opt/farmpos
-# put the appliance/ folder here (git clone or copy), then:
+# Clone the repo - the appliance/ folder is at the repo root (not under farm_pos_web/)
+sudo git clone https://github.com/quintuszgeyser/FarmStallPos.git /tmp/fps
+sudo mkdir -p /opt/farmpos
+sudo cp -r /tmp/fps/appliance /opt/farmpos/appliance
+cd /opt/farmpos
 sudo ./appliance/register-store.sh
 ```
 Answer: Store ID, display name, scale IP (blank = none), image tag. The script:
@@ -61,9 +64,11 @@ sudo ./appliance/restore.sh                     # newest local, or pass a pulled
 ## Updating a box
 Bump `farmpos_version` in `store.yml`, then:
 ```bash
-cd /opt/farmpos && docker compose pull && docker compose up -d
+sudo nano /opt/farmpos/store.yml   # change farmpos_version: "vX.Y.Z"
+sudo /opt/farmpos/appliance/update.sh
 ```
 Never use `:latest` in production - always a pinned `vX.Y.Z` that passed CI.
+`update.sh` takes a pre-update backup, re-renders .env, pulls the new image, restarts pos, and health-gates.
 
 ## Files
 | File | Purpose |
