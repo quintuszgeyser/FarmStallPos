@@ -69,6 +69,7 @@ import re as _re, time as _t_mod
 _BRANDING_KEYS = (
     'branding_store_name',                       # runtime display-name override (all UI)
     'branding_logo_file', 'branding_primary',    # ONE colour - all shades derived from it
+    'branding_bg',                               # POS page background; blank = light tint of primary
     'branding_font', 'branding_invoice_legal',
     'branding_invoice_subtitle', 'branding_invoice_footer',
     # Website appearance (read by ladycoleen_web too, from the same settings table)

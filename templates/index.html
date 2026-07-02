@@ -58,12 +58,19 @@
       --lc-gold-light:  color-mix(in srgb, {{ branding.branding_primary | css_hex('#927f57') }} 12%, #fff);
       --dd-paper:       color-mix(in srgb, {{ branding.branding_primary | css_hex('#927f57') }} 6%, #fff);
       --dd-paper-alt:   color-mix(in srgb, {{ branding.branding_primary | css_hex('#927f57') }} 11%, #fff);
+      /* Page background: an explicit branding_bg if set, else a very light tint of the
+         primary (3% brand) so the surface stops clashing with a non-gold colour. */
+      {% if branding.branding_bg %}--dd-surface: {{ branding.branding_bg | css_hex('#FFFDF7') }};
+      {% else %}--dd-surface: color-mix(in srgb, {{ branding.branding_primary | css_hex('#927f57') }} 3%, #fff);{% endif %}
       /* readable text colour to sit ON the brand colour (buttons, badges) */
       --on-primary:     {{ brand_on_primary }};
       {% if branding.branding_font %}--dd-font: {{ branding.branding_font | safe_font("'Nunito', system-ui, sans-serif") }};{% endif %}
     }
-    {% elif branding.branding_font %}
-    :root { --dd-font: {{ branding.branding_font | safe_font("'Nunito', system-ui, sans-serif") }}; }
+    {% elif branding.branding_bg or branding.branding_font %}
+    :root {
+      {% if branding.branding_bg %}--dd-surface: {{ branding.branding_bg | css_hex('#FFFDF7') }};{% endif %}
+      {% if branding.branding_font %}--dd-font: {{ branding.branding_font | safe_font("'Nunito', system-ui, sans-serif") }};{% endif %}
+    }
     {% endif %}
 
     /* ── Global typography ── */
@@ -1152,6 +1159,14 @@
                   <div class="d-flex align-items-center gap-2">
                     <input type="color" id="brand-primary-picker" class="form-control form-control-color" value="#927f57">
                     <input type="text" id="brand-primary-hex" class="form-control form-control-sm" style="max-width:110px" placeholder="#927f57">
+                  </div>
+                </div>
+                <div>
+                  <label class="form-label fw-semibold mb-1">Background <span class="text-muted fw-normal small">(blank = auto tint of colour)</span></label>
+                  <div class="d-flex align-items-center gap-2">
+                    <input type="color" id="brand-bg-picker" class="form-control form-control-color" value="#fffdf7">
+                    <input type="text" id="brand-bg-hex" class="form-control form-control-sm" style="max-width:110px" placeholder="auto">
+                    <button type="button" id="brand-bg-clear" class="btn btn-sm btn-outline-secondary" title="Clear = auto tint of the colour">Clear</button>
                   </div>
                 </div>
                 <div>
@@ -2637,6 +2652,6 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260702-branding2"></script>
+<script src="/static/main.js?v=20260702-branding3"></script>
 </body>
 </html>

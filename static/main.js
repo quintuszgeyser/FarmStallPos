@@ -8227,14 +8227,15 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     _brandFillFontSelects();
     _bset('brand-store-name', s.branding_store_name);
     _bset('brand-primary-hex', s.branding_primary);
+    _bset('brand-bg-hex', s.branding_bg);
     _bset('brand-font', s.branding_font || 'Nunito');
     _bset('brand-invoice-legal', s.branding_invoice_legal);
     _bset('brand-invoice-subtitle', s.branding_invoice_subtitle);
     _bset('brand-invoice-footer', s.branding_invoice_footer);
     _bset('web-primary-hex', s.web_branding_primary);
     _bset('web-font', s.web_branding_font || 'Nunito');
-    // sync the two colour pickers to their hex fields
-    for (const [pick, hex] of [['brand-primary-picker','brand-primary-hex'],['web-primary-picker','web-primary-hex']]) {
+    // sync the colour pickers to their hex fields
+    for (const [pick, hex] of [['brand-primary-picker','brand-primary-hex'],['brand-bg-picker','brand-bg-hex'],['web-primary-picker','web-primary-hex']]) {
       const hv = document.getElementById(hex)?.value;
       if (hv && /^#[0-9a-fA-F]{6}$/.test(hv)) { const p = document.getElementById(pick); if (p) p.value = hv; }
     }
@@ -8259,6 +8260,13 @@ function _brandFillFontSelects() {
 document.getElementById('brand-primary-picker')?.addEventListener('input', (e) => {
   const hex = document.getElementById('brand-primary-hex'); if (hex) hex.value = e.target.value;
 });
+document.getElementById('brand-bg-picker')?.addEventListener('input', (e) => {
+  const hex = document.getElementById('brand-bg-hex'); if (hex) hex.value = e.target.value;
+});
+// Clear the background = fall back to an auto light tint of the primary colour
+document.getElementById('brand-bg-clear')?.addEventListener('click', () => {
+  const hex = document.getElementById('brand-bg-hex'); if (hex) hex.value = '';
+});
 document.getElementById('web-primary-picker')?.addEventListener('input', (e) => {
   const hex = document.getElementById('web-primary-hex'); if (hex) hex.value = e.target.value;
 });
@@ -8269,6 +8277,7 @@ document.getElementById('btn-save-branding')?.addEventListener('click', async ()
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
       branding_store_name:        _v('brand-store-name'),
       branding_primary:           _v('brand-primary-hex'),
+      branding_bg:                _v('brand-bg-hex'),
       branding_font:              _v('brand-font'),
       branding_invoice_legal:     _v('brand-invoice-legal'),
       branding_invoice_subtitle:  _v('brand-invoice-subtitle'),

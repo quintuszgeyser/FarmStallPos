@@ -13,11 +13,12 @@ bp = Blueprint('settings', __name__)
 # ONE colour per surface (primary) - all shades are derived in CSS, so no secondary/
 # border/background keys. branding_store_name overrides the display name everywhere.
 _BRANDING_KEYS = (
-    'branding_store_name', 'branding_logo_file', 'branding_primary', 'branding_font',
+    'branding_store_name', 'branding_logo_file', 'branding_primary', 'branding_bg',
+    'branding_font',
     'branding_invoice_legal', 'branding_invoice_subtitle', 'branding_invoice_footer',
     'web_branding_primary', 'web_branding_font',
 )
-_COLOUR_KEYS = {'branding_primary', 'web_branding_primary'}
+_COLOUR_KEYS = {'branding_primary', 'branding_bg', 'web_branding_primary'}
 _FONT_KEYS   = {'branding_font', 'web_branding_font'}
 _HEX_RE = re.compile(r'^#[0-9a-fA-F]{3,8}$')
 _SAFE_FONTS = {
