@@ -40,6 +40,15 @@
       --dd-radius-lg:  12px 18px 14px 20px / 18px 12px 20px 14px;
       --dd-border:     2px solid var(--lc-gold-border);
     }
+    /* Runtime white-label overrides (DB-backed). Only emitted for validated non-empty
+       values, so an un-customised box (all branding_* empty) changes nothing. Colours
+       pass through css_hex + fonts through safe_font = defense-in-depth vs CSS-injection. */
+    :root {
+      {% if branding.branding_primary %}--lc-gold: {{ branding.branding_primary | css_hex('#927f57') }}; --dd-primary: {{ branding.branding_primary | css_hex('#927f57') }};{% endif %}
+      {% if branding.branding_primary_dark %}--lc-gold-hover: {{ branding.branding_primary_dark | css_hex('#7a6944') }};{% endif %}
+      {% if branding.branding_primary_border %}--lc-gold-border: {{ branding.branding_primary_border | css_hex('#c9a96e') }};{% endif %}
+      {% if branding.branding_font %}--dd-font: {{ branding.branding_font | safe_font("'Nunito', system-ui, sans-serif") }};{% endif %}
+    }
 
     /* ── Global typography ── */
     body, .card, .modal-content, button, input, select, textarea, h1,h2,h3,h4,h5,h6 {
@@ -404,7 +413,7 @@
   <!-- Brand header -->
   <div class="lc-brand">
     <div class="lc-logo-wrap">
-      <img src="/static/logo.svg" alt="{{ store_name }}">
+      <img src="{{ branding_logo_url }}" alt="{{ store_name }}">
     </div>
     <span>{{ store_tagline }}</span>
   </div>
@@ -1077,6 +1086,55 @@
             <div>
               <button class="btn btn-primary btn-sm" id="btn-save-business-settings">Save</button>
               <span id="business-settings-saved" class="text-success small ms-2 hidden">Saved</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Branding (white-label) ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2">Branding <span class="text-muted fw-normal small">(logo, colours, invoice — changes apply within ~30s)</span></div>
+          <div class="card-body d-flex flex-column gap-3">
+            <div>
+              <label class="form-label fw-semibold mb-1">Logo</label>
+              <div class="d-flex align-items-center gap-3">
+                <img id="brand-logo-thumb" src="{{ branding_logo_url }}" alt="logo" style="height:44px;max-width:160px;object-fit:contain;background:#fff;border:1px solid #ddd;border-radius:4px;padding:2px">
+                <input type="file" id="brand-logo-file" accept=".svg,.png,.jpg,.jpeg,.webp" class="form-control form-control-sm" style="max-width:260px">
+              </div>
+              <div class="text-muted small mt-1">SVG or PNG/JPG/WEBP, max 2 MB. Uploads immediately.</div>
+            </div>
+            <div class="d-flex flex-wrap gap-3 align-items-end">
+              <div>
+                <label class="form-label fw-semibold mb-1">Primary colour</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input type="color" id="brand-primary-picker" class="form-control form-control-color" value="#927f57">
+                  <input type="text" id="brand-primary-hex" class="form-control form-control-sm" style="max-width:110px" placeholder="#927f57">
+                </div>
+              </div>
+              <div>
+                <label class="form-label fw-semibold mb-1">Font</label>
+                <input type="text" id="brand-font" list="brand-font-list" class="form-control form-control-sm" style="max-width:200px" placeholder="Nunito">
+                <datalist id="brand-font-list">
+                  <option value="Nunito"><option value="Arial"><option value="Georgia"><option value="Verdana">
+                  <option value="Tahoma"><option value="Helvetica"><option value="Times New Roman"><option value="system-ui">
+                </datalist>
+              </div>
+            </div>
+            <div>
+              <label class="form-label fw-semibold mb-1">Registered business name <span class="text-muted fw-normal small">(invoices only — the POS header name is set at install)</span></label>
+              <input type="text" id="brand-invoice-legal" class="form-control form-control-sm" maxlength="100" placeholder="e.g. Boer &amp; Butcher (Pty) Ltd">
+            </div>
+            <div>
+              <label class="form-label fw-semibold mb-1">Invoice subtitle</label>
+              <input type="text" id="brand-invoice-subtitle" class="form-control form-control-sm" maxlength="100" placeholder="e.g. Fresh Cuts &amp; Farm Deli">
+            </div>
+            <div>
+              <label class="form-label fw-semibold mb-1">Invoice footer <span class="text-muted fw-normal small">(optional)</span></label>
+              <textarea id="brand-invoice-footer" class="form-control form-control-sm" rows="2" maxlength="500" placeholder="e.g. VAT 4123456789 · 012 345 6789 · Thank you!"></textarea>
+            </div>
+            <div>
+              <button class="btn btn-primary btn-sm" id="btn-save-branding">Save branding</button>
+              <span id="branding-saved" class="text-success small ms-2 hidden">Saved</span>
+              <div class="text-muted small mt-1">Leave a field blank to use the default look.</div>
             </div>
           </div>
         </div>

@@ -60,6 +60,81 @@ else:
     STORE_SUBTITLE = 'Fresh Farm Produce & Boutique Deli'
 
 # ---------------------------------------------------------------------------
+# White-label branding (DB-backed, runtime-editable). See White-Label Branding Plan.
+# Values live in the settings table as branding_* keys; '' means "use the LC/env
+# fallback" so an un-customised box renders byte-identical to Lady Coleen.
+# ---------------------------------------------------------------------------
+import re as _re, time as _t_mod
+
+_BRANDING_KEYS = (
+    'branding_logo_file', 'branding_primary', 'branding_primary_dark',
+    'branding_primary_border', 'branding_font', 'branding_invoice_legal',
+    'branding_invoice_subtitle', 'branding_invoice_footer',
+)
+_BRANDING_SENTINEL = os.path.join(os.path.dirname(__file__), 'static', 'branding', '.cache_bust')
+_branding_cache = {'data': None, 'expires': 0.0, 'sentinel_mtime': 0.0}
+_HEX_RE  = _re.compile(r'^#[0-9a-fA-F]{3,8}$')
+# System fonts safe offline; anything else falls back to the LC font stack.
+_SAFE_FONTS = {
+    'system-ui', 'sans-serif', 'serif', 'monospace', 'Arial', 'Helvetica',
+    'Verdana', 'Tahoma', 'Georgia', 'Times New Roman', 'Courier New', 'Nunito',
+}
+
+def css_hex(val, fallback):
+    """Jinja filter + validator: only emit a value into a <style> block if it is a
+    safe hex colour, else the fallback. Defense-in-depth against CSS-injection XSS."""
+    v = (val or '').strip()
+    return v if _HEX_RE.match(v) else fallback
+
+def safe_font(val, fallback):
+    v = (val or '').strip().strip("'\"")
+    # reject any CSS/HTML metacharacters outright
+    if not v or any(c in v for c in '<>{};/"\\'):
+        return fallback
+    # first family name must be in the safe list (allow a trailing generic)
+    first = v.split(',')[0].strip().strip("'\"")
+    return v if first in _SAFE_FONTS else fallback
+
+def _branding_sentinel_mtime():
+    try:
+        return os.stat(_BRANDING_SENTINEL).st_mtime
+    except OSError:
+        return 0.0
+
+def bust_branding_cache():
+    """Called after any branding_* write. Touches the sentinel so ALL gunicorn
+    workers re-read on their next request (in-process expiry only covers this worker)."""
+    try:
+        os.makedirs(os.path.dirname(_BRANDING_SENTINEL), exist_ok=True)
+        with open(_BRANDING_SENTINEL, 'w') as _f:
+            _f.write(str(_t_mod.time()))
+    except OSError:
+        pass
+    _branding_cache['expires'] = 0.0
+
+def get_branding():
+    """Return the 8 branding values as a dict, cached per-worker with a 30s TTL and a
+    filesystem-sentinel cross-worker invalidation. Never raises - falls back to {} so
+    the context_processor can't 500 the whole app during a DB blip."""
+    now = _t_mod.monotonic()
+    smt = _branding_sentinel_mtime()
+    if (_branding_cache['data'] is not None
+            and now < _branding_cache['expires']
+            and smt == _branding_cache['sentinel_mtime']):
+        return _branding_cache['data']
+    data = {}
+    try:
+        from models import Setting  # local import - models imported after this module region
+        rows = Setting.query.filter(Setting.key.in_(_BRANDING_KEYS)).all()  # one query, not 8
+        data = {r.key: (r.value or '') for r in rows}
+    except Exception as _e:
+        logger.warning(f"branding cache load failed, using fallbacks: {_e}")
+        data = _branding_cache['data'] or {}
+    _branding_cache.update({'data': data, 'expires': now + 30.0, 'sentinel_mtime': smt})
+    return data
+
+
+# ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
 LOG_PATH = os.path.join(os.path.dirname(__file__), 'logs', 'pos.log')
@@ -1202,8 +1277,31 @@ def strong_migrate():
         # Settings: add updated_at for TTL-based import lock
         pg_try("ALTER TABLE settings ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW()")
 
+        # Widen settings.value for branding fields (invoice footer etc). Idempotent:
+        # a no-op when already varchar(2000). Model is String(2000) in the same image,
+        # so SQLAlchemy won't truncate to 200 before the DB sees the value.
+        pg_try("ALTER TABLE settings ALTER COLUMN value TYPE VARCHAR(2000)")
+        # Assert the widen actually took (a SAVEPOINT rollback could have swallowed it).
+        try:
+            _w = conn.execute(text(
+                "SELECT character_maximum_length FROM information_schema.columns "
+                "WHERE table_name='settings' AND column_name='value'"
+            )).scalar()
+            if _w is not None and _w < 2000:
+                logger.warning(f"settings.value width is {_w}, expected >=2000 - branding footer may truncate")
+        except Exception as _e:
+            logger.warning(f"settings.value width check skipped: {_e}")
+
         # Import in-progress flag (atomic lock for CSV imports)
         pg_try("INSERT INTO settings (key, value) VALUES ('import_in_progress', 'false') ON CONFLICT DO NOTHING")
+
+        # White-label branding keys (seed as '' = use Lady Coleen / env fallback, so the
+        # LC box and any un-customised store render byte-identical). See White-Label
+        # Branding Plan. Runtime-editable via /api/settings + the Branding UI card.
+        for _bk in ('branding_logo_file', 'branding_primary', 'branding_primary_dark',
+                    'branding_primary_border', 'branding_font', 'branding_invoice_legal',
+                    'branding_invoice_subtitle', 'branding_invoice_footer'):
+            pg_try(f"INSERT INTO settings (key, value) VALUES ('{_bk}', '') ON CONFLICT DO NOTHING")
 
         # DB constraints
         pg_try("ALTER TABLE products ADD CONSTRAINT chk_product_code_positive CHECK (product_code IS NULL OR product_code > 0)")
@@ -1285,6 +1383,25 @@ def create_app():
     app.jinja_env.globals['store_tagline']  = STORE_TAGLINE
     app.jinja_env.globals['store_legal']    = STORE_LEGAL
     app.jinja_env.globals['store_subtitle'] = STORE_SUBTITLE
+
+    # CSS-safe filters for the runtime branding <style> overrides (XSS defense-in-depth)
+    app.jinja_env.filters['css_hex']   = css_hex
+    app.jinja_env.filters['safe_font'] = safe_font
+
+    # Runtime branding: inject DB-backed values into every template. Empty values keep
+    # the LC/env fallback so an un-customised box is byte-identical. Never raises.
+    @app.context_processor
+    def _inject_branding():
+        b = get_branding()
+        logo_file = (b.get('branding_logo_file') or '').strip()
+        return {
+            'branding': b,
+            'branding_logo_url': ('/static/branding/' + logo_file) if logo_file else '/static/logo.svg',
+            # invoice text: DB value if set, else the env-driven Jinja global fallback
+            'brand_invoice_legal':    (b.get('branding_invoice_legal') or '').strip()    or STORE_LEGAL,
+            'brand_invoice_subtitle': (b.get('branding_invoice_subtitle') or '').strip() or STORE_SUBTITLE,
+            'brand_invoice_footer':   (b.get('branding_invoice_footer') or '').strip(),
+        }
 
     logger.info(f"{LOG_PREFIX} POS starting - ENV={APP_ENV} DB={DB_NAME} IS_QA={IS_QA}")
 
@@ -1431,6 +1548,7 @@ def _register_routes(_app):
     from blueprints.scale        import bp as scale_bp
     from blueprints.imports         import bp as imports_bp
     from blueprints.deploy_schedule import bp as deploy_schedule_bp
+    from blueprints.branding        import bp as branding_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1449,6 +1567,7 @@ def _register_routes(_app):
     _app.register_blueprint(scale_bp)
     _app.register_blueprint(imports_bp)
     _app.register_blueprint(deploy_schedule_bp)
+    _app.register_blueprint(branding_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

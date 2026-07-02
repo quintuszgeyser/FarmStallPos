@@ -13,6 +13,9 @@
       --cream:      #faf7f2;
       --text:       #2c2416;
     }
+    /* Runtime white-label override - invoice uses --gold (NOT --lc-gold). Only the
+       primary maps here; derived light/dark shades keep their tasteful defaults. */
+    {% if branding.branding_primary %}:root { --gold: {{ branding.branding_primary | css_hex('#927f57') }}; }{% endif %}
 
     body {
       font-family: 'Georgia', 'Times New Roman', serif;
@@ -193,7 +196,7 @@
   <!-- Header -->
   <div class="header">
     <div class="header-logo">
-      <img src="/static/logo.svg" alt="{{ store_name }}">
+      <img src="{{ branding_logo_url }}" alt="{{ store_name }}">
     </div>
     <div class="header-right">
       <div class="invoice-title">Invoice</div>
@@ -210,8 +213,8 @@
   <div class="addresses">
     <div class="address-block from-block">
       <div class="address-label">From</div>
-      <h3>{{ store_legal }}</h3>
-      <p>{{ store_subtitle }}</p>
+      <h3>{{ brand_invoice_legal }}</h3>
+      <p>{{ brand_invoice_subtitle }}</p>
     </div>
     {% if inv.customer_name or inv.customer_phone or inv.customer_email or inv.customer_address %}
     <div class="address-block">
@@ -284,7 +287,8 @@
 
   <!-- Footer -->
   <div class="footer">
-    <span class="gold">{{ store_legal }}</span> &nbsp;·&nbsp; Thank you for your business
+    <span class="gold">{{ brand_invoice_legal }}</span> &nbsp;·&nbsp; Thank you for your business
+    {% if brand_invoice_footer %}<div style="margin-top:6px">{{ brand_invoice_footer }}</div>{% endif %}
   </div>
 
 </div>

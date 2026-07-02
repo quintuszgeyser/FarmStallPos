@@ -279,7 +279,9 @@ class Setting(db.Model):
     __tablename__ = 'settings'
     id    = db.Column(db.Integer, primary_key=True)
     key   = db.Column(db.String(50), unique=True, nullable=False)
-    value = db.Column(db.String(200), nullable=False)
+    # Widened 200->2000 for branding_invoice_footer etc. (see strong_migrate ALTER).
+    # Must ship in the same image as the ALTER so SQLAlchemy doesn't truncate to 200.
+    value = db.Column(db.String(2000), nullable=False)
 
 
 class UserSession(db.Model):

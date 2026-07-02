@@ -29,7 +29,7 @@ docker compose version >/dev/null 2>&1 || die "docker compose plugin not install
 
 c_bold "== Farm POS store provisioning =="
 mkdir -p "$FARMPOS_HOME" "$SECRETS_DIR" \
-         "$FARMPOS_HOME/data" "$FARMPOS_HOME/store" "$FARMPOS_HOME/postgres-init"
+         "$FARMPOS_HOME/data" "$FARMPOS_HOME/data/branding" "$FARMPOS_HOME/store" "$FARMPOS_HOME/postgres-init"
 chmod 700 "$SECRETS_DIR"
 STORE_YML="$FARMPOS_HOME/store.yml"
 

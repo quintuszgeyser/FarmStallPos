@@ -40,6 +40,8 @@ services:
       - ./data/pos-logs:/app/logs
       - ./data/product-images:/app/static/product_images
       - ./data/supplier-docs:/app/static/supplier_docs
+      # Runtime-uploaded branding (logo) - persisted across container rebuilds.
+      - ./data/branding:/app/static/branding
       # Per-store logo overrides the image default (falls back to shipped logo if absent).
       - ./store/logo.svg:/app/static/logo.svg:ro
     ports:

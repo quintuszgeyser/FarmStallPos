@@ -8221,7 +8221,56 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     _setSlider('set-min-angle-dist',  'set-min-angle-dist-val',  s.min_angle_distance, v => parseFloat(v).toFixed(2));
     _bindSlider('set-max-face-angles', 'set-max-face-angles-val', v => Math.round(v) + ' angles');
     _bindSlider('set-min-angle-dist',  'set-min-angle-dist-val',  v => parseFloat(v).toFixed(2));
+
+    // Branding (white-label)
+    const _bset = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    _bset('brand-primary-hex', s.branding_primary);
+    if (s.branding_primary && /^#[0-9a-fA-F]{6}$/.test(s.branding_primary)) {
+      const p = document.getElementById('brand-primary-picker'); if (p) p.value = s.branding_primary;
+    }
+    _bset('brand-font', s.branding_font);
+    _bset('brand-invoice-legal', s.branding_invoice_legal);
+    _bset('brand-invoice-subtitle', s.branding_invoice_subtitle);
+    _bset('brand-invoice-footer', s.branding_invoice_footer);
   } catch(e) { console.error('loadConfigSettings', e); }
+});
+
+// Colour picker mirrors into the hex field (live)
+document.getElementById('brand-primary-picker')?.addEventListener('input', (e) => {
+  const hex = document.getElementById('brand-primary-hex'); if (hex) hex.value = e.target.value;
+});
+
+document.getElementById('btn-save-branding')?.addEventListener('click', async () => {
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      branding_primary:           (document.getElementById('brand-primary-hex')?.value || '').trim(),
+      branding_font:              (document.getElementById('brand-font')?.value || '').trim(),
+      branding_invoice_legal:     (document.getElementById('brand-invoice-legal')?.value || '').trim(),
+      branding_invoice_subtitle:  (document.getElementById('brand-invoice-subtitle')?.value || '').trim(),
+      branding_invoice_footer:    (document.getElementById('brand-invoice-footer')?.value || '').trim(),
+    })});
+    _flashSaved('branding-saved');
+    toast('Branding saved - reload to see it (applies within 30s everywhere)', 'success', 3500);
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+// Logo uploads immediately on file selection
+document.getElementById('brand-logo-file')?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  const fd = new FormData(); fd.append('logo', file);
+  try {
+    // Direct fetch (NOT api()) - api() forces Content-Type: application/json which would
+    // strip the multipart boundary and give Flask an empty request.files. Let the browser
+    // set the multipart Content-Type itself.
+    const res = await fetch('/api/branding/logo', { method: 'POST', body: fd, credentials: 'same-origin' });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(j.error || 'Upload failed');
+    const thumb = document.getElementById('brand-logo-thumb');
+    if (thumb && j.logo_url) thumb.src = j.logo_url + '?t=' + Date.now();
+    toast('Logo updated - reload to see it in the header', 'success', 3500);
+  } catch(err) { toast('Logo upload failed: ' + err.message, 'error'); }
+  e.target.value = '';
 });
 
 document.getElementById('btn-save-business-settings')?.addEventListener('click', async () => {
