@@ -10,17 +10,23 @@ Browser-based point-of-sale system for Lady Coleen's farm stall.
 
 Production runs on an Ubuntu 24.04 server via Docker Compose.
 
-```bash
-# Deploy latest code (run after every push to main)
-ssh -J root@172.20.10.1 quintusz@100.72.83.107 \
-  'cd ~/farmpos-docker && bash deploy.sh pos'
+**Releases go local → GitHub → QA → promote.** The in-app Deploy tab promotes the exact
+QA-tested image to prod and ships the **POS and the Lady Coleen web shop together** — you
+do not SSH for the prod step. Do NOT run `deploy.sh pos`/`web` for a release (they rebuild
+prod from live `main`, bypassing QA).
 
-# Verify deploy
+```bash
+# 1. Push to GitHub main (the image clones main fresh on every QA build — push first)
+git push origin main
+
+# 2. Deploy QA — builds BOTH qa-farmpos-app (:5100) and qa-ladycoleen-web (:5101)
 ssh -J root@172.20.10.1 quintusz@100.72.83.107 \
-  'sleep 25 && docker exec farmpos-app python scripts/smoke_test.py http://localhost:5000'
+  'cd ~/farmpos-docker && bash deploy.sh qa'
+
+# 3. Test on QA (:5100 / :5101), then promote:  QA POS → Deploy tab → "Deploy Now"
 ```
 
-The Docker image clones the latest `main` branch from GitHub on every build - push first, then deploy.
+Full runbook: `../03-Tech/Infrastructure/Deploy Runbook.md` (in the Obsidian vault).
 
 ---
 

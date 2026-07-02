@@ -35,14 +35,23 @@ The production system runs on an Ubuntu 24.04 server (`farmpc` in `~/.ssh/config
 - `farm_pos_web/` - POS (this folder, git root)
 - `ladycoleen_web/` - Lady Coleen website (subfolder)
 
+**Deploy flow: local → GitHub → QA → promote (POS + web together).** The in-app
+Deploy tab promotes the byte-identical QA-tested images to prod — it ships **both**
+the POS and the Lady Coleen web shop in one action. You do NOT SSH for the prod step,
+and you do NOT run `deploy.sh web`/`pos` for a release. Full detail:
+`03-Tech/Infrastructure/Deploy Runbook.md`.
+
 ```bash
-# Deploy POS - push to GitHub first, then:
-ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh pos'
+# 1. Push code to GitHub main (both apps clone main fresh on every QA build)
+git add <files> && git commit -m "feat: ..." && git push origin main
 
-# Deploy website - push to GitHub first, then:
-ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh web'
+# 2. Deploy QA — builds BOTH qa-farmpos-app (:5100) AND qa-ladycoleen-web (:5101):
+ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh qa'
 
-# Deploy recognition - SCP file first, then:
+# 3. Test on QA:  POS http://10.0.0.101:5100 · web http://10.0.0.101:5101
+# 4. Promote to prod: QA POS → Deploy tab → "Deploy Now"  (promotes POS + web together)
+
+# Recognition / scale-sync are NOT in the promotion pipeline — deploy directly:
 cat recognition_service_v2.py | ssh farmpc 'cat > ~/farmpos-docker/recognition/recognition_service_v2.py'
 ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh recognition'
 
@@ -51,9 +60,14 @@ ssh farmpc 'docker compose -f ~/farmpos-docker/docker-compose.yml ps'
 ```
 
 **Critical deploy rules:**
-- POS and web pull from GitHub on every build (`--no-cache`) - always push to `main` before deploying
-- Recognition uses local SCP - GitHub push alone does nothing for recognition
-- NEVER `docker compose up` directly - always use `deploy.sh`
+- ⚠️ **NEVER** use `deploy.sh web` / `deploy.sh pos` / `deploy.sh qa-pos` for a release —
+  they build straight to prod (or don't exist and fall through to a prod rebuild),
+  bypassing QA. Releases go QA → Deploy-tab promotion **only**.
+- Promotion re-tags the exact QA image as prod (no rebuild) — what you test on QA is
+  byte-identical to what goes live, differing only by DB (`farm_pos_qa` vs `farm_pos_prod`) and `APP_ENV`.
+- POS and web pull from GitHub on every QA build (`--no-cache`) - always push to `main` first.
+- Recognition uses local SCP - a GitHub push alone does nothing for recognition.
+- NEVER `docker compose up` directly - always use `deploy.sh`.
 - After deploy, verify new code: `docker exec ladycoleen-web grep -c "some_new_string" /app/blueprints/farmshop.py`
 
 ## Environment
