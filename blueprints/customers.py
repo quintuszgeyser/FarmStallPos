@@ -1069,8 +1069,12 @@ def api_customers_attributes_bulk():
 @bp.route('/api/till/active_customer', methods=['GET'])
 def api_till_active_customer():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
-    cutoff = datetime.utcnow() - timedelta(seconds=30)
-    result = db.session.execute(text("""SELECT td.customer_id, td.detected_at, c.name, c.customer_number FROM till_detections td JOIN customers c ON c.id = td.customer_id WHERE td.detected_at >= :cutoff AND c.name IS NOT NULL ORDER BY td.detected_at DESC LIMIT 1"""), {'cutoff': cutoff}).fetchone()
+    try:
+        cutoff = datetime.utcnow() - timedelta(seconds=30)
+        result = db.session.execute(text("""SELECT td.customer_id, td.detected_at, c.name, c.customer_number FROM till_detections td JOIN customers c ON c.id = td.customer_id WHERE td.detected_at >= :cutoff AND c.name IS NOT NULL ORDER BY td.detected_at DESC LIMIT 1"""), {'cutoff': cutoff}).fetchone()
+    except Exception:
+        db.session.rollback()
+        return jsonify({'customer_id': None})
     if not result: return jsonify({'customer_id': None})
     return jsonify({'customer_id': result[0], 'name': result[2], 'customer_number': result[3], 'detected_at': result[1].isoformat() if result[1] else None})
 
