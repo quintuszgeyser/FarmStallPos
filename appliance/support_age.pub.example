@@ -1,0 +1,14 @@
+# Central support age PUBLIC key — the operator's fleet recovery key.
+#
+# Generate ONCE on your support machine:
+#     age-keygen -o ~/.config/farmpos/support_age.key
+# It prints "Public key: age1....". Put ONLY that public line into a file named
+# support_age.pub (drop the .example suffix) next to this one, e.g.:
+#     age1qz9examplepublickeystringxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+#
+# register-store.sh copies support_age.pub into each box's secrets/ so backup.sh
+# encrypts every backup to BOTH the store's key AND this one. That lets you restore
+# or reproduce ANY store's backup with the single support PRIVATE key — which must
+# live ONLY on your support machine / password manager, NEVER in this repo.
+#
+# The public key here is safe to commit (public keys cannot decrypt anything).

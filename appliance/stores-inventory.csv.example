@@ -1,0 +1,4 @@
+store_id,ssh_host,wave,expected_version
+lady-coleen,quintusz@lady-coleen.tailnet.ts.net,1,v2.1.0
+boer-and-butcher,quintusz@boer-and-butcher.tailnet.ts.net,2,v2.1.0
+harbour-deli,quintusz@harbour-deli.tailnet.ts.net,3,v2.1.0

@@ -1,0 +1,7 @@
+# Operator-local, environment-specific, or secret-adjacent — never commit.
+repro.conf
+stores-inventory.csv
+# The real central support PUBLIC key is committed as support_age.pub by the operator;
+# only the .example is shipped. Uncomment the next line if you prefer to keep even the
+# public key out of git and distribute it another way:
+# support_age.pub

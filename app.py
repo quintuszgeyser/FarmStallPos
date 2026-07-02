@@ -96,16 +96,16 @@ def strong_migrate():
     engine = db.engine
     engine_name = engine.dialect.name
 
-    if engine_name != 'sqlite':
-        # Try non-blocking advisory lock — skip if another worker already holds it
-        with engine.connect() as _lc:
-            acquired = _lc.execute(text(f"SELECT pg_try_advisory_lock({LOCK_ID})")).scalar()
-            _lc.commit()
-        if not acquired:
-            logger.info("Migration lock held — skipping (another worker will migrate)")
-            return
-
     with engine.begin() as conn:
+        if engine_name != 'sqlite':
+            # TRANSACTION-level advisory lock — held for the life of THIS transaction and
+            # auto-released on commit/rollback. Must be acquired inside engine.begin() (a
+            # session-level pg_try_advisory_lock on a separate connection releases when that
+            # connection returns to the pool, BEFORE the migration runs — letting a second
+            # gunicorn worker migrate concurrently). Blocking (not _try_): a late worker
+            # waits for the migration to finish, then re-runs the idempotent DDL as a no-op.
+            conn.exec_driver_sql(f"SELECT pg_advisory_xact_lock({LOCK_ID})")
+
         if engine_name == 'sqlite':
             # ---- sales table ----
             conn.exec_driver_sql("""
@@ -1214,14 +1214,8 @@ def strong_migrate():
                 JOIN transactions t ON tl.transaction_id = t.id
                 """)
 
-    # Release advisory lock (PG only)
-    if engine_name != 'sqlite':
-        try:
-            with engine.connect() as _lc:
-                _lc.execute(text(f"SELECT pg_advisory_unlock({LOCK_ID})"))
-                _lc.commit()
-        except Exception:
-            pass
+    # No explicit unlock needed: the transaction-level advisory lock acquired inside
+    # the engine.begin() block above auto-releases when that transaction committed.
 
 
 def create_app():

@@ -18,8 +18,11 @@ FARMPOS_HOME="${FARMPOS_HOME:-/opt/farmpos}"
 
 REGISTRY="${REGISTRY:-ghcr.io}"
 IMAGE_REPO="${IMAGE_REPO:-quintuszgeyser/farmpos-pos}"
-RESTORE=0
+RESTORE=0; UPDATE_ONLY=0
 [ "${1:-}" = "--restore" ] && RESTORE=1
+# --update-only: re-render .env + compose from the current store.yml, then exit BEFORE
+# bringing up the stack / installing cron. Used by update.sh (which does the restart).
+[ "${1:-}" = "--update-only" ] && UPDATE_ONLY=1
 
 need_cmd docker; need_cmd openssl; need_cmd python3
 docker compose version >/dev/null 2>&1 || die "docker compose plugin not installed"
@@ -84,6 +87,27 @@ SECRET_KEY="$(secret_file secret_key)"
 ADMIN_PASS="$(secret_file admin_pass)"
 POSTGRES_PASSWORD_URLENC="$(urlencode "$POSTGRES_PASSWORD")"
 
+# 2a. Backup encryption keypair (generate ONCE per box; private key must be escrowed).
+if command -v age-keygen >/dev/null 2>&1; then
+  if [ ! -s "$SECRETS_DIR/backup_age.key" ]; then
+    age-keygen -o "$SECRETS_DIR/backup_age.key" 2>/dev/null
+    chmod 600 "$SECRETS_DIR/backup_age.key"
+    grep 'public key:' "$SECRETS_DIR/backup_age.key" | awk '{print $NF}' > "$SECRETS_DIR/backup_age.pub"
+    cp "$SECRETS_DIR/backup_age.key" "$SECRETS_DIR/backup_age.key.escrow.txt"
+    KEY_JUST_MADE=1
+  fi
+else
+  c_red "WARN: 'age' not installed — backups will be UNENCRYPTED. apt-get install age, then re-run."
+fi
+
+# 2b. Central support public key -> lets you restore/repro ANY store centrally.
+if [ -f "$HERE/support_age.pub" ]; then
+  cp "$HERE/support_age.pub" "$SECRETS_DIR/support_age.pub"
+else
+  c_red "WARN: appliance/support_age.pub missing — central restore/repro will NOT work."
+  c_red "      Generate it on your support machine and commit it (see support_age.pub.example)."
+fi
+
 # --- 3. Render .env + compose + init --------------------------------------------
 export STORE_ID STORE_NAME STORE_TAGLINE STORE_LEGAL STORE_SUBTITLE TZ \
        FARMPOS_VERSION POS_IMAGE POSTGRES_PASSWORD POSTGRES_PASSWORD_URLENC \
@@ -95,6 +119,13 @@ cp "$HERE/postgres-init/01-create-db.sh" "$FARMPOS_HOME/postgres-init/"
 chmod +x "$FARMPOS_HOME/postgres-init/01-create-db.sh"
 # Ship a default logo if the store didn't supply one, so the bind-mount resolves.
 [ -f "$FARMPOS_HOME/store/logo.svg" ] || : > "$FARMPOS_HOME/store/logo.svg"
+
+# --update-only stops here: .env + compose are re-rendered from store.yml; update.sh
+# owns the pull + restart. Skips DB init, stack start, health-gate, and cron install.
+if [ "$UPDATE_ONLY" = "1" ]; then
+  c_green "Re-rendered .env + docker-compose.yml from store.yml (update-only)."
+  exit 0
+fi
 
 # --- 4. Bring up ----------------------------------------------------------------
 cd "$FARMPOS_HOME"
@@ -112,6 +143,13 @@ for i in $(seq 1 45); do
 done
 [ "$ok" = "1" ] || { docker compose logs --tail 40 pos; die "POS did not become healthy."; }
 
+# --- 5b. Install the nightly backup cron (idempotent) ---------------------------
+CRON_LINE="0 2 * * * $HERE/backup.sh >> $FARMPOS_HOME/data/backup.log 2>&1"
+if ! crontab -l 2>/dev/null | grep -qF "$HERE/backup.sh"; then
+  ( crontab -l 2>/dev/null; echo "$CRON_LINE" ) | crontab -
+  c_green "Installed nightly backup cron (02:00)."
+fi
+
 # --- 6. Ready -------------------------------------------------------------------
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 c_green "================================================================"
@@ -121,4 +159,10 @@ c_green "   Admin:    admin  /  $ADMIN_PASS   (change on first login)"
 [ -n "$SCALE_IP" ] && c_green "   Scale:    $SCALE_IP:$SCALE_PORT"
 c_green "   Secrets:  $SECRETS_DIR (mode 600 — back these up)"
 c_green "================================================================"
+if [ "${KEY_JUST_MADE:-0}" = "1" ]; then
+  c_red "⚠  ESCROW THE BACKUP KEY NOW — this store's backups cannot be self-recovered without it:"
+  c_red "     $SECRETS_DIR/backup_age.key.escrow.txt"
+  c_red "   Copy it to a password manager + one offline location, then delete the .escrow.txt copy."
+fi
+[ -f "$SECRETS_DIR/support_age.pub" ] || c_red "⚠  No support key deployed — you will NOT be able to restore/repro this store centrally."
 [ "$RESTORE" = "1" ] && echo "(restore mode: existing DB preserved; init skipped by Postgres.)"
