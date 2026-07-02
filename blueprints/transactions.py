@@ -14,10 +14,35 @@ from helpers import (
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, KitchenOrder,
-    Sale, Purchase, User,
+    Sale, Purchase, User, AuditLog,
 )
 
 bp = Blueprint('transactions', __name__)
+
+
+def _serialize_sale_rows(rows):
+    """Snapshot Sale rows to JSON for the append-only audit trail (ISSUE-31)."""
+    out = []
+    for r in rows:
+        out.append({
+            'id': r.id, 'sale_id': r.sale_id,
+            'date_time': r.date_time.isoformat() if r.date_time else None,
+            'product_id': r.product_id, 'qty': str(r.qty), 'unit_price': str(r.unit_price),
+            'user_id': r.user_id, 'customer_id': r.customer_id,
+            'payment_method': r.payment_method, 'cash_tendered': (str(r.cash_tendered) if r.cash_tendered is not None else None),
+            'discount_json': r.discount_json, 'sub_log': r.sub_log,
+        })
+    return out
+
+
+def _audit(event_type, target_id, before_rows, note=None):
+    u = current_user()
+    db.session.add(AuditLog(
+        event_type=event_type,
+        actor_user_id=(u.id if u else None),
+        target_table='sales', target_id=str(target_id),
+        before_json=_json.dumps(before_rows), note=note,
+    ))
 
 
 @bp.route('/api/transactions', methods=['GET'])
@@ -104,6 +129,16 @@ def api_transactions_post():
     now          = datetime.utcnow()
     u            = current_user()
     customer_id  = data.get('customer_id')
+    # Tender info (ISSUE-29): the teller's cash/card choice for this whole transaction.
+    # Applies to every line of the sale (they share sale_id). Normalised + validated.
+    pm_raw       = (data.get('payment_method') or '').strip().lower()
+    payment_method = pm_raw if pm_raw in ('cash', 'card', 'split') else None
+    cash_tendered = None
+    if data.get('cash_tendered') not in (None, ''):
+        try:
+            cash_tendered = Decimal(str(data.get('cash_tendered')))
+        except Exception:
+            cash_tendered = None
     cart_discount = data.get('cart_discount')
     has_discount  = cart_discount or any(i.get('item_discount') or i.get('special_name') for i in cart)
     discount_by_id = (u.id if u else None) if has_discount else None
@@ -125,7 +160,10 @@ def api_transactions_post():
                 **(({'cart': cart_discount}) if cart_discount else {}),
                 **(({'special': special_name}) if special_name else {}),
             })
-        db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id))
+        # payment_method on every line (they share sale_id); cash_tendered only on the
+        # first line so it's recorded once per transaction, not double-counted per line.
+        _first_line = (item is cart[0])
+        db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None)))
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'simple':
@@ -215,6 +253,7 @@ def api_transaction_void(sale_id):
     rows   = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows: return jsonify({'error': 'Transaction not found or already voided'}), 404
     u = current_user(); now = datetime.utcnow()
+    _audit('sale_void', sale_id, _serialize_sale_rows(rows), note=reason)  # snapshot before mutation
     for row in rows:
         row.voided = True; row.voided_by = u.id if u else None; row.voided_at = now; row.void_reason = reason
         p = db.session.get(Product, row.product_id, with_for_update=True)
@@ -234,12 +273,17 @@ def api_transaction_edit(sale_id):
     rows = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows: return jsonify({'error': 'Transaction not found or voided'}), 404
     orig_date = rows[0].date_time
+    u = current_user(); now = orig_date
+    _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note='superseded by edit')  # snapshot before mutation
     for row in rows:
         p = db.session.get(Product, row.product_id, with_for_update=True)
         if p and p.product_type == 'simple': p.stock_qty = (p.stock_qty or 0) + int(row.qty)
-        db.session.delete(row)
+        # ISSUE-31: mark the original rows voided instead of DELETE-ing them, so the
+        # pre-edit state is preserved (SARS unalterable records). New lines below are
+        # inserted un-voided under the same sale_id, so 'voided=False' queries still work.
+        row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = datetime.utcnow()
+        row.void_reason = 'superseded by edit'
     reverse_fifo(sale_id)
-    u = current_user(); now = orig_date
     for item in lines:
         pid = int(item['product_id']); qty = Decimal(str(item.get('qty', 1))); unit_price = Decimal(str(item.get('unit_price')))
         if qty <= 0: continue

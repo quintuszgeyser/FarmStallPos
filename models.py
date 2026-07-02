@@ -311,6 +311,25 @@ class Sale(db.Model):
     sub_log       = db.Column(db.Text, nullable=True)
     discount_json = db.Column(db.Text, nullable=True)
     discount_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    # Tender info (ISSUE-29): what the customer paid with. Nullable so historical rows
+    # (pre-migration) stay valid; new sales persist the teller's cash/card choice.
+    payment_method = db.Column(db.String(16), nullable=True)   # 'cash' | 'card' | 'split'
+    cash_tendered  = db.Column(Numeric(10, 2), nullable=True)  # change calc / till reconciliation
+
+
+class AuditLog(db.Model):
+    """Append-only forensic trail for destructive actions (voids, edits) - ISSUE-31.
+    Never UPDATE/DELETE these rows. before_json captures the pre-mutation state so a
+    voided/edited sale can always be reconstructed (SARS s29 unalterable records)."""
+    __tablename__ = 'audit_log'
+    id            = db.Column(db.Integer, primary_key=True)
+    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    event_type    = db.Column(db.String(40), nullable=False)   # 'sale_void' | 'sale_edit'
+    actor_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    target_table  = db.Column(db.String(40), nullable=True)
+    target_id     = db.Column(db.String(64), nullable=True)    # sale_id or row id
+    before_json   = db.Column(db.Text, nullable=True)
+    note          = db.Column(db.String(500), nullable=True)
 
 
 class Special(db.Model):

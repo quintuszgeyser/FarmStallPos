@@ -397,6 +397,8 @@
 </div>
 <style>body { margin-top: 36px !important; }</style>
 {% endif %}
+<!-- Backup-health banner (ISSUE gap): populated by _checkBackupHealth() from /api/health. Hidden unless there's a warning. -->
+<div id="backup-warning-banner" class="admin-only hidden" style="background:#f0ad4e;color:#000;text-align:center;padding:6px 4px;font-weight:bold;font-size:13px;border-bottom:3px solid #d9534f"></div>
 <div class="container" style="background:var(--dd-surface);">
 
   <!-- Brand header -->
@@ -505,6 +507,13 @@
           </div>
         </div>
         <div><div id="cart" class="list-group"></div></div>
+        <!-- Payment method (ISSUE-29): recorded on the sale for till reconciliation -->
+        <div class="btn-group btn-group-sm mt-2" role="group" id="pay-method-group" aria-label="Payment method">
+          <input type="radio" class="btn-check" name="pay-method" id="pay-cash" value="cash" checked>
+          <label class="btn btn-outline-secondary" for="pay-cash">💵 Cash</label>
+          <input type="radio" class="btn-check" name="pay-method" id="pay-card" value="card">
+          <label class="btn btn-outline-secondary" for="pay-card">💳 Card</label>
+        </div>
         <div class="d-flex justify-content-between align-items-center mt-1">
           <div>
             <strong>Total: R<span id="cart-total">0.00</span></strong>

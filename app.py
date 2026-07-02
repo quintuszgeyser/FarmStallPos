@@ -712,6 +712,23 @@ def strong_migrate():
             # discount tracking
             pg_try("ALTER TABLE sales ADD COLUMN discount_json TEXT")
             pg_try("ALTER TABLE sales ADD COLUMN discount_by INTEGER REFERENCES users(id)")
+            # tender info (ISSUE-29) - nullable/additive, safe for existing rows
+            pg_try("ALTER TABLE sales ADD COLUMN payment_method VARCHAR(16)")
+            pg_try("ALTER TABLE sales ADD COLUMN cash_tendered NUMERIC(10,2)")
+
+            # append-only audit trail for voids/edits (ISSUE-31)
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS audit_log (
+              id            SERIAL PRIMARY KEY,
+              created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+              event_type    VARCHAR(40) NOT NULL,
+              actor_user_id INTEGER REFERENCES users(id),
+              target_table  VARCHAR(40),
+              target_id     VARCHAR(64),
+              before_json   TEXT,
+              note          VARCHAR(500)
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_audit_log_created ON audit_log (created_at)")
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS specials (
@@ -1295,10 +1312,25 @@ def create_app():
             imp = conn.execute(text(
                 "SELECT COALESCE((SELECT value FROM settings WHERE key='import_in_progress'),'false')"
             )).scalar()
+        # Backup health (ISSUE gap): backup.sh writes /app/config/backup_status.json.
+        # Absent on the Lady Coleen box (no appliance backup cron) -> no warning shown.
+        backup_warn = None
+        try:
+            import json as _json, datetime as _dt
+            with open('/app/config/backup_status.json') as _bf:
+                _bs = _json.load(_bf)
+            _last = _dt.datetime.fromisoformat(_bs.get('last_backup'))
+            _age_h = (_dt.datetime.now(_last.tzinfo) - _last).total_seconds() / 3600
+            if _bs.get('disk_warn'):        backup_warn = f"Disk {_bs.get('disk_pct','?')}% full"
+            elif _bs.get('last_push_ok') is False: backup_warn = "Off-site backup push failing"
+            elif _age_h > 48:               backup_warn = f"No backup in {int(_age_h)}h"
+        except Exception:
+            backup_warn = None  # no status file / unreadable -> stay silent
         return jsonify({
             'env': APP_ENV, 'db': DB_NAME, 'is_qa': IS_QA,
             'scale_reachable': _health_cache['scale'] if not IS_QA else False,
             'import_in_progress': (imp or 'false').lower() == 'true',
+            'backup_warning': backup_warn,
         })
 
     # Request / response logging

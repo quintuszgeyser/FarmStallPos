@@ -446,7 +446,7 @@ def export_transactions_csv():
     pids = {r.product_id for r in rows}; uids = {r.user_id for r in rows if r.user_id}
     pname = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
     uname = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
-    sio = StringIO(); sio.write('sale_id,date_time,product,qty,unit_price,subtotal,teller,discount\n')
+    sio = StringIO(); sio.write('sale_id,date_time,product,qty,unit_price,subtotal,teller,payment_method,discount\n')
     for r in rows:
         subtotal = round(float(r.qty * r.unit_price), 2); disc = ''
         if r.discount_json:
@@ -457,7 +457,7 @@ def export_transactions_csv():
                 if d.get('cart'):    parts.append(f"Cart:{d['cart'].get('value')}{d['cart'].get('type','')}")
                 disc = ' | '.join(parts)
             except Exception: pass
-        sio.write(f"{r.sale_id},{r.date_time.isoformat()},{pname.get(r.product_id, str(r.product_id)).replace(',',';')},{float(r.qty):.4f},{float(r.unit_price):.2f},{subtotal},{uname.get(r.user_id, '').replace(',',';')},{disc}\n")
+        sio.write(f"{r.sale_id},{r.date_time.isoformat()},{pname.get(r.product_id, str(r.product_id)).replace(',',';')},{float(r.qty):.4f},{float(r.unit_price):.2f},{subtotal},{uname.get(r.user_id, '').replace(',',';')},{r.payment_method or ''},{disc}\n")
     slug = ''
     if pid_filter:
         fp = db.session.get(Product, pid_filter)

@@ -351,6 +351,26 @@ async function refreshMe() {
     show(document.getElementById('btn-login'));
   }
   updateVisibility();
+  _checkBackupHealth();
+}
+
+// Backup-health banner (ISSUE gap): /api/health surfaces a backup_warning string when
+// off-box backups are stale/failing or disk is filling. Show it to admins only; the
+// owner reporting "there's a yellow warning" is a zero-infra alert channel.
+async function _checkBackupHealth() {
+  try {
+    const isAdmin = STATE.user && (STATE.user.roles || []).includes('admin');
+    const b = document.getElementById('backup-warning-banner');
+    if (!b) return;
+    if (!isAdmin) { hide(b); return; }
+    const h = await api('/api/health');
+    if (h && h.backup_warning) {
+      b.textContent = `⚠ Backup warning: ${h.backup_warning} - tell your support contact.`;
+      show(b);
+    } else {
+      hide(b);
+    }
+  } catch (e) { /* health check is best-effort; never block the UI */ }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -3584,8 +3604,10 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   });
 
   // Include customer_id and cart-wide discount if present
+  const payMethod = document.querySelector('input[name="pay-method"]:checked')?.value || 'cash';
   const requestBody = {
     cart: payload,
+    payment_method: payMethod,   // ISSUE-29: recorded per sale for till reconciliation
     ...(STATE.activeCustomer?.customer_id ? { customer_id:   STATE.activeCustomer.customer_id } : {}),
     ...(STATE._cartDiscount               ? { cart_discount: STATE._cartDiscount               } : {}),
   };

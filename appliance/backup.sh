@@ -19,6 +19,21 @@ BK="$FARMPOS_HOME/data/backups"; mkdir -p "$BK"
 TS="$(date +%Y-%m-%d_%H%M%S)"
 DUMP="$BK/${STORE_ID}_${TS}.sql.gz"
 
+# Local retention: 14 normally, 7 when the disk is tight. Set by the disk guard below.
+KEEP=14
+
+# 0. Disk guard - a full disk crashes Postgres mid-write and silently kills backups.
+#    Warn (owner-visible marker via .disk_warn) and tighten retention; hard-abort only
+#    if there is genuinely no safe headroom left.
+DISK_PCT="$(df --output=pcent "$BK" 2>/dev/null | tail -1 | tr -dc '0-9')"
+if [ -n "$DISK_PCT" ] && [ "$DISK_PCT" -ge 80 ]; then
+  echo "$(date -Iseconds) DISK_WARN ${DISK_PCT}% used on backup volume" | tee "$BK/.disk_warn" >&2
+  KEEP=7
+  [ "$DISK_PCT" -ge 95 ] && die "disk ${DISK_PCT}% full - refusing backup (no safe headroom)"
+else
+  rm -f "$BK/.disk_warn"
+fi
+
 # 1. Dump (compressed). set -o pipefail makes a pg_dump failure abort the whole script.
 docker exec farmpos-postgres pg_dump -U farmstall farmpos | gzip > "$DUMP"
 
@@ -30,6 +45,14 @@ if [ "$SIZE" -lt 10240 ]; then
   die "dump is suspiciously small ($SIZE bytes) - aborting, keeping previous backups"
 fi
 gzip -t "$DUMP" 2>/dev/null || { rm -f "$DUMP"; die "dump failed gzip integrity check - aborting"; }
+
+# 1b. Manifest - row counts per table, so restore.sh can detect a truncated/partial dump
+#     that still happens to be valid gzip (ISSUE-30). Written BEFORE encryption so it
+#     reflects the real DB state at dump time.
+MANIFEST="$DUMP.manifest"
+docker exec farmpos-postgres psql -U farmstall -d farmpos -t -A -F',' -c \
+  "SELECT relname, n_live_tup FROM pg_stat_user_tables ORDER BY relname" > "$MANIFEST" 2>/dev/null || \
+  echo "" > "$MANIFEST"
 
 # 2. Encrypt with age to BOTH recipients. Warn (don't fail) if a key is missing so a box
 #    provisioned before the support key existed keeps producing (store-only) backups.
@@ -43,6 +66,8 @@ if command -v age >/dev/null 2>&1 && [ -f "$SECRETS_DIR/backup_age.pub" ]; then
   fi
   age "${RCPT[@]}" -o "$DUMP.age" "$DUMP"
   rm -f "$DUMP"; FINAL="$DUMP.age"
+  # keep the manifest named to match the final artifact
+  mv "$MANIFEST" "$FINAL.manifest"; MANIFEST="$FINAL.manifest"
 else
   echo "$(date -Iseconds) WARN: no age/backup_age.pub - backup is UNENCRYPTED (POPIA risk)" >&2
 fi
@@ -50,25 +75,39 @@ fi
 # 2a. Integrity checksum alongside the artifact.
 sha256sum "$FINAL" > "$FINAL.sha256"
 
-# 3. Retention: keep last 14 local (both the artifact and its .sha256).
-ls -1t "$BK/${STORE_ID}_"*.sql.gz*[!6] 2>/dev/null | grep -v '\.sha256$' | tail -n +15 | while read -r old; do
-  rm -f "$old" "$old.sha256"
-done
+# 3. Retention: keep last $KEEP local (artifact + its .sha256 + .manifest sidecars).
+ls -1t "$BK/${STORE_ID}_"*.sql.gz*.age "$BK/${STORE_ID}_"*.sql.gz 2>/dev/null \
+  | grep -vE '\.sha256$|\.manifest$' | tail -n +$((KEEP+1)) | while read -r old; do
+    rm -f "$old" "$old.sha256" "$old.manifest"
+  done
 echo "$FINAL" > "$BK/.last"
 
 # 4. Off-box push (rclone) if configured in store.yml. Verify the remote copy landed.
+#    Push the manifest too so a central restore can validate row counts.
 TARGET="$(yaml_get store.yml backup.target)"
 if [ -n "$TARGET" ] && command -v rclone >/dev/null 2>&1; then
   DEST="$TARGET/stores/${STORE_ID}/"
-  if rclone copy "$FINAL" "$DEST" && rclone copy "$FINAL.sha256" "$DEST"; then
+  if rclone copy "$FINAL" "$DEST" && rclone copy "$FINAL.sha256" "$DEST" && rclone copy "$MANIFEST" "$DEST"; then
     echo "$(date -Iseconds) pushed $(basename "$FINAL")" >> "$BK/.push.log"
+    rm -f "$BK/.push_warn"
   else
-    echo "$(date -Iseconds) WARN: rclone push FAILED for $(basename "$FINAL")" | tee -a "$BK/.push.log" >&2
+    echo "$(date -Iseconds) WARN: rclone push FAILED for $(basename "$FINAL")" | tee -a "$BK/.push.log" "$BK/.push_warn" >&2
   fi
 elif [ -n "$TARGET" ]; then
   echo "$(date -Iseconds) WARN: backup.target set but rclone not installed - no off-box copy" >&2
 fi
 
-# 5. Heartbeat file for backup-health monitoring (support machine can check its freshness).
+# 5. Heartbeat file for backup-health monitoring (support machine reads this).
 echo "$(date -Iseconds) $(basename "$FINAL") $SIZE bytes" > "$BK/.heartbeat"
+
+# 5b. Write a status file into the POS config volume (mounted into the container at
+#     /app/config) so /api/health can surface a backup-health banner to the owner.
+#     Zero new mounts needed - pos-config is already mounted.
+CFG="$FARMPOS_HOME/data/pos-config"
+if [ -d "$CFG" ]; then
+  PUSHED="true"; [ -f "$BK/.push_warn" ] && PUSHED="false"
+  DWARN="false"; [ -f "$BK/.disk_warn" ] && DWARN="true"
+  printf '{"last_backup":"%s","last_push_ok":%s,"disk_warn":%s,"disk_pct":%s}\n' \
+    "$(date -Iseconds)" "$PUSHED" "$DWARN" "${DISK_PCT:-0}" > "$CFG/backup_status.json" 2>/dev/null || true
+fi
 echo "$(date -Iseconds) backup ok: $FINAL ($SIZE bytes)"

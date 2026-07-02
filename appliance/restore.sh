@@ -64,6 +64,35 @@ docker exec "$PG" psql -U farmstall -d postgres -v ON_ERROR_STOP=1 -c "CREATE DA
 c_bold "Loading dump (errors are fatal)..."
 gunzip -c "$PLAIN" | docker exec -i "$PG" psql -U farmstall -d "$DB" -v ON_ERROR_STOP=1 -q
 
+# 4b. Manifest check (ISSUE-30): a dump truncated mid-COPY can be valid gzip AND load
+#     without a psql error, silently losing rows. Compare restored counts against the
+#     .manifest the backup wrote at dump time. Abort if a key table is >20% short.
+MANIFEST=""
+[ -f "$SRC.manifest" ] && MANIFEST="$SRC.manifest"
+if [ -n "$MANIFEST" ]; then
+  c_bold "Verifying row counts against manifest..."
+  SHORT=""
+  while IFS=',' read -r tbl expected; do
+    [ -z "$tbl" ] && continue
+    case "$tbl" in sales|stock_batches|products|invoices|customers) ;; *) continue ;; esac
+    [ "${expected:-0}" -gt 0 ] 2>/dev/null || continue
+    actual="$(docker exec "$PG" psql -U farmstall -d "$DB" -t -A -c "SELECT count(*) FROM $tbl" 2>/dev/null || echo 0)"
+    # fail if actual < 80% of expected (integer math: actual*100 < expected*80)
+    if [ "$((actual*100))" -lt "$((expected*80))" ]; then
+      SHORT="$SHORT\n    $tbl: expected ~$expected, got $actual"
+    fi
+    printf '    %-16s expected ~%-8s got %s\n' "$tbl" "$expected" "$actual"
+  done < "$MANIFEST"
+  if [ -n "$SHORT" ]; then
+    c_red "!!! RESTORE INCOMPLETE - key tables are >20% below the manifest:"
+    printf "%b\n" "$SHORT"
+    die "aborting before restarting the app - the dump appears TRUNCATED. Do NOT trust this restore; try an earlier backup."
+  fi
+  c_green "Manifest check passed."
+else
+  c_bold "(no .manifest sidecar - skipping row-count verification; older backup)"
+fi
+
 # 5. Bring the app back and report before/after so the operator can SEE it changed.
 docker compose up -d
 AFTER="$(docker exec "$PG" psql -U farmstall -d "$DB" -t -A -c 'SELECT count(*) FROM products' 2>/dev/null || echo '?')"
