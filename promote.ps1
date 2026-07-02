@@ -1,4 +1,4 @@
-# promote.ps1 — Push current main (QA) to the production branch on GitHub.
+# promote.ps1 - Push current main (QA) to the production branch on GitHub.
 # Run this when you're happy with QA and want to release to production.
 #
 # Usage: powershell -ExecutionPolicy Bypass -File promote.ps1
@@ -7,7 +7,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 Write-Host ""
-Write-Host "=== Farm Stall POS — Promote QA → Production ===" -ForegroundColor Cyan
+Write-Host "=== Farm Stall POS - Promote QA → Production ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Make sure we're on main

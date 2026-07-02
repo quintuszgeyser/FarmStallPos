@@ -1,19 +1,19 @@
 """
-Scale management API — POS is single source of truth.
+Scale management API - POS is single source of truth.
 
 Scale is a downstream cache. This blueprint provides:
-- GET  /api/scale/status                    — sync status, reachability, pending products
-- POST /api/scale/preview                   — show what would be sent (dry run)
-- POST /api/scale/test-connection           — ping the scale TCP port
-- GET  /api/scale/sync-runs                 — recent sync run history
-- POST /api/scale/products/<id>/sync        — force single product resync
-- POST /api/scale/force-resync              — mark all products for resync
-- GET  /api/scale/contents                  — read all PLUs currently on the scale
-- POST /api/scale/delete-plu                — delete a PLU from the scale
-- GET  /api/scale/keyboard                  — get keyboard preset layout
-- POST /api/scale/keyboard                  — save keyboard preset layout
-- GET  /api/scale/adverts                   — get advertisement messages
-- POST /api/scale/adverts                   — save advertisement messages
+- GET  /api/scale/status                    - sync status, reachability, pending products
+- POST /api/scale/preview                   - show what would be sent (dry run)
+- POST /api/scale/test-connection           - ping the scale TCP port
+- GET  /api/scale/sync-runs                 - recent sync run history
+- POST /api/scale/products/<id>/sync        - force single product resync
+- POST /api/scale/force-resync              - mark all products for resync
+- GET  /api/scale/contents                  - read all PLUs currently on the scale
+- POST /api/scale/delete-plu                - delete a PLU from the scale
+- GET  /api/scale/keyboard                  - get keyboard preset layout
+- POST /api/scale/keyboard                  - save keyboard preset layout
+- GET  /api/scale/adverts                   - get advertisement messages
+- POST /api/scale/adverts                   - save advertisement messages
 """
 import hashlib
 import json
@@ -174,7 +174,7 @@ def _recv_exact(sock, n):
 
 
 def _scale_poll_status(ip, port) -> dict:
-    """MsgNo 0026 — returns PLU count on scale."""
+    """MsgNo 0026 - returns PLU count on scale."""
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(SCALE_TIMEOUT)
     try:
@@ -415,7 +415,7 @@ def api_scale_sync_source_set():
 
 
 # ---------------------------------------------------------------------------
-# Scale contents — read what's on the scale, delete individual PLUs
+# Scale contents - read what's on the scale, delete individual PLUs
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/scale/contents')

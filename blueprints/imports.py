@@ -4,7 +4,7 @@ CSV Bulk Product Import
 POST /api/products/import?mode=preview|import|strict&allow_name_match=false
 GET  /api/products/import-template
 
-CSV template version=1. Idempotent — re-running same CSV produces identical state.
+CSV template version=1. Idempotent - re-running same CSV produces identical state.
 Match priority: product_code (primary) > name (fallback, only if allow_name_match=true).
 """
 import csv
@@ -26,7 +26,7 @@ from models import db, Product, ProductImportRun
 
 bp = Blueprint('imports', __name__)
 
-# CSV version — bump when column schema changes
+# CSV version - bump when column schema changes
 CSV_VERSION = 1
 
 REQUIRED_COLS = {'name', 'product_type'}
@@ -168,7 +168,7 @@ def _parse_csv(file_bytes):
         header_errors.append(f'Missing required columns: {", ".join(sorted(missing_required))}')
 
     unknown = set(headers) - set(ALL_COLS) - {''}
-    # Unknown columns are warnings, not errors — don't block import
+    # Unknown columns are warnings, not errors - don't block import
 
     rows = []
     for row in reader:
@@ -294,7 +294,7 @@ def api_import_products():
     # Commit phase
     if mode == 'strict' and errors > 0:
         return jsonify({
-            'error': f'Strict mode: {errors} validation errors — nothing imported',
+            'error': f'Strict mode: {errors} validation errors - nothing imported',
             'rows': [r for r in results if r['action'] == 'error'],
             'summary': {'create': 0, 'update': 0, 'unchanged': 0, 'error': errors}
         }), 422

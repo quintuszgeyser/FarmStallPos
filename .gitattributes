@@ -1,4 +1,4 @@
-# Shell scripts and appliance config MUST stay LF — they run on Linux.
+# Shell scripts and appliance config MUST stay LF - they run on Linux.
 # A CRLF shebang (#!/bin/bash\r) breaks with "bad interpreter" on Ubuntu.
 *.sh            text eol=lf
 appliance/**    text eol=lf

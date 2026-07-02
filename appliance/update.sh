@@ -1,5 +1,5 @@
 #!/bin/bash
-# update.sh — pull-based in-place update of a store box to the version pinned in store.yml.
+# update.sh - pull-based in-place update of a store box to the version pinned in store.yml.
 #
 #   1. edit /opt/farmpos/store.yml  ->  farmpos_version: "v2.1.2"
 #   2. sudo /opt/farmpos/appliance/update.sh
@@ -7,7 +7,7 @@
 # Re-renders .env from store.yml (secrets untouched), pulls the new pinned image, restarts
 # ONLY the pos container, and health-gates. If the new image never passed CI it was never
 # pushed, so 'docker compose pull' fails loudly and the old container keeps running. If the
-# new container fails its health check, this exits non-zero — the operator can roll back by
+# new container fails its health check, this exits non-zero - the operator can roll back by
 # restoring the previous farmpos_version and re-running.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -17,14 +17,14 @@ cd "$FARMPOS_HOME"
 
 NEW_VER="$(yaml_get store.yml farmpos_version)"
 [ -n "$NEW_VER" ] || die "farmpos_version missing in store.yml"
-echo "$NEW_VER" | grep -qv 'latest' || die "refusing to run ':latest' — pin a real version"
+echo "$NEW_VER" | grep -qv 'latest' || die "refusing to run ':latest' - pin a real version"
 
 c_bold "Updating $(yaml_get store.yml store_id) -> $NEW_VER"
 
 # Snapshot before a version change (cheap insurance; backup.sh has the size/validity guards).
 if command -v "$HERE/backup.sh" >/dev/null 2>&1 || [ -x "$HERE/backup.sh" ]; then
   c_bold "Taking a pre-update backup..."
-  "$HERE/backup.sh" || c_red "WARN: pre-update backup failed — continuing, but no fresh snapshot."
+  "$HERE/backup.sh" || c_red "WARN: pre-update backup failed - continuing, but no fresh snapshot."
 fi
 
 # Re-render .env + compose from current store.yml (no secret regen, no DB init).

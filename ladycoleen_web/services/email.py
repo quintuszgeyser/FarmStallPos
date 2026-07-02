@@ -25,7 +25,7 @@ def send_order_confirmation_customer(order, lines, pay_ref, delivery_note):
         return
     send_email(
         to=recipient,
-        subject=f"Your Order Confirmation — {order.reference}",
+        subject=f"Your Order Confirmation - {order.reference}",
         template="farmshop_order_confirmation",
         order=order,
         lines=lines,
@@ -36,13 +36,13 @@ def send_order_confirmation_customer(order, lines, pay_ref, delivery_note):
 
 def send_order_notification_admin(order, lines, pay_ref, delivery_note):
     """New paid order notification to admin. Failure logs but never raises."""
-    # Fall back to FROM_EMAIL if ADMIN_EMAIL not set — ensures admin always gets notified
+    # Fall back to FROM_EMAIL if ADMIN_EMAIL not set - ensures admin always gets notified
     admin_email = current_app.config.get("ADMIN_EMAIL") or current_app.config.get("FROM_EMAIL")
     if not admin_email or not order:
         return
     send_email(
         to=admin_email,
-        subject=f"New Paid Order — {order.reference}",
+        subject=f"New Paid Order - {order.reference}",
         template="farmshop_order_admin_paid",
         order=order,
         lines=lines,
@@ -53,7 +53,7 @@ def send_order_notification_admin(order, lines, pay_ref, delivery_note):
 def send_email(to: str, subject: str, template: str, **ctx):
     """
     Send an HTML email. Template is loaded from templates/email/<template>.html.
-    Failure is logged but never raises — does NOT block order flow.
+    Failure is logged but never raises - does NOT block order flow.
     """
     if not to:
         log.warning("send_email called with no recipient for template=%s", template)
@@ -61,7 +61,7 @@ def send_email(to: str, subject: str, template: str, **ctx):
 
     cfg = current_app.config
     if not cfg.get("SMTP_HOST") or not cfg.get("SMTP_USER"):
-        log.warning("SMTP not configured — skipping email to %s (subject: %s)", to, subject)
+        log.warning("SMTP not configured - skipping email to %s (subject: %s)", to, subject)
         return
 
     # Make the environment's public base URL available to every email template so

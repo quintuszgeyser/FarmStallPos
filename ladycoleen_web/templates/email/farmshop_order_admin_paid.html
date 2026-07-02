@@ -8,8 +8,8 @@
   <!-- Customer -->
   <div style="background:#fdf6e3;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px">
     <p style="margin:0 0 4px;font-weight:700;color:#927f57">Customer</p>
-    <p style="margin:0;color:#4a3a28">{{ order.guest_name or '—' }}</p>
-    <p style="margin:0;color:#4a3a28">{{ order.guest_email or '—' }}</p>
+    <p style="margin:0;color:#4a3a28">{{ order.guest_name or '-' }}</p>
+    <p style="margin:0;color:#4a3a28">{{ order.guest_email or '-' }}</p>
     {% if order.guest_phone %}<p style="margin:0;color:#4a3a28">{{ order.guest_phone }}</p>{% endif %}
   </div>
 

@@ -3,7 +3,7 @@ FIFO stock service for online farmshop orders.
 Ported verbatim from farm_pos_web/app.py consume_fifo().
 
 STRICT MODE: All lines must have sufficient stock or the entire order fails.
-Pre-check runs first, then deduction — both inside a single transaction with FOR UPDATE locks.
+Pre-check runs first, then deduction - both inside a single transaction with FOR UPDATE locks.
 """
 import uuid
 import logging
@@ -34,7 +34,7 @@ def check_and_deduct_order(db, online_order_id: int, admin_user_id: int) -> str:
     if not order_row:
         raise ValueError("Order not found")
     if order_row.status != "pending":
-        raise ValueError(f"Order already {order_row.status} — cannot confirm again")
+        raise ValueError(f"Order already {order_row.status} - cannot confirm again")
 
     # Fetch all line items
     lines = db.session.execute(
@@ -77,7 +77,7 @@ def check_and_deduct_order(db, online_order_id: int, admin_user_id: int) -> str:
         {"id": online_order_id}
     ).scalar()
 
-    # Resolve to POS customer ID — web_customer_id is NOT the same as POS customers.id
+    # Resolve to POS customer ID - web_customer_id is NOT the same as POS customers.id
     pos_customer_id = None
     if web_customer_id:
         pos_customer_id = db.session.execute(
@@ -158,7 +158,7 @@ def _check_stock(db, product_id: int, product_type: str, qty_needed: Decimal):
 
 def _deduct_stock(db, product_id: int, product_type: str, qty: Decimal,
                   sale_uuid: str, now: datetime, _depth: int = 0):
-    """Port of POS consume_fifo() — verbatim logic, strict version."""
+    """Port of POS consume_fifo() - verbatim logic, strict version."""
     if _depth > 10:
         return Decimal("0")
 
@@ -305,7 +305,7 @@ def _fmt(qty: Decimal) -> str:
 
 def reverse_sale_consumption(db, sale_uuid: str) -> None:
     """
-    Restore all stock consumed by a sale — mirrors farm_pos_web reverse_fifo().
+    Restore all stock consumed by a sale - mirrors farm_pos_web reverse_fifo().
     Restores FIFO batch quantities, restores simple product stock, deletes consumption records.
     """
     # Restore FIFO batch stock
@@ -332,7 +332,7 @@ def reverse_sale_consumption(db, sale_uuid: str) -> None:
             UPDATE products SET stock_qty = stock_qty + :qty WHERE id = :id
         """), {"qty": int(float(s.qty)), "id": s.product_id})
 
-    # Delete consumption records (safe — sale rows remain for audit)
+    # Delete consumption records (safe - sale rows remain for audit)
     db.session.execute(
         text("DELETE FROM stock_consumption WHERE sale_id = :sid"),
         {"sid": sale_uuid}

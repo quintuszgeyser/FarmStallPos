@@ -16,7 +16,7 @@ PAYFAST_SANDBOX_URL = "https://sandbox.payfast.co.za/eng/process"
 def _signature(data: dict, passphrase: str, skip_empty: bool = True) -> str:
     """
     Generate MD5 signature for PayFast request.
-    IMPORTANT: Fields must remain in insertion order — PayFast docs explicitly say
+    IMPORTANT: Fields must remain in insertion order - PayFast docs explicitly say
     DO NOT sort alphabetically. The pairs must appear in the order defined in the spec.
     skip_empty=True for outgoing form (skip blank fields).
     skip_empty=False for ITN verification (include all fields PayFast sent).
@@ -35,7 +35,7 @@ def build_payfast_form(session_id: str, amount: float,
                        customer_email: str) -> dict:
     """
     Build the PayFast form fields to POST to their payment page.
-    Field order matches the PayFast spec exactly — merchant → customer → transaction.
+    Field order matches the PayFast spec exactly - merchant → customer → transaction.
     Returns dict of fields to include in a hidden-field HTML form.
     """
     cfg      = current_app.config
@@ -90,7 +90,7 @@ def verify_itn(form_data: dict) -> bool:
     sandbox = cfg.get("PAYFAST_SANDBOX", True)
     pfhost  = "sandbox.payfast.co.za" if sandbox else "www.payfast.co.za"
 
-    # 1. Verify signature — preserve received field order, exclude 'signature' field
+    # 1. Verify signature - preserve received field order, exclude 'signature' field
     received_sig = form_data.get("signature", "")
     data_no_sig  = {k: v for k, v in form_data.items() if k != "signature"}
     passphrase   = cfg.get("PAYFAST_PASSPHRASE", "")
@@ -102,7 +102,7 @@ def verify_itn(form_data: dict) -> bool:
                     received_sig, expected_sig)
         return False
 
-    # 2. Server-side validation — POST param string back to PayFast in received order
+    # 2. Server-side validation - POST param string back to PayFast in received order
     try:
         # Build param string preserving received order (excluding signature)
         param_string = "&".join(
@@ -125,7 +125,7 @@ def verify_itn(form_data: dict) -> bool:
 
     # 3. Check payment status
     if form_data.get("payment_status") != "COMPLETE":
-        log.info("PayFast ITN: payment_status=%s — not COMPLETE, ignoring",
+        log.info("PayFast ITN: payment_status=%s - not COMPLETE, ignoring",
                  form_data.get("payment_status"))
         return False
 

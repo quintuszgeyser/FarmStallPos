@@ -197,7 +197,7 @@ def forgot_password():
     email = (data.get("email") or "").strip().lower()
 
     if not email:
-        return jsonify(ok=True), 200   # silent — don't reveal if email exists
+        return jsonify(ok=True), 200   # silent - don't reveal if email exists
 
     customer = WebCustomer.query.filter_by(email=email, deleted_at=None).first()
     if customer:

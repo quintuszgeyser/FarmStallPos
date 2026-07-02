@@ -76,7 +76,7 @@
       <!-- STEP 3: Details + delivery (shown after auth) -->
       <div id="step-details" class="d-none">
         <div id="logged-in-banner" class="alert alert-success py-2 mb-3 d-none" style="font-size:.875rem">
-          ✓ Signed in — your details have been pre-filled.
+          ✓ Signed in - your details have been pre-filled.
           <a href="#" id="logout-link" class="lc-link ms-2">Not you?</a>
         </div>
 
@@ -93,15 +93,15 @@
         <div class="mb-3">
           <div class="form-check mb-2">
             <input class="form-check-input" type="radio" name="delivery" id="d-collect" value="collection" checked onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-collect">Collect from farm shop <span class="text-success fw-semibold">— Free</span></label>
+            <label class="form-check-label" for="d-collect">Collect from farm shop <span class="text-success fw-semibold">- Free</span></label>
           </div>
           <div class="form-check mb-2">
             <input class="form-check-input" type="radio" name="delivery" id="d-deliver" value="delivery" onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-deliver">Deliver to my address <span class="text-muted">— R99</span></label>
+            <label class="form-check-label" for="d-deliver">Deliver to my address <span class="text-muted">- R99</span></label>
           </div>
           <div class="form-check">
             <input class="form-check-input" type="radio" name="delivery" id="d-pudo" value="pudo" onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-pudo">Pudo locker-to-locker <span class="text-muted">— R69</span></label>
+            <label class="form-check-label" for="d-pudo">Pudo locker-to-locker <span class="text-muted">- R69</span></label>
           </div>
         </div>
 
@@ -152,7 +152,7 @@
 const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
 if (!cart.length) window.location = '/farmshop/products';
 
-// Shipping fees by delivery method — injected from server settings (editable in POS)
+// Shipping fees by delivery method - injected from server settings (editable in POS)
 const SHIPPING_FEES = {{ shipping_fees | tojson }};
 
 let subtotal = 0;
@@ -304,7 +304,7 @@ document.getElementById('checkout-form').addEventListener('submit', async (e) =>
   btn.disabled = true; btn.textContent = 'Processing…';
   err.classList.add('d-none');
 
-  // If details step not visible yet, form submit shouldn't fire — bail silently
+  // If details step not visible yet, form submit shouldn't fire - bail silently
   if (document.getElementById('step-details').classList.contains('d-none')) {
     btn.disabled = false; btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`; return;
   }

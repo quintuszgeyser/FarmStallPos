@@ -53,7 +53,7 @@ class Product(db.Model):
     archived_reason      = db.Column(db.String(200), nullable=True)
     product_code         = db.Column(db.Integer, unique=True, nullable=True)
     category_id          = db.Column(db.Integer, db.ForeignKey('categories.id'), nullable=True, index=True)
-    # Scale sync fields — POS is single source of truth, scale is downstream cache
+    # Scale sync fields - POS is single source of truth, scale is downstream cache
     sync_to_scale        = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     scale_tare           = db.Column(Numeric(8, 3), nullable=True)        # tare in grams
     scale_shelf_life     = db.Column(db.Integer, nullable=True)           # days
@@ -71,7 +71,7 @@ class Product(db.Model):
 class Category(db.Model):
     """Central product category. One category per product (Product.category_id).
     name      = display form, as entered (trimmed).
-    name_norm = lower(trim(name)), UNIQUE — enforces case/whitespace de-duplication.
+    name_norm = lower(trim(name)), UNIQUE - enforces case/whitespace de-duplication.
     """
     __tablename__ = 'categories'
     id         = db.Column(db.Integer, primary_key=True)

@@ -1,5 +1,5 @@
 #!/bin/bash
-# repro.sh — reproduce ANY store's exact scenario locally on the support machine.
+# repro.sh - reproduce ANY store's exact scenario locally on the support machine.
 #
 #   ./repro.sh <store_id> <version> [backup_file.age]   # spin up an isolated repro stack
 #   ./repro.sh teardown <store_id>                       # tear it down + wipe plaintext data
@@ -9,7 +9,7 @@
 # pinned image against its EXACT data. Never touches any live store and never collides
 # with your own dev POS. Read-only: it cannot write back to any store.
 #
-# Config comes from repro.conf (gitignored) — see repro.conf.example.
+# Config comes from repro.conf (gitignored) - see repro.conf.example.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$HERE/lib/common.sh"
@@ -91,7 +91,7 @@ services:
       STORE_ID: ${SID}
       STORE_NAME: "REPRO ${SID}"
       SECRET_KEY: repro-throwaway-key
-      SCALE_IP: ""                       # scale hardware cannot be reproduced — stubbed
+      SCALE_IP: ""                       # scale hardware cannot be reproduced - stubbed
       DATABASE_URL: postgresql://farmstall:repro@postgres:5432/farmpos
     ports: ["127.0.0.1:${POS_PORT}:5000"]
 YML
@@ -114,7 +114,7 @@ done
 ROWS="$(docker compose -p "$PROJ" exec -T postgres psql -U farmstall -d farmpos -t -A -c 'SELECT count(*) FROM products' 2>/dev/null || echo '?')"
 BK_AGE="$(basename "$SRC")"
 c_green "================================================================"
-[ "$ok" = "1" ] && c_green " REPRO LIVE — $SID" || c_red " REPRO STARTED (POS not healthy — check logs)"
+[ "$ok" = "1" ] && c_green " REPRO LIVE - $SID" || c_red " REPRO STARTED (POS not healthy - check logs)"
 c_green "   URL:     http://localhost:${POS_PORT}"
 c_green "   Image:   $POS_IMAGE"
 c_green "   Data:    $BK_AGE   (products: $ROWS)"

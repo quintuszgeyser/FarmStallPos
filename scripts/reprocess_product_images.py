@@ -45,10 +45,10 @@ def process(base):
 
 
 if not os.path.isdir(IMG_DIR):
-    print(f'No image directory found at {IMG_DIR} — nothing to do.')
+    print(f'No image directory found at {IMG_DIR} - nothing to do.')
     sys.exit(0)
 
-# Find all base images (e.g. 16_abc12345.jpg) — exclude _thumb/_small variants
+# Find all base images (e.g. 16_abc12345.jpg) - exclude _thumb/_small variants
 base_re = re.compile(r'^(\d+_[a-f0-9]+)\.jpg$')
 bases = [m.group(1) for f in os.listdir(IMG_DIR) if (m := base_re.match(f))]
 

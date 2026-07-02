@@ -1,5 +1,5 @@
 
-// Service worker — network first for HTML, cache for static assets only
+// Service worker - network first for HTML, cache for static assets only
 const CACHE_NAME = 'pos-cache-v4';
 const STATIC_ASSETS = [
   '/static/manifest.json',
@@ -26,7 +26,7 @@ self.addEventListener('activate', (evt) => {
 self.addEventListener('fetch', (evt) => {
   const url = new URL(evt.request.url);
 
-  // Always fetch HTML and JS fresh from network — never cache them
+  // Always fetch HTML and JS fresh from network - never cache them
   if (url.pathname === '/' || url.pathname.endsWith('.js') || url.pathname.endsWith('.html')) {
     evt.respondWith(fetch(evt.request));
     return;

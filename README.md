@@ -20,7 +20,7 @@ ssh -J root@172.20.10.1 quintusz@100.72.83.107 \
   'sleep 25 && docker exec farmpos-app python scripts/smoke_test.py http://localhost:5000'
 ```
 
-The Docker image clones the latest `main` branch from GitHub on every build — push first, then deploy.
+The Docker image clones the latest `main` branch from GitHub on every build - push first, then deploy.
 
 ---
 
@@ -44,14 +44,14 @@ powershell -ExecutionPolicy Bypass -File promote.ps1
 
 Default login: `admin` / `admin123`
 
-QA shows a **yellow banner** — you can never confuse the two environments.
+QA shows a **yellow banner** - you can never confuse the two environments.
 
 ### Prerequisites
 
 | Requirement | Notes |
 |---|---|
-| Python | Use `C:\Python314\python.exe` directly — the `.venv` stub is broken |
-| PostgreSQL | Installed at `C:\Users\<you>\PostgreSQL\pgsql\` — started by the scripts, not a Windows service |
+| Python | Use `C:\Python314\python.exe` directly - the `.venv` stub is broken |
+| PostgreSQL | Installed at `C:\Users\<you>\PostgreSQL\pgsql\` - started by the scripts, not a Windows service |
 | Windows 11 | Start scripts are PowerShell only |
 
 ### Installing packages (Capitec corporate proxy)
@@ -62,7 +62,7 @@ C:\Python314\python.exe -m pip install <package> --trusted-host pypi.org --trust
 
 ### First-time local setup
 
-1. Run `start-qa.ps1` — creates all tables and seeds the admin user on first run.
+1. Run `start-qa.ps1` - creates all tables and seeds the admin user on first run.
 2. Trust the self-signed cert once (required for camera barcode scanning on HTTPS):
    ```powershell
    # Run as Administrator
@@ -79,7 +79,7 @@ Blueprint-based Flask backend + single-page frontend.
 app.py                   Factory: create_app(), strong_migrate(), _register_routes()
 models.py                21 SQLAlchemy models
 helpers.py               Shared utilities (FIFO, auth, date parsing, etc.)
-blueprints/              15 Blueprint files — all 131 API routes
+blueprints/              15 Blueprint files - all 131 API routes
   auth.py                /api/login|logout|me, /api/users/*
   products.py            /api/products/*
   stock.py               /api/stock/*, /api/purchases
@@ -95,17 +95,17 @@ blueprints/              15 Blueprint files — all 131 API routes
   kiosk.py               /api/kiosk/*
   system.py              /api/system/update-*
   core.py                /, /health, /guide, /__version, /api/logs
-templates/index.html     SPA shell — tabs, modals, login form
-static/main.js           All client-side logic — 8,443 lines, no framework
+templates/index.html     SPA shell - tabs, modals, login form
+static/main.js           All client-side logic - 8,443 lines, no framework
 static/main.css          Utility CSS classes
 ```
 
 ### Backend patterns
 
-- **Import order:** `blueprints → helpers → models → db` — never import from `app.py` in a blueprint
+- **Import order:** `blueprints → helpers → models → db` - never import from `app.py` in a blueprint
 - **Auth:** Flask session-based. `require_login()` / `require_role('admin')`. No JWT.
-- **Money:** All columns are `Numeric(10,2)` — never `Float`.
-- **Migrations:** `strong_migrate()` runs on every startup — idempotent DDL via `SAVEPOINT`/rollback. Add all schema changes there. Never use Alembic.
+- **Money:** All columns are `Numeric(10,2)` - never `Float`.
+- **Migrations:** `strong_migrate()` runs on every startup - idempotent DDL via `SAVEPOINT`/rollback. Add all schema changes there. Never use Alembic.
 - **Concurrency:** All stock-mutating routes use `with_for_update=True`.
 - **Sales:** Each receipt is a group of `sales` rows sharing one `sale_id` (UUID). Always display as `sale_id.slice(0, 8)`.
 - **Sessions:** Auto-close after 10 min idle (time tracking); hard logout after 2 h inactivity.
@@ -113,9 +113,9 @@ static/main.css          Utility CSS classes
 ### Frontend (`static/main.js`)
 
 - All state in `STATE` object at top.
-- `api(path, opts)` — single fetch wrapper, throws on non-2xx.
-- `toast(msg, type, ms)` — all notifications. Never `alert()`.
-- `displayQty(qty_base, unitType)` / `displayCost(cost_per_base, qty_base, unitType)` — always use these together for stock quantities.
+- `api(path, opts)` - single fetch wrapper, throws on non-2xx.
+- `toast(msg, type, ms)` - all notifications. Never `alert()`.
+- `displayQty(qty_base, unitType)` / `displayCost(cost_per_base, qty_base, unitType)` - always use these together for stock quantities.
 - **USB barcode scanner:** global `keydown` listener, active on Teller tab when no input focused.
 - **Camera scanner:** ZXing `BrowserMultiFormatReader`, toggled on-demand, 1.5 s cooldown. Requires HTTPS.
 
@@ -138,9 +138,9 @@ static/main.css          Utility CSS classes
 | `stock_item` | `stock_batches` (FIFO) | weight / volume / unit | FIFO |
 | `recipe` | ingredients' batches | unit (portions) | sum of ingredient COGS |
 
-- `sold_by_weight=true` — teller enters qty at till (biltong, cheese, etc.)
-- `is_for_sale=false` — internal ingredient only, hidden at teller
-- `is_prepared=true` — sends to kitchen queue on checkout
+- `sold_by_weight=true` - teller enters qty at till (biltong, cheese, etc.)
+- `is_for_sale=false` - internal ingredient only, hidden at teller
+- `is_prepared=true` - sends to kitchen queue on checkout
 
 ---
 

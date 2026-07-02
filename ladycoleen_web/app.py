@@ -19,7 +19,7 @@ def create_app():
 
     if not app.config.get("SMTP_HOST"):
         logging.getLogger(__name__).warning(
-            "SMTP not configured — all emails will be silently skipped. "
+            "SMTP not configured - all emails will be silently skipped. "
             "Set SMTP_HOST, SMTP_USER, SMTP_PASS, FROM_EMAIL, ADMIN_EMAIL in environment."
         )
 
@@ -50,7 +50,7 @@ def create_app():
     app.register_blueprint(invoices_bp)
     app.register_blueprint(policies_bp)
 
-    # Health check — required by Docker healthcheck
+    # Health check - required by Docker healthcheck
     @app.route("/health")
     def health():
         return jsonify(status="ok"), 200
@@ -58,7 +58,7 @@ def create_app():
     @app.route("/")
     def index():
         from flask import redirect, url_for
-        # Cakes hidden for now — land on the farm shop
+        # Cakes hidden for now - land on the farm shop
         return redirect("/farmshop")
 
     # Serve product images from shared volume mounted at /app/product_images

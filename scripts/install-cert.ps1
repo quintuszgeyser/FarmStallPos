@@ -1,4 +1,4 @@
-# install-cert.ps1 — Install the self-signed cert into Windows Trusted Root so
+# install-cert.ps1 - Install the self-signed cert into Windows Trusted Root so
 # Edge/Chrome trust it without a warning. Run once (as admin) after any cert regeneration.
 #
 # Usage: powershell -ExecutionPolicy Bypass -File install-cert.ps1
@@ -12,7 +12,7 @@ if (-not (Test-Path $certPath)) {
 
 Write-Host "Installing certificate into Trusted Root store..." -ForegroundColor Cyan
 
-# Import into LocalMachine\Root (requires admin) — trusted by all users & all browsers
+# Import into LocalMachine\Root (requires admin) - trusted by all users & all browsers
 try {
     Import-Certificate -FilePath $certPath -CertStoreLocation Cert:\LocalMachine\Root | Out-Null
     Write-Host "Done. Edge and Chrome will now trust https://localhost:5443 and https://192.168.1.4:5443 without warnings." -ForegroundColor Green

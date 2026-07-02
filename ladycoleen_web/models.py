@@ -18,7 +18,7 @@ class WebCustomer(db.Model):
     password_hash  = db.Column(db.Text, nullable=False)
     created_at     = db.Column(db.DateTime(timezone=True), default=utcnow)
     deleted_at     = db.Column(db.DateTime(timezone=True))
-    pos_customer_id = db.Column(db.Integer)  # FK to POS customers.id — optional link
+    pos_customer_id = db.Column(db.Integer)  # FK to POS customers.id - optional link
 
     cake_orders  = db.relationship("CakeOrder", back_populates="customer", lazy="dynamic")
 
@@ -35,7 +35,7 @@ class CakeOrder(db.Model):
     id                = db.Column(db.Integer, primary_key=True)
     reference         = db.Column(db.String(20), unique=True, nullable=False)
 
-    # Customer — either account or guest
+    # Customer - either account or guest
     web_customer_id   = db.Column(db.Integer, db.ForeignKey("web_customers.id"))
     guest_name        = db.Column(db.String(200))
     guest_email       = db.Column(db.String(200))

@@ -1,11 +1,11 @@
-# repro.conf — operator-local config for repro.sh. Copy to repro.conf (gitignored).
+# repro.conf - operator-local config for repro.sh. Copy to repro.conf (gitignored).
 # These are paths/remotes on YOUR support machine, not secrets themselves.
 
 # age private key that can decrypt any store's backup (the central support key).
 # Keep the actual key file 0600 and OFF any shared machine.
 SUPPORT_AGE_KEY="$HOME/.config/farmpos/support_age.key"
 
-# rclone remote + bucket holding the encrypted backups (Cloudflare R2 recommended —
+# rclone remote + bucket holding the encrypted backups (Cloudflare R2 recommended -
 # it has a Johannesburg PoP, which keeps SA customer PII closer for POPIA than B2's
 # US/EU-only regions). Layout: <remote>/stores/<store_id>/<id>_<ts>.sql.gz.age
 BACKUP_RCLONE_REMOTE="r2:farmpos-backups"

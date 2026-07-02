@@ -20,7 +20,7 @@
     {% for o in orders %}
     <tr>
       <td><a href="/admin/farmshop/{{ o.id }}" class="fw-semibold">{{ o.reference }}</a></td>
-      <td>{{ o.guest_name or '—' }}<br>
+      <td>{{ o.guest_name or '-' }}<br>
           <small class="text-muted">{{ o.guest_email or '' }}</small></td>
       <td><strong>R{{ "%.2f"|format(o.total) }}</strong></td>
       <td>{{ o.delivery_method.title() }}</td>

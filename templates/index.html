@@ -10,7 +10,7 @@
   <link rel="manifest" href="/static/manifest.json">
   <meta name="theme-color" content="#927f57">
   <style>
-    /* ── Doodle Design System — Lady Coleen Brand Tokens ── */
+    /* ── Doodle Design System - Lady Coleen Brand Tokens ── */
     :root {
       /* Brand gold = primary (keeps identity with logo #927f57) */
       --lc-gold:        #927f57;
@@ -34,7 +34,7 @@
       --dd-font:       'Nunito', system-ui, sans-serif;
       --dd-font-mono:  'JetBrains Mono', monospace;
 
-      /* Sketch borders — slightly uneven radii for hand-drawn feel */
+      /* Sketch borders - slightly uneven radii for hand-drawn feel */
       --dd-radius-sm:  4px 6px 5px 7px / 6px 4px 7px 5px;
       --dd-radius:     8px 12px 10px 14px / 12px 8px 14px 10px;
       --dd-radius-lg:  12px 18px 14px 20px / 18px 12px 20px 14px;
@@ -48,7 +48,7 @@
     code, pre, .font-monospace { font-family: var(--dd-font-mono) !important; }
     body { background: var(--dd-surface); color: var(--dd-text); }
 
-    /* ── Nav tabs — doodle style ── */
+    /* ── Nav tabs - doodle style ── */
     .nav-tabs { border-bottom: 2px solid var(--lc-gold-border); }
     .nav-tabs .nav-link {
       border-radius: var(--dd-radius-sm);
@@ -80,7 +80,7 @@
     }
     .nav-pills .nav-link:hover:not(.active) { background: var(--lc-gold-light); color: var(--lc-gold-hover); }
 
-    /* ── Cards — paper + sketch border ── */
+    /* ── Cards - paper + sketch border ── */
     .card {
       background: var(--dd-paper);
       border: var(--dd-border);
@@ -172,7 +172,7 @@
       color: #fff !important;
     }
 
-    /* ── Form controls — sketch input style ── */
+    /* ── Form controls - sketch input style ── */
     .form-control, .form-select {
       background: var(--dd-paper);
       border: 2px solid var(--lc-gold-border) !important;
@@ -193,7 +193,7 @@
       box-shadow: 5px 6px 0 var(--lc-gold-border);
     }
 
-    /* ── Brand header — doodle banner ── */
+    /* ── Brand header - doodle banner ── */
     .lc-brand {
       display: flex; align-items: center; gap: 12px;
       padding: 10px 0 8px;
@@ -289,7 +289,7 @@
     #cart .list-group-item { padding: .4rem .5rem; font-size: 15px; }
     .btn-lg-touch { padding: .55rem .9rem; font-size: 16px; }
 
-    /* ── Product cards — sketch style ── */
+    /* ── Product cards - sketch style ── */
     .products-toolbar .form-control, .products-toolbar .btn { height: 44px; font-size: 16px; }
     #products-card-list { display: flex; flex-direction: column; gap: .5rem; }
     .product-thin-card {
@@ -334,7 +334,7 @@
     /* ── Recipe lines ── */
     .recipe-line-row td { vertical-align: middle; padding: .2rem .3rem; }
 
-    /* ── Kitchen Queue — doodle cards ── */
+    /* ── Kitchen Queue - doodle cards ── */
     .kitchen-card {
       border: 2px solid var(--lc-gold-border);
       border-radius: var(--dd-radius-lg);
@@ -370,7 +370,7 @@
     .kitchen-moved { animation: kitchenPulse .8s ease-out forwards; }
 
 
-    /* ── Toasts — doodle style ── */
+    /* ── Toasts - doodle style ── */
     #toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
     .pos-toast {
       min-width: 220px; max-width: 320px; padding: .6rem 1rem;
@@ -393,7 +393,7 @@
 
 {% if is_qa %}
 <div id="qa-banner" style="background:#f0ad4e;color:#000;text-align:center;padding:6px 4px;font-weight:bold;font-size:13px;position:fixed;top:0;left:0;right:0;z-index:9999;border-bottom:3px solid #d9534f;letter-spacing:1px">
-  ⚠ QA MODE — TEST DATA ONLY — Scale sync disabled — Not for live use
+  ⚠ QA MODE - TEST DATA ONLY - Scale sync disabled - Not for live use
 </div>
 <style>body { margin-top: 36px !important; }</style>
 {% endif %}
@@ -548,7 +548,7 @@
       </div>
       <div id="kitchen-queue-list"></div>
       <div id="kitchen-history-list" class="hidden mt-3">
-        <h6 class="text-muted">Completed Orders — Today</h6>
+        <h6 class="text-muted">Completed Orders - Today</h6>
         <div id="kitchen-completed-list"></div>
       </div>
     </div>
@@ -660,7 +660,7 @@
     <!-- ═══════════════ SUPPLIERS ═══════════════ -->
     <div class="tab-pane fade" id="suppliers">
       <div class="row g-3">
-        <!-- Left: supplier list — always visible -->
+        <!-- Left: supplier list - always visible -->
         <div class="col-12 col-lg-4">
           <div class="d-flex align-items-center gap-2 mb-2">
             <h5 class="mb-0">Suppliers</h5>
@@ -673,7 +673,7 @@
         <!-- Right: detail + form side-by-side, always visible -->
         <div class="col-12 col-lg-8">
 
-          <!-- Add/Edit form — shown when adding new or editing -->
+          <!-- Add/Edit form - shown when adding new or editing -->
           <div id="supplier-edit-panel" class="card mb-3">
             <div class="card-body">
               <h6 id="supplier-form-title">Add Supplier</h6>
@@ -693,7 +693,7 @@
             </div>
           </div>
 
-          <!-- Supplier detail — shown when a supplier is selected -->
+          <!-- Supplier detail - shown when a supplier is selected -->
           <div id="supplier-detail-panel" class="hidden">
 
             <!-- Details card -->
@@ -708,7 +708,7 @@
               </div>
             </div>
 
-            <!-- Products from this supplier — collapsed dropdown -->
+            <!-- Products from this supplier - collapsed dropdown -->
             <div class="card mb-3">
               <div class="card-header py-2 d-flex align-items-center" style="cursor:pointer" id="supplier-products-toggle">
                 <span class="small fw-bold">Products from this supplier</span>
@@ -783,26 +783,26 @@
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Revenue</div>
-            <h4 class="mb-0 text-dark" id="stat-total">—</h4>
+            <h4 class="mb-0 text-dark" id="stat-total">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100 border-success"><div class="card-body py-2">
             <div class="text-success small">Gross Profit</div>
-            <h4 class="mb-0 text-success" id="stat-profit">—</h4>
+            <h4 class="mb-0 text-success" id="stat-profit">-</h4>
             <div class="text-muted" style="font-size:11px" id="stat-margin-sub"></div>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">COGS</div>
-            <h4 class="mb-0" id="stat-cogs">—</h4>
+            <h4 class="mb-0" id="stat-cogs">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100 border-danger"><div class="card-body py-2">
             <div class="text-danger small">Write-off Loss</div>
-            <h4 class="mb-0 text-danger" id="stat-writeoff-cost">—</h4>
+            <h4 class="mb-0 text-danger" id="stat-writeoff-cost">-</h4>
             <div class="text-muted" style="font-size:11px" id="stat-writeoff-count-sub"></div>
           </div></div>
         </div>
@@ -813,25 +813,25 @@
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Transactions</div>
-            <h4 class="mb-0" id="stat-tx">—</h4>
+            <h4 class="mb-0" id="stat-tx">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Avg Sale Value</div>
-            <h4 class="mb-0" id="stat-avg">—</h4>
+            <h4 class="mb-0" id="stat-avg">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Items Sold</div>
-            <h4 class="mb-0" id="stat-items">—</h4>
+            <h4 class="mb-0" id="stat-items">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100 border-warning"><div class="card-body py-2">
             <div class="text-warning small">Gross Margin %</div>
-            <h4 class="mb-0 text-warning" id="stat-margin">—</h4>
+            <h4 class="mb-0 text-warning" id="stat-margin">-</h4>
           </div></div>
         </div>
       </div>
@@ -841,27 +841,27 @@
         <div class="col-6 col-md-3">
           <div class="card h-100 border-success"><div class="card-body py-2">
             <div class="text-success small">Best Day</div>
-            <div class="fw-semibold" id="stat-best-day">—</div>
+            <div class="fw-semibold" id="stat-best-day">-</div>
             <div class="text-muted" style="font-size:11px" id="stat-best-day-val"></div>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100 border-secondary"><div class="card-body py-2">
             <div class="text-secondary small">Worst Day</div>
-            <div class="fw-semibold" id="stat-worst-day">—</div>
+            <div class="fw-semibold" id="stat-worst-day">-</div>
             <div class="text-muted" style="font-size:11px" id="stat-worst-day-val"></div>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100 border-info"><div class="card-body py-2">
             <div class="text-info small">Kitchen Orders</div>
-            <h4 class="mb-0 text-info" id="stat-kitchen-count">—</h4>
+            <h4 class="mb-0 text-info" id="stat-kitchen-count">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100 border-info"><div class="card-body py-2">
             <div class="text-info small">Avg Wait Time</div>
-            <h4 class="mb-0 text-info" id="stat-avg-wait">—</h4>
+            <h4 class="mb-0 text-info" id="stat-avg-wait">-</h4>
           </div></div>
         </div>
       </div>
@@ -871,43 +871,43 @@
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">New Customers</div>
-            <h4 class="mb-0" id="stat-new-customers">—</h4>
+            <h4 class="mb-0" id="stat-new-customers">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Returning</div>
-            <h4 class="mb-0" id="stat-returning-customers">—</h4>
+            <h4 class="mb-0" id="stat-returning-customers">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Repeat Rate</div>
-            <h4 class="mb-0" id="stat-repeat-rate">—</h4>
+            <h4 class="mb-0" id="stat-repeat-rate">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Revenue / Customer</div>
-            <h4 class="mb-0" id="stat-rev-per-customer">—</h4>
+            <h4 class="mb-0" id="stat-rev-per-customer">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100 border-success"><div class="card-body py-2">
             <div class="text-success small">Online Revenue</div>
-            <h4 class="mb-0 text-success" id="stat-online-rev">—</h4>
+            <h4 class="mb-0 text-success" id="stat-online-rev">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">In-Store Revenue</div>
-            <h4 class="mb-0" id="stat-instore-rev">—</h4>
+            <h4 class="mb-0" id="stat-instore-rev">-</h4>
           </div></div>
         </div>
         <div class="col-6 col-md-3">
           <div class="card h-100"><div class="card-body py-2">
             <div class="text-muted small">Void Rate</div>
-            <h4 class="mb-0" id="stat-void-rate">—</h4>
+            <h4 class="mb-0" id="stat-void-rate">-</h4>
           </div></div>
         </div>
       </div>
@@ -1006,7 +1006,7 @@
 
               <!-- Inactivity timeout -->
               <div class="fw-semibold small">Inactivity reload</div>
-              <div class="text-muted small">Reload the POS page after this many minutes of no touch/click activity — logs the user out.</div>
+              <div class="text-muted small">Reload the POS page after this many minutes of no touch/click activity - logs the user out.</div>
               <div class="d-flex gap-2 align-items-center">
                 <input type="number" class="form-control form-control-sm" id="kiosk-inactivity-mins" min="0" max="120" placeholder="0 = disabled" style="max-width:140px">
                 <span class="small text-muted">minutes (0 = disabled)</span>
@@ -1075,19 +1075,19 @@
           <div class="card-header fw-semibold py-2">Face Recognition</div>
           <div class="card-body d-flex flex-column gap-3">
             <div>
-              <label class="form-label fw-semibold mb-1">Face match threshold <span class="text-muted fw-normal small">(min similarity to count as a match)</span> <span id="set-face-threshold-val" class="badge bg-primary ms-1">—</span></label>
+              <label class="form-label fw-semibold mb-1">Face match threshold <span class="text-muted fw-normal small">(min similarity to count as a match)</span> <span id="set-face-threshold-val" class="badge bg-primary ms-1">-</span></label>
               <input type="range" class="form-range" id="set-face-threshold" min="0.1" max="0.9" step="0.05">
             </div>
             <div>
-              <label class="form-label fw-semibold mb-1">Identity link threshold <span class="text-muted fw-normal small">(confidence needed to link a track to a customer)</span> <span id="set-link-threshold-val" class="badge bg-primary ms-1">—</span></label>
+              <label class="form-label fw-semibold mb-1">Identity link threshold <span class="text-muted fw-normal small">(confidence needed to link a track to a customer)</span> <span id="set-link-threshold-val" class="badge bg-primary ms-1">-</span></label>
               <input type="range" class="form-range" id="set-link-threshold" min="0.1" max="0.95" step="0.05">
             </div>
             <div>
-              <label class="form-label fw-semibold mb-1">Face quality minimum <span class="text-muted fw-normal small">(lower = accepts blurrier/smaller faces)</span> <span id="set-face-quality-val" class="badge bg-primary ms-1">—</span></label>
+              <label class="form-label fw-semibold mb-1">Face quality minimum <span class="text-muted fw-normal small">(lower = accepts blurrier/smaller faces)</span> <span id="set-face-quality-val" class="badge bg-primary ms-1">-</span></label>
               <input type="range" class="form-range" id="set-face-quality-min" min="0.05" max="0.5" step="0.05">
             </div>
             <div>
-              <label class="form-label fw-semibold mb-1">Min gap between visits <span class="text-muted fw-normal small">(seconds before the same person triggers another visit notification)</span> <span id="set-visit-min-gap-val" class="badge bg-primary ms-1">—</span></label>
+              <label class="form-label fw-semibold mb-1">Min gap between visits <span class="text-muted fw-normal small">(seconds before the same person triggers another visit notification)</span> <span id="set-visit-min-gap-val" class="badge bg-primary ms-1">-</span></label>
               <input type="range" class="form-range" id="set-visit-min-gap" min="30" max="600" step="30">
             </div>
             <div>
@@ -1151,11 +1151,11 @@
           <div class="card-header fw-semibold py-2">Enrollment</div>
           <div class="card-body d-flex flex-column gap-3">
             <div>
-              <label class="form-label fw-semibold mb-1">Max face angles per customer <span class="text-muted fw-normal small">(more = better cross-camera matching, more storage)</span> <span id="set-max-face-angles-val" class="badge bg-primary ms-1">—</span></label>
+              <label class="form-label fw-semibold mb-1">Max face angles per customer <span class="text-muted fw-normal small">(more = better cross-camera matching, more storage)</span> <span id="set-max-face-angles-val" class="badge bg-primary ms-1">-</span></label>
               <input type="range" class="form-range" id="set-max-face-angles" min="3" max="40" step="1">
             </div>
             <div>
-              <label class="form-label fw-semibold mb-1">Min angle distance <span class="text-muted fw-normal small">(how different two embeddings must be to count as a new angle)</span> <span id="set-min-angle-dist-val" class="badge bg-primary ms-1">—</span></label>
+              <label class="form-label fw-semibold mb-1">Min angle distance <span class="text-muted fw-normal small">(how different two embeddings must be to count as a new angle)</span> <span id="set-min-angle-dist-val" class="badge bg-primary ms-1">-</span></label>
               <input type="range" class="form-range" id="set-min-angle-dist" min="0.10" max="0.60" step="0.05">
             </div>
             <div>
@@ -1181,18 +1181,18 @@
 
       <!-- System metrics row -->
       <div class="row g-2 mb-3" id="monitor-metrics-row">
-        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">CPU</div><div class="fw-bold fs-5" id="m-cpu">—</div></div></div>
-        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Memory</div><div class="fw-bold fs-5" id="m-mem">—</div></div></div>
-        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Uptime</div><div class="fw-bold fs-5" id="m-uptime">—</div></div></div>
-        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">ONNX Provider</div><div class="fw-bold small" id="m-onnx">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">CPU</div><div class="fw-bold fs-5" id="m-cpu">-</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Memory</div><div class="fw-bold fs-5" id="m-mem">-</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Uptime</div><div class="fw-bold fs-5" id="m-uptime">-</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">ONNX Provider</div><div class="fw-bold small" id="m-onnx">-</div></div></div>
       </div>
 
       <!-- Pipeline state row -->
       <div class="row g-2 mb-3">
-        <div class="col-6 col-md-3"><div class="card text-center py-2 border-primary"><div class="small text-muted">Active Sessions</div><div class="fw-bold fs-4 text-primary" id="m-sessions">—</div></div></div>
-        <div class="col-6 col-md-3"><div class="card text-center py-2 border-warning"><div class="small text-muted">Anon Identities</div><div class="fw-bold fs-4 text-warning" id="m-anon">—</div></div></div>
-        <div class="col-6 col-md-3"><div class="card text-center py-2 border-info"><div class="small text-muted">Clip Queue</div><div class="fw-bold fs-4 text-info" id="m-queue">—</div></div></div>
-        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Customer Cache</div><div class="fw-bold fs-4" id="m-cache">—</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2 border-primary"><div class="small text-muted">Active Sessions</div><div class="fw-bold fs-4 text-primary" id="m-sessions">-</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2 border-warning"><div class="small text-muted">Anon Identities</div><div class="fw-bold fs-4 text-warning" id="m-anon">-</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2 border-info"><div class="small text-muted">Clip Queue</div><div class="fw-bold fs-4 text-info" id="m-queue">-</div></div></div>
+        <div class="col-6 col-md-3"><div class="card text-center py-2"><div class="small text-muted">Customer Cache</div><div class="fw-bold fs-4" id="m-cache">-</div></div></div>
       </div>
 
       <!-- Active Sessions detail -->
@@ -1215,7 +1215,7 @@
         <div id="monitor-anon-empty" class="text-muted small hidden">None</div>
       </div>
 
-      <!-- Identity Chains — Stable Track Pipeline -->
+      <!-- Identity Chains - Stable Track Pipeline -->
       <div class="mb-3">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h6 class="text-muted mb-0">Identity Pipelines <span class="badge bg-secondary ms-1" id="m-tracks-count">0</span></h6>
@@ -1377,12 +1377,12 @@
     <div class="tab-pane fade" id="scale-monitor">
       <!-- Status banner -->
       <div id="scale-status-banner" class="alert alert-secondary mb-3 d-flex gap-4 flex-wrap align-items-center">
-        <span>Scale: <strong id="scale-ip-display">—</strong></span>
-        <span>Reachable: <strong id="scale-reachable-display">—</strong></span>
-        <span>In sync: <strong id="scale-insync-count">—</strong></span>
-        <span>Pending: <strong id="scale-pending-count">—</strong></span>
-        <span>Errors: <strong id="scale-error-count">—</strong></span>
-        <span>Last run: <strong id="scale-last-run">—</strong></span>
+        <span>Scale: <strong id="scale-ip-display">-</strong></span>
+        <span>Reachable: <strong id="scale-reachable-display">-</strong></span>
+        <span>In sync: <strong id="scale-insync-count">-</strong></span>
+        <span>Pending: <strong id="scale-pending-count">-</strong></span>
+        <span>Errors: <strong id="scale-error-count">-</strong></span>
+        <span>Last run: <strong id="scale-last-run">-</strong></span>
         <div class="ms-auto d-flex gap-2 admin-only">
           <button class="btn btn-outline-secondary btn-sm" onclick="loadScaleTab()">↺ Refresh</button>
           <button class="btn btn-outline-primary btn-sm" onclick="scaleTestConnection()">Test Connection</button>
@@ -1452,7 +1452,7 @@
         <!-- ── Keyboard Presets sub-tab ── -->
         <div class="tab-pane fade" id="scale-tab-keyboard">
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="mb-0">Keyboard Preset Layout <small class="text-muted">170 keys — assign PLUs to shortcut keys</small></h6>
+            <h6 class="mb-0">Keyboard Preset Layout <small class="text-muted">170 keys - assign PLUs to shortcut keys</small></h6>
             <button class="btn btn-success btn-sm" onclick="saveScaleKeyboard()">Save &amp; Sync to Scale</button>
           </div>
           <p class="text-muted small mb-2">Click a key to assign a product. Empty keys are sent as blank slots.</p>
@@ -1511,7 +1511,7 @@
             </div>
             <div class="col-md-5">
               <label class="form-label small mb-1">Description (optional)</label>
-              <input type="text" id="schedule-description" class="form-control" placeholder="e.g. v1.7 — new barcode format">
+              <input type="text" id="schedule-description" class="form-control" placeholder="e.g. v1.7 - new barcode format">
             </div>
             <div class="col-md-3">
               <button class="btn btn-primary w-100" onclick="scheduleDeploySubmit()">Schedule</button>
@@ -1623,7 +1623,7 @@
             <input class="form-check-input" type="checkbox" id="enroll-is-employee">
             <label class="form-check-label fw-semibold" for="enroll-is-employee">
               Employee
-              <span class="text-muted fw-normal small ms-1">— suppresses visit logging &amp; teller alerts</span>
+              <span class="text-muted fw-normal small ms-1">- suppresses visit logging &amp; teller alerts</span>
             </label>
           </div>
         </div>
@@ -1633,7 +1633,7 @@
             <span id="enroll-face-status" class="badge bg-secondary">Face: not enrolled</span>
             <span id="enroll-gait-status" class="badge bg-secondary">Body: not enrolled</span>
           </div>
-          <div class="mt-2 text-muted small">Face and body features are enrolled via the recognition service camera capture — run <code>enroll_capture.py --customer &lt;id&gt;</code> after saving.</div>
+          <div class="mt-2 text-muted small">Face and body features are enrolled via the recognition service camera capture - run <code>enroll_capture.py --customer &lt;id&gt;</code> after saving.</div>
         </div>
       </div>
       <div class="modal-footer d-flex justify-content-between">
@@ -1700,9 +1700,9 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="small text-muted mb-2">Add a note for the admin to review. The transaction is not changed — it is just flagged for attention.</p>
+        <p class="small text-muted mb-2">Add a note for the admin to review. The transaction is not changed - it is just flagged for attention.</p>
         <input type="hidden" id="flag-sale-id">
-        <textarea id="flag-note" class="form-control" rows="3" placeholder="Describe what happened — e.g. Customer returned item, wrong product scanned, price dispute..."></textarea>
+        <textarea id="flag-note" class="form-control" rows="3" placeholder="Describe what happened - e.g. Customer returned item, wrong product scanned, price dispute..."></textarea>
       </div>
       <div class="modal-footer py-2">
         <button id="btn-flag-submit" class="btn btn-warning w-100">Flag for Admin Review</button>
@@ -1755,12 +1755,12 @@
         <div class="mb-2">
           <label class="form-label small fw-bold">Product Type</label>
           <select id="p-type" class="form-select">
-            <option value="stock_item">Stock Item — tracked by unit, g or ml (Milk, Biltong, Coke, Chips)</option>
-            <option value="recipe">Recipe — made from stock items (Cappuccino, Toasted Sandwich)</option>
+            <option value="stock_item">Stock Item - tracked by unit, g or ml (Milk, Biltong, Coke, Chips)</option>
+            <option value="recipe">Recipe - made from stock items (Cappuccino, Toasted Sandwich)</option>
           </select>
         </div>
 
-        <!-- ── Step 2 (stock items only): Unit Type — must come BEFORE price so labels are correct ── -->
+        <!-- ── Step 2 (stock items only): Unit Type - must come BEFORE price so labels are correct ── -->
         <div id="section-unit-type-early" class="mb-2 hidden">
           <label class="form-label small fw-bold">Unit Type <span class="text-muted fw-normal">(sets price label &amp; all unit dropdowns)</span></label>
           <select id="p-unit-type" class="form-select">
@@ -1815,7 +1815,7 @@
           <div class="form-text">JPG, PNG or WebP, max 10MB each. First image becomes primary. Shown on website and at teller.</div>
         </div>
 
-        <!-- ── Price Calculator — only shown when editing an existing product ── -->
+        <!-- ── Price Calculator - only shown when editing an existing product ── -->
         <div id="section-calc" style="display:none">
           <div class="row g-2 mb-2 align-items-end">
             <div class="col-5">
@@ -1842,7 +1842,7 @@
           </div>
         </div>
 
-        <!-- ── Selling price — label &amp; unit selector now correct because unit type was set first ── -->
+        <!-- ── Selling price - label &amp; unit selector now correct because unit type was set first ── -->
         <div class="mb-2" id="price-row">
           <label class="form-label small fw-bold" id="price-row-label">Selling price</label>
           <div class="input-group">
@@ -1870,9 +1870,9 @@
               </div>
             </div>
           </div>
-          <!-- Purchase package — how it arrives from the supplier -->
+          <!-- Purchase package - how it arrives from the supplier -->
           <div class="border rounded p-2 mb-2 bg-light">
-            <div class="fw-semibold small mb-2">📦 Purchase Package <span class="text-muted fw-normal">— how you buy it from the supplier</span></div>
+            <div class="fw-semibold small mb-2">📦 Purchase Package <span class="text-muted fw-normal">- how you buy it from the supplier</span></div>
             <div class="row g-2">
               <div class="col-6">
                 <label class="form-label small">Package size</label>
@@ -1887,17 +1887,17 @@
                 <input id="p-pkg-unit" class="form-control" placeholder="e.g. packet, carton, bag">
               </div>
             </div>
-            <div class="small text-muted mt-1">Used when receiving stock — lets you enter "4 cartons" instead of "4000ml".</div>
+            <div class="small text-muted mt-1">Used when receiving stock - lets you enter "4 cartons" instead of "4000ml".</div>
           </div>
 
           <!-- hidden inputs kept for JS compatibility -->
           <input type="hidden" id="p-sold-by-weight" value="0">
           <input type="hidden" id="p-price-per-unit" value="">
 
-          <!-- Sell packages — how it's sold to customers -->
+          <!-- Sell packages - how it's sold to customers -->
           <div class="border rounded p-2 mb-2" style="border-color:#0d6efd !important;">
             <div class="d-flex justify-content-between align-items-center mb-1">
-              <div class="fw-semibold small">🛒 Sell Packages <span class="text-muted fw-normal">— pre-packed portions you sell to customers</span></div>
+              <div class="fw-semibold small">🛒 Sell Packages <span class="text-muted fw-normal">- pre-packed portions you sell to customers</span></div>
               <button id="btn-add-package" class="btn btn-outline-primary btn-sm">+ Add</button>
             </div>
             <div class="small text-muted mb-2">Each package becomes a scannable product at the till (e.g. "Biltong 100g Bag").</div>
@@ -2013,7 +2013,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h5 class="modal-title">Stocktake — <span id="stocktake-product-name"></span></h5>
+        <h5 class="modal-title">Stocktake - <span id="stocktake-product-name"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -2023,7 +2023,7 @@
         </div>
         <div class="d-flex justify-content-between align-items-center mb-1">
           <label class="form-label small mb-0">Actual count <span class="text-muted">(add a row per container/location)</span></label>
-          <div class="text-muted small">System: <strong id="stocktake-system-qty">—</strong></div>
+          <div class="text-muted small">System: <strong id="stocktake-system-qty">-</strong></div>
         </div>
         <div id="stocktake-rows"></div>
         <button type="button" id="btn-stocktake-add-row" class="btn btn-outline-secondary btn-sm w-100 mb-2">+ Add another container</button>
@@ -2046,7 +2046,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h5 class="modal-title">Write Off Stock — <span id="writeoff-product-name"></span></h5>
+        <h5 class="modal-title">Write Off Stock - <span id="writeoff-product-name"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -2068,7 +2068,7 @@
           </div>
           <div class="col-5">
             <label class="form-label small">Available stock</label>
-            <div class="form-control bg-light" id="writeoff-available" style="height:38px;line-height:1.8">—</div>
+            <div class="form-control bg-light" id="writeoff-available" style="height:38px;line-height:1.8">-</div>
           </div>
         </div>
         <div id="writeoff-cost-preview" class="alert alert-warning py-2 small hidden"></div>
@@ -2089,7 +2089,7 @@
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h5 class="modal-title">Receive Stock — <span id="receive-product-name"></span></h5>
+        <h5 class="modal-title">Receive Stock - <span id="receive-product-name"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -2120,7 +2120,7 @@
           <label class="form-label small">Supplier (optional)</label>
           <div class="input-group">
             <select id="receive-supplier" class="form-select">
-              <option value="">— No supplier —</option>
+              <option value="">- No supplier -</option>
             </select>
             <button id="btn-quick-add-supplier" class="btn btn-outline-secondary btn-sm" type="button" title="Quick add supplier">+</button>
           </div>
@@ -2137,7 +2137,7 @@
         </div>
       </div>
       <div class="modal-footer py-2">
-        <button id="btn-receive-confirm" class="btn btn-success w-100">Confirm — Receive Stock</button>
+        <button id="btn-receive-confirm" class="btn btn-success w-100">Confirm - Receive Stock</button>
       </div>
     </div>
   </div>
@@ -2238,7 +2238,7 @@
         <div class="mb-2">
           <label class="form-label small">Supplier</label>
           <select id="edit-batch-supplier" class="form-select">
-            <option value="">— No supplier —</option>
+            <option value="">- No supplier -</option>
           </select>
         </div>
         <div class="mb-2">
@@ -2265,7 +2265,7 @@
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
       <div class="modal-header py-2">
-        <h5 class="modal-title">Customise — <span id="subs-product-name"></span></h5>
+        <h5 class="modal-title">Customise - <span id="subs-product-name"></span></h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -2400,7 +2400,7 @@
           <!-- Customer picker -->
           <div id="inv-customer-picker">
             <select id="inv-customer-select" class="form-select">
-              <option value="">— Search or select a customer —</option>
+              <option value="">- Search or select a customer -</option>
             </select>
             <div id="inv-customer-preview" class="small text-muted mt-1 hidden"></div>
           </div>
@@ -2475,13 +2475,13 @@
 
         <!-- Bank details -->
         <div class="mb-2">
-          <label class="form-label small fw-bold">Bank Details <span class="text-muted fw-normal">(saved automatically — shown on every invoice)</span></label>
+          <label class="form-label small fw-bold">Bank Details <span class="text-muted fw-normal">(saved automatically - shown on every invoice)</span></label>
           <textarea id="inv-bank-details" class="form-control form-control-sm" rows="3" placeholder="e.g. FNB Cheque&#10;Account: 12345678&#10;Branch: 250655&#10;Reference: Invoice number"></textarea>
         </div>
 
         <!-- Notes -->
         <div class="mb-2">
-          <label class="form-label small fw-bold">Notes <span class="text-muted fw-normal">(optional — shown on invoice)</span></label>
+          <label class="form-label small fw-bold">Notes <span class="text-muted fw-normal">(optional - shown on invoice)</span></label>
           <textarea id="inv-notes" class="form-control form-control-sm" rows="2" placeholder="e.g. Payment due on delivery"></textarea>
         </div>
       </div>

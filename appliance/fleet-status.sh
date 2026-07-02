@@ -1,5 +1,5 @@
 #!/bin/bash
-# fleet-status.sh — show version + backup freshness across the fleet.
+# fleet-status.sh - show version + backup freshness across the fleet.
 #
 #   ./fleet-status.sh            # read stores-inventory.csv, SSH each box, print a table
 #

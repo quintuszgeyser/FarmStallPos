@@ -1,5 +1,5 @@
 #!/bin/bash
-# deploy_cron.sh — runs every minute via crontab
+# deploy_cron.sh - runs every minute via crontab
 # Polls QA POS for pending scheduled deploys and executes them.
 # Install: crontab -e → add:
 #   * * * * * /home/quintusz/farmpos-docker/scripts/deploy_cron.sh >> /home/quintusz/farmpos-docker/logs/deploy_cron.log 2>&1

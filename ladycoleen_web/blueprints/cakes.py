@@ -15,7 +15,7 @@ cakes_bp = Blueprint("cakes", __name__)
 
 # ── Public pages ──────────────────────────────────────────────────────────────
 
-# Cakes hidden for now — public cake pages redirect to the farm shop.
+# Cakes hidden for now - public cake pages redirect to the farm shop.
 # Order-status tracking (/cakes/orders/<ref>), admin, and APIs stay live so
 # existing cake orders and their email links keep working.
 @cakes_bp.route("/cakes")
@@ -122,7 +122,7 @@ def submit_order():
         customer_phone=order.customer_phone or "",
         customer_email=order.customer_email or "",
         notes=f"[ONLINE - CAKE ORDER] {order.reference}. Date required: {order.date_required}. Size: {order.size}, {order.flavor}",
-        lines=[{"name": f"Custom Cake — {order.size}, {order.flavor}",
+        lines=[{"name": f"Custom Cake - {order.size}, {order.flavor}",
                 "qty": 1, "unit_price": 0, "unit": "unit", "subtotal": 0}],
         subtotal=0,
         total=0,
@@ -139,14 +139,14 @@ def submit_order():
 
     send_email(
         to=order.customer_email,
-        subject=f"Order received — {order.reference}",
+        subject=f"Order received - {order.reference}",
         template="cake_order_received",
         order=order
     )
     if current_app.config.get("ADMIN_EMAIL"):
         send_email(
             to=current_app.config["ADMIN_EMAIL"],
-            subject=f"New cake order — {order.reference}",
+            subject=f"New cake order - {order.reference}",
             template="cake_order_admin_notify",
             order=order
         )
@@ -168,7 +168,7 @@ def api_order_status(reference):
 
 @cakes_bp.route("/api/cakes/orders/<reference>/accept", methods=["POST"])
 def accept_quote(reference):
-    """Customer accepts their quote. No auth — reference is the token."""
+    """Customer accepts their quote. No auth - reference is the token."""
     from datetime import datetime, timezone
     order = CakeOrder.query.filter_by(reference=reference).first_or_404()
 
@@ -190,7 +190,7 @@ def accept_quote(reference):
     if current_app.config.get("ADMIN_EMAIL"):
         send_email(
             to=current_app.config["ADMIN_EMAIL"],
-            subject=f"Customer confirmed quote — {order.reference}",
+            subject=f"Customer confirmed quote - {order.reference}",
             template="cake_order_admin_notify",
             order=order
         )
@@ -257,10 +257,10 @@ def admin_quote(order_id):
     order.status       = "quoted"
     db.session.commit()
 
-    # Update POS invoice with actual price — only if still draft and not yet linked to a sale
+    # Update POS invoice with actual price - only if still draft and not yet linked to a sale
     if order.invoice_id:
         lines_json = json.dumps([{
-            "name": f"Custom Cake — {order.size}, {order.flavor}",
+            "name": f"Custom Cake - {order.size}, {order.flavor}",
             "qty": 1,
             "unit_price": price,
             "unit": "unit",
@@ -279,7 +279,7 @@ def admin_quote(order_id):
 
     send_email(
         to=order.customer_email,
-        subject=f"Your cake quote is ready — {order.reference}",
+        subject=f"Your cake quote is ready - {order.reference}",
         template="cake_quote_ready",
         order=order
     )
@@ -319,7 +319,7 @@ def admin_update_status(order_id):
     if new_status == "confirmed":
         send_email(
             to=order.customer_email,
-            subject=f"Your cake order is confirmed — {order.reference}",
+            subject=f"Your cake order is confirmed - {order.reference}",
             template="cake_order_confirmed",
             order=order
         )
@@ -348,7 +348,7 @@ def admin_create_invoice(order_id):
 
     from flask import session as flask_session
     lines_json = json.dumps([{
-        "name": f"Custom Cake — {order.size}, {order.flavor}",
+        "name": f"Custom Cake - {order.size}, {order.flavor}",
         "qty": 1, "unit_price": float(order.quoted_price),
         "unit": "unit", "subtotal": float(order.quoted_price),
     }])

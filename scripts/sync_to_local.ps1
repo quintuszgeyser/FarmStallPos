@@ -1,7 +1,7 @@
 
 <# ================================
   Farm Stall POS → local Postgres
-  Sync script (PowerShell) — tailored to your models
+  Sync script (PowerShell) - tailored to your models
 ================================ #>
 
 # --------- CONFIG: EDIT THESE ----------

@@ -1,5 +1,5 @@
 #!/bin/bash
-# register-store.sh — provision (or repair) a Farm POS appliance box.
+# register-store.sh - provision (or repair) a Farm POS appliance box.
 #
 #   sudo ./register-store.sh              # interactive; or reads existing store.yml
 #   sudo ./register-store.sh --restore    # restore mode (existing data dir / from backup)
@@ -36,7 +36,7 @@ STORE_YML="$FARMPOS_HOME/store.yml"
 # --- 1. Identity ----------------------------------------------------------------
 if [ ! -f "$STORE_YML" ]; then
   if [ -t 0 ]; then
-    echo "No store.yml found — let's create one."
+    echo "No store.yml found - let's create one."
     read -rp "Store ID (kebab-case, e.g. boer-and-butcher): " IN_ID
     read -rp "Store display name: " IN_NAME
     read -rp "Scale IP (blank = no scale): " IN_SCALE
@@ -53,7 +53,7 @@ d['scale'] = {'enabled': bool(scale), 'ip': scale, 'port': 7061}
 yaml.safe_dump(d, open(f,'w'), sort_keys=False)
 PY
   else
-    die "no store.yml at $STORE_YML and not interactive — pre-seed it first."
+    die "no store.yml at $STORE_YML and not interactive - pre-seed it first."
   fi
 fi
 
@@ -97,14 +97,14 @@ if command -v age-keygen >/dev/null 2>&1; then
     KEY_JUST_MADE=1
   fi
 else
-  c_red "WARN: 'age' not installed — backups will be UNENCRYPTED. apt-get install age, then re-run."
+  c_red "WARN: 'age' not installed - backups will be UNENCRYPTED. apt-get install age, then re-run."
 fi
 
 # 2b. Central support public key -> lets you restore/repro ANY store centrally.
 if [ -f "$HERE/support_age.pub" ]; then
   cp "$HERE/support_age.pub" "$SECRETS_DIR/support_age.pub"
 else
-  c_red "WARN: appliance/support_age.pub missing — central restore/repro will NOT work."
+  c_red "WARN: appliance/support_age.pub missing - central restore/repro will NOT work."
   c_red "      Generate it on your support machine and commit it (see support_age.pub.example)."
 fi
 
@@ -153,16 +153,16 @@ fi
 # --- 6. Ready -------------------------------------------------------------------
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 c_green "================================================================"
-c_green " READY — $STORE_NAME is trading."
+c_green " READY - $STORE_NAME is trading."
 c_green "   POS:      http://${LAN_IP:-<lan-ip>}:5000"
 c_green "   Admin:    admin  /  $ADMIN_PASS   (change on first login)"
 [ -n "$SCALE_IP" ] && c_green "   Scale:    $SCALE_IP:$SCALE_PORT"
-c_green "   Secrets:  $SECRETS_DIR (mode 600 — back these up)"
+c_green "   Secrets:  $SECRETS_DIR (mode 600 - back these up)"
 c_green "================================================================"
 if [ "${KEY_JUST_MADE:-0}" = "1" ]; then
-  c_red "⚠  ESCROW THE BACKUP KEY NOW — this store's backups cannot be self-recovered without it:"
+  c_red "⚠  ESCROW THE BACKUP KEY NOW - this store's backups cannot be self-recovered without it:"
   c_red "     $SECRETS_DIR/backup_age.key.escrow.txt"
   c_red "   Copy it to a password manager + one offline location, then delete the .escrow.txt copy."
 fi
-[ -f "$SECRETS_DIR/support_age.pub" ] || c_red "⚠  No support key deployed — you will NOT be able to restore/repro this store centrally."
+[ -f "$SECRETS_DIR/support_age.pub" ] || c_red "⚠  No support key deployed - you will NOT be able to restore/repro this store centrally."
 [ "$RESTORE" = "1" ] && echo "(restore mode: existing DB preserved; init skipped by Postgres.)"

@@ -10,8 +10,8 @@ html_ids = set(re.findall(r'id=["\']([^"\'> ]+)["\']', html))
 
 missing = sorted(js_ids - html_ids)
 print(f"JS references {len(js_ids)} IDs, HTML defines {len(html_ids)} IDs")
-print(f"\nIn JS but NOT in HTML — {len(missing)} mismatches:")
+print(f"\nIn JS but NOT in HTML - {len(missing)} mismatches:")
 for m in missing:
     print(f"  MISSING: {m}")
 if not missing:
-    print("  (none — clean!)")
+    print("  (none - clean!)")

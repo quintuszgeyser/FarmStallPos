@@ -8,7 +8,7 @@ set -e
 cd "$(dirname "$0")"
 
 if [[ -z "$(git status --porcelain)" ]]; then
-  echo "[deploy] Nothing to commit — pushing current HEAD to GitHub..."
+  echo "[deploy] Nothing to commit - pushing current HEAD to GitHub..."
 else
   MSG="${1:-Update $(date '+%Y-%m-%d %H:%M')}"
   git add -A

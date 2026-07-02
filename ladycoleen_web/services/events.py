@@ -15,7 +15,7 @@ def on(event_name: str):
 
 
 def emit(event_name: str, payload: dict):
-    """Fire event — runs all registered handlers synchronously."""
+    """Fire event - runs all registered handlers synchronously."""
     log.info(json.dumps({"action": event_name, **payload}))
     for handler in _handlers.get(event_name, []):
         try:

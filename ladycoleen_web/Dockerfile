@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Clone monorepo and use ladycoleen_web subfolder — same repo as POS
+# Clone monorepo and use ladycoleen_web subfolder - same repo as POS
 RUN git clone https://github.com/quintuszgeyser/FarmStallPos.git /tmp/repo && \
     cp -r /tmp/repo/ladycoleen_web/. /app/ && \
     rm -rf /tmp/repo

@@ -43,7 +43,7 @@
 
 <div class="bill-to">
   <h4>Bill To</h4>
-  <p><strong>{{ invoice.customer_name or '—' }}</strong></p>
+  <p><strong>{{ invoice.customer_name or '-' }}</strong></p>
   {% if invoice.customer_email %}<p>{{ invoice.customer_email }}</p>{% endif %}
   {% if invoice.customer_phone %}<p>{{ invoice.customer_phone }}</p>{% endif %}
   {% if invoice.customer_address %}<p>{{ invoice.customer_address }}</p>{% endif %}

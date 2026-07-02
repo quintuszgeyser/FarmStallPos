@@ -36,7 +36,7 @@ def save_upload(file_storage, subfolder: str, allowed_extensions: set) -> tuple[
         file_storage.save(full_path)
     except Exception as e:
         log.error("Failed to save upload to %s: %s", full_path, e)
-        return None, "Upload failed — please try again"
+        return None, "Upload failed - please try again"
 
     relative = f"{subfolder}/{safe_name}"
     log.info(json_line("file_saved", {"path": relative, "size": size}))

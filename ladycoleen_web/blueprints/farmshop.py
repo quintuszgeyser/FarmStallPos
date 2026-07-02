@@ -193,7 +193,7 @@ def api_products():
 
 def process_payment(amount: float) -> dict:
     """
-    Mock payment — instant approval.
+    Mock payment - instant approval.
     Replace with PayFast when account is verified.
     """
     import uuid as _uuid
@@ -287,10 +287,10 @@ def place_order():
             customer_email = wc.email
             customer_phone = customer_phone or wc.phone
 
-    # ── Step 1: Process payment FIRST — no order created before this ──────────
+    # ── Step 1: Process payment FIRST - no order created before this ──────────
     pay = process_payment(float(total))
     if pay.get("status") != "success":
-        return jsonify(error="Payment failed — please try again"), 402
+        return jsonify(error="Payment failed - please try again"), 402
     pay_ref = pay["reference"]
 
     # ── Step 2: Create order + deduct stock in a single transaction ────────────
@@ -298,7 +298,7 @@ def place_order():
     from datetime import datetime, timezone
 
     try:
-        # 2a. Insert order (status='confirmed' — paid upfront)
+        # 2a. Insert order (status='confirmed' - paid upfront)
         result = db.session.execute(text("""
             INSERT INTO online_orders
                 (web_customer_id, guest_name, guest_email, guest_phone,
@@ -412,7 +412,7 @@ def place_order():
     except Exception as e:
         db.session.rollback()
         log.error("Order creation failed for payment %s: %s", pay_ref, e)
-        return jsonify(error="Order creation failed — please contact us"), 500
+        return jsonify(error="Order creation failed - please contact us"), 500
 
     # ── Step 3: Auto-create POS customer (best-effort, non-blocking) ──────────
     from services.customers import ensure_pos_customer
@@ -594,7 +594,7 @@ def payfast_initiate():
 
     # Send fields as an ORDERED list of [key, value] pairs, NOT a dict.
     # jsonify sorts dict keys alphabetically, which scrambles the field order
-    # PayFast rebuilds the signature from — causing a guaranteed signature mismatch.
+    # PayFast rebuilds the signature from - causing a guaranteed signature mismatch.
     return jsonify(payfast_url=form["action"], fields=list(form["fields"].items())), 200
 
 
@@ -777,7 +777,7 @@ def payfast_notify():
     except Exception as e:
         db.session.rollback()
         log.error("PayFast ITN: order creation failed for session %s: %s", session_id, e)
-        return "OK", 200   # Still return 200 — log and investigate manually
+        return "OK", 200   # Still return 200 - log and investigate manually
 
     # Emails (non-blocking)
     order_full = db.session.execute(
@@ -815,7 +815,7 @@ def payment_success():
             {"sid": session_id}
         ).fetchone()
         if not row:
-            # ITN may not have fired yet — look up by payment_reference = session_id fallback
+            # ITN may not have fired yet - look up by payment_reference = session_id fallback
             sess = db.session.execute(
                 text("SELECT status FROM payment_sessions WHERE session_id = :sid"),
                 {"sid": session_id}
@@ -927,9 +927,9 @@ def admin_confirm_order(order_id):
     except Exception as e:
         db.session.rollback()
         log.error("Order confirm failed order_id=%d: %s", order_id, e)
-        return jsonify(error="Stock deduction failed — order remains pending. Check logs."), 500
+        return jsonify(error="Stock deduction failed - order remains pending. Check logs."), 500
 
-    # Link POS sale to invoice — idempotent (only if not already linked)
+    # Link POS sale to invoice - idempotent (only if not already linked)
     order = db.session.execute(
         text("SELECT invoice_id FROM online_orders WHERE id = :id"), {"id": order_id}
     ).fetchone()
@@ -940,7 +940,7 @@ def admin_confirm_order(order_id):
         """), {"sid": sale_uuid, "iid": order.invoice_id})
         db.session.commit()
         if result.rowcount == 0:
-            log.info("Invoice %d already linked to a sale — skipped update", order.invoice_id)
+            log.info("Invoice %d already linked to a sale - skipped update", order.invoice_id)
 
     emit("order_confirmed", {"type": "farmshop", "id": order_id, "pos_sale_id": sale_uuid})
 
@@ -997,7 +997,7 @@ def admin_update_status(order_id):
 def admin_undo_order(order_id):
     """
     Reverse stock deduction and reset order to draft.
-    Payment record is NOT deleted — preserved as proof of transaction.
+    Payment record is NOT deleted - preserved as proof of transaction.
     Idempotent: safe to call multiple times.
     """
     from blueprints.auth import require_admin
@@ -1014,7 +1014,7 @@ def admin_undo_order(order_id):
     if not order:
         return jsonify(error="Not found"), 404
 
-    # Idempotent — already undone
+    # Idempotent - already undone
     if not order.pos_sale_id:
         return jsonify(ok=True, message="Order already undone"), 200
 
@@ -1026,7 +1026,7 @@ def admin_undo_order(order_id):
     from services.stock import reverse_sale_consumption
     reverse_sale_consumption(db, sale_uuid)
 
-    # 2. Void the sale records — preserve for audit trail, do NOT delete
+    # 2. Void the sale records - preserve for audit trail, do NOT delete
     db.session.execute(text("""
         UPDATE sales SET voided = true, voided_at = now(),
             void_reason = :reason, flag_resolved = false
@@ -1050,12 +1050,12 @@ def admin_undo_order(order_id):
             WHERE id = :iid
         """), {"iid": order.invoice_id, "audit": audit})
 
-    # Payment record intentionally NOT touched — proof of transaction
+    # Payment record intentionally NOT touched - proof of transaction
 
     db.session.commit()
     log.info('{"action":"order_undone","order_id":%d,"sale_id":"%s","by":"%s"}',
              order_id, sale_uuid, admin_user)
-    return jsonify(ok=True, message="Order undone — stock restored")
+    return jsonify(ok=True, message="Order undone - stock restored")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1064,7 +1064,7 @@ def _create_paid_invoice(reference, customer_name, customer_phone,
                          customer_email, notes, lines, subtotal, total,
                          sale_id=None) -> int | None:
     """
-    Create a POS invoice in 'sent' status — paid and ready for fulfilment.
+    Create a POS invoice in 'sent' status - paid and ready for fulfilment.
     Links to the POS sale record if sale_id is provided.
     """
     try:
@@ -1129,11 +1129,11 @@ def _create_draft_invoice(reference, customer_name, customer_phone,
         return None
 
 
-# Shipping fees by delivery method (ZAR). Editable from the POS Invoices tab —
+# Shipping fees by delivery method (ZAR). Editable from the POS Invoices tab -
 # stored in the shared `settings` table (keys: shipping_fee_<method>). These
 # defaults are used only when no setting row exists yet.
 SHIPPING_FEE_DEFAULTS = {
-    "collection": Decimal("0"),    # Collect from farm stall — free
+    "collection": Decimal("0"),    # Collect from farm stall - free
     "pudo":       Decimal("69"),   # Pudo locker-to-locker
     "delivery":   Decimal("99"),   # Delivery to customer address
 }
@@ -1162,7 +1162,7 @@ def _delivery_note(method, address, pudo_name, pudo_suburb, pudo_city) -> str:
     if method == "collection":
         return "Delivery: Collection from farm shop"
     if method == "pudo":
-        return f"Delivery: Pudo — {pudo_name}, {pudo_suburb}, {pudo_city}"
+        return f"Delivery: Pudo - {pudo_name}, {pudo_suburb}, {pudo_city}"
     return f"Delivery: {address or 'Address not provided'}"
 
 
@@ -1187,5 +1187,5 @@ def _send_farmshop_email(order, template: str):
             customer_email = row.email
     if customer_email:
         from services.email import send_email
-        send_email(to=customer_email, subject=f"Order update — {order.reference}",
+        send_email(to=customer_email, subject=f"Order update - {order.reference}",
                    template=template, order=order)

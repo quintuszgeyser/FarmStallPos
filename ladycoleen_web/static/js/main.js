@@ -1,4 +1,4 @@
-// Lady Coleen Web — Public JS
+// Lady Coleen Web - Public JS
 // JWT stored in localStorage, attached to fetch calls automatically
 
 const LC = {

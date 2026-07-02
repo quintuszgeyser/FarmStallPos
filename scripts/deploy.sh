@@ -1,5 +1,5 @@
 #!/bin/bash
-# Smart deployment — caches recognition model/package layers, only rebuilds what changed.
+# Smart deployment - caches recognition model/package layers, only rebuilds what changed.
 #
 # QA  : build the artifact from ./pos (git clone, fresh) and run it as qa-farmpos-app (own DB farm_pos_qa).
 # PROD: PROMOTE THE EXACT QA-TESTED IMAGE (no rebuild) so prod is functionally identical to QA,
@@ -26,7 +26,7 @@ BACKUP_DIR="$HOME/backups/pre-deploy"
 PARITY_FAIL=0   # set to 1 if the post-deploy schema parity check finds drift
 
 wait_healthy() {  # $1 = container name, $2 = label. Never fails the script (warn only).
-  # 120s window — startup runs the DB migration first, which can push health past 60s.
+  # 120s window - startup runs the DB migration first, which can push health past 60s.
   for i in $(seq 1 24); do
     sleep 5
     if docker ps | grep -q "$1.*healthy"; then echo "[deploy] $2 is healthy"; return 0; fi
@@ -80,7 +80,7 @@ schema_parity_check() {
     echo "[deploy] !!! Investigate or run rollback.sh. (DB snapshot is in $BACKUP_DIR)"
     return 1
   fi
-  echo "[deploy] Schema parity OK — prod schema matches qa."
+  echo "[deploy] Schema parity OK - prod schema matches qa."
   return 0
 }
 
@@ -128,30 +128,30 @@ deploy_qa() {
   echo "[deploy] QA web artifact: $QA_WEB_IMAGE ($(cat /tmp/qa_web_image_id.txt 2>/dev/null))"
 }
 
-# PROMOTE the exact QA-tested images to prod — no rebuild. Prod == QA functionally, own DB.
+# PROMOTE the exact QA-tested images to prod - no rebuild. Prod == QA functionally, own DB.
 # Promotes BOTH the POS app and the website together.
 deploy_prod() {
   echo "[deploy] Promoting QA artifacts (POS + WEB) to PROD (no rebuild)..."
   if ! docker image inspect "$QA_IMAGE" >/dev/null 2>&1; then
-    echo "[deploy] ERROR: $QA_IMAGE not found — deploy QA first (deploy.sh qa)."; exit 1
+    echo "[deploy] ERROR: $QA_IMAGE not found - deploy QA first (deploy.sh qa)."; exit 1
   fi
   if ! docker image inspect "$QA_WEB_IMAGE" >/dev/null 2>&1; then
-    echo "[deploy] ERROR: $QA_WEB_IMAGE not found — deploy QA first (deploy.sh qa)."; exit 1
+    echo "[deploy] ERROR: $QA_WEB_IMAGE not found - deploy QA first (deploy.sh qa)."; exit 1
   fi
 
   # 1) Pre-deploy DB snapshot (rollback safety net)
   backup_prod_db
 
-  # 2) Save current prod images as :previous for rollback — but ONLY when we're
+  # 2) Save current prod images as :previous for rollback - but ONLY when we're
   #    actually promoting DIFFERENT bits, so a redundant deploy doesn't clobber the
   #    real rollback target.
   local qa_id prod_id qaw_id prodw_id
   qa_id=$(docker image inspect "$QA_IMAGE" --format '{{.Id}}' 2>/dev/null)
   prod_id=$(docker image inspect "$PROD_IMAGE" --format '{{.Id}}' 2>/dev/null || echo none)
   if [ "$prod_id" = "none" ]; then
-    echo "[deploy] No existing prod POS image (first promotion) — no rollback target yet."
+    echo "[deploy] No existing prod POS image (first promotion) - no rollback target yet."
   elif [ "$qa_id" = "$prod_id" ]; then
-    echo "[deploy] QA POS image already live on prod — preserving existing rollback target."
+    echo "[deploy] QA POS image already live on prod - preserving existing rollback target."
   else
     docker tag "$PROD_IMAGE" "$PROD_PREV_IMAGE"
     echo "[deploy] Saved POS rollback image: $PROD_PREV_IMAGE ($(echo "$prod_id" | cut -c1-19))"
@@ -160,9 +160,9 @@ deploy_prod() {
   qaw_id=$(docker image inspect "$QA_WEB_IMAGE" --format '{{.Id}}' 2>/dev/null)
   prodw_id=$(docker image inspect "$PROD_WEB_IMAGE" --format '{{.Id}}' 2>/dev/null || echo none)
   if [ "$prodw_id" = "none" ]; then
-    echo "[deploy] No existing prod WEB image (first promotion) — no rollback target yet."
+    echo "[deploy] No existing prod WEB image (first promotion) - no rollback target yet."
   elif [ "$qaw_id" = "$prodw_id" ]; then
-    echo "[deploy] QA WEB image already live on prod — preserving existing rollback target."
+    echo "[deploy] QA WEB image already live on prod - preserving existing rollback target."
   else
     docker tag "$PROD_WEB_IMAGE" "$PROD_WEB_PREV_IMAGE"
     echo "[deploy] Saved WEB rollback image: $PROD_WEB_PREV_IMAGE ($(echo "$prodw_id" | cut -c1-19))"
@@ -182,7 +182,7 @@ deploy_prod() {
   docker compose up -d --no-build ladycoleen-web
   wait_healthy ladycoleen-web "PROD WEB"
 
-  # 5) Post-deploy parity gate — fail loudly on drift so it shows in the Deploy tab
+  # 5) Post-deploy parity gate - fail loudly on drift so it shows in the Deploy tab
   schema_parity_check || PARITY_FAIL=1
 }
 
@@ -215,7 +215,7 @@ docker ps --format 'table {{.Names}}\t{{.Status}}'
 
 # Propagate parity result so deploy_cron.sh reports prod drift as a failed deploy.
 if [ "$PARITY_FAIL" = "1" ]; then
-  echo "[deploy] RESULT: FAILED — schema drift detected (see above). Prod is up but NOT in parity with QA."
+  echo "[deploy] RESULT: FAILED - schema drift detected (see above). Prod is up but NOT in parity with QA."
   exit 1
 fi
 echo "[deploy] RESULT: OK"

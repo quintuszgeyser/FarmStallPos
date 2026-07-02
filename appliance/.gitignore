@@ -1,4 +1,4 @@
-# Operator-local, environment-specific, or secret-adjacent — never commit.
+# Operator-local, environment-specific, or secret-adjacent - never commit.
 repro.conf
 stores-inventory.csv
 # The real central support PUBLIC key is committed as support_age.pub by the operator;

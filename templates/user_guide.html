@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Farm Stall POS — User Guide</title>
+  <title>Farm Stall POS - User Guide</title>
   <style>
     :root {
       --green:       #2a6f3e;
@@ -150,7 +150,7 @@
     <a href="#teller-flag">Flagging a Transaction</a>
     <a href="#kitchen">Kitchen Queue</a>
 
-    <div class="section-label">Admin — Products</div>
+    <div class="section-label">Admin - Products</div>
     <a href="#admin-products">Products Tab Overview</a>
     <a href="#admin-new-product">Adding a Product</a>
     <a href="#admin-edit-product">Editing &amp; Pricing</a>
@@ -160,7 +160,7 @@
     <a href="#admin-writeoff">Write-Off</a>
     <a href="#admin-specials">Specials</a>
 
-    <div class="section-label">Admin — Operations</div>
+    <div class="section-label">Admin - Operations</div>
     <a href="#admin-suppliers">Suppliers</a>
     <a href="#admin-purchase-run">Purchase Run</a>
     <a href="#admin-transactions">Managing Transactions</a>
@@ -188,7 +188,7 @@
 <main id="content">
 
   <div style="margin-bottom:40px;">
-    <h1 style="font-size:32px;color:var(--green);font-weight:800;">Farm Stall POS — User Guide</h1>
+    <h1 style="font-size:32px;color:var(--green);font-weight:800;">Farm Stall POS - User Guide</h1>
     <p style="color:var(--muted);margin-top:6px;">Version 2.0 &nbsp;·&nbsp; App: <code>http://10.0.0.101:5000</code> (admin / admin123)</p>
     <p>Sections are marked: <span class="badge badge-teller">Teller</span> <span class="badge badge-admin">Admin</span> <span class="badge badge-dev">Developer</span> <span class="badge badge-both">All roles</span></p>
   </div>
@@ -196,16 +196,16 @@
   <!-- ═══════════ ARCHITECTURE ═══════════ -->
   <h2 id="architecture">System Architecture</h2>
 
-  <p>Farm Stall POS is made up of four services that run together on a single Mini PC (MINISFORUM UN1245 — Intel i5-12450H, 16 GB RAM). All services start automatically on boot.</p>
+  <p>Farm Stall POS is made up of four services that run together on a single Mini PC (MINISFORUM UN1245 - Intel i5-12450H, 16 GB RAM). All services start automatically on boot.</p>
 
   <div class="arch-grid">
     <div class="arch-box">
       <h4>POS Application</h4>
-      <p>Flask web app (Python). Serves the browser UI and handles all business logic — sales, stock, customers, stats. Port <strong>5000</strong>.</p>
+      <p>Flask web app (Python). Serves the browser UI and handles all business logic - sales, stock, customers, stats. Port <strong>5000</strong>.</p>
     </div>
     <div class="arch-box">
       <h4>PostgreSQL Database</h4>
-      <p>Stores all data: products, transactions, stock batches, customers, face embeddings. Two databases — <code>farm_pos</code> (QA) and <code>farm_pos_prod</code> (Production).</p>
+      <p>Stores all data: products, transactions, stock batches, customers, face embeddings. Two databases - <code>farm_pos</code> (QA) and <code>farm_pos_prod</code> (Production).</p>
     </div>
     <div class="arch-box">
       <h4>Frigate NVR</h4>
@@ -248,8 +248,8 @@
 
   <h3>Remote Access</h3>
   <ul>
-    <li><strong>Tailscale VPN</strong> — access the Mini PC from anywhere without port forwarding. IP: <code>100.86.32.13</code></li>
-    <li><strong>SSH</strong> — <code>ssh quintusz@10.0.0.101</code> (password: <code>2311</code>) when on the local network</li>
+    <li><strong>Tailscale VPN</strong> - access the Mini PC from anywhere without port forwarding. IP: <code>100.86.32.13</code></li>
+    <li><strong>SSH</strong> - <code>ssh quintusz@10.0.0.101</code> (password: <code>2311</code>) when on the local network</li>
     <li><strong>Deploy:</strong> <code>~/farmpos-docker/deploy.sh pos</code> or <code>deploy.sh recognition</code></li>
   </ul>
 
@@ -262,7 +262,7 @@
     <tr><th></th><th>Production</th><th>QA (Dev/Test)</th></tr>
     <tr><td>URL</td><td><code>http://10.0.0.101:5000</code></td><td><code>http://localhost:5000</code> (local dev machine)</td></tr>
     <tr><td>Database</td><td><code>farm_pos_prod</code></td><td><code>farm_pos</code></td></tr>
-    <tr><td>Visual indicator</td><td>No banner — clean</td><td>Yellow ⚠ banner at top</td></tr>
+    <tr><td>Visual indicator</td><td>No banner - clean</td><td>Yellow ⚠ banner at top</td></tr>
     <tr><td>Default login</td><td>admin / admin123</td><td>admin / admin123</td></tr>
   </table>
 
@@ -279,7 +279,7 @@
   <h2 id="setup">First-Time Setup <span class="badge badge-admin">Admin</span></h2>
 
   <ol class="steps">
-    <li>All services start automatically on boot — no manual start required in production.</li>
+    <li>All services start automatically on boot - no manual start required in production.</li>
     <li>Open <code>http://10.0.0.101:5000</code> in any browser on the local network.</li>
     <li>Log in with <code>admin</code> / <code>admin123</code> and change the password immediately.</li>
     <li>On first run, all database tables are created automatically and the admin user is seeded.</li>
@@ -311,21 +311,21 @@
 
   <h2 id="roles">User Roles <span class="badge badge-both">All roles</span></h2>
 
-  <p>Each user has one or more roles. Roles can be combined — e.g., <code>teller,developer</code> gives POS access and recognition tools together.</p>
+  <p>Each user has one or more roles. Roles can be combined - e.g., <code>teller,developer</code> gives POS access and recognition tools together.</p>
 
   <table>
     <tr><th>Feature / Tab</th><th>Teller</th><th>Admin</th><th>Developer</th></tr>
-    <tr><td>Teller, Transactions, Kitchen tabs</td><td>✓</td><td>✓</td><td>—</td></tr>
-    <tr><td>Process sales, flag transactions</td><td>✓</td><td>✓</td><td>—</td></tr>
-    <tr><td>View last 5 own transactions (no COGS)</td><td>✓</td><td>✓</td><td>—</td></tr>
-    <tr><td>All transactions + date range + COGS/margin</td><td>—</td><td>✓</td><td>—</td></tr>
-    <tr><td>Edit / void transactions</td><td>—</td><td>✓</td><td>—</td></tr>
-    <tr><td>Products, Stock, Suppliers, Stats</td><td>—</td><td>✓</td><td>—</td></tr>
-    <tr><td>Customers tab</td><td>—</td><td>✓</td><td>—</td></tr>
-    <tr><td>User management</td><td>—</td><td>✓</td><td>—</td></tr>
-    <tr><td>Settings</td><td>—</td><td>✓</td><td>—</td></tr>
-    <tr><td>⚙ Recognition Settings tab</td><td>—</td><td>—</td><td>✓</td></tr>
-    <tr><td>📊 Monitor tab</td><td>—</td><td>—</td><td>✓</td></tr>
+    <tr><td>Teller, Transactions, Kitchen tabs</td><td>✓</td><td>✓</td><td>-</td></tr>
+    <tr><td>Process sales, flag transactions</td><td>✓</td><td>✓</td><td>-</td></tr>
+    <tr><td>View last 5 own transactions (no COGS)</td><td>✓</td><td>✓</td><td>-</td></tr>
+    <tr><td>All transactions + date range + COGS/margin</td><td>-</td><td>✓</td><td>-</td></tr>
+    <tr><td>Edit / void transactions</td><td>-</td><td>✓</td><td>-</td></tr>
+    <tr><td>Products, Stock, Suppliers, Stats</td><td>-</td><td>✓</td><td>-</td></tr>
+    <tr><td>Customers tab</td><td>-</td><td>✓</td><td>-</td></tr>
+    <tr><td>User management</td><td>-</td><td>✓</td><td>-</td></tr>
+    <tr><td>Settings</td><td>-</td><td>✓</td><td>-</td></tr>
+    <tr><td>⚙ Recognition Settings tab</td><td>-</td><td>-</td><td>✓</td></tr>
+    <tr><td>📊 Monitor tab</td><td>-</td><td>-</td><td>✓</td></tr>
   </table>
 
   <div class="box box-info">
@@ -339,7 +339,7 @@
 
   <p>The system tracks login activity automatically for staff time management.</p>
   <ul>
-    <li><strong>Idle 10 minutes:</strong> the current activity session closes for time-tracking purposes. The user stays logged in — no interruption.</li>
+    <li><strong>Idle 10 minutes:</strong> the current activity session closes for time-tracking purposes. The user stays logged in - no interruption.</li>
     <li><strong>Idle 2 hours:</strong> automatic logout. The user must log in again.</li>
   </ul>
   <p>This means a teller can step away for 20 minutes between customers without being logged out, but will be logged out automatically at end of day.</p>
@@ -448,10 +448,10 @@
   <p>The <strong>Kitchen</strong> tab shows pending preparation orders. A red badge on the tab shows the count and updates every 30 seconds.</p>
   <ul>
     <li>Each card shows: product, quantity, ingredient details (swaps/extras highlighted), teller name, live timer (turns red after 10 min).</li>
-    <li><strong>▲ / ▼</strong> — reprioritise orders.</li>
-    <li><strong>✓ Done</strong> — mark complete (records wait time).</li>
-    <li><strong>✕ Cancel</strong> — cancel with confirmation.</li>
-    <li><strong>Completed Today</strong> — toggle to see today's completed orders and their wait times.</li>
+    <li><strong>▲ / ▼</strong> - reprioritise orders.</li>
+    <li><strong>✓ Done</strong> - mark complete (records wait time).</li>
+    <li><strong>✕ Cancel</strong> - cancel with confirmation.</li>
+    <li><strong>Completed Today</strong> - toggle to see today's completed orders and their wait times.</li>
   </ul>
 
   <hr>
@@ -464,7 +464,7 @@
   <table>
     <tr><th>Sub-tab</th><th>Shows</th></tr>
     <tr><td>Single Items</td><td>Stock items and simple products that are for sale at the till</td></tr>
-    <tr><td>Ingredients</td><td>Stock items not sold directly — internal use only (flour, milk base, packaging)</td></tr>
+    <tr><td>Ingredients</td><td>Stock items not sold directly - internal use only (flour, milk base, packaging)</td></tr>
     <tr><td>Recipes</td><td>Composite products (cappuccino, toasted sandwich) for sale at the till</td></tr>
     <tr><td>Specials</td><td>Combo deal specials (e.g., 2× coffee for R35)</td></tr>
     <tr><td>Archived</td><td>Discontinued products (with optional remaining stock)</td></tr>
@@ -495,7 +495,7 @@
     <tr><td>Archive</td><td>Discontinue the product</td></tr>
   </table>
 
-  <p>At the bottom of the Products tab is the <strong>Adjustment History</strong> — a log of all stocktakes and write-offs. Click ✏️ to correct an entry after the fact.</p>
+  <p>At the bottom of the Products tab is the <strong>Adjustment History</strong> - a log of all stocktakes and write-offs. Click ✏️ to correct an entry after the fact.</p>
 
   <hr>
 
@@ -513,7 +513,7 @@
 
   <div class="box box-info">
     <strong>Note on pricing</strong>
-    The Margin % calculator only appears when editing an existing product — it needs stock batches to calculate a cost basis. For new products, enter the selling price directly.
+    The Margin % calculator only appears when editing an existing product - it needs stock batches to calculate a cost basis. For new products, enter the selling price directly.
   </div>
 
   <hr>
@@ -522,7 +522,7 @@
 
   <ol class="steps">
     <li>Click <strong>Edit</strong> on a product card.</li>
-    <li>Make changes. The <strong>Margin %</strong> field and <strong>Calculate &amp; Set Price</strong> button appear above the selling price — enter a margin % and click Calculate to see a suggested price based on the current FIFO cost.</li>
+    <li>Make changes. The <strong>Margin %</strong> field and <strong>Calculate &amp; Set Price</strong> button appear above the selling price - enter a margin % and click Calculate to see a suggested price based on the current FIFO cost.</li>
     <li>Click <strong>Update</strong> to save.</li>
   </ol>
 
@@ -547,10 +547,10 @@
 
   <ol class="steps">
     <li>Find the product and click <strong>Receive</strong>.</li>
-    <li>Enter the <strong>quantity received</strong>. If a purchase package is configured (e.g., 5 L carton) you can enter "3 cartons" instead of "15 000 ml" — the system converts automatically.</li>
+    <li>Enter the <strong>quantity received</strong>. If a purchase package is configured (e.g., 5 L carton) you can enter "3 cartons" instead of "15 000 ml" - the system converts automatically.</li>
     <li>Enter the <strong>total amount paid (R)</strong>. The cost per unit is shown live in friendly units (e.g., R8.33/L).</li>
     <li>Optionally select a <strong>Supplier</strong> and set the <strong>date</strong>.</li>
-    <li>Click <strong>Confirm — Receive Stock</strong>. A new FIFO batch is created; future sales consume older batches first.</li>
+    <li>Click <strong>Confirm - Receive Stock</strong>. A new FIFO batch is created; future sales consume older batches first.</li>
   </ol>
 
   <hr>
@@ -577,7 +577,7 @@
   <ol class="steps">
     <li>Click <strong>Write Off</strong> on a product card.</li>
     <li>Enter the quantity and unit. The estimated FIFO cost consumed is shown live.</li>
-    <li>Enter a <strong>reason</strong> (required) — e.g., <em>Milk expired 2026-04-25</em>.</li>
+    <li>Enter a <strong>reason</strong> (required) - e.g., <em>Milk expired 2026-04-25</em>.</li>
     <li>Click <strong>Confirm Write-Off</strong>.</li>
   </ol>
 
@@ -593,7 +593,7 @@
     <li>Click <strong>+ New Special</strong>.</li>
     <li>Enter a <strong>name</strong> (shown as a toast at the till) and the <strong>special price</strong>.</li>
     <li>Click <strong>+ Add Product</strong> for each product in the deal and set the required quantity.</li>
-    <li>Optionally set a <strong>schedule</strong> (day/time windows — e.g., weekday lunch only).</li>
+    <li>Optionally set a <strong>schedule</strong> (day/time windows - e.g., weekday lunch only).</li>
     <li>Check <strong>Active</strong> to enable it at the till.</li>
     <li>Click <strong>Save Special</strong>.</li>
   </ol>
@@ -617,11 +617,11 @@
 
   <h2 id="admin-purchase-run">Purchase Run <span class="badge badge-admin">Admin</span></h2>
 
-  <p>A Purchase Run lets you record an entire shopping trip from one supplier in one go — useful when returning from Woolworths, PnP, or a market with a slip.</p>
+  <p>A Purchase Run lets you record an entire shopping trip from one supplier in one go - useful when returning from Woolworths, PnP, or a market with a slip.</p>
 
   <ol class="steps">
     <li>Select the supplier and click <strong>+ Purchase Run</strong>.</li>
-    <li>Set the <strong>date</strong> (defaults to today — change it if you're recording a previous trip).</li>
+    <li>Set the <strong>date</strong> (defaults to today - change it if you're recording a previous trip).</li>
     <li>For each item on your slip, click <strong>+ Add Item</strong>, select the product, enter quantity + unit, enter total paid.</li>
     <li>To add a product that doesn't exist yet, click <strong>+ Create New Product</strong> on any line. The full product creation form opens; the new product auto-selects on that line after saving.</li>
     <li>Click <strong>Save Purchase Run</strong>. All batches are created and stock is updated in one operation.</li>
@@ -660,13 +660,13 @@
   <h3>Adding a User</h3>
   <ol class="steps">
     <li>Go to the <strong>Users</strong> tab.</li>
-    <li>Fill in username, password, and select the role(s) — tick as many checkboxes as needed (teller, admin, developer).</li>
+    <li>Fill in username, password, and select the role(s) - tick as many checkboxes as needed (teller, admin, developer).</li>
     <li>Ensure <strong>Active</strong> is checked.</li>
     <li>Click <strong>Add User</strong>.</li>
   </ol>
 
   <h3>Disabling vs Deleting</h3>
-  <p>Prefer <strong>disabling</strong> (uncheck Active, click Update User) over deleting — it preserves the user's transaction history while preventing login.</p>
+  <p>Prefer <strong>disabling</strong> (uncheck Active, click Update User) over deleting - it preserves the user's transaction history while preventing login.</p>
 
   <div class="box box-info">
     <strong>Role combinations</strong>
@@ -696,11 +696,11 @@
 
   <p>Additional drilldowns available from the stats cards:</p>
   <ul>
-    <li><strong>Transactions drilldown</strong> — full list of sales for the selected bar/period</li>
-    <li><strong>Profit drilldown</strong> — per-product revenue, COGS, profit, margin</li>
-    <li><strong>Write-off drilldown</strong> — product, quantity, cost, reason, user</li>
-    <li><strong>Kitchen drilldown</strong> — order count, average wait time</li>
-    <li><strong>Supplier drilldown</strong> — batch-level purchase history with costs</li>
+    <li><strong>Transactions drilldown</strong> - full list of sales for the selected bar/period</li>
+    <li><strong>Profit drilldown</strong> - per-product revenue, COGS, profit, margin</li>
+    <li><strong>Write-off drilldown</strong> - product, quantity, cost, reason, user</li>
+    <li><strong>Kitchen drilldown</strong> - order count, average wait time</li>
+    <li><strong>Supplier drilldown</strong> - batch-level purchase history with costs</li>
   </ul>
 
   <hr>
@@ -725,7 +725,7 @@
 
   <div class="box box-info">
     <strong>How session time works</strong>
-    Sessions auto-close after 10 minutes of inactivity and a new one opens on the next click — so time is tracked in activity windows, not wall-clock time. A teller with a quiet hour between customers will show multiple short sessions, which is accurate.
+    Sessions auto-close after 10 minutes of inactivity and a new one opens on the next click - so time is tracked in activity windows, not wall-clock time. A teller with a quiet hour between customers will show multiple short sessions, which is accurate.
   </div>
 
   <hr>
@@ -753,7 +753,7 @@
   <!-- ═══════════ CUSTOMERS ═══════════ -->
   <h2 id="admin-customers">Customers <span class="badge badge-admin">Admin</span></h2>
 
-  <p>The <strong>Customers</strong> tab manages all customer records — both manually created and auto-enrolled by the recognition system.</p>
+  <p>The <strong>Customers</strong> tab manages all customer records - both manually created and auto-enrolled by the recognition system.</p>
 
   <h3>Customer List</h3>
   <p>Shows customer number, name, visit count, and last visit. A camera icon indicates the customer has biometric data (face / gait / plate). An employee icon marks staff members.</p>
@@ -768,19 +768,19 @@
   <h3>Customer Profile</h3>
   <p>Click a customer to open their profile. It shows:</p>
   <ul>
-    <li><strong>Contact details</strong> — name, phone, email, notes, employee flag</li>
-    <li><strong>License plates</strong> — plates linked for ANPR recognition</li>
-    <li><strong>Face photos</strong> — up to 24 distinct-angle face crops used for matching</li>
-    <li><strong>Visit history</strong> — all detected visits with date, time, camera, and detection method</li>
-    <li><strong>Purchase history</strong> — all sales linked to this customer</li>
-    <li><strong>Physical attributes</strong> — height, build, hair colour, etc. (auto-detected from video)</li>
+    <li><strong>Contact details</strong> - name, phone, email, notes, employee flag</li>
+    <li><strong>License plates</strong> - plates linked for ANPR recognition</li>
+    <li><strong>Face photos</strong> - up to 24 distinct-angle face crops used for matching</li>
+    <li><strong>Visit history</strong> - all detected visits with date, time, camera, and detection method</li>
+    <li><strong>Purchase history</strong> - all sales linked to this customer</li>
+    <li><strong>Physical attributes</strong> - height, build, hair colour, etc. (auto-detected from video)</li>
   </ul>
 
   <h3>Enrolling a License Plate</h3>
   <ol class="steps">
     <li>Open the customer profile and click <strong>+ Add Plate</strong>.</li>
     <li>Enter the plate number.</li>
-    <li>Click <strong>Save</strong>. The plate is now linked — future ANPR detections will identify this customer.</li>
+    <li>Click <strong>Save</strong>. The plate is now linked - future ANPR detections will identify this customer.</li>
   </ol>
 
   <h3>Merge Suggestions</h3>
@@ -794,9 +794,9 @@
   <p>Go to the <strong>Settings</strong> tab (accessible from the top nav or the ⚙ button).</p>
 
   <ul>
-    <li><strong>Default Markup %</strong> — used in the "Calculate &amp; Set Price" tool in the product editor</li>
-    <li><strong>Recognition thresholds</strong> — these are the same as in the Developer Recognition Settings tab; admin can view them here</li>
-    <li><strong>Auto-update</strong> — enable/disable automatic system updates and control whether minor versions install automatically</li>
+    <li><strong>Default Markup %</strong> - used in the "Calculate &amp; Set Price" tool in the product editor</li>
+    <li><strong>Recognition thresholds</strong> - these are the same as in the Developer Recognition Settings tab; admin can view them here</li>
+    <li><strong>Auto-update</strong> - enable/disable automatic system updates and control whether minor versions install automatically</li>
   </ul>
 
   <hr>
@@ -807,8 +807,8 @@
   <p>The update system checks GitHub for new releases automatically. When an update is available, a banner appears at the top of every page (admin only).</p>
 
   <ul>
-    <li><strong>Install Now</strong> — applies the update immediately (takes 1–2 minutes, app restarts)</li>
-    <li><strong>Dismiss</strong> — hides the banner until next login</li>
+    <li><strong>Install Now</strong> - applies the update immediately (takes 1–2 minutes, app restarts)</li>
+    <li><strong>Dismiss</strong> - hides the banner until next login</li>
   </ul>
 
   <p>Progress is shown in a modal during installation. The update is rolled back automatically if anything goes wrong.</p>
@@ -820,7 +820,7 @@
   <!-- ═══════════ DEVELOPER ═══════════ -->
   <h2 id="dev-recognition">Recognition Settings <span class="badge badge-dev">Developer</span></h2>
 
-  <p>The <strong>⚙ Recognition</strong> tab controls how the recognition service matches customers. Changes take effect within 60 seconds — no restart needed.</p>
+  <p>The <strong>⚙ Recognition</strong> tab controls how the recognition service matches customers. Changes take effect within 60 seconds - no restart needed.</p>
 
   <table>
     <tr><th>Setting</th><th>Default</th><th>Effect</th></tr>
@@ -841,20 +841,20 @@
 
   <h3>Status Panel</h3>
   <ul>
-    <li><strong>Connection</strong> — green dot = service reachable, red = service down</li>
-    <li><strong>CPU / Memory</strong> — current resource usage of the recognition service container</li>
-    <li><strong>Uptime</strong> — how long the service has been running</li>
-    <li><strong>ONNX Provider</strong> — confirms whether face models are running on GPU (OpenVINO) or CPU fallback</li>
-    <li><strong>Active tracks</strong> — people currently being tracked across camera events</li>
-    <li><strong>Clip queue depth</strong> — number of video clips queued for background face enrollment</li>
+    <li><strong>Connection</strong> - green dot = service reachable, red = service down</li>
+    <li><strong>CPU / Memory</strong> - current resource usage of the recognition service container</li>
+    <li><strong>Uptime</strong> - how long the service has been running</li>
+    <li><strong>ONNX Provider</strong> - confirms whether face models are running on GPU (OpenVINO) or CPU fallback</li>
+    <li><strong>Active tracks</strong> - people currently being tracked across camera events</li>
+    <li><strong>Clip queue depth</strong> - number of video clips queued for background face enrollment</li>
   </ul>
 
   <h3>Control Actions</h3>
   <ul>
-    <li><strong>Clear Queue</strong> — empties the clip analysis queue</li>
-    <li><strong>Flush Sessions</strong> — expires all active tracking sessions</li>
-    <li><strong>Clear Anonymous</strong> — deletes unresolved anonymous identities older than 24 hours</li>
-    <li><strong>Sync Cache</strong> — forces the recognition service to reload customer data from the database</li>
+    <li><strong>Clear Queue</strong> - empties the clip analysis queue</li>
+    <li><strong>Flush Sessions</strong> - expires all active tracking sessions</li>
+    <li><strong>Clear Anonymous</strong> - deletes unresolved anonymous identities older than 24 hours</li>
+    <li><strong>Sync Cache</strong> - forces the recognition service to reload customer data from the database</li>
   </ul>
 
   <h3>Logs</h3>
@@ -863,7 +863,7 @@
   <hr>
 
   <!-- ═══════════ RECOGNITION SYSTEM ═══════════ -->
-  <h2 id="recog-overview">Recognition System — How It Works</h2>
+  <h2 id="recog-overview">Recognition System - How It Works</h2>
 
   <p>The recognition system uses three types of biometric signal to identify customers:</p>
 
@@ -898,7 +898,7 @@
 
   <div class="box box-info">
     <strong>CPU optimisation</strong>
-    Face models (SCRFD + ArcFace) run on the Intel Iris Xe GPU via OpenVINO. MediaPipe Pose runs on CPU. The system uses separate concurrency controls so GPU and CPU inference can run in parallel — 2 concurrent GPU streams, 3 concurrent CPU gait sessions. Real-time gait is skipped when face quality is already ≥ 0.65, saving CPU.
+    Face models (SCRFD + ArcFace) run on the Intel Iris Xe GPU via OpenVINO. MediaPipe Pose runs on CPU. The system uses separate concurrency controls so GPU and CPU inference can run in parallel - 2 concurrent GPU streams, 3 concurrent CPU gait sessions. Real-time gait is skipped when face quality is already ≥ 0.65, saving CPU.
   </div>
 
   <hr>
@@ -948,7 +948,7 @@
     <li>Top 3 products they usually buy</li>
   </ul>
 
-  <p>The greeting card appears automatically — no teller action needed. The next checkout will link the sale to this customer's profile, building their purchase history and visit analytics.</p>
+  <p>The greeting card appears automatically - no teller action needed. The next checkout will link the sale to this customer's profile, building their purchase history and visit analytics.</p>
 
   <p>The till detection polls every 3 seconds while the Teller tab is active and stops when the tab is hidden to save bandwidth.</p>
 

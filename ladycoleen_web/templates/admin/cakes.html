@@ -29,7 +29,7 @@
       </td>
       <td>{{ o.date_required.strftime('%d %b %Y') }}</td>
       <td>{{ o.size }}<br><small class="text-muted">{{ o.flavor }}</small></td>
-      <td>{% if o.quoted_price %}<strong>R{{ "%.2f"|format(o.quoted_price) }}</strong>{% else %}<span class="text-muted">—</span>{% endif %}</td>
+      <td>{% if o.quoted_price %}<strong>R{{ "%.2f"|format(o.quoted_price) }}</strong>{% else %}<span class="text-muted">-</span>{% endif %}</td>
       <td><span class="badge lc-status-{{ o.status }}">{{ o.status.replace('_',' ').title() }}</span></td>
       <td>
         <a href="/admin/cakes/{{ o.id }}" class="btn btn-sm lc-btn-outline">Manage</a>

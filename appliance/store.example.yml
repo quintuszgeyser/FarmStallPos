@@ -1,5 +1,5 @@
-# store.yml — per-store identity & flags (NON-secret, safe to keep in git/backup).
-# Copied and filled by register-store.sh. Secrets NEVER live here — they are
+# store.yml - per-store identity & flags (NON-secret, safe to keep in git/backup).
+# Copied and filled by register-store.sh. Secrets NEVER live here - they are
 # generated into /opt/farmpos/secrets/ and rendered into .env at provision time.
 
 # Immutable, DNS-safe primary key of this box. Drives hostname, DB, backup path.

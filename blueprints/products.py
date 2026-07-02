@@ -47,9 +47,9 @@ def _process_and_save_image(f_stream, img_dir, pid):
         img = _PIL.open(f_stream)
         img = ImageOps.exif_transpose(img).convert('RGB')
     except Exception:
-        raise ValueError('Could not read image — file may be corrupt or unsupported')
+        raise ValueError('Could not read image - file may be corrupt or unsupported')
     if img.width * img.height > _IMG_MAX_PIXELS:
-        raise ValueError('Image resolution too large — please resize to under 4500×4500px')
+        raise ValueError('Image resolution too large - please resize to under 4500×4500px')
     os.makedirs(img_dir, exist_ok=True)
     for dim, suffix in _IMG_SIZES:
         if suffix:
@@ -165,13 +165,13 @@ def api_products_post():
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
-    # Weight/volume: no stored barcode — scale generates dynamically from product_code
+    # Weight/volume: no stored barcode - scale generates dynamically from product_code
     # Fixed/recipe: deterministic EAN-13 from product_code (unless manually provided)
     if not barcode:
         if not sold_by_weight and unit_type != 'volume':
             barcode = _gen_barcode_from_code(product_code)
 
-    # Scale fields — auto-enable sync for weight/volume products
+    # Scale fields - auto-enable sync for weight/volume products
     sync_to_scale = bool(data.get('sync_to_scale', sold_by_weight))
     try:
         scale_tare       = float(data['scale_tare']) if data.get('scale_tare') not in (None, '') else None
@@ -285,14 +285,14 @@ def api_products_update():
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
 
-    # Category — explicit id, a name (auto-created), or cleared when both blank
+    # Category - explicit id, a name (auto-created), or cleared when both blank
     if 'category_id' in data or 'category' in data:
         if data.get('category_id') or data.get('category'):
             p.category_id = _resolve_category_id(data)
         else:
             p.category_id = None
 
-    # PLU (product_code) change — requires lifecycle management
+    # PLU (product_code) change - requires lifecycle management
     if 'product_code' in data and data['product_code'] is not None:
         try:
             new_code = int(data['product_code'])
@@ -378,7 +378,7 @@ def api_product_image_upload(pid):
         return jsonify({'error': 'Only JPG, PNG or WebP allowed'}), 422
     f.seek(0, 2); fsize = f.tell(); f.seek(0)
     if fsize > _IMG_MAX_BYTES:
-        return jsonify({'error': 'File too large — max 10MB'}), 422
+        return jsonify({'error': 'File too large - max 10MB'}), 422
     img_dir = os.path.join(current_app.static_folder, 'product_images')
     try:
         filename = _process_and_save_image(f.stream, img_dir, pid)
@@ -436,7 +436,7 @@ def api_product_images_upload(pid):
             errors.append({'file': f.filename, 'error': 'Only JPG, PNG or WebP allowed'}); continue
         f.seek(0, 2); fsize = f.tell(); f.seek(0)
         if fsize > _IMG_MAX_BYTES:
-            errors.append({'file': f.filename, 'error': 'File too large — max 10MB'}); continue
+            errors.append({'file': f.filename, 'error': 'File too large - max 10MB'}); continue
         try:
             filename = _process_and_save_image(f.stream, img_dir, pid)
         except ValueError as e:
@@ -626,7 +626,7 @@ def api_products_delete(name):
     if not p:
         return jsonify({'error': 'Product not found'}), 404
     if Sale.query.filter_by(product_id=p.id).count() or Purchase.query.filter_by(product_id=p.id).count() or StockBatch.query.filter_by(product_id=p.id).count():
-        return jsonify({'error': 'Product has historical references — disable instead of deleting.', 'hint': 'Set is_for_sale=false to hide from teller without losing history.'}), 409
+        return jsonify({'error': 'Product has historical references - disable instead of deleting.', 'hint': 'Set is_for_sale=false to hide from teller without losing history.'}), 409
     RecipeLine.query.filter_by(product_id=p.id).delete()
     RecipeLine.query.filter_by(ingredient_id=p.id).delete()
     for child in Product.query.filter_by(parent_stock_item_id=p.id).all():
@@ -726,7 +726,7 @@ def api_fifo_price(pid):
         avg_cost, lines_detail = _recipe_cost(pid)
 
     if avg_cost <= 0:
-        return jsonify({'product_id': pid, 'avg_cost': 0, 'suggested_price': 0, 'markup_pct': float(markup), 'lines': lines_detail, 'warning': 'No stock found — receive stock first'})
+        return jsonify({'product_id': pid, 'avg_cost': 0, 'suggested_price': 0, 'markup_pct': float(markup), 'lines': lines_detail, 'warning': 'No stock found - receive stock first'})
 
     suggested   = avg_cost * (1 + markup / 100)
     suggestions = {f'{pct}%': round(float(avg_cost * (1 + Decimal(pct) / 100)), 2) for pct in [20, 30, 40, 50, 60, 70, 100, 150, 200]}

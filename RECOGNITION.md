@@ -1,6 +1,6 @@
 # Recognition Service
 
-`recognition_service_v2.py` — runs as the `farmpos-recognition` Docker container. Polls Frigate NVR events, identifies customers via face + plate + gait, and pushes visits to the POS API.
+`recognition_service_v2.py` - runs as the `farmpos-recognition` Docker container. Polls Frigate NVR events, identifies customers via face + plate + gait, and pushes visits to the POS API.
 
 ## Architecture
 
@@ -26,14 +26,14 @@ Frigate NVR (port 8971) → Frigate poller (every 30s) → feature extraction
 
 ## Feature Weights (v2 Production)
 
-**Biometric — required to link:**
+**Biometric - required to link:**
 
 | Feature | Points | Notes |
 |---|---|---|
 | Face | 6.0 | InsightFace ArcFace buffalo_l, 512D cosine similarity |
 | Gait | 3.0 | MediaPipe Pose, Euclidean distance |
 
-**Support — cannot link alone:**
+**Support - cannot link alone:**
 
 | Feature | Points | Notes |
 |---|---|---|
@@ -43,7 +43,7 @@ Frigate NVR (port 8971) → Frigate poller (every 30s) → feature extraction
 | Hair colour | 0.3 | pixel analysis |
 | Facial hair | 0.1 | chin darkness heuristic |
 
-**Contextual — capped at 1.0 total, requires biometric ≥ 60%:**
+**Contextual - capped at 1.0 total, requires biometric ≥ 60%:**
 
 | Feature | Points |
 |---|---|
@@ -58,7 +58,7 @@ Frigate NVR (port 8971) → Frigate poller (every 30s) → feature extraction
 | State | Condition |
 |---|---|
 | **LINKED** | Normalised score ≥ 75% of available evidence AND ≥ 4.0 available AND biometric present |
-| **PENDING** | Not enough evidence yet, or in ambiguity region — keep collecting |
+| **PENDING** | Not enough evidence yet, or in ambiguity region - keep collecting |
 | **ENROLL** | Track age ≥ 60s + has enrollment-quality biometric + score below pending threshold |
 
 ## Quality Gates
@@ -88,7 +88,7 @@ Customers start anonymous (`name = NULL`, assigned `customer_number = CUST-0001`
 1. Recognition posts visit → `CustomerVisit` row created
 2. Teller polls `/api/customers/pending_visits` every 5s
 3. Badge appears in POS if customer has a name
-4. Checkout includes `customer_id` — stored in `sales.customer_id`
+4. Checkout includes `customer_id` - stored in `sales.customer_id`
 
 ## Configuration (Docker env vars)
 
@@ -111,16 +111,16 @@ ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh recognition'
 
 **Called by recognition service (no auth required):**
 ```
-POST /api/customers/identify        — submit identification result
-POST /api/customers/log_plate       — log every plate detection
-GET  /api/customers/faces_raw       — all face embeddings (base64)
-GET  /api/customers/gaits_raw       — all gait features (base64)
+POST /api/customers/identify        - submit identification result
+POST /api/customers/log_plate       - log every plate detection
+GET  /api/customers/faces_raw       - all face embeddings (base64)
+GET  /api/customers/gaits_raw       - all gait features (base64)
 ```
 
 **Teller polling:**
 ```
-GET  /api/customers/pending_visits          — unacknowledged visits, last 5 min
-POST /api/customers/visits/<id>/acknowledge — stop toast
+GET  /api/customers/pending_visits          - unacknowledged visits, last 5 min
+POST /api/customers/visits/<id>/acknowledge - stop toast
 ```
 
 **Admin enrollment:**

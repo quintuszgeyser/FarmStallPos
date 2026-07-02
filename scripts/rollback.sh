@@ -1,7 +1,7 @@
 #!/bin/bash
-# rollback.sh — revert PROD POS to the previously-promoted image (fast code rollback).
+# rollback.sh - revert PROD POS to the previously-promoted image (fast code rollback).
 # The pre-deploy DB snapshot is NOT auto-restored (image-only rollback by design); if you
-# also need to restore the DB, the latest snapshot path is printed below — restore manually.
+# also need to restore the DB, the latest snapshot path is printed below - restore manually.
 #
 # Install on server at ~/farmpos-docker/rollback.sh
 set -e
@@ -13,7 +13,7 @@ PROD_PREV_IMAGE="${PROJECT}-pos:previous"
 BACKUP_DIR="$HOME/backups/pre-deploy"
 
 if ! docker image inspect "$PROD_PREV_IMAGE" >/dev/null 2>&1; then
-  echo "[rollback] ERROR: no $PROD_PREV_IMAGE found — nothing to roll back to."; exit 1
+  echo "[rollback] ERROR: no $PROD_PREV_IMAGE found - nothing to roll back to."; exit 1
 fi
 
 echo "[rollback] Current prod image:  $(docker image inspect "$PROD_IMAGE" --format '{{.Id}}' 2>/dev/null)"

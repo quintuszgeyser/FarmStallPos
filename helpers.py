@@ -1,5 +1,5 @@
 """
-Shared utilities — imported by app.py and (eventually) blueprints.
+Shared utilities - imported by app.py and (eventually) blueprints.
 Import order: helpers → models → db. Never import from app.py here.
 """
 
@@ -37,7 +37,7 @@ def normalize_category_name(name):
 def get_or_create_category(name):
     """Resolve a category by case-insensitive normalized name, creating it if
     it does not yet exist. Returns the Category row, or None when name is blank.
-    Does NOT commit — caller's transaction owns the flush/commit."""
+    Does NOT commit - caller's transaction owns the flush/commit."""
     clean = normalize_category_name(name)
     if not clean:
         return None
@@ -71,7 +71,7 @@ def set_setting(key, value):
 
 
 # ---------------------------------------------------------------------------
-# Auth helpers — no dependency on the Flask app object
+# Auth helpers - no dependency on the Flask app object
 # ---------------------------------------------------------------------------
 
 def current_user():
@@ -111,14 +111,14 @@ def require_role(*roles):
 
 def seed_first_admin():
     # NOTE: this runs in EVERY gunicorn worker at startup. On a fresh (empty) DB all
-    # workers race — several see count()==0 and try to INSERT the same admin. The loser
+    # workers race - several see count()==0 and try to INSERT the same admin. The loser
     # hits a UniqueViolation, so each insert is guarded: attempt, and on IntegrityError
     # roll back and treat it as "another worker already seeded it" (same philosophy as
     # db.create_all() skip-on-conflict in strong_migrate()).
     if User.query.count() == 0:
         admin_user = os.getenv('ADMIN_USER', 'admin')
         admin_pass = os.getenv('ADMIN_PASS', 'admin123')
-        # On a provisioned appliance box, refuse to seed the well-known default —
+        # On a provisioned appliance box, refuse to seed the well-known default -
         # register-store.sh always supplies a unique ADMIN_PASS. Gated on STORE_ID so
         # the original Lady Coleen box (which seeds admin/admin123) is unchanged.
         if os.getenv('STORE_ID', '').strip() and admin_pass == 'admin123':
@@ -131,7 +131,7 @@ def seed_first_admin():
         try:
             db.session.commit()
         except IntegrityError:
-            db.session.rollback()  # another worker won the race — fine
+            db.session.rollback()  # another worker won the race - fine
         else:
             default_markup = os.getenv('DEFAULT_MARKUP_PERCENT')
             if default_markup:
@@ -149,7 +149,7 @@ def seed_first_admin():
         try:
             db.session.commit()
         except IntegrityError:
-            db.session.rollback()  # another worker won the race — fine
+            db.session.rollback()  # another worker won the race - fine
 
 
 def get_online_user_id():
@@ -165,7 +165,7 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0):
     """
     Consume qty_needed_base units of ingredient_id from FIFO batches.
     Recursive for compound ingredients (recipe within recipe).
-    Returns total COGS as Decimal. Never raises — consumes what's available.
+    Returns total COGS as Decimal. Never raises - consumes what's available.
     """
     if _depth > 10:
         return Decimal('0')
@@ -258,7 +258,7 @@ def sync_sell_packages(product_id, packages):
             if Sale.query.filter_by(product_id=prod.id).count() == 0:
                 db.session.delete(prod)
 
-    parent = db.session.get(Product, product_id)  # noqa: F841 — kept for future use
+    parent = db.session.get(Product, product_id)  # noqa: F841 - kept for future use
 
     for pkg in packages:
         pkg_name = pkg.get('name', '').strip()
@@ -313,7 +313,7 @@ def _ean13_check(code12):
 def _gen_barcode_from_code(product_code):
     """Generate deterministic EAN-13 for fixed-price products from product_code.
     Format: 1 + PPPPP (5-digit code) + 000000 (6 zeros) + check digit.
-    Weight/volume products don't get a stored barcode — scale generates dynamically.
+    Weight/volume products don't get a stored barcode - scale generates dynamically.
     """
     core = f"1{str(product_code).zfill(5)}000000"
     return core + _ean13_check(core)
@@ -333,7 +333,7 @@ def _plu_range(sold_by_weight, unit_type, product_type):
 
 def _assign_product_code(sold_by_weight, unit_type, product_type):
     """Assign the smallest available product_code gap for the given product type.
-    Uses SELECT FOR UPDATE advisory approach — caller must be inside a transaction.
+    Uses SELECT FOR UPDATE advisory approach - caller must be inside a transaction.
     """
     lo, hi = _plu_range(sold_by_weight, unit_type, product_type)
     from sqlalchemy import text as _text
@@ -366,7 +366,7 @@ def validate_product_code(new_code, product_id=None):
 
 
 def _gen_barcode(seed_id):
-    """Legacy fallback — generates random EAN-13 with prefix 100."""
+    """Legacy fallback - generates random EAN-13 with prefix 100."""
     for _ in range(30):
         rnd = str(random.randint(0, 99999)).zfill(5)
         core = f"100{str(seed_id).zfill(5)}{rnd}"[:12]
@@ -439,7 +439,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'scale_msg1':              p.scale_msg1 or '',
         'scale_msg2':              p.scale_msg2 or '',
         'scale_prohibit':          p.scale_prohibit,
-        # Barcode config — used by POS scanner to decode scale labels
+        # Barcode config - used by POS scanner to decode scale labels
         'scale_barcode_prefix':    20,    # scale always uses prefix 20
         'scale_barcode_format':    'price_cents',  # VVVVVV = total price in cents
         'scale_last_synced_at':    p.scale_last_synced_at.isoformat() if p.scale_last_synced_at else None,
@@ -459,7 +459,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
             d['stock_level'] < float(p.low_stock_threshold)
         )
     if p.product_type == 'simple':
-        # Weighted-average purchase cost per unit — lets the product page show
+        # Weighted-average purchase cost per unit - lets the product page show
         # margin/markup for resale goods (no stock batches, costed from purchases).
         total_value, total_qty = db.session.query(
             func.coalesce(func.sum(Purchase.qty_added * Purchase.purchase_price), 0),

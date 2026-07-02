@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Farm POS smoke test — run after every deploy to confirm core routes are alive.
+Farm POS smoke test - run after every deploy to confirm core routes are alive.
 
 Usage:
     python scripts/smoke_test.py [base_url]
@@ -91,7 +91,7 @@ else:
 
 print()
 if failures:
-    print(f'FAILED — {len(failures)} check(s) failed:')
+    print(f'FAILED - {len(failures)} check(s) failed:')
     for f in failures:
         print(f'  • {f}')
     sys.exit(1)

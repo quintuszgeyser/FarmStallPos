@@ -7,7 +7,7 @@ __pycache__/
 *.pyc
 .claude/
 
-# The web shop is a separate image / optional per store — not part of the POS build.
+# The web shop is a separate image / optional per store - not part of the POS build.
 ladycoleen_web/
 
 # Recognition + Frigate are excluded from appliance boxes entirely.
@@ -16,7 +16,7 @@ requirements_recognition.txt
 RECOGNITION.md
 frigate_config.yml
 
-# Local certs / dev-only artefacts — never bake into an image.
+# Local certs / dev-only artefacts - never bake into an image.
 cert.conf
 cert.key
 cert.pem

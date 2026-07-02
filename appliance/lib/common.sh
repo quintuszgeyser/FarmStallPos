@@ -1,5 +1,5 @@
 #!/bin/bash
-# common.sh — shared helpers for the appliance scripts. Source it: . lib/common.sh
+# common.sh - shared helpers for the appliance scripts. Source it: . lib/common.sh
 
 FARMPOS_HOME="${FARMPOS_HOME:-/opt/farmpos}"
 SECRETS_DIR="$FARMPOS_HOME/secrets"

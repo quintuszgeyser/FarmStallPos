@@ -1,4 +1,4 @@
-// Farm Stall POS main.js — v1.5.0
+// Farm Stall POS main.js - v1.5.0
 //
 // Structure: 15 sections separated by ═══ dividers.
 // Shared globals exported at module level for future ES module split:
@@ -26,7 +26,7 @@ let STATE = {
   customers:        [],
   activeCustomer:   null,   // customer detected at till
   customerPollInterval: null,  // interval ID for till customer polling
-  _cartDiscount:    null,   // {type:'pct'|'amt', value:number} — admin cart-wide discount
+  _cartDiscount:    null,   // {type:'pct'|'amt', value:number} - admin cart-wide discount
 };
 
 // ═══════════════════════════════════════════════════════
@@ -97,8 +97,8 @@ function imgVariant(image_url, variant) {
 }
 
 // ── Multi-image editor state ──────────────────────────────────────────────────
-let _editingImages = [];   // [{id, filename, is_primary, display_order}]  — already saved
-let _pendingFiles  = [];   // File[] — selected but not yet uploaded
+let _editingImages = [];   // [{id, filename, is_primary, display_order}]  - already saved
+let _pendingFiles  = [];   // File[] - selected but not yet uploaded
 
 function renderImageList() {
   const host = document.getElementById('product-images-list');
@@ -157,11 +157,11 @@ function renderImageList() {
     host.appendChild(row);
   });
 
-  // Pending files — queued for upload on save
+  // Pending files - queued for upload on save
   if (_pendingFiles.length) {
     const divider = document.createElement('div');
     divider.className = 'text-muted small mt-2 mb-1';
-    divider.textContent = `${_pendingFiles.length} photo${_pendingFiles.length > 1 ? 's' : ''} queued — will upload on save`;
+    divider.textContent = `${_pendingFiles.length} photo${_pendingFiles.length > 1 ? 's' : ''} queued - will upload on save`;
     host.appendChild(divider);
 
     _pendingFiles.forEach((file, idx) => {
@@ -323,7 +323,7 @@ function updateVisibility() {
   const roleLabels = roles.map(r => `<span class="badge ${r==='admin'?'bg-danger':r==='developer'?'bg-info text-dark':'bg-secondary'} ms-1">${r}</span>`).join('');
   if (au) au.innerHTML = `${STATE.user.username} ${roleLabels}`;
   show(tabs); show(contents);
-  // pos-only: Teller/Transactions/Kitchen — hidden for pure developer (no admin/teller)
+  // pos-only: Teller/Transactions/Kitchen - hidden for pure developer (no admin/teller)
   const showPos = !isDev || isAdmin || isTeller;
   document.querySelectorAll('.pos-only').forEach(el =>
     showPos ? show(el) : hide(el));
@@ -440,8 +440,8 @@ function renderProductDropdown() {
       const opt  = document.createElement('option');
       opt.value  = String(p.id);
       const label = p.sold_by_weight
-        ? `${p.name} — PLU ${p.product_code ?? '—'} (by ${p.base_unit || 'weight'})`
-        : `${p.name} — R${fmt(p.price || 0)}`;
+        ? `${p.name} - PLU ${p.product_code ?? '-'} (by ${p.base_unit || 'weight'})`
+        : `${p.name} - R${fmt(p.price || 0)}`;
       opt.textContent = label;
       sel.appendChild(opt);
     });
@@ -639,7 +639,7 @@ function renderProductsCards() {
     wrap.appendChild(card);
   });
 
-  // Store items for barcode rendering — will render when tab is visible
+  // Store items for barcode rendering - will render when tab is visible
   wrap._pendingBarcodeItems = items;
 
   // Render immediately if tab is visible, otherwise defer to tab show event
@@ -650,7 +650,7 @@ function renderProductsCards() {
 }
 
 // ═══════════════════════════════════════════════════════
-// CATEGORIES — autocomplete, filter pills, management
+// CATEGORIES - autocomplete, filter pills, management
 // ═══════════════════════════════════════════════════════
 
 // ── Editor autocomplete (fuzzy, case-insensitive; free text = new category) ──
@@ -663,7 +663,7 @@ function _categoryMatches(query) {
   const q = (query || '').trim().toLowerCase();
   const cats = STATE.categories || [];
   if (!q) return cats.slice(0, 8);
-  // Substring (contains) match, case-insensitive — "veg" → "Vegetables"
+  // Substring (contains) match, case-insensitive - "veg" → "Vegetables"
   return cats.filter(c => c.name.toLowerCase().includes(q)).slice(0, 8);
 }
 
@@ -760,7 +760,7 @@ function renderCategoriesManage() {
         <button class="btn btn-outline-danger btn-sm" data-cat-del="${c.id}" data-cat-del-name="${escapeHtml(c.name)}" data-cat-del-count="${c.product_count}">Delete</button>
       </td>
     </tr>`).join('');
-  if (!rows) rows = `<tr><td colspan="3" class="text-muted">No categories yet — add one below or type a new category when editing a product.</td></tr>`;
+  if (!rows) rows = `<tr><td colspan="3" class="text-muted">No categories yet - add one below or type a new category when editing a product.</td></tr>`;
 
   wrap.innerHTML = `
     <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
@@ -847,7 +847,7 @@ async function openArchiveModal(p) {
     const affected = data.affected_recipes || [];
 
     // Stock decision for products with remaining stock (stock_item or simple with stock_qty > 0)
-    // Use live stock_level from the preview response — always authoritative
+    // Use live stock_level from the preview response - always authoritative
     const stockLevel  = data.stock_level || 0;
     const simpleStock = p.product_type === 'simple' ? (p.stock_qty || 0) : 0;
     const hasRemainingStock = (p.product_type === 'stock_item' && stockLevel > 0) || (p.product_type === 'simple' && simpleStock > 0);
@@ -858,7 +858,7 @@ async function openArchiveModal(p) {
           <div class="mt-2">
             <div class="form-check">
               <input class="form-check-input" type="radio" name="archive-stock-action" id="stock-action-keep" value="keep" checked>
-              <label class="form-check-label" for="stock-action-keep">Keep stock — still visible in Archived tab</label>
+              <label class="form-check-label" for="stock-action-keep">Keep stock - still visible in Archived tab</label>
             </div>
             <div class="form-check">
               <input class="form-check-input" type="radio" name="archive-stock-action" id="stock-action-writeoff" value="writeoff">
@@ -903,7 +903,7 @@ async function openArchiveModal(p) {
               <div class="col-12">
                 <label class="form-label small mb-1">Replacement ingredient</label>
                 <select class="form-select form-select-sm" id="archive-rep-ing-${r.recipe_id}" onchange="updateArchiveRepUnits(${r.recipe_id})">
-                  <option value="">— select —</option>
+                  <option value="">- select -</option>
                   ${r.replacements.map(c =>
                     `<option value="${c.id}" data-unit-type="${c.unit_type||''}" data-base-unit="${c.base_unit||''}" data-pkg-size="${c.package_size||''}" data-pkg-unit="${c.package_unit||''}">${c.name}</option>`
                   ).join('')}
@@ -1011,7 +1011,7 @@ async function openRestoreModal(p) {
   body.innerHTML = '<div class="text-muted small">Checking…</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('restoreProductModal')).show();
 
-  // Preview only — find which cascade-archived recipes could be restored alongside this product
+  // Preview only - find which cascade-archived recipes could be restored alongside this product
   try {
     const restorable = _getRestorableRecipes(p);
 
@@ -1020,7 +1020,7 @@ async function openRestoreModal(p) {
         <p class="text-muted small">No recipes need attention.</p>`;
     } else {
       let html = `<p>Restore <strong>${p.name}</strong>?</p>
-        <p class="text-muted small">The following recipes were archived when this ingredient was archived. Tick the ones you want to restore too — only recipes where all other ingredients are active can be restored.</p>`;
+        <p class="text-muted small">The following recipes were archived when this ingredient was archived. Tick the ones you want to restore too - only recipes where all other ingredients are active can be restored.</p>`;
       restorable.forEach(r => {
         html += `<div class="form-check">
           <input class="form-check-input" type="checkbox" id="restore-recipe-${r.id}" value="${r.id}" checked>
@@ -1134,7 +1134,7 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
   if (filterInput)  filterInput.classList.toggle('hidden', !isProductList);
 
   if (isProductList) {
-    // Hide +New Product button on archived tab — you can't create archived products
+    // Hide +New Product button on archived tab - you can't create archived products
     if (newProduct) newProduct.classList.toggle('hidden', STATE.productsSubTab === 'archived');
     renderProductsCards();
     // Reload ingredients data when switching to recipes sub-tab so costs are current
@@ -1190,7 +1190,7 @@ function openProductEditor(p) {
   const statusRow = document.getElementById('scale-sync-status-row');
   if (statusRow && p) {
     if (p.scale_last_sync_status) {
-      statusRow.textContent = `Last sync: ${p.scale_last_sync_status}${p.scale_last_synced_at ? ' at ' + new Date(p.scale_last_synced_at).toLocaleString() : ''}${p.scale_last_sync_error ? ' — ' + p.scale_last_sync_error : ''}`;
+      statusRow.textContent = `Last sync: ${p.scale_last_sync_status}${p.scale_last_synced_at ? ' at ' + new Date(p.scale_last_synced_at).toLocaleString() : ''}${p.scale_last_sync_error ? ' - ' + p.scale_last_sync_error : ''}`;
       statusRow.classList.remove('hidden');
     } else { statusRow.classList.add('hidden'); }
   } else if (statusRow) { statusRow.classList.add('hidden'); }
@@ -1204,7 +1204,7 @@ function openProductEditor(p) {
   const descEl = document.getElementById('p-description');
   if (descEl) descEl.value = p?.description ?? '';
 
-  // Category (autocomplete text input — shows the current category name)
+  // Category (autocomplete text input - shows the current category name)
   const catEl = document.getElementById('p-category');
   if (catEl) catEl.value = p?.category_name ?? '';
   hideCategorySuggestions();
@@ -1259,7 +1259,7 @@ function openProductEditor(p) {
   document.getElementById('p-pkg-size').value = pkgSizeDisplay !== '' ? +pkgSizeDisplay.toFixed(6) : '';
   document.getElementById('p-pkg-unit').value = p?.package_unit ?? '';
 
-  document.getElementById('productEditorTitle').textContent = p ? `Edit — ${p.name}` : 'New Product';
+  document.getElementById('productEditorTitle').textContent = p ? `Edit - ${p.name}` : 'New Product';
   // Reset calculator
   hide(document.getElementById('calc-result'));
   initCalcMarkup(p);
@@ -1288,7 +1288,7 @@ function openProductEditor(p) {
   document.getElementById('btn-add-product')   ?.classList.toggle('hidden', isEdit);
   document.getElementById('btn-update-product') ?.classList.toggle('hidden', !isEdit);
   document.getElementById('btn-delete-product') ?.classList.toggle('hidden', !isEdit);
-  // Calculator only makes sense when editing — needs existing stock batches to compute cost
+  // Calculator only makes sense when editing - needs existing stock batches to compute cost
   const calcSection = document.getElementById('section-calc');
   if (calcSection) calcSection.style.display = isEdit ? '' : 'none';
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal'));
@@ -1342,7 +1342,7 @@ document.getElementById('p-barcode')?.addEventListener('input', function(e) {
   }
 });
 
-// btn-remove-image removed — image deletion now handled per-image via renderImageList()
+// btn-remove-image removed - image deletion now handled per-image via renderImageList()
 
 document.getElementById('p-type')?.addEventListener('change', (e) => {
   updateProductTypeSections(e.target.value);
@@ -1357,7 +1357,7 @@ document.getElementById('p-is-for-sale')?.addEventListener('change', (e) => {
   updateProductTypeSections(document.getElementById('p-type').value);
   // Inform user what unchecking means
   if (!e.target.checked) {
-    toast('This product will be moved to the Ingredients tab — it stays available for recipes but won\'t appear at the till.', 'info', 4000);
+    toast('This product will be moved to the Ingredients tab - it stays available for recipes but won\'t appear at the till.', 'info', 4000);
   }
 });
 
@@ -1516,12 +1516,12 @@ function updateProductTypeSections(type) {
     }
   }
 
-  // Update barcode preview based on product type — always show a value
+  // Update barcode preview based on product type - always show a value
   const barcodeInput = el('p-barcode');
   if (barcodeInput && barcodeInput.dataset.autoGenerated !== '0') {
     if (autoSoldByWeight) {
       // Weight/volume: find next code in the correct range, show scale barcode preview
-      // (value part is 00000 — scale encodes actual weight/volume at print time)
+      // (value part is 00000 - scale encodes actual weight/volume at print time)
       const isVolume = unitType === 'volume';
       const lo = isVolume ? 30000 : 1;
       const hi = isVolume ? 39999 : 19999;
@@ -1533,7 +1533,7 @@ function updateProductTypeSections(type) {
       const core = `20${String(nextCode).padStart(5,'0')}00000`;
       barcodeInput.value = core + ean13Check(core);
       barcodeInput.placeholder = '';
-      barcodeInput.title = 'Preview — scale encodes actual weight/volume at print time';
+      barcodeInput.title = 'Preview - scale encodes actual weight/volume at print time';
     } else {
       // Fixed/recipe: deterministic EAN from next available code
       const lo = type === 'recipe' ? 40000 : 20000;
@@ -1584,7 +1584,7 @@ function calcProductMargins(p) {
       cost  = costPerBase;
       price = parseFloat(p.price_per_unit);
     } else {
-      // Sold per package — cost is costPerBase × package_size (stored in base units)
+      // Sold per package - cost is costPerBase × package_size (stored in base units)
       // Count products (unit_type=count, base_unit=unit) have package_size=1 implicitly
       const pkgBase = parseFloat(p.package_size) || (p.unit_type === 'count' ? 1 : null);
       if (!pkgBase) return null;
@@ -1595,7 +1595,7 @@ function calcProductMargins(p) {
     cost  = getIngredientCost(p.id, 1);
     price = parseFloat(p.price);
   } else if (p.product_type === 'simple') {
-    // Resale goods — cost is the weighted-average purchase cost from the API
+    // Resale goods - cost is the weighted-average purchase cost from the API
     if (p.unit_cost == null) return null;
     cost  = parseFloat(p.unit_cost);
     price = parseFloat(p.price);
@@ -1608,7 +1608,7 @@ function calcProductMargins(p) {
   const markup = ((price - cost) / cost * 100).toFixed(1);
   const margin = ((price - cost) / price * 100).toFixed(1);
 
-  // Format cost label — for by-weight products show per kg/L, for fixed products show per unit
+  // Format cost label - for by-weight products show per kg/L, for fixed products show per unit
   let costLabel;
   if (p.product_type === 'stock_item' && p.sold_by_weight) {
     const bigUnit = p.unit_type === 'volume' ? 'L' : 'kg';
@@ -1633,7 +1633,7 @@ function renderRecipeLines() {
     const baseUnit = ingr?.base_unit || line.base_unit || 'g';
     const unitOpts = UNITS[unitType]?.display || [baseUnit];
 
-    // Calculate line cost — works for both stock_item and recipe ingredients
+    // Calculate line cost - works for both stock_item and recipe ingredients
     const qty      = parseFloat(line.qty_base_display || line.qty_base || 0);
     const unit     = line.unit || baseUnit;
     const qtyBase  = ingr?.product_type === 'recipe' ? qty : toBase(qty, unit, unitType);
@@ -1643,10 +1643,10 @@ function renderRecipeLines() {
     const tr = document.createElement('tr');
     tr.className = 'recipe-line-row';
 
-    // Ingredient selector — stock items AND other recipes (for bundles/specials)
+    // Ingredient selector - stock items AND other recipes (for bundles/specials)
     const currentProductId = parseInt(document.getElementById('p-id')?.value || '0');
     let ingSelHTML = `<select class="form-select form-select-sm" data-rl-idx="${idx}" data-rl-field="ingredient_id">`;
-    ingSelHTML += '<option value="">— select —</option>';
+    ingSelHTML += '<option value="">- select -</option>';
     // Group: stock items first, then recipes
     const ingStockItems = STATE.products.filter(p => p.product_type === 'stock_item' && !p.is_archived);
     const ingRecipes    = STATE.products.filter(p => p.product_type === 'recipe' && p.id !== currentProductId && !p.is_archived);
@@ -1666,7 +1666,7 @@ function renderRecipeLines() {
     }
     ingSelHTML += '</select>';
 
-    // Unit selector for this ingredient (hidden for recipe ingredients — qty means "portions")
+    // Unit selector for this ingredient (hidden for recipe ingredients - qty means "portions")
     const isRecipeIngredient = ingr?.product_type === 'recipe';
     let unitSelHTML = `<select class="form-select form-select-sm" data-rl-idx="${idx}" data-rl-field="unit" style="width:auto" ${isRecipeIngredient ? 'disabled' : ''}>`;
     unitOpts.forEach(u => { unitSelHTML += `<option value="${u}" ${u === (line.unit || baseUnit) ? 'selected' : ''}>${u}</option>`; });
@@ -1676,7 +1676,7 @@ function renderRecipeLines() {
       <td>${ingSelHTML}</td>
       <td><input type="number" step="0.01" min="0.01" value="${line.qty_base_display || line.qty_base || ''}" class="form-control form-control-sm" data-rl-idx="${idx}" data-rl-field="qty_display" style="width:80px"></td>
       <td>${unitSelHTML}</td>
-      <td class="small text-muted">${lineCost > 0 ? `R${lineCost.toFixed(4)}` : '—'}</td>
+      <td class="small text-muted">${lineCost > 0 ? `R${lineCost.toFixed(4)}` : '-'}</td>
       <td><button class="btn btn-outline-danger btn-sm" data-rl-remove="${idx}">✕</button></td>
     `;
     tbody.appendChild(tr);
@@ -1709,7 +1709,7 @@ function renderRecipeLines() {
       if (field === 'qty_display') {
         const idx = parseInt(el.dataset.rlIdx);
         _recipeLines[idx].qty_base_display = parseFloat(el.value) || 0;
-        // Update only the cost cell — avoid full re-render which destroys focus
+        // Update only the cost cell - avoid full re-render which destroys focus
         const ingr    = STATE.products.find(p => p.id === _recipeLines[idx].ingredient_id);
         const unitType = ingr?.unit_type || _recipeLines[idx].unit_type || 'weight';
         const unit     = _recipeLines[idx].unit || ingr?.base_unit || UNITS[unitType]?.base || 'g';
@@ -1720,7 +1720,7 @@ function renderRecipeLines() {
         const row      = el.closest('tr');
         if (row) {
           const costCell = row.querySelector('td:nth-child(4)');
-          if (costCell) costCell.textContent = cost > 0 ? `R${cost.toFixed(4)}` : '—';
+          if (costCell) costCell.textContent = cost > 0 ? `R${cost.toFixed(4)}` : '-';
         }
         // Recalc total
         let total = 0;
@@ -1754,7 +1754,7 @@ function getRecipeLinesForSubmit() {
       const ingr = STATE.products.find(p => p.id === l.ingredient_id);
       let qty_base;
       if (ingr?.product_type === 'recipe') {
-        // Recipe ingredient: qty is "portions" — no unit conversion needed
+        // Recipe ingredient: qty is "portions" - no unit conversion needed
         qty_base = parseFloat(l.qty_base_display || l.qty_base || 1);
       } else {
         const unitType   = ingr?.unit_type || l.unit_type || 'weight';
@@ -1806,7 +1806,7 @@ document.getElementById('btn-calc-price')?.addEventListener('click', async () =>
       totalCost += cost;
       breakdown.push({ label: ingr?.name || `#${ln.ingredient_id}`, line_cost: cost });
     });
-    if (totalCost === 0) return toast('No stock prices found — receive stock for ingredients first', 'warning');
+    if (totalCost === 0) return toast('No stock prices found - receive stock for ingredients first', 'warning');
     const suggestedPrice = totalCost * (1 + markup / 100);
     show(resultEl);
     avgCostEl.textContent   = `R${totalCost.toFixed(4)}`;
@@ -2036,7 +2036,7 @@ document.getElementById('btn-delete-product')?.addEventListener('click', async (
     toast('Product deleted');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
   } catch (e) {
-    // Deletion blocked — offer to hide instead
+    // Deletion blocked - offer to hide instead
     if (e.message.includes('historical references')) {
       if (confirm(`"${name}" has historical records and cannot be deleted.\n\nHide it instead? (It will no longer appear at the till or in active lists, but history is preserved.)`)) {
         try {
@@ -2097,7 +2097,7 @@ function buildProductPayload() {
   return {
     name, barcode,
     price:       finalPrice,
-    // Only send stock_qty for simple products — other types track stock differently
+    // Only send stock_qty for simple products - other types track stock differently
     ...(type === 'simple' ? { stock_qty } : {}),
     product_type: type,
     unit_type:    type !== 'simple' ? unitType : null,
@@ -2116,7 +2116,7 @@ function buildProductPayload() {
     margin_pct:    document.getElementById('calc-markup')?.value ? parseFloat(document.getElementById('calc-markup').value) : null,
     is_prepared:   document.getElementById('p-is-prepared')?.checked || false,
     description:   document.getElementById('p-description')?.value?.trim() || null,
-    // Category name — backend resolves/auto-creates; '' clears the category
+    // Category name - backend resolves/auto-creates; '' clears the category
     category:      document.getElementById('p-category')?.value?.trim() || '',
     recipe_lines:  type === 'recipe'     ? getRecipeLinesForSubmit()  : [],
     sell_packages: type === 'stock_item' ? getSellPackagesForSubmit() : [],
@@ -2128,7 +2128,7 @@ function buildProductPayload() {
       }
       return {};
     })()),
-    // PLU (product_code) — only send if explicitly set
+    // PLU (product_code) - only send if explicitly set
     product_code: (() => { const v = parseInt(document.getElementById('p-product-code')?.value || '0', 10); return v > 0 ? v : undefined; })(),
     // Scale settings
     sync_to_scale:     document.getElementById('p-sync-to-scale')?.checked || false,
@@ -2215,14 +2215,14 @@ function _buildStockBody(item, prod) {
       const remaining  = displayQty(b.qty_remaining_base, item.unit_type);
       const purchased  = displayQty(b.qty_purchased_base, item.unit_type);
       const date       = new Date(b.purchased_at).toLocaleDateString('en-ZA');
-      const supplier   = b.supplier_name || '—';
+      const supplier   = b.supplier_name || '-';
       const stockValue = (b.cost_per_base_unit * b.qty_remaining_base);
       const totalCost  = (b.cost_per_base_unit * b.qty_purchased_base).toFixed(2);
       const { cost: costPerDisplay, unit: displayUnit } = displayCost(b.cost_per_base_unit, b.qty_remaining_base, item.unit_type);
       const cogsStr    = `R${costPerDisplay < 0.01 ? costPerDisplay.toFixed(4) : costPerDisplay.toFixed(2)}/${displayUnit}`;
 
       // Sale value per display unit
-      let saleStr = '—';
+      let saleStr = '-';
       if (prod) {
         if (prod.sold_by_weight && prod.price_per_unit != null) {
           const { cost: salePer, unit: saleUnit } = displayCost(parseFloat(prod.price_per_unit), b.qty_remaining_base, item.unit_type);
@@ -2263,7 +2263,7 @@ function _buildStockBody(item, prod) {
     const pkgDiv = document.createElement('div');
     pkgDiv.innerHTML = `<div class="small fw-bold mb-1 text-muted">Packages:</div>`;
     item.sell_packages.forEach(pkg => {
-      pkgDiv.innerHTML += `<div class="small">• ${pkg.name} — ${displayQty(pkg.qty_base, item.unit_type)} @ R${fmt(pkg.price || 0)}</div>`;
+      pkgDiv.innerHTML += `<div class="small">• ${pkg.name} - ${displayQty(pkg.qty_base, item.unit_type)} @ R${fmt(pkg.price || 0)}</div>`;
     });
     wrap.appendChild(pkgDiv);
   }
@@ -2271,7 +2271,7 @@ function _buildStockBody(item, prod) {
 }
 
 function renderStockList(items) {
-  // kept for backward compat — no longer used for display, data goes via STATE._stockItems
+  // kept for backward compat - no longer used for display, data goes via STATE._stockItems
 }
 
 // ── Edit Batch (delegated off products-card-list since batch rows are dynamic) ──
@@ -2303,7 +2303,7 @@ document.getElementById('products-card-list')?.addEventListener('click', (e) => 
   document.getElementById('edit-batch-qty-purchased').dataset.qtyRemaining  = qtyRemaining;
 
   const sel = document.getElementById('edit-batch-supplier');
-  sel.innerHTML = '<option value="">— No supplier —</option>';
+  sel.innerHTML = '<option value="">- No supplier -</option>';
   (_suppliers || []).forEach(s => {
     const opt = document.createElement('option');
     opt.value = s.id; opt.textContent = s.name;
@@ -2436,7 +2436,7 @@ document.getElementById('btn-receive-confirm')?.addEventListener('click', async 
       method: 'POST',
       body: JSON.stringify({ product_id: pid, qty, unit, total_price: totalPrice, supplier_id })
     });
-    toast(`Stock received — R${j.cost_per_base_unit}/unit (${j.qty_base.toFixed(2)} ${j.base_unit})`, 'success', 4000);
+    toast(`Stock received - R${j.cost_per_base_unit}/unit (${j.qty_base.toFixed(2)} ${j.base_unit})`, 'success', 4000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('receiveStockModal')).hide();
     await loadIngredients();
     await loadProducts();
@@ -2535,7 +2535,7 @@ function _updateStocktakePreview() {
   show(preview);
   if (Math.abs(diff) < 0.001) {
     preview.className = 'alert alert-success py-2 small';
-    preview.textContent = '✓ Matches system — no adjustment needed';
+    preview.textContent = '✓ Matches system - no adjustment needed';
   } else if (diff < 0) {
     preview.className = 'alert alert-warning py-2 small';
     preview.textContent = `⚠ System will deduct ${displayQty(Math.abs(diff), _stocktakeItem.unit_type)} (unexplained loss)`;
@@ -2555,7 +2555,7 @@ function openStocktakeModal(item) {
 
   document.getElementById('stocktake-system-qty').textContent = displayQty(item.stock_level || 0, item.unit_type);
 
-  // Reset rows — start with one blank row using base unit
+  // Reset rows - start with one blank row using base unit
   document.getElementById('stocktake-rows').innerHTML = '';
   _addStocktakeRow(UNITS[item.unit_type]?.base || 'unit');
 
@@ -2588,7 +2588,7 @@ document.getElementById('btn-stocktake-confirm')?.addEventListener('click', asyn
     });
     const diffDisplay = displayQty(Math.abs(j.difference), _stocktakeItem?.unit_type);
     const msg = j.difference === 0
-      ? 'No change — stock levels match'
+      ? 'No change - stock levels match'
       : j.difference < 0
         ? `Adjusted: removed ${diffDisplay} (loss recorded)`
         : `Adjusted: added ${diffDisplay} (surplus recorded)`;
@@ -2668,7 +2668,7 @@ document.getElementById('btn-writeoff-confirm')?.addEventListener('click', async
       body: JSON.stringify({ product_id: pid, qty, unit, reason })
     });
     toast(
-      `Written off: ${displayQty(j.qty_written_off, _writeoffItem?.unit_type)} — Cost: R${j.cost_written_off.toFixed(4)}`,
+      `Written off: ${displayQty(j.qty_written_off, _writeoffItem?.unit_type)} - Cost: R${j.cost_written_off.toFixed(4)}`,
       'warning', 5000
     );
     bootstrap.Modal.getOrCreateInstance(document.getElementById('writeoffModal')).hide();
@@ -2731,7 +2731,7 @@ function openSupplierDetail(supplier) {
     el.classList.toggle('active', el.dataset.supplierId === String(supplier.id));
   });
 
-  // Detail replaces the form — form only shows when adding/editing
+  // Detail replaces the form - form only shows when adding/editing
   hide(document.getElementById('supplier-edit-panel'));
   show(document.getElementById('supplier-detail-panel'));
   hide(document.getElementById('purchase-run-panel'));
@@ -2820,7 +2820,7 @@ async function loadSupplierProducts(sid) {
           ${products.map(p => `<tr>
             <td>${p.name}</td>
             <td><span class="badge bg-secondary" style="font-size:10px">${p.product_type}</span></td>
-            <td class="small text-muted">${p.last_received || '—'}</td>
+            <td class="small text-muted">${p.last_received || '-'}</td>
           </tr>`).join('')}
         </tbody>
       </table>`;
@@ -2843,7 +2843,7 @@ function populateSupplierDropdowns() {
   const sel = document.getElementById('receive-supplier');
   if (sel) {
     const prev = sel.value;
-    sel.innerHTML = '<option value="">— No supplier —</option>';
+    sel.innerHTML = '<option value="">- No supplier -</option>';
     _suppliers.forEach(s => {
       const opt = document.createElement('option');
       opt.value = s.id; opt.textContent = s.name;
@@ -2922,7 +2922,7 @@ document.getElementById('btn-supplier-edit')?.addEventListener('click', () => {
   document.getElementById('sup-email').value   = _currentSupplier.email   || '';
   document.getElementById('sup-website').value = _currentSupplier.website || '';
   document.getElementById('sup-notes').value   = _currentSupplier.notes   || '';
-  document.getElementById('supplier-form-title').textContent = `Edit — ${_currentSupplier.name}`;
+  document.getElementById('supplier-form-title').textContent = `Edit - ${_currentSupplier.name}`;
   show(document.getElementById('supplier-edit-panel'));
   hide(document.getElementById('supplier-detail-panel'));
   document.getElementById('sup-name')?.focus();
@@ -2955,7 +2955,7 @@ function _buildProductOptions(supplierProductIds) {
   const rest   = active.filter(p => !supplierProductIds.has(p.id));
   const sep    = own.length ? `<option disabled>── Other products ──</option>` : '';
   const opts   = (arr) => arr.map(p => `<option value="${p.id}">${p.name} (${p.product_type})</option>`).join('');
-  return `<option value="">— Select product —</option>${opts(own)}${sep}${opts(rest)}`;
+  return `<option value="">- Select product -</option>${opts(own)}${sep}${opts(rest)}`;
 }
 
 function addPurchaseLine() {
@@ -3017,7 +3017,7 @@ function addPurchaseLine() {
     updateUnitsForProduct(e.target.value);
   });
 
-  // "Create New Product" — open the full product editor modal and come back
+  // "Create New Product" - open the full product editor modal and come back
   line.querySelector('[data-create-product-btn]')?.addEventListener('click', () => {
     _pendingPurchaseLine = line;
     openProductEditor(null);
@@ -3216,7 +3216,7 @@ document.getElementById('editwo-qty')?.addEventListener('input', () => {
   show(preview);
   if (Math.abs(diff) < 0.001) {
     preview.className = 'alert alert-success py-2 small';
-    preview.textContent = '✓ Same quantity — no change to stock';
+    preview.textContent = '✓ Same quantity - no change to stock';
   } else if (diff > 0) {
     preview.className = 'alert alert-warning py-2 small';
     const prod = _editWoAdj._prod;
@@ -3265,7 +3265,7 @@ function renderCart() {
     const discountedPrice = applyItemDiscount(basePrice, item._discount);
     const hasDiscount  = item._discount && discountedPrice < basePrice;
 
-    // Label — show strikethrough original if discounted
+    // Label - show strikethrough original if discounted
     const label = item.is_weight ? `${item.name}` : `${item.name} × ${fmtQty(item.qty)}`;
     const left  = document.createElement('span');
     left.style.cssText = 'display:flex;align-items:center;gap:10px';
@@ -3332,7 +3332,7 @@ function renderCart() {
       }
     }
 
-    // Per-item discount button — admin only
+    // Per-item discount button - admin only
     if (_admin) {
       const discBtn = document.createElement('button');
       discBtn.className = 'btn btn-sm ms-1 ' + (hasDiscount ? 'btn-success' : 'btn-outline-success');
@@ -3376,7 +3376,7 @@ function addToCart(p) {
     openWeightModal(p);
     return;
   }
-  // Fixed price product (recipes included — customise button in cart)
+  // Fixed price product (recipes included - customise button in cart)
   const key      = String(p.id);
   const existing = STATE.cart[key];
   if (existing && !existing.subs && !existing.extras) {
@@ -3391,7 +3391,7 @@ function addToCart(p) {
     };
     toast(`Added: ${p.name}`, 'success', 1200);
   } else {
-    // Customised entry already exists — add a fresh uncustomised one with unique key
+    // Customised entry already exists - add a fresh uncustomised one with unique key
     const newKey = `${p.id}__${Date.now()}`;
     STATE.cart[newKey] = {
       _key: newKey, product_id: p.id, name: p.name,
@@ -3443,7 +3443,7 @@ function openDiscountModal(itemKey) {
   const item    = isCart ? null : STATE.cart[_discountTarget];
   const current = isCart ? STATE._cartDiscount : item?._discount;
 
-  document.getElementById('discount-modal-title').textContent = isCart ? 'Cart Discount' : `Discount — ${item?.name}`;
+  document.getElementById('discount-modal-title').textContent = isCart ? 'Cart Discount' : `Discount - ${item?.name}`;
   document.getElementById('discount-modal-desc').textContent  = isCart
     ? 'Apply a discount to the entire cart total.'
     : `Discounting: ${item?.name}`;
@@ -3595,8 +3595,8 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; renderCart();
     await loadTransactions();
     await loadProducts();
-    const kitchenMsg = j.kitchen_orders > 0 ? ` — ${j.kitchen_orders} kitchen order${j.kitchen_orders > 1 ? 's' : ''} queued` : '';
-    toast(`Sale complete — #${String(j.transaction_id).slice(0,8)}${kitchenMsg}`, 'success', 4000);
+    const kitchenMsg = j.kitchen_orders > 0 ? ` - ${j.kitchen_orders} kitchen order${j.kitchen_orders > 1 ? 's' : ''} queued` : '';
+    toast(`Sale complete - #${String(j.transaction_id).slice(0,8)}${kitchenMsg}`, 'success', 4000);
     if (j.kitchen_orders > 0) {
       // Update badge immediately
       const badge = document.getElementById('kitchen-badge');
@@ -3686,7 +3686,7 @@ document.getElementById('btn-weight-add')?.addEventListener('click', () => {
     _key:       key,
     product_id: _weightProduct.id,
     name:       label,
-    unit_price: pricePerUnit,   // price per base unit — backend multiplies by qty
+    unit_price: pricePerUnit,   // price per base unit - backend multiplies by qty
     qty:        qty_base,
     is_weight:  true,
     _display_total: total,      // for cart display only
@@ -3694,7 +3694,7 @@ document.getElementById('btn-weight-add')?.addEventListener('click', () => {
   STATE.scanHistory.push(_weightProduct.id);
   renderCart();
   detectAndOfferSpecials();
-  toast(`Added: ${label} — R${fmt(total)}`, 'success', 1500);
+  toast(`Added: ${label} - R${fmt(total)}`, 'success', 1500);
   bootstrap.Modal.getOrCreateInstance(document.getElementById('weightModal')).hide();
 });
 
@@ -3726,7 +3726,7 @@ document.getElementById('search')?.addEventListener('input', function() {
       a.appendChild(img);
     }
     const span = document.createElement('span');
-    span.textContent = `#${p.id} ${p.name}${p.price != null ? ` — R${fmt(p.price)}` : ''}${stockInfo}`;
+    span.textContent = `#${p.id} ${p.name}${p.price != null ? ` - R${fmt(p.price)}` : ''}${stockInfo}`;
     a.appendChild(span);
     a.onclick = () => {
       addToCart(p);
@@ -3741,7 +3741,7 @@ document.getElementById('search')?.addEventListener('input', function() {
 // USB / BLUETOOTH BARCODE SCANNER (keyboard wedge)
 // ═══════════════════════════════════════════════════════
 // Variable weight barcode parser (BC-4000 scale labels)
-// Format: PP IIII VVVVVV C  (13 digits) — confirmed from printed label
+// Format: PP IIII VVVVVV C  (13 digits) - confirmed from printed label
 //   PP     = prefix 20 (variable weight)
 //   IIII   = product_code (4 digits, e.g. 0007 = product_code 7)
 //   VVVVVV = total price in cents (e.g. 003072 = R30.72)
@@ -3771,7 +3771,7 @@ function handleScannedCode(code) {
       renderCart();
       detectAndOfferSpecials();
       beep(80, 880); flashOK();
-      toast(`Added: ${label} — R${fmt(total)}`, 'success', 1500);
+      toast(`Added: ${label} - R${fmt(total)}`, 'success', 1500);
       _releaseScanFocus();
       return true;
     }
@@ -3935,7 +3935,7 @@ let SERIAL = {
 function initSerialSupport() {
   if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) return;
   const btn = document.getElementById('btn-connect-scanner');
-  if (btn) btn.style.display = '';  // always show — error on click if APIs unavailable
+  if (btn) btn.style.display = '';  // always show - error on click if APIs unavailable
 }
 
 function _setScannerDot(state, label) {
@@ -4012,7 +4012,7 @@ function _onBLEDisconnect() {
 }
 
 async function _connectWebBluetooth() {
-  // Accept all BLE devices — budget scanners use various UART service UUIDs
+  // Accept all BLE devices - budget scanners use various UART service UUIDs
   const device = await navigator.bluetooth.requestDevice({
     acceptAllDevices: true,
     optionalServices: [_NUS_SERVICE, _HM10_SERVICE]
@@ -4071,7 +4071,7 @@ async function connectScanner() {
   if (navigator.serial) {
     try { await _connectWebSerial(); return; } catch (e) {
       if (e.name !== 'NotFoundError') { toast('USB scanner error: ' + e.message, 'danger'); _setScannerDot(false); return; }
-      // User cancelled USB picker — fall through to BLE
+      // User cancelled USB picker - fall through to BLE
     }
   }
   if (navigator.bluetooth) {
@@ -4143,7 +4143,7 @@ function renderTransactions(trs) {
     if (t.flagged && t.flag_resolved)  summaryHTML += ` <span class="badge bg-secondary">✓ Reviewed</span>`;
     right.innerHTML = summaryHTML;
 
-    // Flag button — all users
+    // Flag button - all users
     const btnFlag = document.createElement('button');
     btnFlag.className = t.flagged && !t.flag_resolved
       ? 'btn btn-warning btn-sm'
@@ -4260,7 +4260,7 @@ function openTxModal(t) {
   _txModalLines   = t.lines.map(l => ({ ...l }));
   document.getElementById('txModalTitle').textContent = `Transaction #${String(t.id).slice(0,8)}`;
   const meta = document.getElementById('tx-modal-meta');
-  if (meta) meta.textContent = `${new Date(t.date_time).toLocaleString('en-ZA')} — R${fmt(t.total)}${t.teller ? ' — ' + t.teller : ''}`;
+  if (meta) meta.textContent = `${new Date(t.date_time).toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
   document.getElementById('tx-void-reason').value = '';
   renderTxEditTable();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('txModal')).show();
@@ -4327,7 +4327,7 @@ document.getElementById('btn-tx-void')?.addEventListener('click', async () => {
     await api(`/api/transactions/${STATE.currentTx.id}/void`, {
       method: 'POST', body: JSON.stringify({ reason })
     });
-    toast('Transaction voided — stock restored', 'warning');
+    toast('Transaction voided - stock restored', 'warning');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('txModal')).hide();
     loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
     await loadProducts();
@@ -4421,7 +4421,7 @@ function _setUserFormMode(mode) {
   const hint        = document.getElementById('user-form-hint');
   if (mode === 'edit') {
     hide(addActions); show(editActions);
-    if (hint) hint.textContent = 'Editing user — click "+ New User" to create a new one.';
+    if (hint) hint.textContent = 'Editing user - click "+ New User" to create a new one.';
   } else {
     show(addActions); hide(editActions);
     if (hint) hint.textContent = 'Fill in the fields above to add a new user.';
@@ -4545,7 +4545,7 @@ function _initStatsPresets() {
   });
 }
 
-// drilldown state — which canvas+slice is active for click hits
+// drilldown state - which canvas+slice is active for click hits
 let _chartClickHandlers = {};
 
 function drawBarChart(canvas, labels, values, opts = {}) {
@@ -4643,7 +4643,7 @@ function _renderDrilldownTransactions(data, opts = {}) {
     </div></div>
     <div class="col-6 col-md-3"><div class="card text-center py-2 px-1">
       <div class="text-muted" style="font-size:11px">Peak Hour</div>
-      <div class="fw-bold fs-6">${s.peak_hour != null ? `${s.peak_hour}:00` : '—'}</div>
+      <div class="fw-bold fs-6">${s.peak_hour != null ? `${s.peak_hour}:00` : '-'}</div>
     </div></div>
   </div>`;
 
@@ -4682,7 +4682,7 @@ function _renderDrilldownTransactions(data, opts = {}) {
     html += `<div class="mb-3 p-2 rounded" style="background:${opts.context==='best'?'#f0faf0':'#fff8f0'}">
       <div class="fw-semibold small mb-1">${label}</div>
       <ul class="mb-0 small">
-        ${s.top_products.length ? `<li>Best-seller: <strong>${s.top_products[0].product}</strong> — R${fmt(s.top_products[0].revenue)}</li>` : ''}
+        ${s.top_products.length ? `<li>Best-seller: <strong>${s.top_products[0].product}</strong> - R${fmt(s.top_products[0].revenue)}</li>` : ''}
         ${s.peak_hour != null ? `<li>Busiest hour: <strong>${s.peak_hour}:00–${s.peak_hour+1}:00</strong></li>` : ''}
         ${largest ? `<li>Largest single sale: <strong>R${fmt(largest.total)}</strong> (#${largest.sale_id} by ${largest.teller})</li>` : ''}
         ${s.teller_breakdown.length === 1 ? `<li>All sales by: <strong>${s.teller_breakdown[0].teller}</strong></li>` : ''}
@@ -4754,7 +4754,7 @@ async function openDrilldown(title, type, value, opts = {}) {
 }
 
 async function openSupplierDrilldown(supplierName) {
-  document.getElementById('drilldown-title').textContent = `Stock purchases — ${supplierName}`;
+  document.getElementById('drilldown-title').textContent = `Stock purchases - ${supplierName}`;
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
   try {
@@ -4797,7 +4797,7 @@ async function openKitchenDrilldown() {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No kitchen orders found.</div>';
       return;
     }
-    const fmtWait = s => s != null ? (s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`) : '—';
+    const fmtWait = s => s != null ? (s >= 60 ? `${Math.floor(s/60)}m ${s%60}s` : `${s}s`) : '-';
     const completed = orders.filter(o => o.status === 'completed').length;
     const avgWait = orders.filter(o => o.wait_seconds != null).reduce((s,o,_,a) => s + o.wait_seconds/a.length, 0);
     let html = `<div class="small text-muted mb-2">${orders.length} order${orders.length!==1?'s':''} · ${completed} completed · Avg wait ${fmtWait(Math.round(avgWait))}</div>`;
@@ -4806,7 +4806,7 @@ async function openKitchenDrilldown() {
     orders.forEach(o => {
       const statusColor = o.status === 'completed' ? 'text-success' : o.status === 'cancelled' ? 'text-danger' : 'text-warning';
       html += `<tr>
-        <td style="font-size:11px">${o.queued_at?.replace('T',' ').slice(0,16) || '—'}</td>
+        <td style="font-size:11px">${o.queued_at?.replace('T',' ').slice(0,16) || '-'}</td>
         <td>${o.product}</td>
         <td>${o.qty}</td>
         <td>${o.teller}</td>
@@ -4839,7 +4839,7 @@ async function openWriteoffDrilldown() {
       <thead class="table-light"><tr><th>Date</th><th>Product</th><th>Qty written off</th><th class="text-end text-danger">Cost lost</th><th>By</th></tr></thead><tbody>`;
     items.forEach(w => {
       html += `<tr>
-        <td style="font-size:11px">${w.date?.replace('T',' ').slice(0,16) || '—'}</td>
+        <td style="font-size:11px">${w.date?.replace('T',' ').slice(0,16) || '-'}</td>
         <td>${w.product}</td>
         <td>${Math.abs(w.qty_change).toFixed(2)} ${w.base_unit}</td>
         <td class="text-end text-danger fw-semibold">R${fmt(w.cost)}</td>
@@ -4867,7 +4867,7 @@ async function openProfitDrilldown() {
     const _admin      = isAdmin();
     const totalRev    = items.reduce((s, i) => s + i.revenue, 0);
     const totalProfit = items.reduce((s, i) => s + i.profit, 0);
-    const overallMargin = totalRev > 0 ? (totalProfit / totalRev * 100).toFixed(1) : '—';
+    const overallMargin = totalRev > 0 ? (totalProfit / totalRev * 100).toFixed(1) : '-';
     let html = `<div class="row g-2 mb-3">
       <div class="${_admin ? 'col-4' : 'col-12'}"><div class="card border-success text-center py-2"><div class="small text-muted">Revenue</div><div class="fw-bold text-success">R${fmt(totalRev)}</div></div></div>
       ${_admin ? `
@@ -4886,7 +4886,7 @@ async function openProfitDrilldown() {
         ${_admin ? `
         <td class="text-end text-muted">R${fmt(i.cogs)}</td>
         <td class="text-end fw-semibold ${profitColor}">R${fmt(i.profit)}</td>
-        <td class="text-end text-warning">${i.margin != null ? i.margin + '%' : '—'}</td>
+        <td class="text-end text-warning">${i.margin != null ? i.margin + '%' : '-'}</td>
         ` : ''}
       </tr>`;
     });
@@ -5108,10 +5108,10 @@ async function loadStats() {
     el('stat-margin-sub') && (el('stat-margin-sub').textContent = j.gross_margin != null ? `${j.gross_margin}% margin` : '');
     cardClick(el('stat-profit'), () => openProfitDrilldown());
 
-    el('stat-cogs')   && (el('stat-cogs').textContent   = j.total_cogs > 0 ? `R${fmt(j.total_cogs)}` : '—');
+    el('stat-cogs')   && (el('stat-cogs').textContent   = j.total_cogs > 0 ? `R${fmt(j.total_cogs)}` : '-');
     cardClick(el('stat-cogs'), () => openProfitDrilldown());
 
-    el('stat-margin') && (el('stat-margin').textContent = j.gross_margin != null ? `${j.gross_margin}%` : '—');
+    el('stat-margin') && (el('stat-margin').textContent = j.gross_margin != null ? `${j.gross_margin}%` : '-');
     cardClick(el('stat-margin'), () => openProfitDrilldown());
 
     el('stat-tx')     && (el('stat-tx').textContent     = j.transactions_count);
@@ -5136,14 +5136,14 @@ async function loadStats() {
     ));
 
     if (el('stat-writeoff-cost')) {
-      el('stat-writeoff-cost').textContent = j.total_writeoff_cost > 0 ? `R${fmt(j.total_writeoff_cost)}` : '—';
+      el('stat-writeoff-cost').textContent = j.total_writeoff_cost > 0 ? `R${fmt(j.total_writeoff_cost)}` : '-';
       cardClick(el('stat-writeoff-cost'), () => openWriteoffDrilldown());
     }
     if (el('stat-writeoff-count-sub')) {
       el('stat-writeoff-count-sub').textContent = j.writeoff_count > 0 ? `${j.writeoff_count} write-offs` : '';
     }
     if (el('stat-kitchen-count')) {
-      el('stat-kitchen-count').textContent = j.kitchen_orders_today > 0 ? j.kitchen_orders_today : '—';
+      el('stat-kitchen-count').textContent = j.kitchen_orders_today > 0 ? j.kitchen_orders_today : '-';
       cardClick(el('stat-kitchen-count'), () => openKitchenDrilldown());
     }
     if (el('stat-avg-wait')) {
@@ -5152,24 +5152,24 @@ async function loadStats() {
         const m = Math.floor(waitSecs / 60), s = Math.round(waitSecs % 60);
         el('stat-avg-wait').textContent = m > 0 ? `${m}m ${s}s` : `${s}s`;
       } else {
-        el('stat-avg-wait').textContent = '—';
+        el('stat-avg-wait').textContent = '-';
       }
       cardClick(el('stat-avg-wait'), () => openKitchenDrilldown());
     }
 
     // ── New customer / channel cards ──
-    if (el('stat-new-customers'))     { el('stat-new-customers').textContent     = j.new_customers ?? '—';     cardClick(el('stat-new-customers'),     () => switchChartTab('customers')); }
-    if (el('stat-returning-customers')){ el('stat-returning-customers').textContent = j.returning_customers ?? '—'; cardClick(el('stat-returning-customers'), () => switchChartTab('customers')); }
-    if (el('stat-repeat-rate'))       { el('stat-repeat-rate').textContent       = j.repeat_customer_rate != null ? j.repeat_customer_rate + '%' : '—'; cardClick(el('stat-repeat-rate'), () => switchChartTab('customers')); }
-    if (el('stat-rev-per-customer'))  { el('stat-rev-per-customer').textContent  = j.revenue_per_customer != null ? `R${fmt(j.revenue_per_customer)}` : '—'; }
-    if (el('stat-online-rev'))        { el('stat-online-rev').textContent        = j.online_revenue != null ? `R${fmt(j.online_revenue)}` : '—';     cardClick(el('stat-online-rev'),        () => switchChartTab('channels')); }
-    if (el('stat-instore-rev'))       { el('stat-instore-rev').textContent       = j.instore_revenue != null ? `R${fmt(j.instore_revenue)}` : '—';   cardClick(el('stat-instore-rev'),       () => switchChartTab('channels')); }
-    if (el('stat-void-rate'))         { el('stat-void-rate').textContent         = j.void_receipt_rate != null ? j.void_receipt_rate + '%' : '—'; }
+    if (el('stat-new-customers'))     { el('stat-new-customers').textContent     = j.new_customers ?? '-';     cardClick(el('stat-new-customers'),     () => switchChartTab('customers')); }
+    if (el('stat-returning-customers')){ el('stat-returning-customers').textContent = j.returning_customers ?? '-'; cardClick(el('stat-returning-customers'), () => switchChartTab('customers')); }
+    if (el('stat-repeat-rate'))       { el('stat-repeat-rate').textContent       = j.repeat_customer_rate != null ? j.repeat_customer_rate + '%' : '-'; cardClick(el('stat-repeat-rate'), () => switchChartTab('customers')); }
+    if (el('stat-rev-per-customer'))  { el('stat-rev-per-customer').textContent  = j.revenue_per_customer != null ? `R${fmt(j.revenue_per_customer)}` : '-'; }
+    if (el('stat-online-rev'))        { el('stat-online-rev').textContent        = j.online_revenue != null ? `R${fmt(j.online_revenue)}` : '-';     cardClick(el('stat-online-rev'),        () => switchChartTab('channels')); }
+    if (el('stat-instore-rev'))       { el('stat-instore-rev').textContent       = j.instore_revenue != null ? `R${fmt(j.instore_revenue)}` : '-';   cardClick(el('stat-instore-rev'),       () => switchChartTab('channels')); }
+    if (el('stat-void-rate'))         { el('stat-void-rate').textContent         = j.void_receipt_rate != null ? j.void_receipt_rate + '%' : '-'; }
 
     if (el('stat-best-day') && j.best_day) {
       el('stat-best-day').textContent     = j.best_day.date;
       el('stat-best-day-val').textContent = `R${fmt(j.best_day.revenue)} · ${j.best_day.tx_count} sales`;
-      cardClick(el('stat-best-day'), () => openDrilldown(`Best day — ${j.best_day.date}`, 'day', j.best_day.date, { context: 'best' }));
+      cardClick(el('stat-best-day'), () => openDrilldown(`Best day - ${j.best_day.date}`, 'day', j.best_day.date, { context: 'best' }));
     }
     const worstCard = el('stat-worst-day')?.closest('.card');
     if (j.worst_day) {
@@ -5177,7 +5177,7 @@ async function loadStats() {
       if (el('stat-worst-day')) {
         el('stat-worst-day').textContent     = j.worst_day.date;
         el('stat-worst-day-val').textContent = `R${fmt(j.worst_day.revenue)} · ${j.worst_day.tx_count} sales`;
-        cardClick(el('stat-worst-day'), () => openDrilldown(`Worst day — ${j.worst_day.date}`, 'day', j.worst_day.date, { context: 'worst' }));
+        cardClick(el('stat-worst-day'), () => openDrilldown(`Worst day - ${j.worst_day.date}`, 'day', j.worst_day.date, { context: 'worst' }));
       }
     } else {
       if (worstCard) worstCard.style.display = 'none';
@@ -5193,7 +5193,7 @@ async function loadStats() {
         empWrap.innerHTML = '<div class="text-muted small">No employee data for this period.</div>';
       } else {
         const fmtMins = m => m >= 60 ? `${Math.floor(m/60)}h ${Math.round(m%60)}m` : `${Math.round(m)}m`;
-        const fmtTime = iso => iso ? iso.replace('T',' ').slice(0,16) : '—';
+        const fmtTime = iso => iso ? iso.replace('T',' ').slice(0,16) : '-';
         const COLS = 11;
         let rows = '';
         emps.forEach(e => {
@@ -5206,12 +5206,12 @@ async function loadStats() {
               <td class="text-end">${e.transactions}</td>
               <td class="text-end">R${fmt(e.avg_tx_value)}</td>
               <td class="text-end">${e.items_sold}</td>
-              <td class="text-end">${e.session_count || '—'}</td>
-              <td class="text-end">${e.session_minutes ? fmtMins(e.session_minutes) : '—'}</td>
-              <td class="text-end">${e.revenue_per_hour != null ? `R${fmt(e.revenue_per_hour)}` : '—'}</td>
-              <td class="text-end">${e.tx_per_hour != null ? e.tx_per_hour.toFixed(1) : '—'}</td>
-              <td class="text-end" style="font-size:11px">${e.first_sale ? e.first_sale.replace('T',' ').slice(0,16) : '—'}</td>
-              <td class="text-end" style="font-size:11px">${e.last_sale  ? e.last_sale.replace('T',' ').slice(0,16)  : '—'}</td>
+              <td class="text-end">${e.session_count || '-'}</td>
+              <td class="text-end">${e.session_minutes ? fmtMins(e.session_minutes) : '-'}</td>
+              <td class="text-end">${e.revenue_per_hour != null ? `R${fmt(e.revenue_per_hour)}` : '-'}</td>
+              <td class="text-end">${e.tx_per_hour != null ? e.tx_per_hour.toFixed(1) : '-'}</td>
+              <td class="text-end" style="font-size:11px">${e.first_sale ? e.first_sale.replace('T',' ').slice(0,16) : '-'}</td>
+              <td class="text-end" style="font-size:11px">${e.last_sale  ? e.last_sale.replace('T',' ').slice(0,16)  : '-'}</td>
             </tr>
             <tr class="emp-detail-row d-none" data-detail-for="${e.user_id}">
               <td colspan="${COLS}" class="p-0 ps-3 pb-2">
@@ -5231,8 +5231,8 @@ async function loadStats() {
                       <tr>
                         <td class="text-muted">${i + 1}</td>
                         <td>${fmtTime(s.login)}</td>
-                        <td>${s.logout ? fmtTime(s.logout) : '—'}</td>
-                        <td>${s.last_active ? fmtTime(s.last_active) : '—'}</td>
+                        <td>${s.logout ? fmtTime(s.logout) : '-'}</td>
+                        <td>${s.last_active ? fmtTime(s.last_active) : '-'}</td>
                         <td class="text-end">${fmtMins(s.duration_min)}</td>
                         <td>${s.open ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Closed</span>'}</td>
                       </tr>`).join('')}
@@ -5293,7 +5293,7 @@ document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStat
 document.getElementById('stats-product-filter')?.addEventListener('change', loadStats);
 _initStatsPresets();
 
-// ── Exports — all use the active stats filters ──
+// ── Exports - all use the active stats filters ──
 function _exportParams() {
   const s         = document.getElementById('stats-start')?.value || todayISO();
   const e         = document.getElementById('stats-end')?.value   || todayISO();
@@ -5353,9 +5353,9 @@ async function loadDeployStatus() {
       banner.className = 'alert mb-3 ' + (pending ? 'alert-info' : 'alert-secondary');
       banner.innerHTML = `
         <strong>Current:</strong> ${d.current_env.toUpperCase()}
-        ${pending ? `&nbsp;|&nbsp; <strong>⏰ Next deploy:</strong> ${new Date(pending.scheduled_at).toLocaleString()} — ${pending.description || 'no description'}
+        ${pending ? `&nbsp;|&nbsp; <strong>⏰ Next deploy:</strong> ${new Date(pending.scheduled_at).toLocaleString()} - ${pending.description || 'no description'}
           <button class="btn btn-danger btn-sm ms-2" onclick="cancelSchedule(${pending.id})">Cancel</button>` : '&nbsp;|&nbsp; No pending schedule'}
-        ${last ? `<br><small class="text-muted">Last deploy: ${new Date(last.executed_at).toLocaleString()} — <span class="${last.status === 'done' ? 'text-success' : 'text-danger'}">${last.status}</span></small>` : ''}
+        ${last ? `<br><small class="text-muted">Last deploy: ${new Date(last.executed_at).toLocaleString()} - <span class="${last.status === 'done' ? 'text-success' : 'text-danger'}">${last.status}</span></small>` : ''}
       `;
     }
     const tbody = document.getElementById('deploy-history-body');
@@ -5364,9 +5364,9 @@ async function loadDeployStatus() {
       tbody.innerHTML = rows.map(r => `
         <tr>
           <td class="small">${new Date(r.scheduled_at).toLocaleString()}</td>
-          <td>${r.description || '—'}</td>
+          <td>${r.description || '-'}</td>
           <td><span class="badge ${r.status === 'done' ? 'bg-success' : r.status === 'failed' ? 'bg-danger' : r.status === 'pending' ? 'bg-primary' : r.status === 'running' ? 'bg-warning text-dark' : 'bg-secondary'}">${r.status}</span></td>
-          <td class="small">${r.executed_at ? new Date(r.executed_at).toLocaleString() : '—'}</td>
+          <td class="small">${r.executed_at ? new Date(r.executed_at).toLocaleString() : '-'}</td>
           <td>${r.status === 'pending' ? `<button class="btn btn-outline-danger btn-sm" onclick="cancelSchedule(${r.id})">Cancel</button>` : ''}</td>
         </tr>
       `).join('');
@@ -5400,7 +5400,7 @@ async function deployNow() {
   if (!confirm('Deploy QA code to PROD now? PROD will restart (~30s downtime).')) return;
   try {
     const d = await api('/api/deploy-schedule/execute', { method: 'POST' });
-    toast('Deploy started — check status for progress', 'info', 5000);
+    toast('Deploy started - check status for progress', 'info', 5000);
     setTimeout(loadDeployStatus, 3000);
   } catch (e) { toast('Deploy failed: ' + e.message, 'danger'); }
 }
@@ -5409,7 +5409,7 @@ async function rollbackNow() {
   if (!confirm('Roll PROD back to the PREVIOUS image? PROD restarts (~30s downtime). The database is NOT changed.')) return;
   try {
     const d = await api('/api/deploy-schedule/rollback', { method: 'POST' });
-    toast('Rollback queued — runs within 60s via host. Check status for progress.', 'info', 5000);
+    toast('Rollback queued - runs within 60s via host. Check status for progress.', 'info', 5000);
     setTimeout(loadDeployStatus, 3000);
   } catch (e) { toast('Rollback failed: ' + e.message, 'danger'); }
 }
@@ -5467,7 +5467,7 @@ function renderImportPreview(data) {
   const s = data.summary;
   const summaryEl = document.getElementById('import-summary');
   summaryEl.innerHTML = `
-    <strong>${data.rows?.length || 0} rows parsed</strong> —
+    <strong>${data.rows?.length || 0} rows parsed</strong> -
     <span class="text-success">🟢 ${s.create} create</span>
     <span class="text-warning ms-2">🟡 ${s.update} update</span>
     <span class="text-secondary ms-2">⬜ ${s.unchanged} unchanged</span>
@@ -5556,7 +5556,7 @@ async function _updateScaleBanner() {
     document.getElementById('scale-error-count').textContent = d.products_error;
     const lr = d.last_run;
     document.getElementById('scale-last-run').textContent = lr
-      ? `${lr.status} — ${new Date(lr.started_at).toLocaleTimeString()} (${lr.products_sent} sent, ${lr.products_failed} failed)`
+      ? `${lr.status} - ${new Date(lr.started_at).toLocaleTimeString()} (${lr.products_sent} sent, ${lr.products_failed} failed)`
       : 'Never';
     document.getElementById('scale-status-banner').className =
       `alert mb-3 d-flex gap-4 flex-wrap align-items-center ${d.scale_reachable ? 'alert-success' : 'alert-warning'}`;
@@ -5583,7 +5583,7 @@ async function loadScaleStatus() {
           ? `<span class="badge bg-success">In Sync</span>`
           : `<span class="badge bg-warning text-dark">Pending</span>`;
       return `<tr class="${p.validation_error ? 'table-danger' : p.pending_change ? 'table-warning' : ''}">
-        <td>${p.product_code || '—'}</td>
+        <td>${p.product_code || '-'}</td>
         <td>${p.name}</td>
         <td>${p.sold_by_weight ? `R${((p.price_per_unit||0)*1000).toFixed(2)}/kg` : `R${(p.price||0).toFixed(2)}`}</td>
         <td>${p.scale_tare || 0}g</td>
@@ -5602,8 +5602,8 @@ async function loadScaleContents() {
     const d = await api('/api/scale/contents');
     const badge = document.getElementById('scale-plu-count-badge');
     badge.textContent = d.plu_count_on_scale !== null
-      ? `— ${d.plu_count_on_scale} PLUs on scale, ${d.plu_count_tracked} tracked in POS`
-      : `— ${d.plu_count_tracked} tracked (scale not reachable)`;
+      ? `- ${d.plu_count_on_scale} PLUs on scale, ${d.plu_count_tracked} tracked in POS`
+      : `- ${d.plu_count_tracked} tracked (scale not reachable)`;
 
     document.getElementById('scale-contents-body').innerHTML = d.plus.map(p => {
       const isOrphan = !p.sync_to_scale || p.is_archived;
@@ -5622,14 +5622,14 @@ async function loadScaleContents() {
       return `<tr class="${p.sync_status === 'removed' ? 'table-secondary' : isOrphan ? 'table-warning' : ''}">
         <td><strong>${p.product_code}</strong></td>
         <td>${p.name}</td>
-        <td>—</td>
+        <td>-</td>
         <td>${price}</td>
         <td>${p.scale_tare || 0}g</td>
         <td>${p.scale_shelf_life || 0}d</td>
         <td>${statusBadge}</td>
         <td>${p.sync_status !== 'removed' ? `<button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.product_code}, ${p.id})" title="Delete from scale">✕</button>` : ''}</td>
       </tr>`;
-    }).join('') || '<tr><td colspan="8" class="text-muted text-center">No PLUs tracked — click "Read from Scale" to get live data</td></tr>';
+    }).join('') || '<tr><td colspan="8" class="text-muted text-center">No PLUs tracked - click "Read from Scale" to get live data</td></tr>';
   } catch (e) { toast('Scale contents error: ' + e.message, 'danger'); }
 }
 
@@ -5674,11 +5674,11 @@ function scaleKeyAssign(idx) {
     ? _scaleProducts
     : [];
   const options = prods.map(p =>
-    `<option value="${p.id}" ${slot.plu_no === p.id ? 'selected' : ''}>PLU ${p.product_code} — ${p.name}</option>`
+    `<option value="${p.id}" ${slot.plu_no === p.id ? 'selected' : ''}>PLU ${p.product_code} - ${p.name}</option>`
   ).join('');
   const html = `
     <select id="kb-picker-select" class="form-select mb-2">
-      <option value="">— Empty (clear key) —</option>
+      <option value="">- Empty (clear key) -</option>
       ${options}
     </select>
     <button class="btn btn-primary btn-sm" onclick="scaleKeyConfirm(${idx})">Assign</button>
@@ -5902,12 +5902,12 @@ function _kitchenIngHtml(ingredients) {
         ? `${(i.qty/1000).toFixed(2)}kg`
         : `${i.qty % 1 === 0 ? i.qty : i.qty.toFixed(1)}${i.base_unit}`;
       if (i.removed)     return `<li style="background:#f8d7da;border-radius:4px;padding:2px 6px;font-weight:700;color:#842029;text-decoration:line-through">✕ NO ${i.name}</li>`;
-      if (i.extra)       return `<li style="background:#d1e7dd;border-radius:4px;padding:2px 6px;font-weight:700;color:#0a3622">+ EXTRA: ${i.name} — <strong>${qtyDisplay}</strong></li>`;
+      if (i.extra)       return `<li style="background:#d1e7dd;border-radius:4px;padding:2px 6px;font-weight:700;color:#0a3622">+ EXTRA: ${i.name} - <strong>${qtyDisplay}</strong></li>`;
       if (i.substituted) {
         const origNote = i.original_name ? ` <span style="text-decoration:line-through;opacity:.6">${i.original_name}</span>` : '';
-        return `<li style="background:#fff3cd;border-radius:4px;padding:2px 6px;font-weight:700;color:#856404">⚑ SWAP: ${i.name}${origNote} — <strong>${qtyDisplay}</strong></li>`;
+        return `<li style="background:#fff3cd;border-radius:4px;padding:2px 6px;font-weight:700;color:#856404">⚑ SWAP: ${i.name}${origNote} - <strong>${qtyDisplay}</strong></li>`;
       }
-      return `<li>• ${i.name} — <strong>${qtyDisplay}</strong></li>`;
+      return `<li>• ${i.name} - <strong>${qtyDisplay}</strong></li>`;
     }).join('') + `</ul>`;
 }
 
@@ -5983,7 +5983,7 @@ function renderKitchenQueue(orders) {
         </div>
       </div>
       <div class="kitchen-actions">
-        <button class="btn btn-success btn-lg-touch flex-fill" data-ko-done-sale="${saleId}">✓ Done — whole order</button>
+        <button class="btn btn-success btn-lg-touch flex-fill" data-ko-done-sale="${saleId}">✓ Done - whole order</button>
         <button class="btn btn-outline-danger" data-ko-cancel-sale="${saleId}">✕ Cancel</button>
       </div>
     `;
@@ -6019,7 +6019,7 @@ function renderKitchenHistory(orders) {
   }
   host.innerHTML = '';
   done.forEach(o => {
-    const wait = o.wait_seconds != null ? fmtWait(o.wait_seconds) : '—';
+    const wait = o.wait_seconds != null ? fmtWait(o.wait_seconds) : '-';
     const item = document.createElement('div');
     item.className = `d-flex justify-content-between align-items-center py-2 border-bottom small ${o.status === 'cancelled' ? 'text-muted' : ''}`;
     item.innerHTML = `
@@ -6075,7 +6075,7 @@ function startKitchenTimers() {
   }, 1000);
 }
 
-// Background badge poll — runs every 30s regardless of which tab is active
+// Background badge poll - runs every 30s regardless of which tab is active
 let _kitchenBadgePollTimer = null;
 function startKitchenBadgePoll() {
   if (_kitchenBadgePollTimer) return;
@@ -6154,7 +6154,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
     if (_kitchenRefreshTimer) { clearInterval(_kitchenRefreshTimer); _kitchenRefreshTimer = null; }
   } else if (target === '#stats') {
     _populateStatsProductFilter();
-    // Only auto-load if no data has been loaded yet — preserve the user's selected range
+    // Only auto-load if no data has been loaded yet - preserve the user's selected range
     if (!_statsData) await loadStats();
   }
 });
@@ -6221,7 +6221,7 @@ function renderSpecialsList() {
     card.innerHTML = `
       <div class="product-thin-main">
         <div class="product-title">${s.name}${activeBadge}</div>
-        <div class="product-sub">R${fmt(s.special_price)} — ${lineNames || 'No products set'}</div>
+        <div class="product-sub">R${fmt(s.special_price)} - ${lineNames || 'No products set'}</div>
         ${scheduleText ? `<div class="small text-muted">🕐 ${scheduleText}</div>` : ''}
       </div>
       <div class="product-actions">
@@ -6246,7 +6246,7 @@ function openSpecialEditor(s) {
   document.getElementById('special-name').value  = s?.name ?? '';
   document.getElementById('special-price').value = s?.special_price ?? '';
   document.getElementById('special-active').checked = s?.active !== false;
-  document.getElementById('special-editor-title').textContent = s ? `Edit — ${s.name}` : 'New Special';
+  document.getElementById('special-editor-title').textContent = s ? `Edit - ${s.name}` : 'New Special';
   const delBtn = document.getElementById('btn-delete-special');
   s ? show(delBtn) : hide(delBtn);
   renderScheduleRows();
@@ -6259,7 +6259,7 @@ function renderScheduleRows() {
   if (!host) return;
   host.innerHTML = '';
   if (_scheduleRows.length === 0) {
-    host.innerHTML = '<p class="small text-success mb-0">Always active — no time restrictions.</p>';
+    host.innerHTML = '<p class="small text-success mb-0">Always active - no time restrictions.</p>';
     return;
   }
   _scheduleRows.forEach((row, idx) => {
@@ -6353,7 +6353,7 @@ function renderSpecialLines() {
   _specialLines.forEach((line, idx) => {
     const tr = document.createElement('tr');
     let selHTML = `<select class="form-select form-select-sm" data-sl-idx="${idx}" data-sl-field="product_id">
-      <option value="">— select —</option>`;
+      <option value="">- select -</option>`;
     forSaleProducts.forEach(p => {
       selHTML += `<option value="${p.id}" ${p.id === line.product_id ? 'selected' : ''}>${p.name}</option>`;
     });
@@ -6419,7 +6419,7 @@ document.getElementById('btn-delete-special')?.addEventListener('click', async (
 });
 
 // ═══════════════════════════════════════════════════════
-// COMBO / SPECIAL DETECTION — auto-applies, no prompt
+// COMBO / SPECIAL DETECTION - auto-applies, no prompt
 // ═══════════════════════════════════════════════════════
 
 function _basePrice(item) {
@@ -6514,7 +6514,7 @@ function detectAndOfferSpecials() {
     const sav = special.lines.reduce((s, r) => s + parseFloat(STATE.products.find(p => p.id === r.product_id)?.price || 0) * r.qty, 0)
                 - parseFloat(special.special_price);
     applySpecial(special, times);
-    if (sav * times > 0.005) toast(`"${special.name}" ×${times} — saving R${fmt(sav * times)}`, 'success', 3000);
+    if (sav * times > 0.005) toast(`"${special.name}" ×${times} - saving R${fmt(sav * times)}`, 'success', 3000);
   });
 
   renderCart();
@@ -6524,7 +6524,7 @@ function applySpecial(special, times) {
   // Discount exactly (req.qty × times) units per required product.
   // Uses _allocated_units / _discounted_subtotal so that a product appearing in two
   // different specials (e.g. Coke in both "2×Coke" and "Coke+Cream Soda") is split
-  // correctly — each unit is counted towards at most one special.
+  // correctly - each unit is counted towards at most one special.
   const totalBaseForSpecial = special.lines.reduce((s, l) => {
     return s + parseFloat(STATE.products.find(p => p.id === l.product_id)?.price || 0) * l.qty;
   }, 0);
@@ -6633,7 +6633,7 @@ function renderSubsTable() {
     const otherAlts  = _subsAlts.filter(a => a.id !== ing.ingredient_id && !historyIds.includes(a.id));
 
     let selHTML = `<select class="form-select form-select-sm" data-sub-idx="${idx}" data-sub-field="replace" ${isRemoved ? 'disabled' : ''}>`;
-    selHTML += `<option value="">— keep default —</option>`;
+    selHTML += `<option value="">- keep default -</option>`;
     if (histAlts.length) {
       selHTML += `<optgroup label="Previously used">`;
       histAlts.forEach(a => { selHTML += `<option value="${a.id}" ${a.id === ing.replaced_by_id ? 'selected' : ''}>${a.name} (${a.unit_type || ''})</option>`; });
@@ -6696,7 +6696,7 @@ function renderSubsTable() {
     if (!ex.unit) ex.unit = baseUnit;
 
     let ingSelHTML = `<select class="form-select form-select-sm" data-extra-idx="${idx}" data-extra-field="ingredient_id">
-      <option value="">— select ingredient —</option>`;
+      <option value="">- select ingredient -</option>`;
     _subsAlts.forEach(a => {
       ingSelHTML += `<option value="${a.id}" ${a.id === ex.ingredient_id ? 'selected' : ''}>${a.name} (${a.unit_type || ''})</option>`;
     });
@@ -6771,7 +6771,7 @@ function updateSubsPriceDelta() {
     if (ing.replaced_by_id && ing.replaced_by_id !== ing.ingredient_id) {
       // Default ingredient cost at the original qty_base
       const defaultCost = (STATE._stockCostMap?.[ing.ingredient_id] || 0) * (ing.qty_base || 0);
-      // Swap ingredient cost — use edited qty if provided, else original qty_base
+      // Swap ingredient cost - use edited qty if provided, else original qty_base
       const rep         = _subsAlts.find(a => a.id === ing.replaced_by_id);
       const swapQtyBase = (ing.qty_display !== undefined)
         ? _qtyBaseFromDisplay(ing.qty_display, ing.unit || rep?.base_unit, rep?.unit_type)
@@ -6871,7 +6871,7 @@ document.getElementById('btn-subs-confirm')?.addEventListener('click', () => {
   if (_subsCartKey && STATE.cart[_subsCartKey]) {
     const entry = STATE.cart[_subsCartKey];
     if (!hasCustomisation) {
-      // No actual change — just update name/price in place
+      // No actual change - just update name/price in place
       entry.name       = p.name;
       entry.unit_price = finalPrice * entry.qty;
       entry.subs       = undefined;
@@ -6888,14 +6888,14 @@ document.getElementById('btn-subs-confirm')?.addEventListener('click', () => {
         subs, extras,
       };
     } else {
-      // qty === 1 — update in place as before
+      // qty === 1 - update in place as before
       entry.name       = allLabels.length ? `${p.name} (${allLabels.join(', ')})` : p.name;
       entry.unit_price = finalPrice;
       entry.subs       = subs;
       entry.extras     = extras;
     }
   } else {
-    // New entry — use unique key if customised so multiple versions can coexist
+    // New entry - use unique key if customised so multiple versions can coexist
     const cartKey = hasCustomisation ? `${p.id}__${Date.now()}` : String(p.id);
     const existingPlain = !hasCustomisation && STATE.cart[cartKey];
     if (existingPlain) {
@@ -6921,7 +6921,7 @@ document.getElementById('btn-subs-confirm')?.addEventListener('click', () => {
 });
 
 // ═══════════════════════════════════════════════════════
-// CUSTOMER VISIT POLLING — greet returning customers
+// CUSTOMER VISIT POLLING - greet returning customers
 // ═══════════════════════════════════════════════════════
 let _customerVisitPollTimer = null;
 const _acknowledgedVisits = new Set();
@@ -6936,7 +6936,7 @@ function startCustomerVisitPoll() {
         _acknowledgedVisits.add(v.id);
         api(`/api/customers/visits/${v.id}/acknowledge`, { method: 'POST' }).catch(() => {});
 
-        const visitNote = v.visit_count === 1 ? ' — first visit!' : '';
+        const visitNote = v.visit_count === 1 ? ' - first visit!' : '';
         const name = v.customer_name || 'customer';
 
         // Fetch purchase history hint for returning customers
@@ -6946,7 +6946,7 @@ function startCustomerVisitPoll() {
             const profile = await api(`/api/customers/${v.customer_id}/profile`);
             const top = (profile.top_products || []).slice(0, 2).map(p => p.name);
             if (top.length && profile.total_spent > 0) {
-              hint = ` — usually buys ${top.join(' & ')}`;
+              hint = ` - usually buys ${top.join(' & ')}`;
             }
           } catch {}
         }
@@ -6973,7 +6973,7 @@ document.getElementById('customer-subtabs')?.addEventListener('click', e => {
 async function loadCustomers() {
   STATE.customers = await api('/api/customers');
   renderCustomersList();
-  // Run merge suggestions on every refresh — auto-merges fire inline, panel updates live
+  // Run merge suggestions on every refresh - auto-merges fire inline, panel updates live
   loadMergeSuggestions().catch(() => {});
 }
 
@@ -7039,7 +7039,7 @@ function renderCustomersList() {
   });
   STATE._sortedCustomers = sorted;
 
-  // Merge toolbar — shown when ≥2 checked
+  // Merge toolbar - shown when ≥2 checked
   const toolbarHtml = `
     <div id="merge-toolbar" class="d-none mb-2 p-2 bg-warning-subtle border rounded d-flex align-items-center gap-2">
       <span id="merge-selected-count" class="small fw-semibold"></span>
@@ -7087,8 +7087,8 @@ function renderCustomersList() {
           ${c.phone ? `<div class="small text-muted">${c.phone}</div>` : ''}
           <div class="small mt-1 d-flex flex-wrap gap-1">
             ${c.plates.length ? c.plates.map(p => `<span class="badge bg-light text-dark border">${p}</span>`).join('') : ''}
-            ${c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face —</span>'}
-            ${c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body —</span>'}
+            ${c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face -</span>'}
+            ${c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body -</span>'}
             ${_attrChips(c.physical_attributes)}
           </div>
           <div class="small mt-1 d-flex flex-wrap gap-2 text-muted">
@@ -7167,7 +7167,7 @@ async function openMergeModal() {
       method: 'POST', body: JSON.stringify({ ids })
     });
   } catch(e) {
-    // Fall back to first selected — don't block the modal on server error
+    // Fall back to first selected - don't block the modal on server error
     console.warn('merge_suggest_primary failed:', e.message);
   }
   let selectedPrimaryId = suggestResult?.primary_id ?? ids[0];
@@ -7195,7 +7195,7 @@ async function openMergeModal() {
   // Override selector (collapsed by default)
   const overrideOpts = customers.map(c => `
     <option value="${c.id}" ${c.id === selectedPrimaryId ? 'selected' : ''}>
-      ${c.customer_number} — ${c.name || 'Unnamed'} (${c.visit_count} visits${c.has_face ? ', face ✓' : ''})
+      ${c.customer_number} - ${c.name || 'Unnamed'} (${c.visit_count} visits${c.has_face ? ', face ✓' : ''})
     </option>`).join('');
 
   body.innerHTML = `
@@ -7205,7 +7205,7 @@ async function openMergeModal() {
         onerror="this.style.display='none'">
       <div>
         <div class="fw-semibold small">Primary: ${customers.find(c=>c.id===selectedPrimaryId)?.name || customers.find(c=>c.id===selectedPrimaryId)?.customer_number}</div>
-        <div class="text-muted" style="font-size:.7rem">Auto-selected — ${primaryReason}. Their name, number and details are kept.</div>
+        <div class="text-muted" style="font-size:.7rem">Auto-selected - ${primaryReason}. Their name, number and details are kept.</div>
       </div>
     </div>
     ${radarComparison}
@@ -7238,7 +7238,7 @@ async function openMergeModal() {
       });
       bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).hide();
       clearMergeSelection();
-      toast('Customers merged — undo available from their profile', 'success', 6000);
+      toast('Customers merged - undo available from their profile', 'success', 6000);
       await loadCustomers();
     } catch(e) {
       toast(e.message, 'danger');
@@ -7252,7 +7252,7 @@ function drawRadarChart(canvasId, scores, color) {
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
   const cx = W / 2, cy = H / 2;
-  // Leave generous margin for labels — 52px on all sides
+  // Leave generous margin for labels - 52px on all sides
   const R = Math.min(cx, cy) - 52;
   const labels = Object.keys(scores);
   const values = Object.values(scores);
@@ -7316,13 +7316,13 @@ function drawRadarChart(canvasId, scores, color) {
     ctx.fill();
   }
 
-  // Labels — positioned well outside the radar ring with word-wrap for long names
+  // Labels - positioned well outside the radar ring with word-wrap for long names
   const lineH = 13;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   for (let i = 0; i < N; i++) {
     const a = startAngle + i * angleStep;
-    // Push labels further out — 26px clearance from ring edge
+    // Push labels further out - 26px clearance from ring edge
     const labelR = R + 26;
     const lx = cx + Math.cos(a) * labelR;
     const ly = cy + Math.sin(a) * labelR;
@@ -7360,7 +7360,7 @@ async function openCustomerDetail(customerId) {
   if (!c) return;
 
   document.getElementById('customerDetailTitle').textContent =
-    (c.name || 'Unnamed') + (c.customer_number ? ` — ${c.customer_number}` : '');
+    (c.name || 'Unnamed') + (c.customer_number ? ` - ${c.customer_number}` : '');
   document.getElementById('customerDetailBody').innerHTML =
     '<div class="text-center text-muted py-4">Loading...</div>';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).show();
@@ -7398,8 +7398,8 @@ async function openCustomerDetail(customerId) {
         ? '<span class="badge bg-success">🏪 In-store customer</span>'
         : '';
   const signalBadges = [
-    c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face —</span>',
-    c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body —</span>',
+    c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face -</span>',
+    c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body -</span>',
     ...(c.plates || []).map(p => `<span class="badge bg-light text-dark border">${p}</span>`),
     c.auto_enrolled ? '<span class="badge bg-info text-dark">Auto-enrolled</span>' : '',
     originBadge,
@@ -7448,13 +7448,13 @@ async function openCustomerDetail(customerId) {
     face_similarity: 'Face sim', gait_distance: 'Gait dist',
     session_face_sim: 'Face sim', session_cameras: 'Cameras', session_faces: 'Faces',
   };
-  // These are raw counts/values — do not multiply by 100 or append %
+  // These are raw counts/values - do not multiply by 100 or append %
   const SIGNAL_RAW_COUNT = new Set(['session_cameras', 'session_faces']);
 
   let visitsHtml = '';
   if (visits.length) {
     const rows = visits.map(v => {
-      // detected_at is stored as UTC without 'Z' — append it so the browser parses as UTC
+      // detected_at is stored as UTC without 'Z' - append it so the browser parses as UTC
       // then toLocaleTimeString converts to the user's local timezone (SAST = UTC+2)
       const dtRaw = v.detected_at || '';
       const dt = new Date(dtRaw.endsWith('Z') || dtRaw.includes('+') ? dtRaw : dtRaw + 'Z');
@@ -7468,7 +7468,7 @@ async function openCustomerDetail(customerId) {
         if (k === 'face_similarity' || k === 'gait_distance' || k === 'session_face_sim') return ''; // shown as sub-detail
         const label = SIGNAL_LABELS[k] || k;
         if (SIGNAL_RAW_COUNT.has(k)) {
-          // Raw count — show as plain number, no %
+          // Raw count - show as plain number, no %
           return `<span class="badge bg-secondary" style="font-size:.7rem">${label}: ${score}</span>`;
         }
         const pct = typeof score === 'number' ? Math.round(score * 100) : null;
@@ -7477,7 +7477,7 @@ async function openCustomerDetail(customerId) {
         return `<span class="badge ${colour}" style="font-size:.7rem">${label}${pct !== null ? ': ' + pct + '%' : ''}</span>`;
       }).filter(Boolean).join(' ');
 
-      // Sub-detail: similarity values — convert gait distance to % match (0=perfect, 0.25=threshold)
+      // Sub-detail: similarity values - convert gait distance to % match (0=perfect, 0.25=threshold)
       const gaitPct = scores.gait_distance != null
         ? Math.max(0, Math.round((1 - scores.gait_distance / 0.25) * 100))
         : null;
@@ -7495,7 +7495,7 @@ async function openCustomerDetail(customerId) {
           <div class="mt-1">${camera}</div>
         </td>
         <td style="vertical-align:top">
-          <div class="d-flex flex-wrap gap-1 mb-1">${signalBadges || '<span class="text-muted small">—</span>'}</div>
+          <div class="d-flex flex-wrap gap-1 mb-1">${signalBadges || '<span class="text-muted small">-</span>'}</div>
           ${details ? `<div class="text-muted" style="font-size:.7rem">${details}</div>` : ''}
         </td>
       </tr>`;
@@ -7522,18 +7522,18 @@ async function openCustomerDetail(customerId) {
   if (profile) {
     const p = profile;
     const fmtR = n => `R${fmt(n || 0)}`;
-    const fmtDwell = s => s > 0 ? (s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.round(s)}s`) : '—';
+    const fmtDwell = s => s > 0 ? (s >= 60 ? `${Math.floor(s/60)}m ${Math.round(s%60)}s` : `${Math.round(s)}s`) : '-';
 
     // Key stats row
-    const firstSeen = p.first_seen ? new Date(p.first_seen).toLocaleDateString('en-ZA') : '—';
+    const firstSeen = p.first_seen ? new Date(p.first_seen).toLocaleDateString('en-ZA') : '-';
     const purchaseVisits = (p.recent_sessions || []).filter(s => s.purchase_made).length;
     const totalVisits = (p.recent_sessions || []).length;
     const buyRate = totalVisits > 0 ? Math.round(purchaseVisits / totalVisits * 100) : null;
 
     const onlinePct  = p.online_spend_pct !== null && p.online_spend_pct !== undefined ? p.online_spend_pct + '%' : null;
     const lastPurchaseStr = p.days_since_purchase !== null && p.days_since_purchase !== undefined
-      ? (p.days_since_purchase === 0 ? 'Today' : p.days_since_purchase + 'd ago') : '—';
-    const longestGapStr = p.longest_gap_days !== null && p.longest_gap_days !== undefined ? p.longest_gap_days + 'd' : '—';
+      ? (p.days_since_purchase === 0 ? 'Today' : p.days_since_purchase + 'd ago') : '-';
+    const longestGapStr = p.longest_gap_days !== null && p.longest_gap_days !== undefined ? p.longest_gap_days + 'd' : '-';
 
     bizHtml = `
     <div class="row g-2 mb-3">
@@ -7547,7 +7547,7 @@ async function openCustomerDetail(customerId) {
       </div></div>
       <div class="col-4"><div class="border rounded text-center py-2 px-1">
         <div class="text-muted" style="font-size:11px">Buy Rate</div>
-        <div class="fw-bold ${buyRate >= 50 ? 'text-success' : 'text-warning'}">${buyRate !== null ? buyRate + '%' : '—'}</div>
+        <div class="fw-bold ${buyRate >= 50 ? 'text-success' : 'text-warning'}">${buyRate !== null ? buyRate + '%' : '-'}</div>
       </div></div>
     </div>
     <div class="row g-2 mb-3">
@@ -7577,7 +7577,7 @@ async function openCustomerDetail(customerId) {
       </div></div>
       <div class="col-4"><div class="border rounded text-center py-2 px-1">
         <div class="text-muted" style="font-size:11px">Online Split</div>
-        <div class="fw-bold">${onlinePct || '—'}</div>
+        <div class="fw-bold">${onlinePct || '-'}</div>
       </div></div>
     </div>
     <div class="row g-2 mb-3">
@@ -7587,11 +7587,11 @@ async function openCustomerDetail(customerId) {
       </div></div>
       <div class="col-4"><div class="border rounded text-center py-2 px-1">
         <div class="text-muted" style="font-size:11px">Fav. Day</div>
-        <div class="fw-bold" style="font-size:12px">${p.fav_day || '—'}</div>
+        <div class="fw-bold" style="font-size:12px">${p.fav_day || '-'}</div>
       </div></div>
       <div class="col-4"><div class="border rounded text-center py-2 px-1">
         <div class="text-muted" style="font-size:11px">Fav. Time</div>
-        <div class="fw-bold" style="font-size:12px">${p.fav_time || '—'}</div>
+        <div class="fw-bold" style="font-size:12px">${p.fav_time || '-'}</div>
       </div></div>
     </div>`;
 
@@ -7767,7 +7767,7 @@ async function unmergeCustomer(logId, sourceName) {
     if (result.soft_unmerge) {
       toast(`${label} reactivated. Biometric data will rebuild automatically on next sighting.`, 'info', 7000);
     } else {
-      toast(`${label} unmerged — biometric data restored.`, 'success', 5000);
+      toast(`${label} unmerged - biometric data restored.`, 'success', 5000);
     }
     bootstrap.Modal.getOrCreateInstance(document.getElementById('customerDetailModal')).hide();
     await loadCustomers();
@@ -7985,7 +7985,7 @@ document.querySelector('[data-bs-target="#customers"]')?.addEventListener('hidde
   if (_customerTabRefreshTimer) { clearInterval(_customerTabRefreshTimer); _customerTabRefreshTimer = null; }
 });
 
-// ─── Merge Suggestions — runs automatically on tab open ──────
+// ─── Merge Suggestions - runs automatically on tab open ──────
 async function loadMergeSuggestions() {
   const panel = document.getElementById('merge-suggestions-panel');
   if (!panel) return;
@@ -7997,7 +7997,7 @@ async function loadMergeSuggestions() {
       return;
     }
 
-    // Auto-merge threshold — read from settings, default 0.95
+    // Auto-merge threshold - read from settings, default 0.95
     let AUTO_MERGE_THRESHOLD = 0.95;
     try { const cfg = await api('/api/settings'); AUTO_MERGE_THRESHOLD = parseFloat(cfg.auto_merge_min_sim ?? 0.95); } catch {}
 
@@ -8032,7 +8032,7 @@ async function loadMergeSuggestions() {
     panel.classList.remove('hidden');
     panel.innerHTML = `
       <div class="alert alert-warning py-2 mb-2">
-        <strong>${manual.length} possible duplicate${manual.length > 1 ? 's' : ''} — review needed</strong>
+        <strong>${manual.length} possible duplicate${manual.length > 1 ? 's' : ''} - review needed</strong>
         <span class="text-muted small ms-2">Merge or decline each pair.</span>
       </div>
       ${manual.map(s => `
@@ -8049,7 +8049,7 @@ async function loadMergeSuggestions() {
             <span class="text-muted small ms-1">(${s.customer_b.visit_count} visits)</span>
           </div>
           <span class="badge bg-warning text-dark me-1">${Math.round(s.similarity * 100)}% similar</span>
-          <button class="btn btn-outline-danger btn-sm" title="Not the same person — never suggest again"
+          <button class="btn btn-outline-danger btn-sm" title="Not the same person - never suggest again"
                   onclick="declineMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id}, event)">✕ Not same</button>
         </div>`).join('')}`;
   } catch(e) { /* silently fail */ }
@@ -8071,7 +8071,7 @@ async function declineMergeSuggestion(idA, idB, event) {
       method: 'POST',
       body: JSON.stringify({ customer_a_id: idA, customer_b_id: idB, reason: 'Declined by user' })
     });
-    toast('Pair marked as different people — won\'t be suggested again', 'success');
+    toast('Pair marked as different people - won\'t be suggested again', 'success');
     await loadMergeSuggestions();
   } catch(e) {
     toast('Could not save decline: ' + e.message, 'error');
@@ -8222,7 +8222,7 @@ document.getElementById('btn-save-recognition-settings')?.addEventListener('clic
       visit_min_gap_seconds: parseInt(document.getElementById('set-visit-min-gap')?.value || 180),
     })});
     _flashSaved('rec-settings-saved');
-    toast('Recognition settings saved — takes effect within 60s', 'success', 3000);
+    toast('Recognition settings saved - takes effect within 60s', 'success', 3000);
   } catch(e) { toast(e.message, 'error'); }
 });
 
@@ -8393,7 +8393,7 @@ function _renderKioskTablets(statuses) {
         <div class="d-flex flex-wrap gap-1">
           <button class="btn btn-outline-warning btn-sm" onclick="kioskAction('${t.ip}','restart-ui')">Restart UI</button>
           <button class="btn btn-outline-danger btn-sm" onclick="kioskReboot('${t.ip}')">Reboot</button>
-        </div>` : '<div class="text-muted small">Cannot reach tablet — check Tailscale connection.</div>'}
+        </div>` : '<div class="text-muted small">Cannot reach tablet - check Tailscale connection.</div>'}
       </div>`;
   }).join('');
 }
@@ -8698,7 +8698,7 @@ document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('hidden.bs.tab', stopCustomerPolling);
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', () => setTimeout(_focusTrap, 200));
 
-// (System Updates removed — deployment is via Docker rebuild, not Windows updater)
+// (System Updates removed - deployment is via Docker rebuild, not Windows updater)
 
 // ═══════════════════════════════════════════════════════
 // DEVELOPER MONITOR
@@ -8840,7 +8840,7 @@ async function refreshIdentityTracks() {
   try {
     const d = await api('/api/recognition/tracks');
     const tracks = d.tracks || [];
-    // Only show active tracks — closed ones are just clutter
+    // Only show active tracks - closed ones are just clutter
     const activeTracks = tracks.filter(t => t.state !== 'closed');
     const countEl = document.getElementById('m-tracks-count');
     if (countEl) countEl.textContent = activeTracks.length + (tracks.length > activeTracks.length ? ` (+${tracks.length - activeTracks.length} closed)` : '');
@@ -8872,7 +8872,7 @@ async function refreshIdentityTracks() {
         ? `<span class="text-success fw-bold">cid=${t.customer_id}</span>`
         : (t.anon_id
             ? `<span class="text-warning">${t.anon_id.slice(0,8)}</span>`
-            : '<span class="text-muted">—</span>');
+            : '<span class="text-muted">-</span>');
       const promoBar = `<div style="width:50px;height:6px;background:#e9ecef;border-radius:3px;display:inline-block;vertical-align:middle">
         <div style="width:${Math.round((t.promotion_score||0)*100)}%;height:100%;background:${(t.promotion_score||0)>=0.65?'#22c55e':'#f59e0b'};border-radius:3px"></div>
       </div> ${Math.round((t.promotion_score||0)*100)}%`;
@@ -8880,8 +8880,8 @@ async function refreshIdentityTracks() {
       return `<tr>
         <td><span class="badge bg-${_STATE_COLORS[t.state]||'secondary'}">${_STATE_ICONS[t.state]||''} ${t.state}</span>${locked}</td>
         <td class="font-monospace" style="font-size:11px">${t.stable_id.slice(0,8)}</td>
-        <td>${t.current_camera || '—'}</td>
-        <td class="font-monospace" style="font-size:11px">${t.session_id ? t.session_id.slice(0,8) : '—'}</td>
+        <td>${t.current_camera || '-'}</td>
+        <td class="font-monospace" style="font-size:11px">${t.session_id ? t.session_id.slice(0,8) : '-'}</td>
         <td>${identityStr}</td>
         <td>${Math.round((t.confidence||0)*100)}%</td>
         <td>${promoBar}</td>
@@ -8891,7 +8891,7 @@ async function refreshIdentityTracks() {
         <td>${t.last_seen_ago}s</td>
       </tr>`;
     }).join('');
-  } catch(e) { /* silently fail — don't break main monitor */ }
+  } catch(e) { /* silently fail - don't break main monitor */ }
 }
 
 // ─── Identity Event Log panel ────────────────────────────────────────────────
@@ -8906,7 +8906,7 @@ const _EVENT_COLORS = {
 };
 
 let _identityLogKnown = new Set();
-let _identityLogCutoff = 0; // unix seconds — events at or before this ts are suppressed after a clear
+let _identityLogCutoff = 0; // unix seconds - events at or before this ts are suppressed after a clear
 
 async function refreshIdentityLog() {
   try {
@@ -9008,7 +9008,7 @@ async function refreshLogs() {
       const escapedMsg = r.msg.replace(/</g,'&lt;').replace(/>/g,'&gt;');
       return `<div style="color:#e2e8f0;line-height:1.4"><span style="color:#64748b">${r.ts}</span> ${lvlBadge} ${escapedMsg}</div>`;
     }).join('') || '<div style="color:#64748b">No logs</div>';
-    // Always pin to bottom — newest logs at the bottom, always visible
+    // Always pin to bottom - newest logs at the bottom, always visible
     container.scrollTop = container.scrollHeight;
   } catch(e) {
     container.innerHTML = `<div style="color:#f87171">Error: ${e.message}</div>`;
@@ -9066,7 +9066,7 @@ function _invPopulateCustomers() {
   const sel = document.getElementById('inv-customer-select');
   if (!sel) return;
   const prev = sel.value;
-  sel.innerHTML = '<option value="">— Search or select a customer —</option>';
+  sel.innerHTML = '<option value="">- Search or select a customer -</option>';
   [...STATE.customers]
     .sort((a, b) => (a.name || 'zzz').localeCompare(b.name || 'zzz'))
     .forEach(c => {
@@ -9081,7 +9081,7 @@ function _invPopulateCustomers() {
 // ── Product search / typeahead ──
 let _invSelectedProduct = null;
 
-function _invPopulateProducts() { /* no-op — replaced by live search */ }
+function _invPopulateProducts() { /* no-op - replaced by live search */ }
 
 function _invUpdateUnitDropdown(p) {
   const unitSel = document.getElementById('inv-product-unit');
@@ -9245,7 +9245,7 @@ function renderInvoicesList() {
           <tr style="cursor:pointer" onclick="openInvoiceEditor(${i.id})">
             <td class="fw-semibold">${i.invoice_number}</td>
             <td class="text-muted small">${i.created_at ? new Date(i.created_at).toLocaleDateString() : ''}</td>
-            <td>${i.customer_name || '<span class="text-muted">—</span>'}${i.customer_id ? ' <span class="badge" style="font-size:0.6rem;background:#7c3aed;color:#fff" title="Linked to POS customer">🔗</span>' : ''}</td>
+            <td>${i.customer_name || '<span class="text-muted">-</span>'}${i.customer_id ? ' <span class="badge" style="font-size:0.6rem;background:#7c3aed;color:#fff" title="Linked to POS customer">🔗</span>' : ''}</td>
             <td class="fw-semibold">R${fmt(i.total)}</td>
             <td>${statusBadge(i.status)}</td>
             <td>
@@ -9255,7 +9255,7 @@ function renderInvoicesList() {
                   ? `<span class="text-muted small">Stock deducted</span>`
                   : (i.status !== 'draft'
                     ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`
-                    : '<span class="text-muted small">—</span>')}
+                    : '<span class="text-muted small">-</span>')}
             </td>
             <td><a href="/invoices/${i.id}/print" target="_blank" class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation()">Print</a></td>
             <td><button class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();_invDeleteFromList(${i.id}, '${i.invoice_number}')">Delete</button></td>
@@ -9277,7 +9277,7 @@ async function _invFinaliseFromList(invId) {
   if (!confirm('Finalise this invoice? Stock will be deducted from inventory.')) return;
   try {
     await api(`/api/invoices/${invId}/finalise`, { method: 'POST' });
-    toast('Invoice finalised — stock deducted', 'success');
+    toast('Invoice finalised - stock deducted', 'success');
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -9286,7 +9286,7 @@ async function _invUndoFromList(invId) {
   if (!confirm('Undo this sale? Stock will be restored to inventory.')) return;
   try {
     await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
-    toast('Invoice undone — stock restored. Invoice is now Draft.', 'warning');
+    toast('Invoice undone - stock restored. Invoice is now Draft.', 'warning');
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -9347,7 +9347,7 @@ function _renderInvLines() {
       _invRecalc();
     });
 
-    // Unit dropdown change — recalc price per selected unit and subtotal
+    // Unit dropdown change - recalc price per selected unit and subtotal
     const unitSel = tr.querySelector(`[data-inv-unit="${i}"]`);
     if (unitSel) {
       unitSel.addEventListener('change', e => {
@@ -9405,19 +9405,19 @@ function openInvoiceEditor(invId) {
       const statusSel  = document.getElementById('inv-status');
       const addLineBtn = document.getElementById('btn-inv-add-line');
       if (inv.sale_id && inv.status === 'finalised') {
-        // Fully finalised — lock everything; undo is the only action
+        // Fully finalised - lock everything; undo is the only action
         if (statusSel)  statusSel.disabled  = true;
         if (addLineBtn) addLineBtn.disabled = true;
         if (finaliseBtn) hide(finaliseBtn);
         if (undoBtn) show(undoBtn);
       } else if (inv.sale_id) {
-        // Stock deducted but status is paid/sent — allow status change, lock line items
+        // Stock deducted but status is paid/sent - allow status change, lock line items
         if (statusSel)  statusSel.disabled  = false;
         if (addLineBtn) addLineBtn.disabled = true;
         if (finaliseBtn) hide(finaliseBtn);
         if (undoBtn) show(undoBtn);
       } else {
-        // No sale yet — normal editable state
+        // No sale yet - normal editable state
         if (statusSel)  statusSel.disabled  = false;
         if (addLineBtn) addLineBtn.disabled = false;
         if (undoBtn) hide(undoBtn);
@@ -9612,7 +9612,7 @@ document.getElementById('btn-inv-finalise')?.addEventListener('click', async () 
   if (!confirm('Finalise this invoice? Stock will be deducted from inventory.')) return;
   try {
     await api(`/api/invoices/${invId}/finalise`, { method: 'POST' });
-    toast('Invoice finalised — stock deducted', 'success');
+    toast('Invoice finalised - stock deducted', 'success');
     bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
@@ -9624,7 +9624,7 @@ document.getElementById('btn-inv-undo')?.addEventListener('click', async () => {
   if (!confirm('Undo this invoice?\n\nStock will be restored to inventory.\nThe invoice will return to Draft so it can be edited and re-finalised.')) return;
   try {
     await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
-    toast('Invoice undone — stock restored. Invoice is now Draft.', 'warning');
+    toast('Invoice undone - stock restored. Invoice is now Draft.', 'warning');
     bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
@@ -9708,7 +9708,7 @@ async function loadShippingFees() {
   }
 }
 
-// Populate whenever the modal opens (Bootstrap event — robust on mobile, no click race)
+// Populate whenever the modal opens (Bootstrap event - robust on mobile, no click race)
 document.getElementById('shippingFeesModal')?.addEventListener('shown.bs.modal', loadShippingFees);
 
 document.getElementById('btn-save-shipping-fees')?.addEventListener('click', async () => {

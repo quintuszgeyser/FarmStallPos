@@ -1,5 +1,5 @@
 """
-Idempotent migration runner — same pattern as POS strong_migrate().
+Idempotent migration runner - same pattern as POS strong_migrate().
 Runs on every app startup. Safe to re-run.
 Uses SAVEPOINTs so each step can fail independently without aborting the transaction.
 """

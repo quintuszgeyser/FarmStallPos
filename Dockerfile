@@ -1,15 +1,15 @@
-# Farm POS — pinned appliance image.
+# Farm POS - pinned appliance image.
 #
 # This is the MULTI-STORE build: source is COPY'd in at build time (not git-cloned),
 # so a CI-built tag is an immutable, reproducible artifact that every appliance box
 # pulls by version. Built and pushed by .github/workflows/release.yml on a git tag.
 #
 # NOTE: the original Lady Coleen box builds from its own server-side
-# ~/farmpos-docker/pos/Dockerfile (git-clone). This file does NOT affect it —
+# ~/farmpos-docker/pos/Dockerfile (git-clone). This file does NOT affect it -
 # LC keeps deploying exactly as before. This image is for new stores only.
 FROM python:3.11-slim
 
-# System deps: libpq for psycopg, curl for the healthcheck. No git — source is COPY'd.
+# System deps: libpq for psycopg, curl for the healthcheck. No git - source is COPY'd.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libpq5 \
         curl \
@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install Python deps first (cached layer — only re-runs when requirements.txt changes).
+# Install Python deps first (cached layer - only re-runs when requirements.txt changes).
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

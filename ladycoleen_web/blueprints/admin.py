@@ -99,7 +99,7 @@ def mark_payment_paid(payment_id):
             from services.email import send_email
             send_email(
                 to=order.customer_email,
-                subject=f"Payment received — {order.reference}",
+                subject=f"Payment received - {order.reference}",
                 template="payment_received",
                 order=order,
                 payment=payment
@@ -181,7 +181,7 @@ def send_test_email():
     admin_name = flask_session.get("admin_user", "Admin")
     send_email(
         to=recipient,
-        subject="✅ Test Email — Lady Coleen System",
+        subject="✅ Test Email - Lady Coleen System",
         template="farmshop_order_ready",
         order=type("FakeOrder", (), {
             "reference": "TEST-EMAIL-001",
@@ -190,7 +190,7 @@ def send_test_email():
             "delivery_method": "collection",
         })()
     )
-    return jsonify(ok=True, message=f"Test email sent to {recipient} — check your inbox and logs")
+    return jsonify(ok=True, message=f"Test email sent to {recipient} - check your inbox and logs")
 
 
 @admin_bp.route("/admin/logs")

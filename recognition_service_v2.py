@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Farm Stall — Customer Recognition Service v2.0
+Farm Stall - Customer Recognition Service v2.0
 Production-grade multi-biometric identification with:
 - Quality-gated feature extraction
 - Normalized scoring with safety constraints
@@ -61,12 +61,12 @@ POS_PASS        = os.environ.get('POS_PASS',    'admin123')
 FRIGATE_URL     = os.environ.get('FRIGATE_URL', 'http://127.0.0.1:8971')
 WEBHOOK_PORT    = int(os.environ.get('WEBHOOK_PORT', '8080'))
 
-# Model thresholds — overridden at startup from POS settings (GET /api/settings)
-FACE_THRESHOLD  = 0.55  # Minimum cosine similarity for face match (raised from 0.35 — logs showed false matches at 0.35-0.54)
-GAIT_THRESHOLD  = 0.40  # Euclidean distance for gait match — 0.40 for 12-dim L2-normalized temporal vector
+# Model thresholds - overridden at startup from POS settings (GET /api/settings)
+FACE_THRESHOLD  = 0.55  # Minimum cosine similarity for face match (raised from 0.35 - logs showed false matches at 0.35-0.54)
+GAIT_THRESHOLD  = 0.40  # Euclidean distance for gait match - 0.40 for 12-dim L2-normalized temporal vector
 
 # Quality gates
-FACE_QUALITY_MIN = 0.25  # Minimum face quality — raised from 0.15 to reject more marginal detections
+FACE_QUALITY_MIN = 0.25  # Minimum face quality - raised from 0.15 to reject more marginal detections
 GAIT_QUALITY_MIN = 0.45  # Mounted camera looking down scores lower
 PLATE_CONF_MIN   = 0.8   # Minimum OCR confidence to use
 
@@ -97,28 +97,28 @@ MAX_FACE_EMBEDDINGS = 24
 MIN_ANGLE_DISTANCE  = 0.25
 
 # ─── Session-centric identity constants ─────────────────────────────────────
-# Real-time track path: advisory only — never creates customers
+# Real-time track path: advisory only - never creates customers
 STRONG_LINK_THRESHOLD    = 0.65   # face_sim threshold for teller notification
 MIN_STRONG_MATCH_OBS     = 2      # consecutive face-present obs at ≥0.65 before notifying
-MIN_FACE_FOR_WELCOME     = 0.55   # face_sim floor — gait/context alone cannot trigger welcome
+MIN_FACE_FOR_WELCOME     = 0.55   # face_sim floor - gait/context alone cannot trigger welcome
 
 # Session lifecycle
 SESSION_IDLE_EXPIRY      = 60     # seconds idle → resolver fires
 MAX_SESSION_LIFETIME     = 300    # seconds hard cap regardless of activity
 
 # Session clustering thresholds
-SESSION_JOIN_FACE_SIM    = 0.55   # min face_sim to join an existing session — raised from 0.50
-SESSION_MERGE_FACE_SIM   = 0.68   # min face_sim to merge two sessions — raised from 0.62; cross-person merges were contaminating sessions
+SESSION_JOIN_FACE_SIM    = 0.55   # min face_sim to join an existing session - raised from 0.50
+SESSION_MERGE_FACE_SIM   = 0.68   # min face_sim to merge two sessions - raised from 0.62; cross-person merges were contaminating sessions
 
 # Resolver thresholds
-RESOLVER_LINK_THRESHOLD  = 0.70   # resolver links to existing customer — raised from 0.60; logs showed false matches at 0.63-0.69
+RESOLVER_LINK_THRESHOLD  = 0.70   # resolver links to existing customer - raised from 0.60; logs showed false matches at 0.63-0.69
 RECENT_CUSTOMER_SIM      = 0.50   # anti-clone: link to recently-created customer (raised from 0.40)
 ANON_IDENTITY_SIM        = 0.50   # sim to anonymous identity → merge evidence into it (raised from 0.45)
 
 # Customer creation gates (all must pass)
 MIN_FACES_TO_CREATE      = 5      # face embedding count required
 MIN_HIGH_QUALITY_FACES   = 3      # of those, must be quality ≥ FACE_QUALITY_MIN_CREATE (raised from 2)
-FACE_QUALITY_MIN_CREATE  = 0.35   # quality floor — raised from 0.25 to require better frames
+FACE_QUALITY_MIN_CREATE  = 0.35   # quality floor - raised from 0.25 to require better frames
 MIN_SESSION_DURATION     = 30     # seconds session must exist before creation
 CLEARLY_NOT_EXISTING     = 0.45   # best_face_sim must be BELOW this to create (raised from 0.35)
 
@@ -126,26 +126,26 @@ ANON_IDENTITY_TTL        = 86400  # 24 hours
 
 # ─── Stable Track Layer constants ────────────────────────────────────────────
 # Track reuse / continuity
-TRACK_REUSE_WINDOW        = 3.0    # seconds — max gap to attempt reuse of same track
+TRACK_REUSE_WINDOW        = 3.0    # seconds - max gap to attempt reuse of same track
 TRACK_REUSE_HARD_MIN      = 0.25   # face_sim below this → NEVER reuse (different person)
 TRACK_REUSE_THRESHOLD     = 0.55   # weighted score must exceed this to reuse
-CROSS_CAMERA_FACE_MIN     = 0.55   # stricter — no bbox anchor when crossing cameras
-CROSS_CAMERA_REUSE_WINDOW = 10.0   # seconds — person can move between cameras
+CROSS_CAMERA_FACE_MIN     = 0.55   # stricter - no bbox anchor when crossing cameras
+CROSS_CAMERA_REUSE_WINDOW = 10.0   # seconds - person can move between cameras
 MIN_TRACK_REUSE_CONFIDENCE = 0.20  # skip closed tracks weaker than this
 
 # Track lifecycle
 STABLE_TRACK_TTL           = 3600  # seconds after CLOSED before fully removed
 TRACK_GRACE_PERIOD         = 5.0   # seconds to hold session open after track disappears
-REENTRY_WINDOW             = 120.0 # seconds — try re-id against recently closed tracks
+REENTRY_WINDOW             = 120.0 # seconds - try re-id against recently closed tracks
 MAX_ACTIVE_TRACKS_PER_CAMERA = 10  # soft cap per camera
 
 # Frame buffer
-MAX_FRAMES_PER_TRACK       = 60    # hard cap (deque maxlen) — ~2min at 0.5Hz
+MAX_FRAMES_PER_TRACK       = 60    # hard cap (deque maxlen) - ~2min at 0.5Hz
 FRAME_SAMPLE_HZ            = 0.5   # 1 frame per 2 seconds per track
 EVIDENCE_FLUSH_INTERVAL    = 15.0  # seconds between evidence extractions from buffer
 
 # Stable-track rebind window (early correction of wrong binding)
-REBIND_WINDOW              = 5.0   # seconds from track creation — rebind allowed
+REBIND_WINDOW              = 5.0   # seconds from track creation - rebind allowed
 REBIND_MIN_SIM             = 0.75  # must be significantly stronger to rebind
 
 # Confidence decay
@@ -154,12 +154,12 @@ CONFIDENCE_DECAY_INTERVAL  = 30.0  # seconds between decay ticks
 CONFIDENCE_DECAY_FLOOR     = 0.10  # never decay below this
 
 # Promotion scoring
-PROMOTION_MIN_SCORE        = 0.72  # promotion fires when score exceeds this (raised from 0.65 — logs showed false matches at 0.63-0.69)
+PROMOTION_MIN_SCORE        = 0.72  # promotion fires when score exceeds this (raised from 0.65 - logs showed false matches at 0.63-0.69)
 PROFILE_QUALITY_MIN        = 0.45  # quality floor for profile-worthy embeddings (raised from 0.40)
-MIN_TIME_SPAN_FOR_PROMOTION = 5.0  # seconds — block single-burst promotions
+MIN_TIME_SPAN_FOR_PROMOTION = 5.0  # seconds - block single-burst promotions
 
 # Anon identity reconciliation
-ANON_MERGE_THRESHOLD       = 0.65  # bidirectional — raised from 0.55 to prevent merging different people
+ANON_MERGE_THRESHOLD       = 0.65  # bidirectional - raised from 0.55 to prevent merging different people
 ANON_MERGE_COOLDOWN        = 60.0  # seconds before re-attempting same pair
 
 # ─── Stable Track Data Structures ────────────────────────────────────────────
@@ -177,7 +177,7 @@ class PersonState(enum.Enum):
     GRACE          = "grace"          # left frame, session held open briefly
     CLOSED         = "closed"         # session ended, identity preserved in anon pool
 
-# Valid state transitions — any transition not in this set is rejected
+# Valid state transitions - any transition not in this set is rejected
 _VALID_TRANSITIONS: set = {
     (PersonState.DETECTED,       PersonState.TRACKING),
     (PersonState.DETECTED,       PersonState.GRACE),       # left frame before face detected
@@ -207,7 +207,7 @@ _VALID_TRANSITIONS: set = {
 
 @dataclass
 class StabilityRecord:
-    """Tracks how many times identity components were reassigned — high counts indicate instability."""
+    """Tracks how many times identity components were reassigned - high counts indicate instability."""
     session_reassignments: int = 0
     anon_reassignments:    int = 0
     cross_camera_hops:     int = 0
@@ -239,18 +239,18 @@ class StableTrack:
     stable_id:      str
     created_at:     float
     state:          PersonState = PersonState.DETECTED
-    locked:         bool        = False   # True during promotion — blocks evidence + merges
+    locked:         bool        = False   # True during promotion - blocks evidence + merges
 
-    # Camera tracking — origin_camera never changes; current_camera updates on handoff
+    # Camera tracking - origin_camera never changes; current_camera updates on handoff
     origin_camera:   str        = ''
     current_camera:  str        = ''
     camera_history:  List[str]  = field(default_factory=list)
 
-    # Frigate linkage — one stable track can absorb multiple flickering event_ids
+    # Frigate linkage - one stable track can absorb multiple flickering event_ids
     raw_event_ids:  List[str]   = field(default_factory=list)
     last_bbox:      Optional[Tuple[float,float,float,float]] = None
 
-    # Hard identity bindings — set once, never changed (except within REBIND_WINDOW)
+    # Hard identity bindings - set once, never changed (except within REBIND_WINDOW)
     session_id:     Optional[str] = None
     anon_id:        Optional[str] = None
     customer_id:    Optional[int] = None
@@ -296,7 +296,7 @@ class StableTrack:
         return True
 
     def can_accept_evidence(self) -> bool:
-        """Guards all evidence ingestion — CLOSED/PROMOTED/locked tracks reject new data."""
+        """Guards all evidence ingestion - CLOSED/PROMOTED/locked tracks reject new data."""
         if self.state in (PersonState.CLOSED, PersonState.PROMOTED):
             return False
         if self.locked:
@@ -348,7 +348,7 @@ _recently_closed:    Dict[str, dict]        = {}   # stable_id → {track, close
 _anon_merge_history: Dict[Tuple[str,str], float] = {}   # (min_id, max_id) → last_merge_ts
 _stable_tracks_lock = threading.Lock()
 
-# Identity event ring-buffer — populated by log_identity_event() below (Task 3)
+# Identity event ring-buffer - populated by log_identity_event() below (Task 3)
 _identity_events: collections.deque = collections.deque(maxlen=500)
 
 def log_identity_event(event_type: str, stable_id: Optional[str], **kwargs):
@@ -375,7 +375,7 @@ THRESHOLD_VERSION = "v1.0_initial"
 FEATURE_WEIGHTS = {
     # Biometric (identity-grade)
     'face':         6.0,
-    # Gait here is single-frame body proportions, not temporal gait — weight accordingly.
+    # Gait here is single-frame body proportions, not temporal gait - weight accordingly.
     # True temporal gait (stride cadence etc.) would warrant 3.0+.
     'gait':         1.0,
 
@@ -395,7 +395,7 @@ FEATURE_WEIGHTS = {
 BIOMETRIC_FEATURES = {'face', 'gait'}
 SUPPORT_FEATURES = {'plate', 'height_cat', 'build', 'hair_color', 'facial_hair'}
 CONTEXT_FEATURES = {'time_pattern', 'zone_pattern', 'plate_person_assoc'}
-MAX_CONTEXT_CONTRIBUTION = 0.25  # hard cap — context signals can never dominate biometrics
+MAX_CONTEXT_CONTRIBUTION = 0.25  # hard cap - context signals can never dominate biometrics
 
 # ─── Embedding & quality validation helpers ──────────────────────────────────
 
@@ -434,7 +434,7 @@ def _validate_embedding(emb_bytes: Optional[bytes], source: str) -> bool:
 def _normalize_quality(raw: float, source: str) -> float:
     """
     Clamp a quality score to [0.0, 1.0].
-    Logs a warning if the raw value was out of range — useful for catching
+    Logs a warning if the raw value was out of range - useful for catching
     model output drift or mis-scaled scores in production.
     """
     try:
@@ -455,13 +455,13 @@ _face_app     = None
 _mp_pose_inst = None
 
 # On Linux + Docker with OpenVINO GPU, ONNX (SCRFD/ArcFace/ANPR) runs on Iris Xe
-# while MediaPipe Pose runs on CPU — they use separate resources and can safely
+# while MediaPipe Pose runs on CPU - they use separate resources and can safely
 # overlap. Two separate semaphores replace the single lock to allow GPU+CPU
 # parallelism while still preventing individual model queue saturation.
 _onnx_semaphore      = threading.Semaphore(2)   # Iris Xe GPU: 2 parallel streams
 _mediapipe_semaphore = threading.Semaphore(3)   # CPU: 3 concurrent pose sessions
 
-# Hard ceiling on total active inference tasks — must equal _event_semaphore value.
+# Hard ceiling on total active inference tasks - must equal _event_semaphore value.
 # Setting it higher causes tasks to acquire a slot then block on the semaphore forever,
 # permanently consuming slots and starving all new events.
 MAX_ACTIVE_TASKS   = 3
@@ -501,7 +501,7 @@ def get_face_app():
             MODEL_NAME = os.environ.get('INSIGHTFACE_MODEL', 'antelopev2')
             model_base = os.path.join(model_dir, MODEL_NAME)
 
-            # Auto-discover detector and recognizer — prefer antelopev2 files, fall back to buffalo_l
+            # Auto-discover detector and recognizer - prefer antelopev2 files, fall back to buffalo_l
             det_model = next(
                 (os.path.join(model_base, f) for f in ['scrfd_10g_bnkps.onnx', 'det_10g.onnx']
                  if os.path.exists(os.path.join(model_base, f))), None)
@@ -526,7 +526,7 @@ def get_face_app():
                 _providers = ['CPUExecutionProvider']
                 logger.info('ONNX using CPU provider (OpenVINO not available)')
 
-            # Cap threads per inference session — ONNX defaults to all cores which
+            # Cap threads per inference session - ONNX defaults to all cores which
             # causes 800%+ CPU spikes when multiple calls overlap. 4 threads gives
             # fast inference without saturating a 12-thread CPU.
             _sess_opts = _ort.SessionOptions()
@@ -571,7 +571,7 @@ def get_face_app():
                         # Face size
                         face_area = (bbox[2] - bbox[0]) * (bbox[3] - bbox[1])
                         size_ratio = face_area / img_area
-                        # Use 2.5% threshold — crops are already head-region so
+                        # Use 2.5% threshold - crops are already head-region so
                         # face fills less of the image than a full-frame shot would
                         size_score = min(1.0, size_ratio / 0.025)
 
@@ -583,7 +583,7 @@ def get_face_app():
                         blur_var = cv2.Laplacian(gray, cv2.CV_64F).var()
                         blur_score = min(1.0, blur_var / 500)
 
-                        # Hard-reject overexposed / completely dark frames — these produce
+                        # Hard-reject overexposed / completely dark frames - these produce
                         # garbage embeddings that cause false matches across different people.
                         mean_brightness = float(np.mean(gray))
                         if mean_brightness > 220:
@@ -597,7 +597,7 @@ def get_face_app():
                         brightness_score = 1.0 - max(0.0, (mean_brightness - 180) / 40) - max(0.0, (30 - mean_brightness) / 30)
                         brightness_score = max(0.0, brightness_score)
 
-                        # Combined quality — added brightness as a modifier
+                        # Combined quality - added brightness as a modifier
                         quality = det_conf * 0.4 + size_score * 0.35 + blur_score * 0.15 + brightness_score * 0.10
 
                         # Quality gate
@@ -655,7 +655,7 @@ def get_pose():
             from mediapipe.tasks import python
             from mediapipe.tasks.python import vision
 
-            # Try GPU delegate first (OpenCL — works on Intel Iris Xe under Linux).
+            # Try GPU delegate first (OpenCL - works on Intel Iris Xe under Linux).
             # MediaPipe falls back gracefully to CPU if the delegate is unavailable.
             _mp_loaded = False
             for _delegate in (python.BaseOptions.Delegate.GPU, python.BaseOptions.Delegate.CPU):
@@ -679,7 +679,7 @@ def get_pose():
             _mp_pose_inst = None
     return _mp_pose_inst
 
-# Second MediaPipe instance in VIDEO mode — for temporal gait from clips
+# Second MediaPipe instance in VIDEO mode - for temporal gait from clips
 _mp_pose_video = None
 _mp_pose_model_path = None  # cached after first get_pose() call
 
@@ -721,10 +721,10 @@ def get_pose_video():
 
 def extract_temporal_gait_from_clip(frames_seq):
     """Extract temporal gait features from a sequence of (frame, timestamp_ms) pairs.
-    Uses zero-crossing cadence analysis — no FFT, stable on noisy real-world clips.
+    Uses zero-crossing cadence analysis - no FFT, stable on noisy real-world clips.
     Returns (features_bytes, quality) or (None, 0.0).
     Feature vector: 12 × float32, L2-normalized. Incompatible with old 6-float gait.
-    Creates a fresh VIDEO mode pose instance per clip — MediaPipe VIDEO mode requires
+    Creates a fresh VIDEO mode pose instance per clip - MediaPipe VIDEO mode requires
     strictly monotonically increasing timestamps across its lifetime, so reusing an
     instance across clips would fail when clip 2's timestamps restart from 0.
     """
@@ -745,7 +745,7 @@ def extract_temporal_gait_from_clip(frames_seq):
         if not os.path.exists(model_path):
             return None, 0.0
 
-        # Fresh instance per clip — avoids non-monotonic timestamp error across clips
+        # Fresh instance per clip - avoids non-monotonic timestamp error across clips
         options = vision.PoseLandmarkerOptions(
             base_options=python.BaseOptions(model_asset_path=model_path),
             running_mode=vision.RunningMode.VIDEO)
@@ -763,7 +763,7 @@ def extract_temporal_gait_from_clip(frames_seq):
             # Prefer ankles (27/28), fall back to knees (25/26) when ankles not visible.
             # Knees oscillate at same frequency as ankles during walking and are
             # more visible from mounted cameras looking down at an angle.
-            VIS = 0.3  # lowered from 0.5 — partial visibility is acceptable
+            VIS = 0.3  # lowered from 0.5 - partial visibility is acceptable
             l_leg = lm[27] if lm[27].visibility > VIS else (lm[25] if lm[25].visibility > VIS else None)
             r_leg = lm[28] if lm[28].visibility > VIS else (lm[26] if lm[26].visibility > VIS else None)
             if l_leg:
@@ -787,13 +787,13 @@ def extract_temporal_gait_from_clip(frames_seq):
             return None, 0.0
 
         def zcr(s):
-            """Zero-crossing rate — proxy for stride cadence."""
+            """Zero-crossing rate - proxy for stride cadence."""
             d = np.array(s) - np.mean(s)
             return float(len(np.where(np.diff(np.sign(d)))[0])) / len(d)
 
         cl = zcr(ankle_y_l) if len(ankle_y_l) >= 5 else 0.0
         cr = zcr(ankle_y_r) if len(ankle_y_r) >= 5 else 0.0
-        # If only one ankle visible, symmetry is unknown — use neutral 0.5
+        # If only one ankle visible, symmetry is unknown - use neutral 0.5
         if len(ankle_y_l) < 5 or len(ankle_y_r) < 5:
             sym = 0.5
         else:
@@ -875,7 +875,7 @@ def _to_json_safe(obj):
 def _check_pos_sustained_outage():
     global _pos_down_warned
     if not _pos_down_warned and (time.time() - _pos_last_success) > 300:
-        logger.error(f'POS has been unreachable for >5 minutes — visits and enrollments are not being recorded')
+        logger.error(f'POS has been unreachable for >5 minutes - visits and enrollments are not being recorded')
         _pos_down_warned = True
 
 def pos_post(path, payload, retries=3):
@@ -896,7 +896,7 @@ def pos_post(path, payload, retries=3):
             return r.json() if r.ok else None
         except (requests.Timeout, requests.ConnectionError) as e:
             if attempt < retries:
-                # Exponential backoff: 2s, 4s, 8s — covers Docker DNS settling after POS restart
+                # Exponential backoff: 2s, 4s, 8s - covers Docker DNS settling after POS restart
                 time.sleep(2 ** (attempt + 1))
                 continue
             logger.warning(f'POS POST {path} failed after {retries} retries: {e}')
@@ -942,7 +942,7 @@ _cache_rebuild_lock = threading.Lock()  # prevents concurrent full cache rebuild
 
 # ─── Per-customer time-decayed threshold cache ───────────────────────────────
 _threshold_cache = {}        # customer_id → effective_threshold
-_threshold_cache_time = 0.0  # epoch — reset to 0 to force recompute on next access
+_threshold_cache_time = 0.0  # epoch - reset to 0 to force recompute on next access
 
 def _compute_per_customer_thresholds(link_threshold):
     """Return per-customer effective link thresholds based on days since last visit.
@@ -969,7 +969,7 @@ def _compute_per_customer_thresholds(link_threshold):
     _threshold_cache_time = time.time()
     return result
 
-_employee_ids: set = set()  # customer IDs marked is_employee=True — refreshed with customer cache
+_employee_ids: set = set()  # customer IDs marked is_employee=True - refreshed with customer cache
 
 # ─── Stable Track helpers ─────────────────────────────────────────────────────
 
@@ -998,7 +998,7 @@ def _should_reuse_stable_track(new_emb: Optional[bytes],
     Uses: 0.6×face_sim + 0.3×bbox_iou + 0.1×temporal_proximity
     Hard floor: face_sim < TRACK_REUSE_HARD_MIN → always False (different person).
     """
-    # Hard temporal gate — don't reuse tracks that are too old
+    # Hard temporal gate - don't reuse tracks that are too old
     window = TRACK_REUSE_WINDOW if same_camera else CROSS_CAMERA_REUSE_WINDOW
     if (now - existing.last_seen) > window:
         return False
@@ -1015,11 +1015,11 @@ def _should_reuse_stable_track(new_emb: Optional[bytes],
         except Exception:
             face_sim = 0.0
 
-    # Hard floor — below this we NEVER merge (definitely different person)
+    # Hard floor - below this we NEVER merge (definitely different person)
     if face_sim < TRACK_REUSE_HARD_MIN:
         return False
 
-    # Confidence floor — skip weak/stale closed tracks
+    # Confidence floor - skip weak/stale closed tracks
     if existing.state == PersonState.CLOSED and existing.confidence < MIN_TRACK_REUSE_CONFIDENCE:
         return False
 
@@ -1042,8 +1042,8 @@ def _find_existing_stable_track(new_emb: Optional[bytes],
     Search for an existing StableTrack that this new Frigate event belongs to.
     Priority order:
       1. Active tracks (same camera)
-      2. Grace-period tracks (same camera — resume)
-      3. Closed/recently-closed tracks (same camera — re-entry)
+      2. Grace-period tracks (same camera - resume)
+      3. Closed/recently-closed tracks (same camera - re-entry)
       4. Cross-camera tracks (face-only, tighter threshold)
 
     Returns (stable_track, reason) or (None, '') if no match.
@@ -1088,7 +1088,7 @@ def _find_existing_stable_track(new_emb: Optional[bytes],
                         if best_reason not in ('active', 'grace_resume'):
                             best_track = st; best_reason = 'reentry'
 
-        # Cross-camera pass — only if nothing found on same camera
+        # Cross-camera pass - only if nothing found on same camera
         if best_track is None and new_emb:
             for st in _stable_tracks.values():
                 if st.current_camera == camera:
@@ -1102,7 +1102,7 @@ def _find_existing_stable_track(new_emb: Optional[bytes],
 
 
 def _can_create_track(camera: str) -> bool:
-    """Soft cap — log and refuse if camera already has too many active tracks."""
+    """Soft cap - log and refuse if camera already has too many active tracks."""
     with _stable_tracks_lock:
         active = sum(
             1 for st in _stable_tracks.values()
@@ -1124,13 +1124,13 @@ def _get_or_create_stable_track(event_id: str,
     """
     Main entry point for stable track resolution.
     Returns (stable_track, action) where action is one of:
-      'existing_event'  — event_id already mapped to a stable track
-      'reused_active'   — matched to an active track
-      'grace_resume'    — resumed a grace-period track
-      'reentry'         — re-entered frame, matched to recently-closed track
-      'cross_camera'    — matched track from another camera
-      'created'         — new stable track
-      'capped'          — per-camera cap reached, track not created
+      'existing_event'  - event_id already mapped to a stable track
+      'reused_active'   - matched to an active track
+      'grace_resume'    - resumed a grace-period track
+      'reentry'         - re-entered frame, matched to recently-closed track
+      'cross_camera'    - matched track from another camera
+      'created'         - new stable track
+      'capped'          - per-camera cap reached, track not created
     """
     # Fast path: event already known
     with _stable_tracks_lock:
@@ -1160,12 +1160,12 @@ def _get_or_create_stable_track(event_id: str,
                                session_id=existing.session_id, detail='grace period resume')
         elif reason == 'reentry':
             # Reset lifecycle: CLOSED → TRACKING so the track can accept new evidence
-            # and bind a fresh session. Do NOT reuse the old session_id — it is expired.
+            # and bind a fresh session. Do NOT reuse the old session_id - it is expired.
             existing.session_id = None
             existing.anon_id    = None
             existing.transition(PersonState.TRACKING)
             log_identity_event('REENTRY_MATCHED', existing.stable_id,
-                               detail=f'matched after {now - existing.last_seen:.1f}s gap — reset to TRACKING')
+                               detail=f'matched after {now - existing.last_seen:.1f}s gap - reset to TRACKING')
         elif reason == 'cross_camera':
             old_cam = existing.current_camera
             with _stable_tracks_lock:
@@ -1177,7 +1177,7 @@ def _get_or_create_stable_track(event_id: str,
 
         return existing, reason
 
-    # No match — create new stable track
+    # No match - create new stable track
     if not _can_create_track(camera):
         return None, 'capped'
 
@@ -1207,7 +1207,7 @@ def _flush_evidence(st: StableTrack):
     """
     Extract face embeddings + gait from the best frames in the stable track's
     rolling buffer and feed them directly into the bound VisitorSession.
-    No clip download — uses snapshots already in memory.
+    No clip download - uses snapshots already in memory.
     """
     if not st.session_id:
         return
@@ -1280,7 +1280,7 @@ def _maybe_flush_evidence(st: StableTrack, now: float):
 
 
 def _apply_confidence_decay(st: StableTrack, now: float):
-    """Decay track confidence when idle — stale evidence should not dominate matching."""
+    """Decay track confidence when idle - stale evidence should not dominate matching."""
     if st.state in (PersonState.CLOSED, PersonState.PROMOTED):
         return
     idle = now - st.last_seen
@@ -1326,7 +1326,7 @@ def refresh_customers():
     _employee_ids = {c['id'] for c in customers if c.get('is_employee')}
     # Invalidate signals cache so next event rebuilds with new customer set
     _signals_cache_ids = set()
-    # Invalidate threshold cache — last_visit may have changed
+    # Invalidate threshold cache - last_visit may have changed
     _threshold_cache_time = 0.0
     logger.info(f'Customer cache refreshed: {len(customers)} customers, {len(_employee_ids)} employees')
 
@@ -1383,7 +1383,7 @@ def extract_face_with_quality(image_path, person_box=None):
     person_box: normalised [x1,y1,x2,y2] from Frigate (0-1). When provided,
     the image is cropped to the head region (top 35% of the box, expanded by
     20%) before running face detection. This is critical when the camera sees
-    the full body — the face would otherwise be too small for SCRFD to detect.
+    the full body - the face would otherwise be too small for SCRFD to detect.
     """
     try:
         import cv2
@@ -1415,7 +1415,7 @@ def extract_face_with_quality(image_path, person_box=None):
             if px2 > px1 and py2 > py1:
                 img = img[py1:py2, px1:px2]
                 # Upscale small crops so the face fills the SCRFD input.
-                # SCRFD uses input_size=(640,640) — a 150×180px crop gets
+                # SCRFD uses input_size=(640,640) - a 150×180px crop gets
                 # downscaled to ~150px which is too small for reliable detection.
                 # Resize so the longer edge is 480px, keeping aspect ratio.
                 ch, cw = img.shape[:2]
@@ -1427,7 +1427,7 @@ def extract_face_with_quality(image_path, person_box=None):
 
         # CLAHE pre-processing: boost contrast on under-exposed faces before
         # passing to SCRFD. Converts to LAB, equalises the L channel only
-        # (luminance), then converts back — preserves colour, lifts midtones.
+        # (luminance), then converts back - preserves colour, lifts midtones.
         # ~2ms per image on CPU, can push quality scores from 0.19 → 0.35+.
         try:
             lab = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
@@ -1613,7 +1613,7 @@ def extract_physical_attributes(image_path, person_box=None):
         face_bbox = faces[0][0]
         attributes = {}
 
-        # Hair color — sample above the face, but exclude sky-blue and wall-grey
+        # Hair color - sample above the face, but exclude sky-blue and wall-grey
         # pixels by requiring moderate saturation (pure background has near-zero sat).
         face_w = face_bbox[2] - face_bbox[0]
         face_h = face_bbox[3] - face_bbox[1]
@@ -1679,7 +1679,7 @@ def extract_physical_attributes(image_path, person_box=None):
                 else:
                     attributes['build'] = 'slim'
 
-        # Facial hair — compare chin region darkness RELATIVE to mid-face to avoid
+        # Facial hair - compare chin region darkness RELATIVE to mid-face to avoid
         # false positives on dark skin. A beard makes the chin darker than the cheeks;
         # the absolute level varies with skin tone.
         face_region = img[int(face_bbox[1]):int(face_bbox[3]),
@@ -1758,11 +1758,11 @@ def extract_all_signals_with_quality(event):
                 # x2 < x1 or y2 < y1 which is impossible in corner format.
                 px, py, pw, ph = person_box
                 if pw < px or ph < py:
-                    # It's [x,y,w,h] — convert to [x1,y1,x2,y2]
+                    # It's [x,y,w,h] - convert to [x1,y1,x2,y2]
                     person_box = [px, py, px + pw, py + ph]
                     logger.debug(f'Converted person_box [x,y,w,h]→[x1,y1,x2,y2]: {person_box}')
 
-                # Only skip truly degenerate boxes (< 3% width) — the head-crop
+                # Only skip truly degenerate boxes (< 3% width) - the head-crop
                 # logic upscales small crops to 480px before SCRFD, so 8% was
                 # discarding valid detections where the person is near the edge.
                 box_width = person_box[2] - person_box[0]
@@ -1868,7 +1868,7 @@ def fetch_frigate_clip(event_id):
 def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
     """
     Extract as many distinct-angle faces as possible from a clip.
-    Samples every few frames (not just N evenly spaced) to maximise angular coverage —
+    Samples every few frames (not just N evenly spaced) to maximise angular coverage -
     at 5fps a 10s clip = 50 frames, we sample up to 50 of them.
     Stops collecting new angles once MAX_FACE_EMBEDDINGS distinct angles found.
     """
@@ -1880,13 +1880,13 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         cap.release()
         return None
 
-    # Sample densely — up to n_sample frames (default 50 for new sessions, 20 for enrichment)
+    # Sample densely - up to n_sample frames (default 50 for new sessions, 20 for enrichment)
     max_frames = n_sample if n_sample is not None else 50
     step = max(1, frame_count // max_frames)
     indices = list(range(0, frame_count, step))
     face_candidates = []   # (quality, embedding_bytes, photo_bytes, attrs_or_None)
-    gait_candidates = []   # (quality, features_bytes) — single-frame fallback
-    frames_seq      = []   # [(frame_original, timestamp_ms)] — for temporal gait
+    gait_candidates = []   # (quality, features_bytes) - single-frame fallback
+    frames_seq      = []   # [(frame_original, timestamp_ms)] - for temporal gait
     best_body_snapshot = None
     best_body_best_face_qual = 0.0
 
@@ -1952,7 +1952,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
             if gait_feat and gait_qual >= GAIT_QUALITY_MIN:
                 gait_candidates.append((gait_qual, gait_feat))
 
-            # Body snapshot — only when face confirmed in same frame
+            # Body snapshot - only when face confirmed in same frame
             if person_box and len(person_box) == 4 and face_emb and face_qual > best_body_best_face_qual:
                 h, w = frame.shape[:2]
                 bx1, by1, bx2, by2 = person_box
@@ -1989,7 +1989,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
     # Select distinct-angle face embeddings from all candidates.
     # Like iPhone fingerprint enrollment: keep embeddings that are sufficiently
     # different from each other (cosine distance > 0.25) so each one covers
-    # a new angle. The POS enroll/face endpoint also enforces this gate —
+    # a new angle. The POS enroll/face endpoint also enforces this gate -
     # these are just the candidates we'll submit.
     face_candidates.sort(key=lambda x: x[0], reverse=True)  # best quality first
 
@@ -2015,7 +2015,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
 
     logger.debug(f'Clip faces: {len(face_candidates)} candidates → {len(distinct_faces)} distinct angles')
 
-    # Build result — multiple face signals, best gait, best body snapshot
+    # Build result - multiple face signals, best gait, best body snapshot
     result = {
         'camera': 'clip_analysis',
         'source': 'clip_analysis',
@@ -2030,7 +2030,7 @@ def analyze_clip_for_best_signals(clip_path, person_box=None, n_sample=None):
         if best_attrs:
             result['physical_attrs'] = best_attrs
 
-    # Temporal gait — preferred over averaged single-frame gait
+    # Temporal gait - preferred over averaged single-frame gait
     temporal_gait_feats, temporal_gait_qual = extract_temporal_gait_from_clip(frames_seq)
     logger.debug(f'Temporal gait result: feats={temporal_gait_feats is not None} quality={temporal_gait_qual:.3f}')
     if temporal_gait_feats and temporal_gait_qual >= 0.35:
@@ -2068,9 +2068,9 @@ def calculate_match_score_safe(new_signals, customer_signals, track_history=None
     biometric_weight = 0.0
     context_score = 0.0
 
-    # === ANPR PRIOR — check plate match before face scoring =====================
+    # === ANPR PRIOR - check plate match before face scoring =====================
     # If plate matches, we lower the effective face threshold for this candidate.
-    # Floor of 0.35 — plate can never make a sub-0.35 face match succeed.
+    # Floor of 0.35 - plate can never make a sub-0.35 face match succeed.
     plate_prior = False
     if new_signals.get('plate') and customer_signals.get('plates'):
         if (new_signals['plate'] in customer_signals['plates'] or
@@ -2411,7 +2411,7 @@ class TrackIdentity:
         best_customer = max(weighted_scores.keys(), key=lambda cid: weighted_scores[cid])
         best_score = weighted_scores[best_customer]
 
-        # Use per-customer threshold if available — accounts for time since last visit
+        # Use per-customer threshold if available - accounts for time since last visit
         if per_customer_thresholds:
             link_thresh = per_customer_thresholds.get(best_customer, global_thresh)
         else:
@@ -2542,7 +2542,7 @@ class ThresholdManager:
 
     def __init__(self):
         self.global_thresholds = {
-            'link': 0.70,      # Raised from 0.55 — logs showed false matches at 0.63–0.69
+            'link': 0.70,      # Raised from 0.55 - logs showed false matches at 0.63–0.69
             'pending': 0.45    # Don't enroll if already matched at this level
         }
         self.segment_thresholds = {}
@@ -2572,7 +2572,7 @@ _threshold_manager = ThresholdManager()
 def get_current_threshold(threshold_type, context=None):
     return _threshold_manager.get_threshold(threshold_type, context)
 
-# ─── VisitorSession — session-centric identity accumulator ──────────────────
+# ─── VisitorSession - session-centric identity accumulator ──────────────────
 
 class VisitorSession:
     """Accumulates evidence from all sources (real-time + clips) for one visit.
@@ -2584,13 +2584,13 @@ class VisitorSession:
         self.last_evidence_at = time.time()
         # list of (embedding_bytes, quality_float, camera_str)
         self.face_embeddings  = []
-        self.gait_features    = None   # (features_bytes, quality) — best seen
+        self.gait_features    = None   # (features_bytes, quality) - best seen
         self.cameras_seen     = set()
         self.source_event_ids = set()
         self.best_face_sim    = 0.0    # highest sim seen against any existing customer
         self.candidate_customer_id = None
-        self.best_snapshot    = None   # (snapshot_bytes, face_quality) — for body photo
-        self.best_face_photo  = None   # (face_photo_bytes, quality) — for face photo on card
+        self.best_snapshot    = None   # (snapshot_bytes, face_quality) - for body photo
+        self.best_face_photo  = None   # (face_photo_bytes, quality) - for face photo on card
         # accumulating → resolving (transitional lock) → resolved | expired
         self.status = 'accumulating'
         self.locked = False   # set True during promotion to block concurrent evidence/merges
@@ -2654,14 +2654,14 @@ class VisitorSession:
 _active_sessions    = {}   # session_id → VisitorSession
 _sessions_lock      = threading.Lock()
 
-# Anonymous identities — evidence that didn't meet creation threshold, held 24h
+# Anonymous identities - evidence that didn't meet creation threshold, held 24h
 _anonymous_identities = {}
 # anon_id → {face_embeddings, gait, cameras, created_at, last_seen_at}
 
-# Idempotency guard — session_ids that already triggered a customer creation
+# Idempotency guard - session_ids that already triggered a customer creation
 _created_from_session_ids = set()
 
-# Recently-created customer embeddings cache — for anti-clone gate (last 10 min)
+# Recently-created customer embeddings cache - for anti-clone gate (last 10 min)
 _recent_customers_cache   = []   # list of {cid, embeddings, created_at}
 _recent_customers_lock    = threading.Lock()
 
@@ -2696,7 +2696,7 @@ VISIT_LOG_INTERVAL   = 300  # min seconds between visit logs for the same track
 TRACK_IDLE_EXPIRY    = 300  # remove tracks idle longer than this (seconds)
 PROFILE_UPGRADE_INTERVAL = 300  # min seconds between photo/body upgrades per customer
 
-# Per-customer timestamp of last photo/body upgrade — prevents upgrade on every poll
+# Per-customer timestamp of last photo/body upgrade - prevents upgrade on every poll
 _profile_upgrade_times = {}   # customer_id -> float (epoch time)
 _profile_upgrade_lock  = threading.Lock()
 
@@ -2719,7 +2719,7 @@ def _improve_customer_profile(customer_id, signals):
 
         # --- Face embedding: add if missing, upgrade if meaningfully better ---
         if has_face_embedding and new_face_quality >= FACE_UPGRADE_MIN:
-            # Use cached embeddings to decide whether to enroll — avoids a GET per event.
+            # Use cached embeddings to decide whether to enroll - avoids a GET per event.
             # Fall back to API only if this customer isn't in the cache yet.
             cached = _signals_cache.get(customer_id, {})
             cached_faces = cached.get('face_embeddings', None)
@@ -2730,7 +2730,7 @@ def _improve_customer_profile(customer_id, signals):
             upgraded_photo_only = False
             cam_src = signals.get('camera')
             if len(cached_faces) == 0:
-                # No active face embedding — add one regardless of quality
+                # No active face embedding - add one regardless of quality
                 logger.info(f'Profile [{customer_id}]: adding face embedding (quality={new_face_quality:.2f})')
                 payload = {
                     'embedding_b64': base64.b64encode(signals['face_embedding']).decode(),
@@ -2746,7 +2746,7 @@ def _improve_customer_profile(customer_id, signals):
                 enrolled_new_angle = True
 
             elif new_face_quality >= 0.60 and has_face_photo:
-                # Good quality face photo — upgrade if better than what's stored.
+                # Good quality face photo - upgrade if better than what's stored.
                 # Rate-limited to once per PROFILE_UPGRADE_INTERVAL per customer so
                 # a customer standing in frame for 5+ min doesn't spam upgrades.
                 # This is a photo-only update; it does NOT add a new embedding so
@@ -2856,7 +2856,7 @@ def _assign_to_session(face_emb, camera, event_id, ts):
                 continue
             time_gap = ts - sess.last_evidence_at
 
-            # Face similarity gate — primary assignment criterion
+            # Face similarity gate - primary assignment criterion
             # Both face_emb and stored embeddings are raw bytes; decode before cosine_sim
             if face_emb and sess.face_embeddings:
                 face_arr = np.frombuffer(face_emb, dtype=np.float32)
@@ -2867,7 +2867,7 @@ def _assign_to_session(face_emb, camera, event_id, ts):
                 if sim > SESSION_JOIN_FACE_SIM and sim > best_sim:
                     best_sim, best_session = sim, sid
 
-            # No-face same-camera fallback — only if exactly ONE eligible recent session
+            # No-face same-camera fallback - only if exactly ONE eligible recent session
             elif (not face_emb and camera and camera in sess.cameras_seen and time_gap < 30):
                 eligible = [s for s in _active_sessions.values()
                             if s.status == 'accumulating'
@@ -2880,7 +2880,7 @@ def _assign_to_session(face_emb, camera, event_id, ts):
             _active_sessions[best_session].last_evidence_at = ts
             return best_session
 
-        # No match — start a new session
+        # No match - start a new session
         sess = VisitorSession()
         _active_sessions[sess.session_id] = sess
         logger.debug(f'New session {sess.session_id[:8]} (camera={camera})')
@@ -2890,7 +2890,7 @@ def _assign_to_session(face_emb, camera, event_id, ts):
 def _compute_promotion_score(session) -> float:
     """
     Scored promotion model replacing the old binary gate checklist.
-    Returns a score in [0.0, 1.0] — promotion fires when score >= PROMOTION_MIN_SCORE.
+    Returns a score in [0.0, 1.0] - promotion fires when score >= PROMOTION_MIN_SCORE.
 
     Positive signals: embedding count, angle diversity, average quality, internal consistency, gait.
     Negative signals: proportion of low-quality frames, embedding instability.
@@ -2903,13 +2903,13 @@ def _compute_promotion_score(session) -> float:
     qualities = [_normalize_quality(float(e[1]), '_compute_promotion_score') for e in embs]
 
     # Temporal gate: use session duration as proxy (session has created_at / last_evidence_at).
-    # Individual embeddings store (bytes, quality, camera) — no per-embedding timestamp.
+    # Individual embeddings store (bytes, quality, camera) - no per-embedding timestamp.
     # If session object has timing attributes use them; otherwise skip the gate.
     session_duration = 0.0
     if hasattr(session, 'last_evidence_at') and hasattr(session, 'created_at'):
         session_duration = max(0.0, session.last_evidence_at - session.created_at)
     elif hasattr(session, 'face_embeddings') and len(embs) > 1:
-        # _FakeSession or anon list — no timing, skip gate
+        # _FakeSession or anon list - no timing, skip gate
         session_duration = MIN_TIME_SPAN_FOR_PROMOTION + 1.0
 
     if session_duration < MIN_TIME_SPAN_FOR_PROMOTION:
@@ -2923,7 +2923,7 @@ def _compute_promotion_score(session) -> float:
     # 1. Count score (normalised to 15 as "enough")
     count_score = min(len(embs) / 15.0, 1.0)
 
-    # 2. Angle diversity — average pairwise cosine distance
+    # 2. Angle diversity - average pairwise cosine distance
     diversity = 0.0
     if len(embs) >= 2:
         vecs = []
@@ -2946,7 +2946,7 @@ def _compute_promotion_score(session) -> float:
     profile_q = [q for q in qualities if q >= PROFILE_QUALITY_MIN]
     quality_score = float(np.mean(profile_q)) if profile_q else 0.0
 
-    # 4. Internal consistency — average cosine similarity within embedding set
+    # 4. Internal consistency - average cosine similarity within embedding set
     consistency = 0.0
     if len(embs) >= 2:
         valid_vecs = []
@@ -3045,13 +3045,13 @@ def _reconcile_anon_identities(now: float):
             if not embs_b:
                 continue
 
-            # Cooldown check — skip recently-attempted pairs
+            # Cooldown check - skip recently-attempted pairs
             pair_key = (min(id_a, id_b), max(id_a, id_b))
             last_merge = _anon_merge_history.get(pair_key, 0.0)
             if (now - last_merge) < ANON_MERGE_COOLDOWN:
                 continue
 
-            # Bidirectional consistency — both directions must clear threshold
+            # Bidirectional consistency - both directions must clear threshold
             sim_ab = _best_pairwise_sim(embs_a, embs_b)
             if sim_ab < ANON_MERGE_THRESHOLD:
                 continue
@@ -3110,7 +3110,7 @@ def _reconcile_anon_identities(now: float):
 def _merge_overlapping_sessions():
     """Merge sessions with very similar face embeddings into one.
     Runs before the resolver so it always sees consolidated evidence.
-    Uses SESSION_MERGE_FACE_SIM — stricter than join threshold."""
+    Uses SESSION_MERGE_FACE_SIM - stricter than join threshold."""
     with _sessions_lock:
         open_sessions = [s for s in _active_sessions.values() if s.status == 'accumulating']
 
@@ -3128,7 +3128,7 @@ def _merge_overlapping_sessions():
                 with _sessions_lock:
                     if a.status != 'accumulating' or b.status != 'accumulating':
                         continue
-                    # Merge B into A — keep best-quality embeddings from both
+                    # Merge B into A - keep best-quality embeddings from both
                     a.face_embeddings.extend(b.face_embeddings)
                     a.cameras_seen.update(b.cameras_seen)
                     a.source_event_ids.update(b.source_event_ids)
@@ -3139,7 +3139,7 @@ def _merge_overlapping_sessions():
                         a.best_face_sim = b.best_face_sim
                         a.candidate_customer_id = b.candidate_customer_id
                     a.last_evidence_at = max(a.last_evidence_at, b.last_evidence_at)
-                    # Merge snapshot/face photo — keep best quality
+                    # Merge snapshot/face photo - keep best quality
                     if b.best_snapshot and (not a.best_snapshot or b.best_snapshot[1] > a.best_snapshot[1]):
                         a.best_snapshot = b.best_snapshot
                     if b.best_face_photo and (not a.best_face_photo or b.best_face_photo[1] > a.best_face_photo[1]):
@@ -3228,14 +3228,14 @@ def _create_customer_from_embeddings(face_embeddings, gait_features, session_id,
     return cid
 
 
-VISIT_SCORE_MIN        = 0.35  # promotion score floor for visit logging — multi-signal
+VISIT_SCORE_MIN        = 0.35  # promotion score floor for visit logging - multi-signal
 VISIT_MIN_EMBEDDINGS   = 3     # fallback: allow weak sim if this many embeddings support it
 
 def _log_session_visit(cid, session, dwell_seconds=None, direct_match=False):
     """Log a visit for a resolved session.
 
     direct_match=True: identity was confirmed by direct face_sim >= RESOLVER_LINK_THRESHOLD.
-                       Skip the evidence gate — the match itself is the proof.
+                       Skip the evidence gate - the match itself is the proof.
     direct_match=False: identity inferred from accumulated evidence (new/anon promotion).
                         Apply multi-signal gate to avoid logging weak resolutions.
     """
@@ -3253,7 +3253,7 @@ def _log_session_visit(cid, session, dwell_seconds=None, direct_match=False):
                          f'score={score:.3f} sim={face_sim:.3f} embs={n_embs}')
             return
     else:
-        # Direct match — still apply absolute floor (0.30) as sanity check
+        # Direct match - still apply absolute floor (0.30) as sanity check
         if face_sim < 0.30:
             logger.debug(f'_log_session_visit: skipped direct_match cid={cid} '
                          f'sim={face_sim:.3f} below hard floor 0.30')
@@ -3309,7 +3309,7 @@ def _resolve_session(session):
             # Employees: mark resolved but skip visit log and clip re-queuing entirely
             if linked_cid in _employee_ids:
                 session.status = 'resolved'
-                logger.debug(f'Resolver: session {session.session_id[:8]} → employee cid={linked_cid} — suppressed')
+                logger.debug(f'Resolver: session {session.session_id[:8]} → employee cid={linked_cid} - suppressed')
                 return
             _log_session_visit(linked_cid, session, dwell_seconds=session.duration(),
                                direct_match=True)   # face_sim >= RESOLVER_LINK_THRESHOLD confirmed
@@ -3326,7 +3326,7 @@ def _resolve_session(session):
                         logger.debug(f'Re-queued clip {eid[:12]} for enrichment of linked cid={linked_cid}')
             return
 
-        # ── Step 2: Anti-clone — recent customer suppression ─────────────────
+        # ── Step 2: Anti-clone - recent customer suppression ─────────────────
         if best_emb:
             best_emb_arr = np.frombuffer(best_emb, dtype=np.float32)
             for recent_cid, recent_emb_list in _get_recent_customer_embeddings(minutes=10):
@@ -3395,7 +3395,7 @@ def _resolve_session(session):
                                     _clip_analysis_queue.append((eid, cid, None))
                                     logger.debug(f'Re-queued clip {eid[:12]} for enrichment of promoted cid={cid}')
                         return
-                # Not yet promotable — keep anon, expire this session
+                # Not yet promotable - keep anon, expire this session
                 session.status = 'expired'
                 logger.debug(f'Resolver: session {session.session_id[:8]} → '
                              f'merged into anon {best_anon_id[:8]}, not yet promotable')
@@ -3501,7 +3501,7 @@ def process_event(event):
 
         # ── Stable Track Layer ─────────────────────────────────────────────────
         # Resolve or create a StableTrack for this Frigate event.
-        # This is the root identity anchor — one physical person = one StableTrack
+        # This is the root identity anchor - one physical person = one StableTrack
         # regardless of how many Frigate event_ids they generate.
         face_emb_for_stable = signals.get('face_embedding') if _validate_embedding(
             signals.get('face_embedding'), 'process_event/stable_lookup') else None
@@ -3598,7 +3598,7 @@ def process_event(event):
             # all expensive downstream work: no visit log, no teller alert,
             # no clip re-queuing, no profile improvement API calls.
             if resolved_id in _employee_ids:
-                logger.debug(f'Track {track_id[:8]} → employee cid={resolved_id} — suppressed')
+                logger.debug(f'Track {track_id[:8]} → employee cid={resolved_id} - suppressed')
                 return
 
             # Collect best face_sim and context_score for safety checks + logging
@@ -3617,12 +3617,12 @@ def process_event(event):
 
             eff_threshold = per_customer_thresholds.get(resolved_id, link_threshold)
 
-            # Hard face_sim floor — no link without at least some face evidence,
+            # Hard face_sim floor - no link without at least some face evidence,
             # regardless of how high gait/context/camera scores are.
             # A no-face frame (pink top, back of head, etc.) must never link to a customer.
             if best_face_sim < 0.30:
                 logger.warning(f'Track {track_id[:8]} face_sim_floor_failed sim={best_face_sim:.3f} '
-                               f'(no face in frame) — link suppressed')
+                               f'(no face in frame) - link suppressed')
                 return
 
             # Safety checks when relaxed threshold was used (long-absent customer)
@@ -3636,7 +3636,7 @@ def process_event(event):
                                      f'sim={best_face_sim:.3f}')
                         return
 
-            # Structured confidence explanation log — primary diagnostic tool for tuning
+            # Structured confidence explanation log - primary diagnostic tool for tuning
             cam_boost = float(best_scores_breakdown.get('camera_boost', 0.0))
             logger.info(
                 f'Track {track_id[:8]} → cid={resolved_id} | '
@@ -3647,7 +3647,7 @@ def process_event(event):
                 f'final_score={track.confidence:.3f}'
             )
 
-            # Build confidence scores — all values must be plain Python float, not
+            # Build confidence scores - all values must be plain Python float, not
             # numpy.float32, or json.dumps will raise "not JSON serializable".
             conf_scores = {'track_confidence': float(track.confidence)}
             if signals.get('face_quality'):
@@ -3663,7 +3663,7 @@ def process_event(event):
                     break
 
             # Real-time: notify teller only when STABLE + FACE-DOMINANT match.
-            # Advisory only — does not create customers.
+            # Advisory only - does not create customers.
             # Requires MIN_STRONG_MATCH_OBS consecutive obs at face_sim ≥ STRONG_LINK_THRESHOLD
             # AND face_sim ≥ MIN_FACE_FOR_WELCOME (gait/context alone cannot trigger welcome).
             face_sim_this_obs = best_face_sim
@@ -3677,7 +3677,7 @@ def process_event(event):
                 track._strong_obs = 0
 
             if getattr(track, '_strong_obs', 0) >= MIN_STRONG_MATCH_OBS:
-                # Stable confirmed match — log visit (teller notification) rate-limited
+                # Stable confirmed match - log visit (teller notification) rate-limited
                 if time.time() - track.visit_logged_at >= VISIT_LOG_INTERVAL:
                     identify_payload = {
                         'customer_id': resolved_id,
@@ -3692,7 +3692,7 @@ def process_event(event):
                     pos_post('/api/customers/identify', identify_payload)
                     track.visit_logged_at = time.time()
 
-                # Continuous profile improvement — fill in missing or upgrade quality
+                # Continuous profile improvement - fill in missing or upgrade quality
                 _improve_customer_profile(resolved_id, signals)
             else:
                 logger.debug(f'Track {track_id[:8]} waiting for stable match '
@@ -3705,7 +3705,7 @@ def process_event(event):
 
         # ── Feed evidence into VisitorSession (all tracks, regardless of link status) ──
         # The session resolver is the sole authority for customer creation.
-        # Use FACE_QUALITY_MIN (global) not FACE_QUALITY_MIN_CREATE — sessions accumulate
+        # Use FACE_QUALITY_MIN (global) not FACE_QUALITY_MIN_CREATE - sessions accumulate
         # all usable evidence; the creation gate is applied only at resolve time.
         _face_qual_now = float(signals.get('face_quality', 0))
         face_emb_for_session = signals.get('face_embedding') if _face_qual_now >= FACE_QUALITY_MIN else None
@@ -3786,7 +3786,7 @@ ACTIVE_EVENT_REPROCESS_INTERVAL = 90  # seconds between re-runs for the same act
 _clip_analysis_queue = collections.deque()  # [(event_id, customer_id, person_box)]
 _clip_queue_lock = threading.Lock()
 MAX_CLIP_QUEUE = 50
-_clips_enriched = set()  # (event_id, customer_id) pairs already processed — prevents re-queue spam
+_clips_enriched = set()  # (event_id, customer_id) pairs already processed - prevents re-queue spam
 
 def _clip_analysis_loop():
     """Background thread: post-event clip enrichment. Multiple workers share the queue."""
@@ -3799,7 +3799,7 @@ def _clip_analysis_loop():
             else:
                 event_id = None
         if event_id is None:
-            _t.sleep(5)  # idle — no work available
+            _t.sleep(5)  # idle - no work available
             continue
 
         _t.sleep(1)  # brief yield between jobs to keep CPU below saturation
@@ -3812,7 +3812,7 @@ def _clip_analysis_loop():
                 continue
             _clips_enriched.add(dedup_key)
             if len(_clips_enriched) > 1000:
-                # Evict oldest half — set has no order so just clear the excess
+                # Evict oldest half - set has no order so just clear the excess
                 excess = list(_clips_enriched)[:500]
                 for k in excess:
                     _clips_enriched.discard(k)
@@ -3824,7 +3824,7 @@ def _clip_analysis_loop():
             try:
                 # For known customers, check if further enrichment is worth the CPU cost.
                 # Skip entirely if already at max angles AND has gait stored.
-                _n_sample = 25  # reduced from 50 — enough for multi-angle coverage
+                _n_sample = 25  # reduced from 50 - enough for multi-angle coverage
                 _need_gait = True
                 if customer_id is not None:
                     cust_sigs = _signals_cache.get(customer_id, {})
@@ -3862,7 +3862,7 @@ def _clip_analysis_loop():
                                     f'(score={best_match_score:.3f}) for event {event_id[:12]}')
 
                 # --- Unresolved: feed evidence into the stable track's bound session ---
-                # NEVER call _assign_to_session() here — that is first-contact only.
+                # NEVER call _assign_to_session() here - that is first-contact only.
                 # Using it from the clip worker creates a spurious clip_analysis session
                 # that splits evidence away from the real session the track is bound to.
                 if customer_id is None:
@@ -3922,7 +3922,7 @@ def _clip_analysis_loop():
                 clip_camera = signals.get('camera') or signals.get('source')
 
                 # Verify each clip face actually matches this customer before storing.
-                # Clips can contain multiple people — don't enrich with wrong-person faces.
+                # Clips can contain multiple people - don't enrich with wrong-person faces.
                 cust_sigs = _signals_cache.get(customer_id, {})
                 cust_stored_embs = []
                 for fe in cust_sigs.get('face_embeddings', [])[:10]:  # top 10 stored
@@ -3971,7 +3971,7 @@ def _clip_analysis_loop():
                 if angles_added > 0:
                     _signals_cache_ids.clear()
 
-                # Gait — enroll only if customer doesn't have one yet
+                # Gait - enroll only if customer doesn't have one yet
                 if _need_gait and signals.get('gait_features'):
                     existing_gaits = pos_get(f'/api/customers/{customer_id}/gaits_raw') or []
                     if not existing_gaits:
@@ -3989,7 +3989,7 @@ def _clip_analysis_loop():
                         'snapshot_only': True,
                     })
 
-                # Best physical attributes — one write total
+                # Best physical attributes - one write total
                 attrs_to_write = best_attrs or signals.get('physical_attrs')
                 if attrs_to_write and float(attrs_to_write.get('confidence', 0)) >= 0.3:
                     pos_post(f'/api/customers/{customer_id}/attributes', attrs_to_write)
@@ -4020,10 +4020,10 @@ def _cleanup_stable_tracks(now: float):
             # Apply confidence decay to idle tracks
             _apply_confidence_decay(st, now)
 
-            # Grace period expiry — GRACE → CLOSED
+            # Grace period expiry - GRACE → CLOSED
             # If track has good promo potential but no customer yet, extend grace
             # to 30s to give the session resolver time to promote before closing.
-            # IMPORTANT: compute score live from the bound session — st.promotion_score
+            # IMPORTANT: compute score live from the bound session - st.promotion_score
             # is only written during _resolve_session which fires after grace expires.
             if (st.state == PersonState.GRACE
                     and st.grace_started_at is not None):
@@ -4033,7 +4033,7 @@ def _cleanup_stable_tracks(now: float):
                     _bound_sess = _active_sessions.get(st.session_id) if st.session_id else None
                     _live_score = _compute_promotion_score(_bound_sess) if _bound_sess else 0.0
                     if _live_score >= 0.50:
-                        effective_grace = 30.0  # extended — high-potential unresolved track
+                        effective_grace = 30.0  # extended - high-potential unresolved track
                 if (now - st.grace_started_at) > effective_grace:
                     st.transition(PersonState.CLOSED)
                     log_identity_event('GRACE_EXPIRED', st.stable_id,
@@ -4062,7 +4062,7 @@ def _cleanup_stable_tracks(now: float):
         for sid in to_remove:
             st = _stable_tracks.pop(sid, None)
             if st:
-                # Clean ALL reverse event_id mappings — one track can have many
+                # Clean ALL reverse event_id mappings - one track can have many
                 for eid in st.raw_event_ids:
                     _event_to_stable.pop(eid, None)
             _recently_closed.pop(sid, None)
@@ -4175,7 +4175,7 @@ def poll_frigate_events():
                     if label not in ('person', 'car'):
                         continue
 
-                    # Active event (no end_time yet) — throttle re-processing to avoid
+                    # Active event (no end_time yet) - throttle re-processing to avoid
                     # running SCRFD inference on every 30s poll for someone standing still.
                     if not end_time:
                         recent_count += 1
@@ -4214,7 +4214,7 @@ def poll_frigate_events():
                                 _release_task_slot()
                         threading.Thread(target=_run_active, daemon=True).start()
 
-                    # Ended event within last 60 seconds — process once
+                    # Ended event within last 60 seconds - process once
                     elif (now - end_time) <= 60:
                         recent_count += 1
                         if eid and eid not in _seen_events:
@@ -4369,7 +4369,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         elif parsed.path == '/identity_events':
             n = int(qs.get('n', ['100'])[0])
             events = list(_identity_events)[-n:]
-            # Serialise — timestamps as ISO strings for readability
+            # Serialise - timestamps as ISO strings for readability
             out = []
             for ev in events:
                 row = dict(ev)
@@ -4452,10 +4452,10 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
         elif parsed.path == '/control/sync_cache':
             _signals_cache_ids.clear()
-            # Also clear recent customers cache — prevents ghost matches after DB wipe
+            # Also clear recent customers cache - prevents ghost matches after DB wipe
             with _recent_customers_lock:
                 _recent_customers_cache.clear()
-            logger.info('Monitor: customer cache + recent cache invalidated — will rebuild on next poll')
+            logger.info('Monitor: customer cache + recent cache invalidated - will rebuild on next poll')
             self._send_json({'ok': True})
 
         elif parsed.path == '/control/requeue_clip':
@@ -4545,20 +4545,20 @@ def _reindex_customer_embeddings(cid):
 
     new_embeddings = []
     for face_entry in faces_raw:
-        # faces_raw doesn't include the raw photo — we need to fetch via the photo endpoint
+        # faces_raw doesn't include the raw photo - we need to fetch via the photo endpoint
         pass  # Will use enroll/face with replace_if_better for now; full photo re-embedding
               # requires a separate endpoint. Use existing embeddings + replace_if_better only.
 
     # For now: trigger profile improvement by posting the existing embeddings back with
-    # replace_if_better=True — the endpoint will upgrade lower-quality angles
-    logger.debug(f'Nightly reindex: cid={cid} — triggering replace_if_better on {len(faces_raw)} embeddings')
+    # replace_if_better=True - the endpoint will upgrade lower-quality angles
+    logger.debug(f'Nightly reindex: cid={cid} - triggering replace_if_better on {len(faces_raw)} embeddings')
     for face_entry in faces_raw:
         if not isinstance(face_entry, dict):
             continue
         quality = float(face_entry.get('quality') or 0.0)
         if quality <= 0:
             continue  # no quality metadata yet, skip
-        # Re-submit with replace_if_better — will upgrade any same-angle lower-quality row
+        # Re-submit with replace_if_better - will upgrade any same-angle lower-quality row
         pos_post(f'/api/customers/{cid}/enroll/face', {
             'embedding_b64': face_entry['embedding_b64'],
             'quality': quality,
@@ -4711,7 +4711,7 @@ if __name__ == '__main__':
                 except Exception:
                     pass
         if _startup_recent_customers:
-            logger.info(f'Startup: {len(_startup_recent_customers)} recently enrolled customers — will skip re-enrollment: {_startup_recent_customers}')
+            logger.info(f'Startup: {len(_startup_recent_customers)} recently enrolled customers - will skip re-enrollment: {_startup_recent_customers}')
     except Exception as e:
         logger.warning(f'Startup recent-customer check failed: {e}')
 
@@ -4721,7 +4721,7 @@ if __name__ == '__main__':
     # Background cache refresh
     threading.Thread(target=_cache_refresh_loop, daemon=True).start()
 
-    # Brief delay before starting the Frigate poller — lets models load and
+    # Brief delay before starting the Frigate poller - lets models load and
     # signal cache settle before processing any events.
     import time as _startup_time
     _startup_time.sleep(5)
@@ -4729,21 +4729,21 @@ if __name__ == '__main__':
     # Background Frigate poller
     threading.Thread(target=poll_frigate_events, daemon=True).start()
 
-    # Background clip enrichment — 2 workers drain the queue without saturating the CPU
+    # Background clip enrichment - 2 workers drain the queue without saturating the CPU
     for _i in range(2):
         threading.Thread(target=_clip_analysis_loop, daemon=True, name=f'clip-worker-{_i}').start()
 
     # Background track cleanup (prevents _active_tracks memory growth)
     threading.Thread(target=_track_cleanup_loop, daemon=True).start()
 
-    # Session resolver — single authority for customer creation
+    # Session resolver - single authority for customer creation
     threading.Thread(target=_session_resolver_loop, daemon=True).start()
     logger.info('Session resolver started (idle_expiry=60s max_lifetime=300s)')
 
-    # Nightly reindex — refreshes embeddings for customers not seen in >90 days
+    # Nightly reindex - refreshes embeddings for customers not seen in >90 days
     threading.Thread(target=_nightly_reindex_loop, daemon=True).start()
 
-    # Startup photo backfill — fixes customers with embeddings but no face/body photo
+    # Startup photo backfill - fixes customers with embeddings but no face/body photo
     threading.Thread(target=_photo_backfill_loop, daemon=True).start()
 
     # Webhook server (blocking)

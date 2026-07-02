@@ -1,6 +1,6 @@
-# compose.template.yml — the appliance stack for a NEW store box.
+# compose.template.yml - the appliance stack for a NEW store box.
 # POS-only: postgres + pos. No recognition, no Frigate, no web shop (all excluded
-# from appliance boxes by design). Consumes a PINNED image tag from GHCR — no build.
+# from appliance boxes by design). Consumes a PINNED image tag from GHCR - no build.
 # All config comes from the rendered .env (which register-store.sh generates).
 #
 # Copied to /opt/farmpos/docker-compose.yml at provision time. `docker compose up -d`.
@@ -16,7 +16,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
-      # Entrypoint init — creates the DB on an EMPTY data dir only (no-op on restore).
+      # Entrypoint init - creates the DB on an EMPTY data dir only (no-op on restore).
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
     ports:
       - "127.0.0.1:5432:5432"     # never LAN-exposed

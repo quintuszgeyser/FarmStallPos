@@ -10,9 +10,9 @@ def ensure_pos_customer(db, name: str, email: str | None, phone: str | None,
     Find or create a POS customers record. Returns the POS customers.id or None if skipped.
 
     Dedup order:
-    1. web_customers.pos_customer_id already set — return it directly (handles post-merge case).
-    2. Email match (case-insensitive, trimmed) on active customers — follow merged_into chain.
-    3. Phone match on active customers — only if no email.
+    1. web_customers.pos_customer_id already set - return it directly (handles post-merge case).
+    2. Email match (case-insensitive, trimmed) on active customers - follow merged_into chain.
+    3. Phone match on active customers - only if no email.
     4. Create new record if nothing matched.
     5. Skip entirely if neither email nor phone.
     """
@@ -24,7 +24,7 @@ def ensure_pos_customer(db, name: str, email: str | None, phone: str | None,
         return None
 
     try:
-        # 1. Already linked — return current pos_customer_id (may have been updated after a merge)
+        # 1. Already linked - return current pos_customer_id (may have been updated after a merge)
         if web_customer_id:
             linked = db.session.execute(
                 text("SELECT pos_customer_id FROM web_customers WHERE id = :id"),

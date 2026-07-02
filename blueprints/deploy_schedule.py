@@ -1,11 +1,11 @@
 """
 Scheduled QA → PROD deployments.
 
-POST /api/deploy-schedule          — schedule a deploy (datetime + description)
-GET  /api/deploy-schedule          — list upcoming + recent schedules
-DELETE /api/deploy-schedule/<id>   — cancel a pending schedule
-POST /api/deploy-schedule/execute  — manually trigger now (admin only)
-GET  /api/deploy-schedule/status   — current deploy status + env info
+POST /api/deploy-schedule          - schedule a deploy (datetime + description)
+GET  /api/deploy-schedule          - list upcoming + recent schedules
+DELETE /api/deploy-schedule/<id>   - cancel a pending schedule
+POST /api/deploy-schedule/execute  - manually trigger now (admin only)
+GET  /api/deploy-schedule/status   - current deploy status + env info
 """
 import threading
 from datetime import datetime, timezone, timedelta
@@ -24,7 +24,7 @@ _deploy_lock = threading.Lock()
 
 
 def _start_scheduler(app):
-    """Start background scheduler thread — call once from create_app()."""
+    """Start background scheduler thread - call once from create_app()."""
     global _scheduler_started
     if _scheduler_started:
         return
@@ -59,7 +59,7 @@ def _check_due_schedules():
 
 
 def _execute_schedule(schedule: DeploySchedule):
-    """Mark schedule as running — actual deploy is triggered by host cron via /api/deploy-schedule/poll.
+    """Mark schedule as running - actual deploy is triggered by host cron via /api/deploy-schedule/poll.
     The host runs: curl -X POST http://localhost:5100/api/deploy-schedule/poll every minute.
     This marks it running and the cron script then calls deploy.sh prod.
     """
@@ -115,7 +115,7 @@ def api_schedule_create():
         if scheduled_at.tzinfo is None:
             scheduled_at = scheduled_at.replace(tzinfo=timezone.utc)
     except Exception:
-        return jsonify({'error': 'Invalid scheduled_at — use ISO format e.g. 2026-06-19T02:00:00Z'}), 400
+        return jsonify({'error': 'Invalid scheduled_at - use ISO format e.g. 2026-06-19T02:00:00Z'}), 400
 
     if scheduled_at <= datetime.now(timezone.utc):
         return jsonify({'error': 'scheduled_at must be in the future'}), 400
@@ -145,7 +145,7 @@ def api_schedule_cancel(sid):
     if not s:
         return jsonify({'error': 'Not found'}), 404
     if s.status != 'pending':
-        return jsonify({'error': f'Cannot cancel — status is {s.status}'}), 400
+        return jsonify({'error': f'Cannot cancel - status is {s.status}'}), 400
     s.status = 'cancelled'
     db.session.commit()
     return jsonify({'ok': True})
@@ -153,7 +153,7 @@ def api_schedule_cancel(sid):
 
 @bp.route('/api/deploy-schedule/execute', methods=['POST'])
 def api_schedule_execute_now():
-    """Schedule an immediate deploy — host cron picks it up on next /poll call."""
+    """Schedule an immediate deploy - host cron picks it up on next /poll call."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
 
@@ -172,12 +172,12 @@ def api_schedule_execute_now():
     db.session.add(s)
     db.session.commit()
     return jsonify({'ok': True, 'schedule_id': s.id,
-                    'message': 'Deploy queued — will execute within 60 seconds via host cron'})
+                    'message': 'Deploy queued - will execute within 60 seconds via host cron'})
 
 
 @bp.route('/api/deploy-schedule/rollback', methods=['POST'])
 def api_schedule_rollback_now():
-    """Queue an immediate PROD rollback to the previous image — host cron runs rollback.sh."""
+    """Queue an immediate PROD rollback to the previous image - host cron runs rollback.sh."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
 
@@ -195,7 +195,7 @@ def api_schedule_rollback_now():
     db.session.add(s)
     db.session.commit()
     return jsonify({'ok': True, 'schedule_id': s.id,
-                    'message': 'Rollback queued — will execute within 60 seconds via host cron'})
+                    'message': 'Rollback queued - will execute within 60 seconds via host cron'})
 
 
 @bp.route('/api/deploy-schedule/poll', methods=['POST'])
@@ -203,7 +203,7 @@ def api_schedule_poll():
     """Called by host cron every minute. Returns next pending schedule if due.
     Cron script: curl -s -X POST http://localhost:5100/api/deploy-schedule/poll
     If response contains 'deploy': true, cron runs deploy.sh prod then calls /complete.
-    No auth — only callable from localhost (Docker network).
+    No auth - only callable from localhost (Docker network).
     """
     import os
     if request.remote_addr not in ('127.0.0.1', '::1', '172.0.0.0/8'):

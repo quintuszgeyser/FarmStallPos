@@ -47,10 +47,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      # Migration smoke test — the guardrail for fleet-wide strong_migrate().
+      # Migration smoke test - the guardrail for fleet-wide strong_migrate().
       # Boot the freshly built image against an EMPTY Postgres and assert the app
       # comes up healthy (which only happens after strong_migrate() + seed succeed).
-      - name: Smoke test — migrate against empty Postgres + /health
+      - name: Smoke test - migrate against empty Postgres + /health
         run: |
           set -euo pipefail
           docker network create farmpos-ci
@@ -81,7 +81,7 @@ jobs:
             sleep 2
           done
           if [ "$ok" != "1" ]; then
-            echo "::error::POS did not become healthy — migration or startup failed."
+            echo "::error::POS did not become healthy - migration or startup failed."
             echo "--- ci-pos logs ---"; docker logs ci-pos || true
             exit 1
           fi
@@ -92,7 +92,7 @@ jobs:
               -e APP_ENV=prod -e STORE_ID=guard-test \
               -e DATABASE_URL="postgresql://farmstall:ci-test-pw@ci-pg:5432/farmpos" \
               farmpos-pos:ci python -c "import app" 2>/dev/null; then
-            echo "::error::Guard did not fire — a provisioned box booted with dev-secret-key."
+            echo "::error::Guard did not fire - a provisioned box booted with dev-secret-key."
             exit 1
           fi
           echo "Guard test passed: provisioned box refuses the dev SECRET_KEY."

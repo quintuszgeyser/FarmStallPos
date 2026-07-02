@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Farm POS DB integrity check — run after every migration to confirm schema and row counts.
+Farm POS DB integrity check - run after every migration to confirm schema and row counts.
 
 Usage:
     python scripts/db_integrity.py [database_url]
@@ -96,7 +96,7 @@ with engine.connect() as conn:
             counts[table] = n
             print(f'  {table:30s}  {n:>8} rows')
         except Exception as e:
-            print(f'  ✗  {table}: query failed — {e}')
+            print(f'  ✗  {table}: query failed - {e}')
             failures.append(f'Count query failed: {table}')
 
 section('Baseline comparison')
@@ -118,14 +118,14 @@ if os.path.exists(BASELINE_FILE):
             sign = '+' if delta >= 0 else ''
             print(f'  ✓  {table}: {prev} → {current} ({sign}{delta})')
 else:
-    print(f'  No baseline found — saving current counts as baseline to {BASELINE_FILE}')
+    print(f'  No baseline found - saving current counts as baseline to {BASELINE_FILE}')
     with open(BASELINE_FILE, 'w') as f:
         json.dump(counts, f, indent=2)
     print('  Baseline saved. Re-run to compare.')
 
 print()
 if failures:
-    print(f'FAILED — {len(failures)} issue(s):')
+    print(f'FAILED - {len(failures)} issue(s):')
     for f in failures:
         print(f'  • {f}')
     sys.exit(1)

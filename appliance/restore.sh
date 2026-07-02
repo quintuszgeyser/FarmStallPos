@@ -1,5 +1,5 @@
 #!/bin/bash
-# restore.sh — restore a store's DB from a backup (local or pulled from off-box).
+# restore.sh - restore a store's DB from a backup (local or pulled from off-box).
 #   sudo ./restore.sh                      # restore newest local backup
 #   sudo ./restore.sh /path/to/dump.sql.gz[.age]
 #
@@ -7,7 +7,7 @@
 # always produces the backup's exact state (never a silent merge into existing rows).
 # Load runs with ON_ERROR_STOP=1 and no output suppression, so a bad dump fails loudly.
 #
-# DRILL THIS on a box that ALREADY HAS DATA before trusting it — an empty-DB drill
+# DRILL THIS on a box that ALREADY HAS DATA before trusting it - an empty-DB drill
 # hides the merge/idempotency failure mode. An untested restore is not a backup.
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,7 +27,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 chmod 700 "$TMP"                         # decrypted PII must not be world-readable
 PLAIN="$TMP/restore.sql.gz"
 
-# 1. Decrypt if .age (needs a private key — store's own, or the central support key).
+# 1. Decrypt if .age (needs a private key - store's own, or the central support key).
 if [[ "$SRC" == *.age ]]; then
   KEY=""
   [ -f "$SECRETS_DIR/backup_age.key" ] && KEY="$SECRETS_DIR/backup_age.key"
@@ -39,11 +39,11 @@ else
 fi
 
 # 2. Validate the dump BEFORE we touch the database (fail before destroying anything).
-gzip -t "$PLAIN" 2>/dev/null || die "backup is not a valid gzip — refusing to restore"
+gzip -t "$PLAIN" 2>/dev/null || die "backup is not a valid gzip - refusing to restore"
 SIZE=$(stat -c%s "$PLAIN" 2>/dev/null || echo 0)
-[ "$SIZE" -gt 1024 ] || die "decrypted dump is suspiciously small ($SIZE bytes) — refusing to restore"
+[ "$SIZE" -gt 1024 ] || die "decrypted dump is suspiciously small ($SIZE bytes) - refusing to restore"
 gunzip -c "$PLAIN" | head -c 4096 | grep -qE 'CREATE TABLE|COPY |INSERT INTO' \
-  || die "dump does not look like a pg_dump (no CREATE/COPY/INSERT in header) — refusing"
+  || die "dump does not look like a pg_dump (no CREATE/COPY/INSERT in header) - refusing"
 
 # 3. Bring up Postgres; stop the app so nothing writes mid-restore.
 docker compose up -d postgres
@@ -54,7 +54,7 @@ BEFORE="$(docker exec "$PG" psql -U farmstall -d "$DB" -t -A -c 'SELECT count(*)
 c_bold "products rows BEFORE restore: $BEFORE"
 
 # 4. Clean slate: DROP + CREATE the DB, then load. This is the fix for the silent-merge
-#    bug — loading a plain-SQL dump into a populated DB errors on every existing table.
+#    bug - loading a plain-SQL dump into a populated DB errors on every existing table.
 c_bold "Dropping + recreating $DB (clean restore)..."
 docker exec "$PG" psql -U farmstall -d postgres -v ON_ERROR_STOP=1 -c \
   "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DB' AND pid<>pg_backend_pid();" >/dev/null
@@ -67,4 +67,4 @@ gunzip -c "$PLAIN" | docker exec -i "$PG" psql -U farmstall -d "$DB" -v ON_ERROR
 # 5. Bring the app back and report before/after so the operator can SEE it changed.
 docker compose up -d
 AFTER="$(docker exec "$PG" psql -U farmstall -d "$DB" -t -A -c 'SELECT count(*) FROM products' 2>/dev/null || echo '?')"
-c_green "Restore complete. products rows: $BEFORE -> $AFTER  — verify the POS."
+c_green "Restore complete. products rows: $BEFORE -> $AFTER  - verify the POS."

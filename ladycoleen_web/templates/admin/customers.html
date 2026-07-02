@@ -40,7 +40,7 @@
     <tr>
       <td>{{ c.name }}</td>
       <td>{{ c.email }}</td>
-      <td>{{ c.phone or '—' }}</td>
+      <td>{{ c.phone or '-' }}</td>
       <td>{{ c.created_at.strftime('%d %b %Y') }}</td>
       <td>{{ c.cake_orders.count() }}</td>
       <td>

@@ -1,4 +1,4 @@
-# Farm POS Appliance — new-store onboarding
+# Farm POS Appliance - new-store onboarding
 
 Turns a bare mini-PC into a trading POS. **POS-only** (no recognition/Frigate/web shop).
 Local-first: the box owns its Postgres and trades fully offline.
@@ -43,7 +43,7 @@ before first boot and run the script non-interactively.
 
 ## Backups (per-store encryption)
 ```bash
-# once per box — PUBLIC key encrypts on the box; PRIVATE key is escrowed OFF the box.
+# once per box - PUBLIC key encrypts on the box; PRIVATE key is escrowed OFF the box.
 age-keygen -o /opt/farmpos/secrets/backup_age.key
 grep 'public key:' /opt/farmpos/secrets/backup_age.key | awk '{print $NF}' \
   > /opt/farmpos/secrets/backup_age.pub
@@ -63,7 +63,7 @@ Bump `farmpos_version` in `store.yml`, then:
 ```bash
 cd /opt/farmpos && docker compose pull && docker compose up -d
 ```
-Never use `:latest` in production — always a pinned `vX.Y.Z` that passed CI.
+Never use `:latest` in production - always a pinned `vX.Y.Z` that passed CI.
 
 ## Files
 | File | Purpose |

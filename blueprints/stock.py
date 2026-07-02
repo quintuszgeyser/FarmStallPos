@@ -203,7 +203,7 @@ def api_stock_writeoff():
     qty_base       = Decimal(str(qty * conversion))
     system_before  = Decimal(str(get_stock_level(pid)))
     if qty_base > system_before:
-        return jsonify({'error': f'Cannot write off {float(qty_base)}{p.base_unit} — only {float(system_before)}{p.base_unit} in stock'}), 400
+        return jsonify({'error': f'Cannot write off {float(qty_base)}{p.base_unit} - only {float(system_before)}{p.base_unit} in stock'}), 400
     u   = current_user(); now = datetime.utcnow()
     cost_written_off = consume_fifo(pid, qty_base, f'wo-{uuid.uuid4()}', now)
     db.session.add(StockAdjustment(product_id=pid, adjustment_type='writeoff', qty_change_base=-qty_base, system_qty_before=system_before, cost_written_off=cost_written_off, reason=reason, adjusted_at=now, user_id=u.id if u else None))
@@ -236,7 +236,7 @@ def api_stock_adjustment_edit(adj_id):
     u   = current_user(); now = datetime.utcnow()
     if diff > 0:
         current_stock = Decimal(str(get_stock_level(p.id)))
-        if diff > current_stock: return jsonify({'error': f'Cannot write off additional {float(diff)}{p.base_unit} — only {float(current_stock)}{p.base_unit} in stock'}), 400
+        if diff > current_stock: return jsonify({'error': f'Cannot write off additional {float(diff)}{p.base_unit} - only {float(current_stock)}{p.base_unit} in stock'}), 400
         extra_cost = consume_fifo(p.id, diff, f'wo-edit-{uuid.uuid4()}', now)
         adj.cost_written_off = Decimal(str(adj.cost_written_off or 0)) + Decimal(str(extra_cost))
     elif diff < 0:

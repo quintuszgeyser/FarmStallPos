@@ -177,7 +177,7 @@ def api_stats():
     filtered_product_name = (db.session.get(Product, product_id_filter) or Product(name=None)).name if product_id_filter else None
     filtered_user_name    = (db.session.get(User, user_id_filter) or User(username=None)).username if user_id_filter else None
 
-    # ── New customer/channel metrics — receipt-level, correct deduplication ──
+    # ── New customer/channel metrics - receipt-level, correct deduplication ──
     from sqlalchemy import text as _text
     cust_row = db.session.execute(_text("""
         WITH all_receipts AS (
@@ -291,7 +291,7 @@ def api_stats_drilldown():
     for sid, sale_rows in sale_map.items():
         sr = sorted(sale_rows, key=lambda r: r.date_time)
         total = float(sum(Decimal(str(r.qty)) * r.unit_price for r in sale_rows))
-        transactions.append({'sale_id': sid[:8], 'date_time': sr[0].date_time.isoformat(), 'teller': user_names.get(sr[0].user_id, '—'), 'total': round(total, 2), 'item_count': sum(float(r.qty) for r in sale_rows), 'lines': [{'product': prod_names.get(r.product_id, str(r.product_id)), 'qty': float(r.qty), 'unit_price': float(r.unit_price), 'line_total': round(float(Decimal(str(r.qty)) * r.unit_price), 2)} for r in sorted(sale_rows, key=lambda x: x.product_id)]})
+        transactions.append({'sale_id': sid[:8], 'date_time': sr[0].date_time.isoformat(), 'teller': user_names.get(sr[0].user_id, '-'), 'total': round(total, 2), 'item_count': sum(float(r.qty) for r in sale_rows), 'lines': [{'product': prod_names.get(r.product_id, str(r.product_id)), 'qty': float(r.qty), 'unit_price': float(r.unit_price), 'line_total': round(float(Decimal(str(r.qty)) * r.unit_price), 2)} for r in sorted(sale_rows, key=lambda x: x.product_id)]})
     transactions.sort(key=lambda x: x['date_time'], reverse=True)
 
     total_revenue = sum(t['total'] for t in transactions); total_tx = len(transactions)
@@ -334,7 +334,7 @@ def api_stats_drilldown_kitchen():
     orders = kq.order_by(KitchenOrder.queued_at.desc()).all()
     uids = {o.teller_id for o in orders if o.teller_id}
     user_names = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
-    return jsonify([{'id': o.id, 'sale_id': o.sale_id[:8], 'product': o.product_name, 'qty': float(o.qty), 'status': o.status, 'teller': user_names.get(o.teller_id, '—'), 'queued_at': o.queued_at.isoformat() if o.queued_at else None, 'completed_at': o.completed_at.isoformat() if o.completed_at else None, 'wait_seconds': round((o.completed_at - o.queued_at).total_seconds()) if (o.completed_at and o.queued_at) else None, 'notes': o.notes or ''} for o in orders])
+    return jsonify([{'id': o.id, 'sale_id': o.sale_id[:8], 'product': o.product_name, 'qty': float(o.qty), 'status': o.status, 'teller': user_names.get(o.teller_id, '-'), 'queued_at': o.queued_at.isoformat() if o.queued_at else None, 'completed_at': o.completed_at.isoformat() if o.completed_at else None, 'wait_seconds': round((o.completed_at - o.queued_at).total_seconds()) if (o.completed_at and o.queued_at) else None, 'notes': o.notes or ''} for o in orders])
 
 
 @bp.route('/api/stats/drilldown/writeoffs')
@@ -350,7 +350,7 @@ def api_stats_drilldown_writeoffs():
     pids = {w.product_id for w in writeoffs}; uids = {w.user_id for w in writeoffs if w.user_id}
     prods = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
     users = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
-    return jsonify([{'date': w.adjusted_at.isoformat() if w.adjusted_at else None, 'product': prods[w.product_id].name if w.product_id in prods else str(w.product_id), 'qty_change': float(w.qty_change_base), 'base_unit': prods[w.product_id].base_unit if w.product_id in prods else '', 'cost': float(w.cost_written_off) if w.cost_written_off else 0, 'by': users.get(w.user_id, '—')} for w in writeoffs])
+    return jsonify([{'date': w.adjusted_at.isoformat() if w.adjusted_at else None, 'product': prods[w.product_id].name if w.product_id in prods else str(w.product_id), 'qty_change': float(w.qty_change_base), 'base_unit': prods[w.product_id].base_unit if w.product_id in prods else '', 'cost': float(w.cost_written_off) if w.cost_written_off else 0, 'by': users.get(w.user_id, '-')} for w in writeoffs])
 
 
 @bp.route('/api/stats/drilldown/profit')

@@ -35,13 +35,13 @@ from helpers import (
 
 APP_VERSION = '1.6.0'
 
-# Environment configuration — explicit, never guessed
+# Environment configuration - explicit, never guessed
 APP_ENV  = os.environ.get('APP_ENV', 'prod').lower()
 IS_QA    = APP_ENV == 'qa'
 DB_NAME  = os.environ.get('POSTGRES_DB', os.environ.get('DATABASE_URL', 'unknown').split('/')[-1])
 LOG_PREFIX = f"[{APP_ENV.upper()}][{DB_NAME}]"
 
-# Per-store identity — set from store.yml → .env on each appliance box (multi-store).
+# Per-store identity - set from store.yml → .env on each appliance box (multi-store).
 # STORE_ID is the switch: when it is UNSET this is the original Lady Coleen box and
 # every field falls back to the exact historical strings, so that box renders and
 # behaves byte-for-byte as before. A provisioned store (register-store.sh) always
@@ -53,7 +53,7 @@ if STORE_ID:
     STORE_LEGAL    = os.environ.get('STORE_LEGAL', '').strip()    or STORE_NAME
     STORE_SUBTITLE = os.environ.get('STORE_SUBTITLE', '').strip()
 else:
-    # Original Lady Coleen box — do NOT change these literals.
+    # Original Lady Coleen box - do NOT change these literals.
     STORE_NAME     = 'Lady Coleen'
     STORE_TAGLINE  = 'Lady Coleen Boutique Farmstall'
     STORE_LEGAL    = 'Lady Coleen Boutique Farm Shop'
@@ -98,10 +98,10 @@ def strong_migrate():
 
     with engine.begin() as conn:
         if engine_name != 'sqlite':
-            # TRANSACTION-level advisory lock — held for the life of THIS transaction and
+            # TRANSACTION-level advisory lock - held for the life of THIS transaction and
             # auto-released on commit/rollback. Must be acquired inside engine.begin() (a
             # session-level pg_try_advisory_lock on a separate connection releases when that
-            # connection returns to the pool, BEFORE the migration runs — letting a second
+            # connection returns to the pool, BEFORE the migration runs - letting a second
             # gunicorn worker migrate concurrently). Blocking (not _try_): a late worker
             # waits for the migration to finish, then re-runs the idempotent DDL as a no-op.
             conn.exec_driver_sql(f"SELECT pg_advisory_xact_lock({LOCK_ID})")
@@ -998,7 +998,7 @@ def strong_migrate():
             pg_try("CREATE INDEX IF NOT EXISTS idx_excl_a ON customer_exclusions(customer_id_a)")
             pg_try("CREATE INDEX IF NOT EXISTS idx_excl_b ON customer_exclusions(customer_id_b)")
 
-            # Merge audit log — one row per merge operation, survives unmerge
+            # Merge audit log - one row per merge operation, survives unmerge
             pg_try("""
             CREATE TABLE IF NOT EXISTS customer_merge_log (
                 id SERIAL PRIMARY KEY,
@@ -1016,7 +1016,7 @@ def strong_migrate():
             pg_try("CREATE INDEX IF NOT EXISTS idx_merge_log_primary ON customer_merge_log(primary_id)")
             pg_try("CREATE INDEX IF NOT EXISTS idx_merge_log_source  ON customer_merge_log(source_id)")
 
-            # Track which customer originally owned each face/gait row — needed for unmerge
+            # Track which customer originally owned each face/gait row - needed for unmerge
             pg_try("ALTER TABLE customer_faces ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
             pg_try("ALTER TABLE customer_gaits ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
             pg_try("ALTER TABLE customer_physical_attributes ADD COLUMN original_customer_id INTEGER REFERENCES customers(id)")
@@ -1024,7 +1024,7 @@ def strong_migrate():
             pg_try("ALTER TABLE customer_faces ADD COLUMN quality NUMERIC(4,3)")
             pg_try("ALTER TABLE customer_faces ADD COLUMN camera_source VARCHAR(20)")
 
-        # scale sync fields on products — POS is single source of truth
+        # scale sync fields on products - POS is single source of truth
         pg_try("ALTER TABLE products ADD COLUMN sync_to_scale BOOLEAN NOT NULL DEFAULT FALSE")
         pg_try("ALTER TABLE products ADD COLUMN scale_tare NUMERIC(8,3)")
         pg_try("ALTER TABLE products ADD COLUMN scale_shelf_life INTEGER")
@@ -1077,7 +1077,7 @@ def strong_migrate():
             )
         """)
 
-        # PLU audit log — tracks product_code changes for scale lifecycle management
+        # PLU audit log - tracks product_code changes for scale lifecycle management
         pg_try("""
             CREATE TABLE IF NOT EXISTS scale_plu_log (
               id          SERIAL PRIMARY KEY,
@@ -1258,10 +1258,10 @@ def create_app():
 
     db.init_app(app)
 
-    # Inject environment into Jinja2 globals — used by QA banner in index.html
+    # Inject environment into Jinja2 globals - used by QA banner in index.html
     app.jinja_env.globals['app_env'] = APP_ENV
     app.jinja_env.globals['is_qa']   = IS_QA
-    # Per-store branding — templates render these instead of hardcoded strings.
+    # Per-store branding - templates render these instead of hardcoded strings.
     # On the original Lady Coleen box (STORE_ID unset) they resolve to the exact
     # historical literals, so nothing renders differently there.
     app.jinja_env.globals['store_name']     = STORE_NAME
@@ -1269,14 +1269,14 @@ def create_app():
     app.jinja_env.globals['store_legal']    = STORE_LEGAL
     app.jinja_env.globals['store_subtitle'] = STORE_SUBTITLE
 
-    logger.info(f"{LOG_PREFIX} POS starting — ENV={APP_ENV} DB={DB_NAME} IS_QA={IS_QA}")
+    logger.info(f"{LOG_PREFIX} POS starting - ENV={APP_ENV} DB={DB_NAME} IS_QA={IS_QA}")
 
-    # /api/env — environment info for frontend
+    # /api/env - environment info for frontend
     @app.route('/api/env')
     def _api_env():
         return jsonify({'env': APP_ENV, 'is_qa': IS_QA})
 
-    # /api/health — non-blocking health check with cached scale check
+    # /api/health - non-blocking health check with cached scale check
     _health_cache = {'scale': False, 'checked_at': 0}
     @app.route('/api/health')
     def _api_health():
@@ -1418,13 +1418,13 @@ def _register_routes(_app):
     _app.register_blueprint(imports_bp)
     _app.register_blueprint(deploy_schedule_bp)
 
-    # Start background deploy scheduler (only in QA — QA schedules deploys to PROD)
+    # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:
         from blueprints.deploy_schedule import _start_scheduler
         _start_scheduler(_app)
 
 
-# Module-level app instance — used by gunicorn (`app:app`) and @app.route decorators.
+# Module-level app instance - used by gunicorn (`app:app`) and @app.route decorators.
 # Must be defined AFTER strong_migrate (below) and BEFORE the route definitions.
 # create_app() is called here, which runs strong_migrate + seed on startup.
 

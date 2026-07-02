@@ -17,7 +17,7 @@ from models import (
 
 bp = Blueprint('customers', __name__)
 
-# Recognition service URL — imported lazily to avoid circular
+# Recognition service URL - imported lazily to avoid circular
 def _recog_url():
     import os
     return os.environ.get('RECOGNITION_URL', 'http://farmpos-recognition:8080')
@@ -84,7 +84,7 @@ def _build_customer_list(customers):
     '''), {'cids': cids}).fetchall()
     extras = {row[0]: row[1:] for row in rows}
 
-    # Bulk spend stats — receipt-level to avoid row inflation
+    # Bulk spend stats - receipt-level to avoid row inflation
     spend_rows = db.session.execute(text('''
         WITH receipts AS (
             SELECT s.customer_id, s.sale_id,
@@ -373,7 +373,7 @@ def api_customer_profile(cid):
     customer = db.session.get(Customer, cid)
     if not customer: return jsonify({'error': 'Customer not found'}), 404
 
-    # ── Receipt-level CTE — one row per receipt, avoids row-based inflation ──
+    # ── Receipt-level CTE - one row per receipt, avoids row-based inflation ──
     receipt_rows = db.session.execute(text("""
         WITH receipt_sales AS (
             SELECT
