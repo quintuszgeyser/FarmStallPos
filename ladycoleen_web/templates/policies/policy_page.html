@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ title }} - Lady Coleen{% endblock %}
+{% block title %}{{ title }} - {{ store_name }}{% endblock %}
 
 {% block content %}
 <div class="container py-5" style="max-width:780px">
@@ -24,7 +24,7 @@
 
     <hr style="border-color:var(--lc-gold-border);margin-top:2.5rem">
     <p class="text-muted small mb-0">
-      Lady Coleen Boutique Farm Shop - <a href="mailto:orders@ladycoleen.co.za" style="color:var(--lc-gold)">orders@ladycoleen.co.za</a>
+      {{ store_name_full }} - <a href="mailto:orders@ladycoleen.co.za" style="color:var(--lc-gold)">orders@ladycoleen.co.za</a>
     </p>
   </div>
 

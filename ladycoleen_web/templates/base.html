@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>{% block title %}Lady Coleen{% endblock %}</title>
+  <title>{% block title %}{{ store_name }}{% endblock %}</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -69,7 +69,7 @@
 
   <footer class="lc-footer mt-5 py-4">
     <div class="container text-center">
-      <p class="mb-1">Lady Coleen Boutique Farm Shop</p>
+      <p class="mb-1">{{ store_name_full }}</p>
       <p class="mb-1 text-muted small">Custom cakes &amp; farm-fresh products</p>
       <div class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:.82rem">
         <a href="/policies/refund"   style="color:var(--lc-gold)">Refund Policy</a>

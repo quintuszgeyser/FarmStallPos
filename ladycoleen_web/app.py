@@ -76,7 +76,8 @@ def create_app():
                 from sqlalchemy import text as _text
                 rows = db.session.execute(_text(
                     "SELECT key, value FROM settings WHERE key IN "
-                    "('web_branding_primary','web_branding_font','branding_logo_file')"
+                    "('web_branding_primary','web_branding_font','branding_logo_file',"
+                    "'branding_store_name')"
                 )).fetchall()
                 data = {k: (v or '') for k, v in rows}
             except Exception:
@@ -86,13 +87,20 @@ def create_app():
         prim = (d.get('web_branding_primary') or '').strip()
         font = (d.get('web_branding_font') or '').strip()
         logo = (d.get('branding_logo_file') or '').strip()
+        name = (d.get('branding_store_name') or '').strip()
         # only serve a logo filename that looks safe (set by the POS upload endpoint)
         safe_logo = bool(logo) and bool(_re.match(r'^[\w.\-]+$', logo))
+        # Runtime store name (white-label). Empty = the historical 'Lady Coleen' literals,
+        # so an un-customised box renders byte-identical. store_name = the short brand,
+        # store_name_full = the longer descriptive line used in footers/titles.
+        store_name = name or 'Lady Coleen'
         return {
             'web_primary':  prim if _HEXRE.match(prim) else '',
             'web_on_primary': _contrast(prim) if _HEXRE.match(prim) else '#ffffff',
             'web_font': font if (font in _SAFE_FONTS) else '',
             'web_logo_url': ('/brand-logo/' + logo) if safe_logo else '/static/logo.svg',
+            'store_name': store_name,
+            'store_name_full': (store_name + ' Boutique Farm Shop') if not name else store_name,
         }
 
     # Health check - required by Docker healthcheck

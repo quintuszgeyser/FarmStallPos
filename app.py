@@ -1409,12 +1409,17 @@ def create_app():
     def _inject_branding():
         b = get_branding()
         logo_file = (b.get('branding_logo_file') or '').strip()
+        _branded_name = (b.get('branding_store_name') or '').strip()
         return {
             'branding': b,
             'branding_logo_url': ('/static/branding/' + logo_file) if logo_file else '/static/logo.svg',
             # Runtime display name - overrides the startup Jinja global EVERYWHERE {{ store_name }}
             # is used (context processor wins over jinja_env.globals). Empty = env/LC default.
-            'store_name':  (b.get('branding_store_name') or '').strip() or STORE_NAME,
+            'store_name':  _branded_name or STORE_NAME,
+            # The visible header renders {{ store_tagline }}, not {{ store_name }} - override it
+            # too so a branded store name actually shows in the header (not just the <title>).
+            # Empty branded name = keep the env/LC tagline exactly.
+            'store_tagline': _branded_name or STORE_TAGLINE,
             # Auto-contrast text colour for the chosen primary (readable on light OR dark).
             'brand_on_primary': brand_contrast(b.get('branding_primary') or '#927f57'),
             # invoice text: DB value if set, else the env-driven Jinja global fallback
