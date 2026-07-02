@@ -1399,8 +1399,10 @@ def create_app():
     db.init_app(app)
 
     # Inject environment into Jinja2 globals - used by QA banner in index.html
-    app.jinja_env.globals['app_env'] = APP_ENV
-    app.jinja_env.globals['is_qa']   = IS_QA
+    app.jinja_env.globals['app_env']       = APP_ENV
+    app.jinja_env.globals['is_qa']         = IS_QA
+    # True on appliance boxes (STORE_ID set) - hides recognition/monitor tabs
+    app.jinja_env.globals['is_appliance']  = bool(STORE_ID)
     # Per-store branding - templates render these instead of hardcoded strings.
     # On the original Lady Coleen box (STORE_ID unset) they resolve to the exact
     # historical literals, so nothing renders differently there.
