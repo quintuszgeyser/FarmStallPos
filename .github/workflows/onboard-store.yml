@@ -11,7 +11,8 @@ name: Onboard New Store
 # No inbound SSH from GitHub, no open ports, works on any LAN.
 #
 # Repo secrets required (Settings → Secrets → Actions):
-#   SUPPORT_AGE_PUB  — your central age public key (all store backups encrypted to this)
+#   SUPPORT_AGE_PUB        — your central age public key (all store backups encrypted to this)
+#   OPERATOR_SSH_PUBLIC_KEY — your SSH public key (added to root's authorized_keys on every box)
 #
 # Per-onboard inputs (see below):
 #   store_name     — display name shown in the UI
@@ -147,7 +148,7 @@ jobs:
           print(open('/tmp/store.yml').read())
           PY
 
-      # ── 5. Base64-encode store.yml + support_age.pub for the bootstrap cmd ──
+      # ── 5. Base64-encode store.yml + support_age.pub + ssh pubkey ───────────
       - name: Encode payload
         id: payload
         run: |
@@ -155,16 +156,16 @@ jobs:
           echo "store_yml_b64=$STORE_YML_B64" >> "$GITHUB_OUTPUT"
 
           # Use support_age.pub from repo if present, else from secret
-          if [ -f "farm_pos_web/appliance/support_age.pub" ] && \
-             ! grep -q '^#' "farm_pos_web/appliance/support_age.pub" 2>/dev/null || \
-             grep -qv '^#' "farm_pos_web/appliance/support_age.pub" 2>/dev/null; then
-            SUPPORT_PUB=$(grep -v '^#' "farm_pos_web/appliance/support_age.pub" | head -1)
-          fi
+          SUPPORT_PUB=$(grep -v '^#' "farm_pos_web/appliance/support_age.pub" 2>/dev/null | head -1 || true)
           if [ -z "${SUPPORT_PUB:-}" ]; then
             SUPPORT_PUB="${{ secrets.SUPPORT_AGE_PUB }}"
           fi
           SUPPORT_PUB_B64=$(printf '%s' "$SUPPORT_PUB" | base64 -w0)
           echo "support_pub_b64=$SUPPORT_PUB_B64" >> "$GITHUB_OUTPUT"
+
+          # SSH public key — same for every store, stored as repo secret
+          SSH_PUBKEY_B64=$(printf '%s' "${{ secrets.OPERATOR_SSH_PUBLIC_KEY }}" | base64 -w0)
+          echo "ssh_pubkey_b64=$SSH_PUBKEY_B64" >> "$GITHUB_OUTPUT"
 
       # ── 6. Output the bootstrap command ──────────────────────────────────
       - name: Output bootstrap command
@@ -174,8 +175,8 @@ jobs:
           GHCR_PAT:        ${{ github.event.inputs.ghcr_pat }}
           STORE_YML_B64:   ${{ steps.payload.outputs.store_yml_b64 }}
           SUPPORT_PUB_B64: ${{ steps.payload.outputs.support_pub_b64 }}
+          SSH_PUBKEY_B64:  ${{ steps.payload.outputs.ssh_pubkey_b64 }}
           REPO:            ${{ github.repository }}
-          REF:             ${{ github.ref_name }}
         run: |
           cat <<EOF
 
@@ -189,12 +190,14 @@ jobs:
             --store-yml     "${STORE_YML_B64}" \\
             --support-pub   "${SUPPORT_PUB_B64}" \\
             --ghcr-pat      "${GHCR_PAT}" \\
+            --ssh-pubkey    "${SSH_PUBKEY_B64}" \\
             --version       "${STORE_VER}"'
 
           ════════════════════════════════════════════════════════════
-           The command above is safe to share with the person doing
-           the physical install. It expires when the Tailscale key
-           expires. The GHCR PAT only has read:packages scope.
+           After install, connect via:
+             ssh root@<tailscale-ip>       (Tailscale)
+             ssh root@<lan-ip>             (LAN)
+           The GHCR PAT only has read:packages scope.
           ════════════════════════════════════════════════════════════
 
           EOF

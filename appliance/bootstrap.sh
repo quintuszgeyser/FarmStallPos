@@ -30,6 +30,7 @@ STORE_YML_B64=""
 SUPPORT_PUB_B64=""
 GHCR_PAT=""
 VERSION=""
+SSH_PUBKEY_B64=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -37,6 +38,7 @@ while [[ $# -gt 0 ]]; do
     --support-pub) SUPPORT_PUB_B64="$2"; shift 2 ;;
     --ghcr-pat)    GHCR_PAT="$2";        shift 2 ;;
     --version)     VERSION="$2";         shift 2 ;;
+    --ssh-pubkey)  SSH_PUBKEY_B64="$2";  shift 2 ;;
     *) die "Unknown argument: $1" ;;
   esac
 done
@@ -116,15 +118,37 @@ else
   c_red "  WARN: no support_age.pub — central backup restore will NOT work"
 fi
 
-# ── 5. Log in to GHCR ────────────────────────────────────────────────────────
-c_bold "Step 5/8 — Logging in to GHCR..."
+# ── 5. Install operator SSH public key ───────────────────────────────────────
+c_bold "Step 5/9 — Installing operator SSH public key..."
+if [ -n "$SSH_PUBKEY_B64" ]; then
+  PUBKEY=$(echo "$SSH_PUBKEY_B64" | base64 -d)
+  mkdir -p /root/.ssh
+  chmod 700 /root/.ssh
+  touch /root/.ssh/authorized_keys
+  chmod 600 /root/.ssh/authorized_keys
+  # Append only if not already present (idempotent)
+  if ! grep -qF "$PUBKEY" /root/.ssh/authorized_keys 2>/dev/null; then
+    echo "$PUBKEY" >> /root/.ssh/authorized_keys
+    c_green "  SSH public key added to root's authorized_keys"
+  else
+    c_green "  SSH public key already present (skipped)"
+  fi
+  # Ensure sshd is running and allows public key auth
+  sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+  systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
+else
+  c_red "  WARN: no SSH public key provided — you will only be able to SSH with a password"
+fi
+
+# ── 6. Log in to GHCR ────────────────────────────────────────────────────────
+c_bold "Step 6/9 — Logging in to GHCR..."
 echo "$GHCR_PAT" | docker login ghcr.io -u quintuszgeyser --password-stdin
 c_green "  GHCR login OK"
 # Clear PAT from environment immediately after use
 unset GHCR_PAT
 
-# ── 6. Install Tailscale ──────────────────────────────────────────────────────
-c_bold "Step 6/8 — Installing Tailscale..."
+# ── 7. Install Tailscale ──────────────────────────────────────────────────────
+c_bold "Step 7/9 — Installing Tailscale..."
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
 else
@@ -132,12 +156,12 @@ else
 fi
 c_green "  Tailscale ready"
 
-# ── 7. Run register-store.sh ─────────────────────────────────────────────────
-c_bold "Step 7/8 — Running register-store.sh..."
+# ── 8. Run register-store.sh ─────────────────────────────────────────────────
+c_bold "Step 8/9 — Running register-store.sh..."
 FARMPOS_HOME="$FARMPOS_HOME" bash "$APPLIANCE_DIR/register-store.sh"
 
-# ── 8. Handover checks ───────────────────────────────────────────────────────
-c_bold "Step 8/8 — Running handover checks..."
+# ── 9. Handover checks ───────────────────────────────────────────────────────
+c_bold "Step 9/9 — Running handover checks..."
 . "$APPLIANCE_DIR/lib/common.sh"
 
 PASS=0; FAIL=0
@@ -168,6 +192,8 @@ check "support_age.pub present" \
   "test -s $APPLIANCE_DIR/support_age.pub"
 check "Tailscale connected" \
   "tailscale status 2>/dev/null | grep -v 'not logged in' | grep -q 'farmpos-'"
+check "Operator SSH key installed" \
+  "test -s /root/.ssh/authorized_keys"
 
 echo ""
 echo "  $PASS / $((PASS+FAIL)) checks passed"
@@ -190,6 +216,9 @@ c_green ""
 c_green "  POS (LAN):       http://${LAN_IP}:5000"
 c_green "  POS (Tailscale): http://${TS_IP}:5000"
 c_green "  Admin login:     admin / ${ADMIN_PASS}"
+c_green ""
+c_green "  SSH (LAN):       ssh root@${LAN_IP}"
+c_green "  SSH (Tailscale): ssh root@${TS_IP}"
 c_green "════════════════════════════════════════════════════════"
 echo ""
 c_red "⚠  TO DO BEFORE TRADING:"
