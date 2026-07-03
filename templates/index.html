@@ -2835,7 +2835,7 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260702-branding3"></script>
+<script src="/static/main.js?v=20260703-labels1"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">
@@ -3013,14 +3013,17 @@
         <!-- Centre: WYSIWYG canvas (server-rendered PNG + overlay handles) -->
         <div id="ld-canvas-scroll" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:32px;background:#e9ecef;min-width:0">
           <!-- Outer wrapper fixes the rendered size; overlay sits on top -->
-          <div id="ld-canvas-wrap" style="position:relative;display:inline-block;box-shadow:0 2px 16px rgba(0,0,0,.18);cursor:default">
+          <div id="ld-canvas-wrap" style="position:relative;display:inline-block;box-shadow:0 2px 16px rgba(0,0,0,.18);cursor:default;min-width:160px;min-height:80px">
             <!-- The server-rendered PNG — this IS the label -->
             <img id="ld-canvas-img" src="" alt="label" draggable="false"
-                 style="display:block;max-width:none;image-rendering:pixelated">
+                 style="display:block;max-width:none;image-rendering:pixelated;min-width:160px;min-height:80px">
             <div id="ld-canvas-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">
               <!-- selection handles injected here by JS -->
             </div>
-            <div id="ld-canvas-spinner" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.6);font-size:20px">⏳</div>
+            <!-- Spinner: hidden by default, shown only during server render -->
+            <div id="ld-canvas-spinner" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(255,255,255,.7);font-size:24px">⏳</div>
+            <!-- Error state -->
+            <div id="ld-canvas-error" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:16px;text-align:center;font-size:12px;color:#dc3545;background:rgba(255,255,255,.9)"></div>
           </div>
         </div>
 

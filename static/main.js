@@ -10758,11 +10758,14 @@ function ldRequestRender(immediate = false) {
 }
 
 async function ldDoRender() {
-  const spinner = document.getElementById('ld-canvas-spinner');
-  const img     = document.getElementById('ld-canvas-img');
-  const status  = document.getElementById('ld-render-status');
-  if (spinner) spinner.style.display = 'flex';
-  if (status)  status.textContent = 'rendering...';
+  const spinner  = document.getElementById('ld-canvas-spinner');
+  const errDiv   = document.getElementById('ld-canvas-error');
+  const img      = document.getElementById('ld-canvas-img');
+  const status   = document.getElementById('ld-render-status');
+
+  if (spinner) { spinner.style.display = 'flex'; }
+  if (errDiv)  { errDiv.style.display  = 'none'; }
+  if (status)  { status.textContent    = 'rendering…'; }
 
   const productId = document.getElementById('ld-preview-product')?.value || null;
   const template  = ldBuildTemplate();
@@ -10775,11 +10778,14 @@ async function ldDoRender() {
         template,
       }),
     });
-    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
-    const blob  = await res.blob();
-    const url   = URL.createObjectURL(blob);
-    const wPx = Math.round(LD.widthMm  * LD.scale);
-    const hPx = Math.round(LD.heightMm * LD.scale);
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({}));
+      throw new Error(j.error || `Server error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const wPx  = Math.round(LD.widthMm  * LD.scale);
+    const hPx  = Math.round(LD.heightMm * LD.scale);
     if (img) {
       img.style.width  = wPx + 'px';
       img.style.height = hPx + 'px';
@@ -10788,7 +10794,12 @@ async function ldDoRender() {
     if (status) status.textContent = '';
     ldDrawOverlay();
   } catch (e) {
-    if (status) status.textContent = 'Error: ' + e.message;
+    if (status) status.textContent = '';
+    if (errDiv) {
+      errDiv.textContent = 'Preview failed: ' + e.message;
+      errDiv.style.display = 'flex';
+    }
+    console.error('ldDoRender:', e);
   } finally {
     if (spinner) spinner.style.display = 'none';
   }
