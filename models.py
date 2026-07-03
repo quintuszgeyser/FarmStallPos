@@ -315,8 +315,9 @@ class Sale(db.Model):
     discount_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     # Tender info (ISSUE-29): what the customer paid with. Nullable so historical rows
     # (pre-migration) stay valid; new sales persist the teller's cash/card choice.
-    payment_method = db.Column(db.String(16), nullable=True)   # 'cash' | 'card' | 'split'
+    payment_method = db.Column(db.String(16), nullable=True)   # 'cash' | 'card' | 'qr' | 'split'
     cash_tendered  = db.Column(Numeric(10, 2), nullable=True)  # change calc / till reconciliation
+    card_amount    = db.Column(Numeric(10, 2), nullable=True)  # split payment card portion
 
 
 class AuditLog(db.Model):

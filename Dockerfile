@@ -17,6 +17,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Version injected at build time by release.yml: --build-arg APP_VERSION=v2.2.0
+ARG APP_VERSION=dev
+ENV APP_VERSION=${APP_VERSION}
+
 # Install Python deps first (cached layer - only re-runs when requirements.txt changes).
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

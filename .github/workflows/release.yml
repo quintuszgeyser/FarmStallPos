@@ -46,6 +46,7 @@ jobs:
           context: .
           load: true
           tags: farmpos-pos:ci
+          build-args: APP_VERSION=${{ steps.ver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -115,6 +116,7 @@ jobs:
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ steps.ver.outputs.version }}
             ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+          build-args: APP_VERSION=${{ steps.ver.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

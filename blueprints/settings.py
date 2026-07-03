@@ -62,6 +62,9 @@ def api_settings():
     if request.method == 'GET':
         return jsonify({
             'markup_percent':        float(get_setting('markup_percent', 20) or 20),
+            'vat_registered':        get_setting('vat_registered', 'false') == 'true',
+            'vat_number':            str(get_setting('vat_number', '') or ''),
+            'vat_rate':              float(get_setting('vat_rate', 15) or 15),
             'face_threshold':        float(get_setting('face_threshold', 0.35) or 0.35),
             'link_threshold':        float(get_setting('link_threshold', 0.55) or 0.55),
             'face_quality_min':      float(get_setting('face_quality_min', 0.15) or 0.15),
@@ -82,7 +85,8 @@ def api_settings():
     data  = request.json or {}
     saved = {}
     for key, cast in [
-        ('markup_percent', float), ('face_threshold', float),
+        ('markup_percent', float), ('vat_rate', float),
+        ('face_threshold', float),
         ('link_threshold', float), ('face_quality_min', float),
         ('merge_suggest_min_sim', float), ('auto_merge_min_sim', float),
         ('max_face_angles', int), ('min_angle_distance', float),
@@ -90,6 +94,7 @@ def api_settings():
         ('kiosk_inactivity_minutes', int), ('kiosk_url', str),
         ('visit_min_gap_seconds', int),
         ('scale_ip', str), ('scale_port', int),
+        ('vat_number', str),
     ]:
         if key in data:
             try:
@@ -97,6 +102,10 @@ def api_settings():
                 saved[key] = cast(data[key])
             except Exception:
                 return jsonify({'error': f'Invalid {key}'}), 400
+
+    if 'vat_registered' in data:
+        set_setting('vat_registered', 'true' if data['vat_registered'] else 'false')
+        saved['vat_registered'] = bool(data['vat_registered'])
 
     # Branding keys - validated (never trust a colour/font into a <style> block).
     # branding_logo_file is set only via the upload endpoint, not here.

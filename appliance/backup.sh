@@ -35,7 +35,21 @@ else
 fi
 
 # 1. Dump (compressed). set -o pipefail makes a pg_dump failure abort the whole script.
-docker exec farmpos-postgres pg_dump -U farmstall farmpos | gzip > "$DUMP"
+# Write a failure status immediately if pg_dump fails so /api/health shows a banner.
+_write_failure_status() {
+  local msg="$1"
+  CFG="$FARMPOS_HOME/data/pos-config"
+  if [ -d "$CFG" ]; then
+    DWARN="false"; [ -f "$BK/.disk_warn" ] && DWARN="true"
+    printf '{"last_backup":null,"last_push_ok":false,"disk_warn":%s,"disk_pct":%s,"error":"%s"}\n' \
+      "$DWARN" "${DISK_PCT:-0}" "$msg" > "$CFG/backup_status.json" 2>/dev/null || true
+  fi
+}
+if ! docker exec farmpos-postgres pg_dump -U farmstall farmpos | gzip > "$DUMP"; then
+  rm -f "$DUMP"
+  _write_failure_status "pg_dump failed"
+  die "pg_dump failed - Postgres may be unreachable"
+fi
 
 # 1a. Size guard - never let a zero/tiny dump (postgres down, broken pipe) overwrite good
 #     backups. 2 KB is the floor: a fresh store with no products compresses to ~7 KB, so

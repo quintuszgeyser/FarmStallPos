@@ -169,8 +169,14 @@ def api_stats():
     employee_stats.sort(key=lambda x: x['revenue'], reverse=True)
 
     supplier_costs = defaultdict(float)
-    for b in StockBatch.query.filter(StockBatch.purchased_at >= start_dt, StockBatch.purchased_at <= end_dt).all():
-        sup_name = db.session.get(Supplier, b.supplier_id).name if b.supplier_id else 'Unknown'
+    _batches_in_range = StockBatch.query.filter(
+        StockBatch.purchased_at >= start_dt,
+        StockBatch.purchased_at <= end_dt,
+    ).all()
+    _sup_ids = {b.supplier_id for b in _batches_in_range if b.supplier_id}
+    _sup_map = {s.id: s.name for s in Supplier.query.filter(Supplier.id.in_(_sup_ids)).all()} if _sup_ids else {}
+    for b in _batches_in_range:
+        sup_name = _sup_map.get(b.supplier_id, 'Unknown') if b.supplier_id else 'Unknown'
         supplier_costs[sup_name] += float(b.qty_purchased_base) * float(b.cost_per_base_unit)
     supplier_breakdown = [{'supplier': k, 'total_cost': round(v, 2)} for k, v in sorted(supplier_costs.items(), key=lambda x: x[1], reverse=True)]
 

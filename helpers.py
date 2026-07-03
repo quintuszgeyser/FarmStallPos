@@ -402,7 +402,7 @@ def _parse_dt(value: str, is_end: bool = False):
         return None
 
 
-def _serialize_product(p, include_recipe=False, include_packages=False):
+def _serialize_product(p, include_recipe=False, include_packages=False, image_cache=None):
     d = {
         'id':           p.id,
         'name':         p.name,
@@ -445,7 +445,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False):
         'scale_last_synced_at':    p.scale_last_synced_at.isoformat() if p.scale_last_synced_at else None,
         'scale_last_sync_status':  p.scale_last_sync_status,
         'scale_last_sync_error':   p.scale_last_sync_error,
-        'images': [{
+        'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
             'filename':      img.filename,
             'is_primary':    img.is_primary,

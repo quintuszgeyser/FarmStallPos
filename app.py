@@ -33,7 +33,7 @@ from helpers import (
     _parse_dt,
 )
 
-APP_VERSION = '1.6.0'
+APP_VERSION = os.environ.get('APP_VERSION', '1.6.0')
 
 # Environment configuration - explicit, never guessed
 APP_ENV  = os.environ.get('APP_ENV', 'prod').lower()
@@ -817,6 +817,7 @@ def strong_migrate():
             # tender info (ISSUE-29) - nullable/additive, safe for existing rows
             pg_try("ALTER TABLE sales ADD COLUMN payment_method VARCHAR(16)")
             pg_try("ALTER TABLE sales ADD COLUMN cash_tendered NUMERIC(10,2)")
+            pg_try("ALTER TABLE sales ADD COLUMN card_amount NUMERIC(10,2)")
 
             # till sessions for end-of-day cash-up (ISSUE-33)
             conn.exec_driver_sql("""

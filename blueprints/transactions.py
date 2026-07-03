@@ -56,6 +56,10 @@ def api_transactions_get():
 
     q = db.session.query(Sale).filter(Sale.voided == False)
 
+    if not require_role('admin'):
+        # Tellers see only their own last 5 transactions
+        q = q.filter(Sale.user_id == u.id)
+
     if u.role == 'admin':
         today = date.today()
         if start_param or end_param:
@@ -132,13 +136,21 @@ def api_transactions_post():
     # Tender info (ISSUE-29): the teller's cash/card choice for this whole transaction.
     # Applies to every line of the sale (they share sale_id). Normalised + validated.
     pm_raw       = (data.get('payment_method') or '').strip().lower()
-    payment_method = pm_raw if pm_raw in ('cash', 'card', 'qr', 'split') else None
+    if pm_raw not in ('cash', 'card', 'qr', 'split'):
+        return jsonify({'error': 'payment_method required (cash/card/qr/split)'}), 400
+    payment_method = pm_raw
     cash_tendered = None
     if data.get('cash_tendered') not in (None, ''):
         try:
             cash_tendered = Decimal(str(data.get('cash_tendered')))
         except Exception:
             cash_tendered = None
+    card_amount = None
+    if data.get('card_amount') not in (None, ''):
+        try:
+            card_amount = Decimal(str(data.get('card_amount')))
+        except Exception:
+            card_amount = None
     cart_discount = data.get('cart_discount')
     has_discount  = cart_discount or any(i.get('item_discount') or i.get('special_name') for i in cart)
     discount_by_id = (u.id if u else None) if has_discount else None
@@ -163,7 +175,7 @@ def api_transactions_post():
         # payment_method on every line (they share sale_id); cash_tendered only on the
         # first line so it's recorded once per transaction, not double-counted per line.
         _first_line = (item is cart[0])
-        db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None)))
+        db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None), card_amount=(card_amount if _first_line else None)))
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'simple':
@@ -286,11 +298,9 @@ def api_transaction_return(sale_id):
         if qty > orig_qty:
             return jsonify({'error': f'Return qty {qty} exceeds original {orig_qty} for product {pid}'}), 400
 
-        # Find the unit_price from the original rows
         orig_row = next((r for r in orig_rows if r.product_id == pid), None)
         unit_price = orig_row.unit_price if orig_row else Decimal('0')
 
-        # Negative-qty sale row marks this as a return
         db.session.add(Sale(
             sale_id=return_uuid,
             date_time=now,
@@ -302,14 +312,16 @@ def api_transaction_return(sale_id):
             payment_method='return',
         ))
 
-        # Restore stock
         p = db.session.get(Product, pid, with_for_update=True)
-        if p and p.product_type == 'simple':
+        if not p:
+            pass
+        elif p.product_type == 'simple':
             p.stock_qty = (p.stock_qty or 0) + int(qty)
-        elif p and p.product_type in ('stock_item', 'recipe'):
-            # Re-add a stock batch for the returned quantity at the original cost
+        elif p.product_type == 'stock_item':
+            # Restore stock_item: look up FIFO cost from original sale consumptions
+            consumptions = StockConsumption.query.filter_by(
+                sale_id=sale_id, ingredient_id=pid).all()
             orig_batch_cost = Decimal('0')
-            consumptions = StockConsumption.query.filter_by(sale_id=sale_id, ingredient_id=pid).all()
             if consumptions:
                 total_consumed = sum(Decimal(str(c.qty_consumed_base)) for c in consumptions)
                 if total_consumed > 0:
@@ -318,7 +330,6 @@ def api_transaction_return(sale_id):
                         for c in consumptions
                     ) / total_consumed
             if orig_batch_cost <= 0:
-                # fallback: use the unit_price as cost (approximate)
                 orig_batch_cost = unit_price
             db.session.add(StockBatch(
                 product_id=pid,
@@ -328,6 +339,23 @@ def api_transaction_return(sale_id):
                 purchased_at=now,
                 user_id=u.id if u else None,
             ))
+        elif p.product_type == 'recipe':
+            # Restore recipe: reverse each ingredient's FIFO consumption proportionally.
+            # Recipes don't appear in stock_consumption themselves — their ingredients do.
+            # Use the same logic as void: call reverse_fifo on the original sale_id
+            # but only for the fraction of qty being returned vs original qty sold.
+            return_ratio = qty / orig_qty if orig_qty > 0 else Decimal('1')
+            for rl in RecipeLine.query.filter_by(product_id=pid).all():
+                ing_consumptions = StockConsumption.query.filter_by(
+                    sale_id=sale_id, ingredient_id=rl.ingredient_id).all()
+                for c in ing_consumptions:
+                    restore_qty = Decimal(str(c.qty_consumed_base)) * return_ratio
+                    batch = db.session.get(StockBatch, c.batch_id, with_for_update=True)
+                    if batch:
+                        batch.qty_remaining_base = (
+                            Decimal(str(batch.qty_remaining_base)) + restore_qty
+                        )
+
         returned_lines.append({'product_id': pid, 'qty': float(qty)})
 
     _audit('sale_return', sale_id, _serialize_sale_rows(orig_rows),

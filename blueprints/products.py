@@ -94,7 +94,21 @@ def api_products_get():
         return jsonify({'error': 'Unauthorized'}), 401
     products = Product.query.order_by(Product.name.asc()).all()
     include_recipe = request.args.get('full') == '1'
-    return jsonify([_serialize_product(p, include_recipe=include_recipe, include_packages=include_recipe) for p in products])
+    # Pre-fetch all images in one query to avoid N+1 per product
+    from models import ProductImage
+    from collections import defaultdict
+    all_images = ProductImage.query.filter(
+        ProductImage.product_id.in_([p.id for p in products])
+    ).order_by(ProductImage.product_id, ProductImage.display_order).all() if products else []
+    image_cache = defaultdict(list)
+    for img in all_images:
+        image_cache[img.product_id].append({
+            'id': img.id, 'filename': img.filename,
+            'is_primary': img.is_primary, 'display_order': img.display_order,
+        })
+    return jsonify([_serialize_product(p, include_recipe=include_recipe,
+                                       include_packages=include_recipe,
+                                       image_cache=image_cache) for p in products])
 
 
 @bp.route('/api/products/<int:pid>', methods=['GET'])
