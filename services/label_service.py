@@ -55,9 +55,15 @@ except ImportError:
     _QR_OK = False
 
 
-# px per mm at 203 DPI (typical thermal label printer)
-DPI   = 203
-MM_TO_PX = DPI / 25.4   # ≈ 8 px/mm
+# Printer native resolution
+PRINT_DPI = 203
+
+# Render at 3× printer DPI for sharp screen preview and crisp print raster.
+# At 203 DPI a 40mm label is only 320px wide — fonts look jaggy.
+# At 609 DPI the same label is 960px — fonts and barcodes are sharp.
+# The TSPL2 bitmap is sent at full resolution; the printer scales to its 203 DPI dots.
+DPI      = PRINT_DPI * 3    # 609 DPI
+MM_TO_PX = DPI / 25.4       # ≈ 24 px/mm
 
 
 class LabelRenderService:
@@ -68,7 +74,7 @@ class LabelRenderService:
     The renderer works at RENDER_DPI internally, then can scale to any output size.
     """
 
-    RENDER_DPI = 203   # matches Xprinter XP-365B native resolution
+    RENDER_DPI = DPI   # render at high DPI for sharpness; TSPL2 maps to printer dots
 
     def __init__(self, branding: dict):
         self.branding = branding
@@ -130,63 +136,101 @@ class LabelRenderService:
     # ── PIL drawing ───────────────────────────────────────────────────────────
 
     def _draw_element_pil(self, draw, img, el, ctx, w_px, h_px):
-        el_type  = el.get('type', '')
-        x = int(el.get('x', 0) * MM_TO_PX)
-        y = int(el.get('y', 0) * MM_TO_PX)
-        w = int(el.get('w', 20) * MM_TO_PX)
-        h = int(el.get('h', 8)  * MM_TO_PX)
-        color    = el.get('color', '#000000')
-        font_sz  = max(6, int(el.get('font_size', 10) * MM_TO_PX / 3))
-
-        try:
-            font = ImageFont.truetype('arial.ttf', font_sz)
-        except Exception:
-            font = ImageFont.load_default()
+        el_type = el.get('type', '')
+        # Element bounding box in pixels
+        ex = int(round(el.get('x', 0) * MM_TO_PX))
+        ey = int(round(el.get('y', 0) * MM_TO_PX))
+        ew = int(round(el.get('w', 20) * MM_TO_PX))
+        eh = int(round(el.get('h', 8)  * MM_TO_PX))
+        color = el.get('color', '#000000')
 
         if el_type == 'store_logo':
             logo_path = _resolve_logo(self.branding.get('logo_file', ''))
             if logo_path and os.path.exists(logo_path):
                 try:
                     logo = Image.open(logo_path).convert('RGBA')
-                    logo.thumbnail((w, h), Image.LANCZOS)
-                    img.paste(logo, (x, y), logo)
+                    logo.thumbnail((ew, eh), Image.LANCZOS)
+                    img.paste(logo, (ex, ey), logo)
                 except Exception as e:
                     log.debug('Logo paste failed: %s', e)
             return
 
         if el_type == 'barcode':
-            bc_img = self._render_barcode_pil(ctx.get('barcode', ''), el, w, h)
+            bc_img = self._render_barcode_pil(ctx.get('barcode', ''), el, ew, eh)
             if bc_img:
-                img.paste(bc_img, (x, y))
+                img.paste(bc_img, (ex, ey))
             return
 
-        # Text elements
+        # ── Text rendering ────────────────────────────────────────────────────
         text = _resolve_text(el_type, el, ctx)
-        if el.get('bold'):
-            try:
-                font = ImageFont.truetype('arialbd.ttf', font_sz)
-            except Exception:
-                pass
-        draw.text((x, y), text, fill=color, font=font)
+        if not text:
+            return
+
+        # font_size is in typographic points. Convert to pixels at render DPI.
+        # 1 pt = 1/72 inch → px = pt × DPI / 72
+        pt    = max(4, el.get('font_size', 9))
+        px_sz = max(6, int(round(pt * DPI / 72)))
+        bold  = el.get('bold', False)
+        font  = _load_font(px_sz, bold)
+
+        # Measure text so we can apply alignment within the element box
+        bbox = draw.textbbox((0, 0), text, font=font)
+        tw   = bbox[2] - bbox[0]   # text width in px
+        th   = bbox[3] - bbox[1]   # text height in px
+
+        align = el.get('align', 'left')
+        if align == 'center':
+            tx = ex + max(0, (ew - tw) // 2)
+        elif align == 'right':
+            tx = ex + max(0, ew - tw)
+        else:
+            tx = ex
+
+        # Vertically centre text within the element box
+        ty = ey + max(0, (eh - th) // 2)
+
+        # Clip drawing to the element bounding box to avoid overflow
+        draw.text((tx, ty), text, fill=color, font=font)
 
     def _render_barcode_pil(self, value: str, el: dict, w_px: int, h_px: int):
+        """Render a barcode at high resolution then downsample — crisp at any size."""
         if not value:
             return None
         fmt = _pick_barcode_format(value, el.get('barcode_format', 'auto'))
+
         if fmt == 'qrcode':
             if not _QR_OK:
                 return None
-            qr = qrcode.make(value)
-            return qr.resize((w_px, h_px))
+            # Render at 10× then downscale — sharp QR at any size
+            scale = max(1, min(w_px, h_px) // 21)
+            qr = qrcode.QRCode(
+                error_correction=qrcode.constants.ERROR_CORRECT_M,
+                box_size=scale, border=1,
+            )
+            qr.add_data(value)
+            qr.make(fit=True)
+            qr_img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
+            return qr_img.resize((w_px, h_px), Image.LANCZOS)
+
         if not _BARCODE_OK:
             return None
         try:
-            BC = barcode.get_barcode_class(fmt)
+            # Render at 4× target resolution for sharp bars, then downscale
+            scale = 4
+            opts = {
+                'write_text': False,
+                'module_height': (h_px * scale) / DPI * 25.4,   # mm at scale DPI
+                'module_width':  0.8,
+                'quiet_zone':    2,
+                'dpi':           DPI * scale,
+            }
+            BC     = barcode.get_barcode_class(fmt)
             writer = ImageWriter()
-            buf = io.BytesIO()
-            BC(value, writer=writer).write(buf)
+            buf    = io.BytesIO()
+            BC(value, writer=writer).write(buf, options=opts)
             buf.seek(0)
-            return Image.open(buf).resize((w_px, h_px))
+            hi_res = Image.open(buf).convert('RGB')
+            return hi_res.resize((w_px, h_px), Image.LANCZOS)
         except Exception as e:
             log.debug('Barcode render failed (%s %s): %s', fmt, value, e)
             return None
@@ -413,6 +457,32 @@ class _PrinterNotFound(Exception):
 
 
 # ── Pure helpers ───────────────────────────────────────────────────────────────
+
+def _load_font(px_size: int, bold: bool = False):
+    """
+    Load a truetype font at px_size pixels. Tries common paths on Ubuntu + Windows.
+    Falls back to Pillow's built-in bitmap font (always available, low quality).
+    """
+    # Prefer DejaVu — ships with Ubuntu, metrically correct, free
+    candidates = (
+        [
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+            'arialbd.ttf', 'Arial_Bold.ttf',
+        ] if bold else [
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+            'arial.ttf', 'Arial.ttf',
+        ]
+    )
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, px_size)
+        except Exception:
+            pass
+    # Last resort — Pillow default bitmap font (ignores px_size)
+    return ImageFont.load_default()
+
 
 def _pick_barcode_format(value: str, hint: str) -> str:
     """Choose the best barcode format for a given value."""
