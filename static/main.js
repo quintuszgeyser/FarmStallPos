@@ -242,6 +242,13 @@ async function api(path, opts = {}, timeoutMs = 10000) {
       credentials: 'same-origin',
       signal: controller.signal,
     }, opts));
+    if (res.status === 401) {
+      // Session expired — persist cart so it survives the re-login page load
+      _saveCartToSession();
+      toast('Session expired — please log in again', 'warning', 5000);
+      setTimeout(() => location.reload(), 1500);
+      throw new Error('Session expired');
+    }
     if (!res.ok) {
       let err = 'Request failed';
       try { const j = await res.json(); err = j.error || JSON.stringify(j); } catch {}
@@ -254,6 +261,25 @@ async function api(path, opts = {}, timeoutMs = 10000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function _saveCartToSession() {
+  try {
+    if (Object.keys(STATE.cart || {}).length > 0)
+      sessionStorage.setItem('farmpos_cart_backup', JSON.stringify(STATE.cart));
+  } catch {}
+}
+
+function _restoreCartFromSession() {
+  try {
+    const saved = sessionStorage.getItem('farmpos_cart_backup');
+    if (saved) {
+      STATE.cart = JSON.parse(saved);
+      sessionStorage.removeItem('farmpos_cart_backup');
+      renderCart();
+      toast('Cart restored from previous session', 'info', 4000);
+    }
+  } catch {}
 }
 
 function toast(msg, type = 'success', durationMs = 3000) {
@@ -388,6 +414,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     setTimeout(_focusTrap, 400);
     initSerialSupport();
     await loadProducts();
+    _restoreCartFromSession();  // restore cart if session expired mid-sale
     await loadTransactions();
     await loadSpecials();
     startKitchenBadgePoll();  // badge visible to all users
@@ -3603,11 +3630,30 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     };
   });
 
-  // Include customer_id and cart-wide discount if present
   const payMethod = document.querySelector('input[name="pay-method"]:checked')?.value || 'card';
+
+  // Split payment validation
+  let cashTendered = null, cardAmount = null;
+  if (payMethod === 'split') {
+    cashTendered = parseFloat(document.getElementById('split-cash-input')?.value) || 0;
+    cardAmount   = parseFloat(document.getElementById('split-card-input')?.value) || 0;
+    const splitTotal = Math.round((cashTendered + cardAmount) * 100);
+    const cartTotal  = Math.round(cartSubtotal * 100);
+    if (splitTotal < cartTotal) {
+      return toast(`Split total R${fmt(cashTendered + cardAmount)} is less than cart total R${fmt(cartSubtotal)}`, 'warning');
+    }
+  } else if (payMethod === 'cash') {
+    const cashInput = document.getElementById('split-cash-input');
+    cashTendered = cashInput && cashInput.closest('#split-payment-row')?.classList.contains('hidden')
+      ? null
+      : (parseFloat(cashInput?.value) || null);
+  }
+
   const requestBody = {
     cart: payload,
-    payment_method: payMethod,   // ISSUE-29: recorded per sale for till reconciliation
+    payment_method: payMethod,
+    ...(cashTendered != null        ? { cash_tendered: cashTendered } : {}),
+    ...(cardAmount != null          ? { card_amount:   cardAmount   } : {}),
     ...(STATE.activeCustomer?.customer_id ? { customer_id:   STATE.activeCustomer.customer_id } : {}),
     ...(STATE._cartDiscount               ? { cart_discount: STATE._cartDiscount               } : {}),
   };
@@ -3633,6 +3679,42 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     }
   } catch (e) { toast(e.message, 'error'); }
 });
+
+// ── Split payment UI ─────────────────────────────────────────────────────────
+document.querySelectorAll('input[name="pay-method"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    const splitRow = document.getElementById('split-payment-row');
+    if (!splitRow) return;
+    if (radio.value === 'split' && radio.checked) {
+      splitRow.classList.remove('hidden');
+      _updateSplitBalance();
+    } else if (radio.checked) {
+      splitRow.classList.add('hidden');
+    }
+  });
+});
+
+function _updateSplitBalance() {
+  const total     = parseFloat(document.getElementById('cart-total')?.textContent || '0');
+  const cash      = parseFloat(document.getElementById('split-cash-input')?.value) || 0;
+  const card      = parseFloat(document.getElementById('split-card-input')?.value) || 0;
+  const remaining = Math.round((total - cash - card) * 100) / 100;
+  const el = document.getElementById('split-balance');
+  if (!el) return;
+  if (remaining > 0.001) {
+    el.textContent = `R${fmt(remaining)} unallocated`;
+    el.className = 'small text-danger';
+  } else if (remaining < -0.001) {
+    el.textContent = `R${fmt(Math.abs(remaining))} over`;
+    el.className = 'small text-warning';
+  } else {
+    el.textContent = '✓ Balanced';
+    el.className = 'small text-success';
+  }
+}
+
+document.getElementById('split-cash-input')?.addEventListener('input', _updateSplitBalance);
+document.getElementById('split-card-input')?.addEventListener('input', _updateSplitBalance);
 
 // ═══════════════════════════════════════════════════════
 // WEIGHT ENTRY MODAL
@@ -4186,6 +4268,12 @@ function renderTransactions(trs) {
       btnReturn.textContent = '↩ Return';
       btnReturn.onclick = () => openReturnModal(t);
       right.appendChild(btnReturn);
+
+      const btnReceipt = document.createElement('button');
+      btnReceipt.className = 'btn btn-outline-secondary btn-sm';
+      btnReceipt.textContent = '🖨 Receipt';
+      btnReceipt.onclick = () => printReceipt(t.id);
+      right.appendChild(btnReceipt);
       // Resolve flag button
       if (t.flagged && !t.flag_resolved) {
         const btnResolve = document.createElement('button');
@@ -4363,6 +4451,42 @@ document.getElementById('btn-tx-void')?.addEventListener('click', async () => {
   } catch (e) { toast(e.message, 'error'); }
 });
 
+// ── Print Receipt ────────────────────────────────────────────────────────────
+async function printReceipt(saleId) {
+  try {
+    const r = await api(`/api/transactions/${saleId}/receipt`);
+    const lines = r.lines.map(ln =>
+      `${ln.name.padEnd(20)} x${fmt(ln.qty)}  R${fmt(ln.subtotal)}`
+    ).join('\n');
+    const pm = r.payment_method ? r.payment_method.toUpperCase() : '';
+    const change = r.change != null && r.change > 0 ? `\nChange:    R${fmt(r.change)}` : '';
+    const vat    = r.vat_registered ? `\nVAT (${r.vat_rate}%): R${fmt(r.vat_amount)}` : '';
+    const vatNum = r.vat_registered && r.vat_number ? `VAT No: ${r.vat_number}\n` : '';
+    const content = [
+      r.store_name || '',
+      r.store_legal ? `(${r.store_legal})` : '',
+      vatNum,
+      new Date(r.date_time).toLocaleString('en-ZA'),
+      `Receipt: #${String(saleId).slice(0,8)}`,
+      '─'.repeat(32),
+      lines,
+      '─'.repeat(32),
+      `TOTAL:     R${fmt(r.total)}`,
+      vat,
+      `Payment:   ${pm}`,
+      r.cash_tendered != null ? `Tendered:  R${fmt(r.cash_tendered)}` : '',
+      change,
+      '',
+      r.footer || 'Thank you for your purchase!',
+    ].filter(l => l !== null && l !== undefined).join('\n');
+
+    const win = window.open('', '_blank', 'width=400,height=600');
+    win.document.write(`<pre style="font-family:monospace;font-size:12px;padding:16px">${content}</pre>`);
+    win.document.close();
+    win.print();
+  } catch (e) { toast('Could not load receipt: ' + e.message, 'error'); }
+}
+
 // ── Return Items (ISSUE-32) ──────────────────────────────────────────────────
 let _returnTx = null;
 
@@ -4443,6 +4567,16 @@ async function openCloseTillModal() {
     document.getElementById('ct-card-sales').textContent  = `R${fmt(_tillSummary.card_sales)}`;
     document.getElementById('ct-total-sales').textContent = `R${fmt(_tillSummary.total_sales)}`;
     document.getElementById('ct-void-total').textContent  = `R${fmt(_tillSummary.void_total)}`;
+    const refundRow = document.getElementById('ct-refunds-row');
+    if (refundRow && _tillSummary.cash_refunds > 0) {
+      document.getElementById('ct-cash-refunds').textContent = `- R${fmt(_tillSummary.cash_refunds)}`;
+      refundRow.style.removeProperty('display');
+    }
+    const vatRow = document.getElementById('ct-vat-row');
+    if (vatRow && _tillSummary.vat_registered) {
+      document.getElementById('ct-vat-amount').textContent = `R${fmt(_tillSummary.vat_amount)}`;
+      vatRow.style.removeProperty('display');
+    }
     document.getElementById('ct-opening-float').value     = fmt(_tillSummary.suggested_opening_float);
     document.getElementById('ct-counted-cash').value      = '';
     document.getElementById('ct-over-under').classList.add('hidden');

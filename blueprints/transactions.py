@@ -54,7 +54,10 @@ def api_transactions_get():
     start_param = request.args.get('start')
     end_param   = request.args.get('end')
 
-    q = db.session.query(Sale).filter(Sale.voided == False)
+    q = db.session.query(Sale).filter(
+        Sale.voided == False,
+        Sale.payment_method != 'return',  # return rows are confusing negative entries
+    )
 
     if not require_role('admin'):
         # Tellers see only their own last 5 transactions
@@ -179,7 +182,7 @@ def api_transactions_post():
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'simple':
-            p.stock_qty = max(0, (p.stock_qty or 0) - int(qty))
+            p.stock_qty = max(0, (p.stock_qty or 0) - int(qty.to_integral_value()))
         elif p.product_type == 'stock_item':
             consume_fifo(pid, qty, sale_uuid, now)
         elif p.product_type == 'recipe':
@@ -237,6 +240,43 @@ def api_transactions_post():
     return jsonify({'ok': True, 'transaction_id': sale_uuid, 'kitchen_orders': len(all_kitchen)})
 
 
+@bp.route('/api/transactions/<sale_id>/receipt', methods=['GET'])
+def api_transaction_receipt(sale_id):
+    """Return receipt data for a sale. Used by the print receipt button."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    from helpers import get_setting
+    rows = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
+    if not rows:
+        return jsonify({'error': 'Transaction not found'}), 404
+    product_map = {p.id: p.name for p in Product.query.filter(
+        Product.id.in_({r.product_id for r in rows})).all()}
+    lines = [{'name': product_map.get(r.product_id, f'Product {r.product_id}'),
+              'qty': float(r.qty), 'unit_price': float(r.unit_price),
+              'subtotal': float(Decimal(str(r.qty)) * r.unit_price)} for r in rows]
+    total = sum(ln['subtotal'] for ln in lines)
+    vat_registered = get_setting('vat_registered', 'false') == 'true'
+    vat_rate_pct   = float(get_setting('vat_rate', 15) or 15)
+    vat_amount     = round(total * (vat_rate_pct / 100) / (1 + vat_rate_pct / 100), 2) if vat_registered else 0
+    u = current_user()
+    return jsonify({
+        'sale_id':       sale_id,
+        'date_time':     rows[0].date_time.isoformat(),
+        'lines':         lines,
+        'total':         round(total, 2),
+        'payment_method': rows[0].payment_method,
+        'cash_tendered': float(rows[0].cash_tendered) if rows[0].cash_tendered else None,
+        'change':        round(float(rows[0].cash_tendered or 0) - total, 2) if rows[0].cash_tendered else None,
+        'vat_registered': vat_registered,
+        'vat_rate':      vat_rate_pct,
+        'vat_amount':    vat_amount,
+        'store_name':    get_setting('branding_store_name', ''),
+        'store_legal':   get_setting('branding_invoice_legal', ''),
+        'vat_number':    get_setting('vat_number', ''),
+        'footer':        get_setting('branding_invoice_footer', ''),
+    })
+
+
 @bp.route('/api/transactions/<sale_id>/flag', methods=['POST'])
 def api_transaction_flag(sale_id):
     if not require_login():
@@ -283,6 +323,20 @@ def api_transaction_return(sale_id):
     for r in orig_rows:
         orig_by_pid.setdefault(r.product_id, Decimal('0'))
         orig_by_pid[r.product_id] += Decimal(str(r.qty))
+
+    # Subtract quantities already returned against this sale_id (prevent double-return)
+    already_returned = Sale.query.filter(
+        Sale.void_reason.like(f'return:{sale_id}:%'),
+        Sale.voided == False,
+    ).all()
+    already_by_pid = {}
+    for r in already_returned:
+        already_by_pid.setdefault(r.product_id, Decimal('0'))
+        already_by_pid[r.product_id] += abs(Decimal(str(r.qty)))
+
+    for pid, returned_qty in already_by_pid.items():
+        if pid in orig_by_pid:
+            orig_by_pid[pid] = max(Decimal('0'), orig_by_pid[pid] - returned_qty)
 
     u = current_user()
     now = datetime.utcnow()
@@ -393,21 +447,28 @@ def api_transaction_edit(sale_id):
     rows = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows: return jsonify({'error': 'Transaction not found or voided'}), 404
     orig_date = rows[0].date_time
+    # Preserve original payment_method and tender on replacement rows so Z-report stays correct
+    orig_payment_method = rows[0].payment_method
+    orig_cash_tendered  = rows[0].cash_tendered
+    orig_card_amount    = rows[0].card_amount
     u = current_user(); now = orig_date
-    _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note='superseded by edit')  # snapshot before mutation
+    _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note='superseded by edit')
     for row in rows:
         p = db.session.get(Product, row.product_id, with_for_update=True)
         if p and p.product_type == 'simple': p.stock_qty = (p.stock_qty or 0) + int(row.qty)
-        # ISSUE-31: mark the original rows voided instead of DELETE-ing them, so the
-        # pre-edit state is preserved (SARS unalterable records). New lines below are
-        # inserted un-voided under the same sale_id, so 'voided=False' queries still work.
         row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = datetime.utcnow()
         row.void_reason = 'superseded by edit'
     reverse_fifo(sale_id)
-    for item in lines:
+    for idx, item in enumerate(lines):
         pid = int(item['product_id']); qty = Decimal(str(item.get('qty', 1))); unit_price = Decimal(str(item.get('unit_price')))
         if qty <= 0: continue
-        db.session.add(Sale(sale_id=sale_id, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None))
+        # payment_method preserved from original; cash/card tender only on first new line
+        _first = (idx == 0)
+        db.session.add(Sale(sale_id=sale_id, date_time=now, product_id=pid, qty=qty,
+                            unit_price=unit_price, user_id=u.id if u else None,
+                            payment_method=orig_payment_method,
+                            cash_tendered=(orig_cash_tendered if _first else None),
+                            card_amount=(orig_card_amount if _first else None)))
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'simple': p.stock_qty = max(0, (p.stock_qty or 0) - int(qty))

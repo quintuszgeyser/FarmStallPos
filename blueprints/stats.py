@@ -87,6 +87,27 @@ def api_stats():
     if sale_ids:
         consumptions = StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all()
         total_cogs   = float(sum(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)) for c in consumptions))
+    # Return transactions restore StockBatch rows but leave StockConsumption intact —
+    # deduct the batch value added by returns in this period to avoid overstating COGS.
+    # Return sale rows have payment_method='return' and negative qty.
+    return_rows_in_period = [r for r in rows if r.payment_method == 'return']
+    if return_rows_in_period:
+        # Find the original sale_ids referenced in void_reason ('return:<orig_id>:<reason>')
+        orig_ids_from_returns = set()
+        for r in return_rows_in_period:
+            try: orig_ids_from_returns.add(r.void_reason.split(':')[1])
+            except Exception: pass
+        if orig_ids_from_returns:
+            ret_consumptions = StockConsumption.query.filter(
+                StockConsumption.sale_id.in_(list(orig_ids_from_returns))
+            ).all()
+            # Proportion of the original sale that was returned (approximate via row count)
+            return_product_ids = {r.product_id for r in return_rows_in_period}
+            cogs_credit = float(sum(
+                Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
+                for c in ret_consumptions if c.ingredient_id in return_product_ids
+            ))
+            total_cogs = max(0.0, total_cogs - cogs_credit)
     gross_profit = total_sales_value - total_cogs
     gross_margin = round(gross_profit / total_sales_value * 100, 1) if total_sales_value > 0 else None
 
@@ -183,16 +204,30 @@ def api_stats():
     filtered_product_name = (db.session.get(Product, product_id_filter) or Product(name=None)).name if product_id_filter else None
     filtered_user_name    = (db.session.get(User, user_id_filter) or User(username=None)).username if user_id_filter else None
 
-    # ── New customer/channel metrics - receipt-level, correct deduplication ──
+    # ── Customer/channel metrics — online_orders table only exists on Lady Coleen box ──
     from sqlalchemy import text as _text
-    cust_row = db.session.execute(_text("""
+    _has_online_orders = False
+    try:
+        db.session.execute(_text("SELECT 1 FROM online_orders LIMIT 1"))
+        _has_online_orders = True
+    except Exception:
+        db.session.rollback()
+
+    if _has_online_orders:
+        _oo_join  = "LEFT JOIN online_orders oo ON oo.pos_sale_id::text = s.sale_id"
+        _oo_flag  = "MAX(CASE WHEN oo.id IS NOT NULL THEN 1 ELSE 0 END)"
+    else:
+        _oo_join  = ""
+        _oo_flag  = "0"
+
+    cust_row = db.session.execute(_text(f"""
         WITH all_receipts AS (
             SELECT s.sale_id, s.customer_id, MIN(s.date_time) AS sale_at,
-                MAX(CASE WHEN oo.id IS NOT NULL THEN 1 ELSE 0 END) AS is_online,
+                {_oo_flag} AS is_online,
                 SUM(CASE WHEN NOT COALESCE(s.voided,FALSE) THEN s.qty * s.unit_price ELSE 0 END) AS receipt_total,
                 BOOL_OR(COALESCE(s.voided,FALSE)) AS is_voided
             FROM sales s
-            LEFT JOIN online_orders oo ON oo.pos_sale_id::text = s.sale_id
+            {_oo_join}
             GROUP BY s.sale_id, s.customer_id
         ),
         period AS (SELECT * FROM all_receipts WHERE sale_at >= :s AND sale_at <= :e),
@@ -595,16 +630,25 @@ def api_stats_drilldown_channels():
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
     from sqlalchemy import text as _text
 
-    daily_rows = db.session.execute(_text("""
+    _has_oo = False
+    try:
+        db.session.execute(_text("SELECT 1 FROM online_orders LIMIT 1"))
+        _has_oo = True
+    except Exception:
+        db.session.rollback()
+
+    _oo_j = "LEFT JOIN online_orders oo ON oo.pos_sale_id::text = s.sale_id" if _has_oo else ""
+    _oo_f = "MAX(CASE WHEN oo.id IS NOT NULL THEN 1 ELSE 0 END)" if _has_oo else "0"
+
+    daily_rows = db.session.execute(_text(f"""
         WITH receipts AS (
             SELECT
                 s.sale_id,
                 DATE(MIN(s.date_time))                                          AS sale_date,
                 SUM(CASE WHEN NOT COALESCE(s.voided,FALSE) THEN s.qty * s.unit_price ELSE 0 END) AS receipt_total,
                 BOOL_OR(COALESCE(s.voided,FALSE))                               AS is_voided,
-                MAX(CASE WHEN oo.id IS NOT NULL THEN 1 ELSE 0 END)              AS is_online
-            FROM sales s
-            LEFT JOIN online_orders oo ON oo.pos_sale_id::text = s.sale_id
+                {_oo_f}                                                         AS is_online
+            FROM sales s {_oo_j}
             WHERE s.date_time >= :s AND s.date_time <= :e
             GROUP BY s.sale_id
         )
@@ -619,12 +663,17 @@ def api_stats_drilldown_channels():
         ORDER BY sale_date
     """), {'s': start_dt, 'e': end_dt}).fetchall()
 
-    delivery_rows = db.session.execute(_text("""
-        SELECT delivery_method, COUNT(*) AS cnt
-        FROM online_orders
-        WHERE created_at >= :s AND created_at <= :e AND status != 'cancelled'
-        GROUP BY delivery_method
-    """), {'s': start_dt, 'e': end_dt}).fetchall()
+    delivery_rows = []
+    if _has_oo:
+        try:
+            delivery_rows = db.session.execute(_text("""
+                SELECT delivery_method, COUNT(*) AS cnt
+                FROM online_orders
+                WHERE created_at >= :s AND created_at <= :e AND status != 'cancelled'
+                GROUP BY delivery_method
+            """), {'s': start_dt, 'e': end_dt}).fetchall()
+        except Exception:
+            db.session.rollback()
 
     return jsonify({
         'daily': [{'date': r[0], 'online_rev': float(r[1]), 'instore_rev': float(r[2]),

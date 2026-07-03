@@ -24,7 +24,9 @@ def index():
 
 @bp.route('/health')
 def health_check():
-    return jsonify({'status': 'healthy', 'version': _app_version(), 'timestamp': __import__('datetime').datetime.utcnow().isoformat()})
+    # Public endpoint — returns minimal info only (no DB name, no env details).
+    # Used by Docker HEALTHCHECK and appliance bootstrap. No auth required by design.
+    return jsonify({'status': 'healthy', 'version': _app_version()})
 
 
 @bp.route('/guide')
@@ -34,6 +36,8 @@ def user_guide():
 
 @bp.route('/__version')
 def version():
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
     return jsonify({'version': _app_version()})
 
 

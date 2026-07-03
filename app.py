@@ -1416,6 +1416,12 @@ def create_app():
 
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,    # test connection before use — prevents mid-sale 500s on stale connections
+        'pool_recycle':  1800,    # recycle connections every 30 min (before Postgres idle timeout)
+        'pool_size':     5,       # per-worker pool; 4 workers × 5 = 20 max connections
+        'max_overflow':  5,       # allow brief spikes to 10 per worker
+    }
 
     db.init_app(app)
 

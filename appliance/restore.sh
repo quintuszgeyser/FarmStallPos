@@ -45,10 +45,13 @@ SIZE=$(stat -c%s "$PLAIN" 2>/dev/null || echo 0)
 gunzip -c "$PLAIN" | head -c 65536 | grep -qE 'CREATE TABLE|COPY |INSERT INTO|PostgreSQL database dump' \
   || die "dump does not look like a pg_dump (no recognisable pg_dump markers) - refusing"
 
-# 3. Bring up Postgres; stop the app so nothing writes mid-restore.
+# 3. Bring up Postgres; stop ALL app services so nothing writes mid-restore.
+#    web and scale-sync stay connected to Postgres and can write between DROP and reload.
 docker compose up -d postgres
 for i in $(seq 1 30); do docker exec "$PG" pg_isready -U farmstall >/dev/null 2>&1 && break; sleep 2; done
-docker compose stop pos 2>/dev/null || true
+for svc in pos web farmpos-web farmpos-scale-sync ladycoleen-web; do
+  docker compose stop "$svc" 2>/dev/null || true
+done
 
 BEFORE="$(docker exec "$PG" psql -U farmstall -d "$DB" -t -A -c 'SELECT count(*) FROM products' 2>/dev/null || echo 'n/a')"
 c_bold "products rows BEFORE restore: $BEFORE"

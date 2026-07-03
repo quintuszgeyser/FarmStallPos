@@ -540,7 +540,7 @@
           </div>
         </div>
         <div><div id="cart" class="list-group"></div></div>
-        <!-- Payment method (ISSUE-29): recorded on the sale for till reconciliation -->
+        <!-- Payment method: recorded on the sale for till reconciliation -->
         <div class="btn-group btn-group-sm mt-2" role="group" id="pay-method-group" aria-label="Payment method">
           <input type="radio" class="btn-check" name="pay-method" id="pay-card" value="card" checked>
           <label class="btn btn-outline-secondary" for="pay-card">💳 Card</label>
@@ -548,6 +548,20 @@
           <label class="btn btn-outline-secondary" for="pay-cash">💵 Cash</label>
           <input type="radio" class="btn-check" name="pay-method" id="pay-qr" value="qr">
           <label class="btn btn-outline-secondary" for="pay-qr">📱 QR</label>
+          <input type="radio" class="btn-check" name="pay-method" id="pay-split" value="split">
+          <label class="btn btn-outline-secondary" for="pay-split">✂ Split</label>
+        </div>
+        <!-- Split payment inputs — shown only when Split is selected -->
+        <div id="split-payment-row" class="d-flex gap-2 mt-1 align-items-center hidden">
+          <div class="input-group input-group-sm" style="width:140px">
+            <span class="input-group-text">💵 R</span>
+            <input type="number" id="split-cash-input" class="form-control" placeholder="Cash" min="0" step="0.01">
+          </div>
+          <div class="input-group input-group-sm" style="width:140px">
+            <span class="input-group-text">💳 R</span>
+            <input type="number" id="split-card-input" class="form-control" placeholder="Card" min="0" step="0.01">
+          </div>
+          <span id="split-balance" class="small text-muted"></span>
         </div>
         <div class="d-flex justify-content-between align-items-center mt-1">
           <div>
@@ -1894,6 +1908,8 @@
           <div class="d-flex justify-content-between"><span>Card sales:</span><span id="ct-card-sales">-</span></div>
           <div class="d-flex justify-content-between fw-bold border-top pt-1"><span>Total sales:</span><span id="ct-total-sales">-</span></div>
           <div class="d-flex justify-content-between text-muted"><span>Voids in period:</span><span id="ct-void-total">-</span></div>
+          <div class="d-flex justify-content-between text-warning" id="ct-refunds-row" style="display:none!important"><span>Cash refunds paid out:</span><span id="ct-cash-refunds">-</span></div>
+          <div class="d-flex justify-content-between text-muted" id="ct-vat-row" style="display:none!important"><span>VAT included (15%):</span><span id="ct-vat-amount">-</span></div>
         </div>
         <div class="mb-2">
           <label class="form-label small">Opening float (cash in drawer at start)</label>
@@ -1932,7 +1948,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="small text-muted">Seeds FIFO stock batches for <strong>stock_item</strong> products without a supplier purchase-run. Required columns: <code>product_code, qty, unit, unit_cost</code>. Optional: <code>received_date</code>.</p>
+        <p class="small text-muted">Seeds FIFO stock batches for <strong>stock_item</strong> products without a supplier purchase-run. Required columns: <code>product_code, qty, unit, unit_cost</code>. Optional: <code>received_date</code>.<br><strong>unit_cost = cost per single unit</strong> (e.g. cost per gram, not total batch cost). For a 1 kg bag that cost R50, enter qty=1000, unit=g, unit_cost=0.05.</p>
         <div class="mb-2 d-flex gap-2">
           <a href="/api/stock/opening-import-template" class="btn btn-outline-secondary btn-sm">⬇ Download Template</a>
         </div>
