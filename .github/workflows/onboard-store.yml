@@ -16,13 +16,13 @@ name: Onboard New Store
 #   TAILSCALE_AUTH_KEY       — reusable Tailscale auth key (tskey-auth-...)
 #   GHCR_PAT                 — GitHub PAT with read:packages (pulls the pinned image)
 #
-# Per-onboard inputs (see below):
+# Per-onboard inputs (see below — just 2 required):
 #   store_name     — display name shown in the UI
-#   store_id       — kebab-case slug (auto-derived if left blank)
 #   image_version  — exact tag to install, e.g. v2.2.0
-#   tailscale_key  — tskey-auth-... (reusable, no-expiry)
-#   ghcr_pat       — GitHub PAT with read:packages (used only for docker login on the box)
-#   enable_web_shop — start the web shop container?
+#
+# Optional inputs:
+#   store_id       — kebab-case slug (auto-derived from store_name if blank)
+#   enable_web_shop — start the web shop container? (default: false)
 
 on:
   workflow_dispatch:
@@ -38,10 +38,6 @@ on:
         type: string
       image_version:
         description: 'Image version to install (e.g. v2.2.0) — must be a published release tag'
-        required: true
-        type: string
-      ghcr_pat:
-        description: 'GitHub PAT with read:packages — used only for docker login on the box'
         required: true
         type: string
       enable_web_shop:
@@ -170,7 +166,7 @@ jobs:
         env:
           STORE_ID:        ${{ steps.ids.outputs.store_id }}
           STORE_VER:       ${{ github.event.inputs.image_version }}
-          GHCR_PAT:        ${{ github.event.inputs.ghcr_pat }}
+          GHCR_PAT:        ${{ secrets.GHCR_PAT }}
           STORE_YML_B64:   ${{ steps.payload.outputs.store_yml_b64 }}
           SUPPORT_PUB_B64: ${{ steps.payload.outputs.support_pub_b64 }}
           SSH_PUBKEY_B64:  ${{ steps.payload.outputs.ssh_pubkey_b64 }}
