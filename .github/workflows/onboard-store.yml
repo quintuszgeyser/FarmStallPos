@@ -61,18 +61,18 @@ jobs:
   generate-bootstrap:
     runs-on: ubuntu-latest
     steps:
-      # ── 1. Validate image version exists as a GitHub release ──────────────
+      # ── 1. Validate image version tag exists in the repo ─────────────────
       - name: Validate image version
         run: |
           TAG="${{ github.event.inputs.image_version }}"
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG}")
+            "https://api.github.com/repos/${{ github.repository }}/git/refs/tags/${TAG}")
           if [ "$STATUS" != "200" ]; then
-            echo "::error::Release tag '${TAG}' not found. Push the tag first: git tag ${TAG} && git push origin ${TAG}"
+            echo "::error::Tag '${TAG}' not found in repo. Push it first: git tag ${TAG} && git push origin ${TAG}"
             exit 1
           fi
-          echo "✅ Release ${TAG} confirmed"
+          echo "✅ Tag ${TAG} confirmed"
 
       # ── 2. Derive / validate store_id ─────────────────────────────────────
       - name: Derive store_id
