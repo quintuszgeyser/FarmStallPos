@@ -289,6 +289,65 @@ def api_transaction_receipt(sale_id):
     })
 
 
+@bp.route('/api/transactions/<sale_id>/print-receipt', methods=['POST'])
+def api_transaction_print_receipt(sale_id):
+    """Render a receipt image and send directly to the thermal printer via TSPL2."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    from helpers import get_setting
+    from services.receipt_service import ReceiptRenderService
+    from services.label_service import PrintDispatchService
+
+    data       = request.json or {}
+    printer_id = data.get('printer_id')
+
+    rows = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
+    if not rows:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    product_map = {p.id: p.name for p in Product.query.filter(
+        Product.id.in_({r.product_id for r in rows})).all()}
+    lines = [{'name': product_map.get(r.product_id, f'Product {r.product_id}'),
+              'qty': float(r.qty), 'unit_price': float(r.unit_price),
+              'subtotal': float(Decimal(str(r.qty)) * r.unit_price)} for r in rows]
+    total          = sum(ln['subtotal'] for ln in lines)
+    vat_registered = get_setting('vat_registered', 'false') == 'true'
+    vat_rate_pct   = float(get_setting('vat_rate', 15) or 15)
+    vat_amount     = round(total * (vat_rate_pct / 100) / (1 + vat_rate_pct / 100), 2) if vat_registered else 0
+
+    receipt_data = {
+        'sale_id':        sale_id,
+        'date_time':      rows[0].date_time.isoformat(),
+        'lines':          lines,
+        'total':          round(total, 2),
+        'payment_method': rows[0].payment_method,
+        'cash_tendered':  float(rows[0].cash_tendered) if rows[0].cash_tendered else None,
+        'change':         round(float(rows[0].cash_tendered or 0) - total, 2) if rows[0].cash_tendered else None,
+        'vat_registered': vat_registered,
+        'vat_rate':       vat_rate_pct,
+        'vat_amount':     vat_amount,
+        'store_name':     get_setting('branding_store_name', ''),
+        'store_legal':    get_setting('branding_invoice_legal', ''),
+        'vat_number':     get_setting('vat_number', ''),
+        'footer':         get_setting('branding_invoice_footer', ''),
+        'logo_file':      get_setting('branding_logo_file', ''),
+    }
+
+    width_mm = float(get_setting('receipt_width_mm', '72') or '72')
+
+    try:
+        svc      = ReceiptRenderService()
+        img, h   = svc.render(receipt_data, width_mm=width_mm)
+        dispatch = PrintDispatchService()
+        result   = dispatch.send(img, printer_id=printer_id,
+                                 width_mm=width_mm, height_mm=h)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    return jsonify({'ok': True, 'status': result.get('status'), 'notes': result.get('notes')})
+
+
 @bp.route('/api/transactions/<sale_id>/flag', methods=['POST'])
 def api_transaction_flag(sale_id):
     if not require_login():

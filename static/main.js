@@ -27,6 +27,7 @@ let STATE = {
   activeCustomer:   null,   // customer detected at till
   customerPollInterval: null,  // interval ID for till customer polling
   _cartDiscount:    null,   // {type:'pct'|'amt', value:number} - admin cart-wide discount
+  _receiptPrinterId: null,  // LabelPrinter.id to use for receipts (null = auto-detect USB)
 };
 
 // ═══════════════════════════════════════════════════════
@@ -3673,6 +3674,11 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     await loadProducts();
     const kitchenMsg = j.kitchen_orders > 0 ? ` - ${j.kitchen_orders} kitchen order${j.kitchen_orders > 1 ? 's' : ''} queued` : '';
     toast(`Sale complete - #${String(j.transaction_id).slice(0,8)}${kitchenMsg}`, 'success', 4000);
+    // Auto-print receipt if enabled in settings
+    try {
+      const s = await api('/api/settings');
+      if (s.auto_print_receipt === 'true') printReceipt(j.transaction_id);
+    } catch(e) { /* non-blocking */ }
     if (j.kitchen_orders > 0) {
       // Update badge immediately
       const badge = document.getElementById('kitchen-badge');
@@ -4313,9 +4319,17 @@ function renderTransactions(trs) {
 
       const btnReceipt = document.createElement('button');
       btnReceipt.className = 'btn btn-outline-secondary btn-sm';
+      btnReceipt.title = 'Print receipt on thermal printer';
       btnReceipt.textContent = '🖨 Receipt';
       btnReceipt.onclick = () => printReceipt(t.id);
       right.appendChild(btnReceipt);
+
+      const btnReceiptPreview = document.createElement('button');
+      btnReceiptPreview.className = 'btn btn-outline-secondary btn-sm';
+      btnReceiptPreview.title = 'Preview receipt in browser';
+      btnReceiptPreview.textContent = '👁';
+      btnReceiptPreview.onclick = () => previewReceipt(t.id);
+      right.appendChild(btnReceiptPreview);
       // Resolve flag button
       if (t.flagged && !t.flag_resolved) {
         const btnResolve = document.createElement('button');
@@ -4495,12 +4509,27 @@ document.getElementById('btn-tx-void')?.addEventListener('click', async () => {
 
 // ── Print Receipt ────────────────────────────────────────────────────────────
 async function printReceipt(saleId) {
+  // Resolve configured receipt printer (falls back to default/USB auto-detect)
+  const printerId = STATE._receiptPrinterId || null;
+  try {
+    const result = await api(`/api/transactions/${saleId}/print-receipt`, {
+      method: 'POST',
+      body: JSON.stringify({ printer_id: printerId }),
+    });
+    toast('Receipt sent to printer', 'success', 3000);
+  } catch (e) {
+    toast('Receipt print failed: ' + e.message, 'error');
+  }
+}
+
+async function previewReceipt(saleId) {
+  // Browser preview as fallback — opens a formatted window for visual check
   try {
     const r = await api(`/api/transactions/${saleId}/receipt`);
     const lines = r.lines.map(ln =>
-      `${ln.name.padEnd(20)} x${fmt(ln.qty)}  R${fmt(ln.subtotal)}`
+      `${ln.name.substring(0,20).padEnd(20)} x${fmt(ln.qty).padStart(6)}  R${fmt(ln.subtotal).padStart(7)}`
     ).join('\n');
-    const pm = r.payment_method ? r.payment_method.toUpperCase() : '';
+    const pm     = r.payment_method ? r.payment_method.toUpperCase() : '';
     const change = r.change != null && r.change > 0 ? `\nChange:    R${fmt(r.change)}` : '';
     const vat    = r.vat_registered ? `\nVAT (${r.vat_rate}%): R${fmt(r.vat_amount)}` : '';
     const vatNum = r.vat_registered && r.vat_number ? `VAT No: ${r.vat_number}\n` : '';
@@ -4510,9 +4539,9 @@ async function printReceipt(saleId) {
       vatNum,
       new Date(r.date_time).toLocaleString('en-ZA'),
       `Receipt: #${String(saleId).slice(0,8)}`,
-      '─'.repeat(32),
+      '─'.repeat(42),
       lines,
-      '─'.repeat(32),
+      '─'.repeat(42),
       `TOTAL:     R${fmt(r.total)}`,
       vat,
       `Payment:   ${pm}`,
@@ -4521,11 +4550,12 @@ async function printReceipt(saleId) {
       '',
       r.footer || 'Thank you for your purchase!',
     ].filter(l => l !== null && l !== undefined).join('\n');
-
-    const win = window.open('', '_blank', 'width=400,height=600');
-    win.document.write(`<pre style="font-family:monospace;font-size:12px;padding:16px">${content}</pre>`);
+    const win = window.open('', '_blank', 'width=420,height=700');
+    if (!win) { toast('Pop-up blocked — allow pop-ups for receipt preview', 'warning'); return; }
+    win.document.write(`<!DOCTYPE html><html><head><title>Receipt</title></head><body>
+      <pre style="font-family:'Courier New',monospace;font-size:13px;padding:20px;white-space:pre">${content}</pre>
+      <script>window.print();<\/script></body></html>`);
     win.document.close();
-    win.print();
   } catch (e) { toast('Could not load receipt: ' + e.message, 'error'); }
 }
 
@@ -5226,7 +5256,7 @@ function switchChartTab(tab) { _showChartTab(tab); }
 
 function _showChartTab(tab) {
   _statsChartTab = tab;
-  ['daily','hourly','minute','top','top-rev','suppliers','channels','customers'].forEach(id => {
+  ['daily','hourly','minute','top','top-rev','suppliers','channels','customers','dow'].forEach(id => {
     const c = document.getElementById(`chart-${id}`);
     if (c) c.style.display = 'none';
   });
@@ -5326,6 +5356,44 @@ function _showChartTab(tab) {
         title: 'Customer Purchase Frequency',
       });
     }).catch(() => {});
+
+  } else if (tab === 'dow') {
+    const c = document.getElementById('chart-dow');
+    c.style.display = '';
+    const dayData = (_statsData && _statsData.revenue_per_day) || [];
+    if (!dayData.length) { drawBarChart(c, [], [], {title: 'No data in selected range'}); return; }
+
+    // Aggregate revenue, transaction count, and occurrences per day-of-week
+    const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const rev  = [0,0,0,0,0,0,0];
+    const txs  = [0,0,0,0,0,0,0];
+    const days = [0,0,0,0,0,0,0];   // how many calendar days of that weekday exist in range
+
+    dayData.forEach(d => {
+      // JS Date: 0=Sun,1=Mon…6=Sat → remap to Mon=0…Sun=6
+      const jsDay = new Date(d.date + 'T00:00:00').getDay();
+      const idx   = jsDay === 0 ? 6 : jsDay - 1;
+      rev[idx]  += d.revenue || 0;
+      txs[idx]  += d.tx_count || 0;
+      days[idx] += 1;
+    });
+
+    // Show average revenue per day-of-week occurrence (avoids bias from having 5 Mondays vs 4 Sundays)
+    const avgRev = rev.map((r, i) => days[i] > 0 ? Math.round(r / days[i] * 100) / 100 : 0);
+    const avgTx  = txs.map((t, i) => days[i] > 0 ? Math.round(t / days[i] * 10) / 10  : 0);
+
+    // Annotate label with occurrence count so the teller understands the average basis
+    const labels = DOW.map((d, i) => days[i] > 0 ? `${d} (${days[i]}×)` : d);
+
+    drawBarChart(c, labels, avgRev, {
+      color: '#7b1fa2', color2: '#ba68c8', valuePrefix: 'R',
+      title: `Avg Revenue per Day of Week  •  ${dayData.length} days in range`,
+      onBarClick: (lbl, val, i) => {
+        if (avgTx[i] === 0) return;
+        const fullDay = DOW[i];
+        toast(`${fullDay}: avg R${fmt(avgRev[i])} revenue, avg ${avgTx[i]} transactions (${days[i]} occurrence${days[i]!==1?'s':''})`, 'info', 5000);
+      },
+    });
   }
 }
 
@@ -5389,7 +5457,12 @@ async function loadStats() {
       chipArea.appendChild(chip);
     };
     if (userId) {
-      const empName = STATE.users.find(u => String(u.id) === String(userId))?.username || `#${userId}`;
+      // Look up name from STATE.users first, then fall back to the stats employee_stats payload,
+      // then the employee table DOM — avoids "Employee #4" when users aren't loaded for the role.
+      const fromUsers     = STATE.users.find(u => String(u.id) === String(userId))?.username;
+      const fromStats     = _statsData?.employee_stats?.find(e => String(e.user_id) === String(userId))?.name;
+      const fromDom       = document.querySelector(`[data-emp-id="${userId}"] .emp-name`)?.textContent?.trim();
+      const empName       = fromUsers || fromStats || fromDom || `Employee #${userId}`;
       addChip(`Employee: ${empName}`, () => {
         const el = document.getElementById('stats-user-filter');
         if (el) el.value = '';
@@ -6242,6 +6315,10 @@ async function loadSettings() {
   try {
     const j = await api('/api/settings');
     _globalMarkupPct = parseFloat(j.markup_percent) || 40;
+    // Load receipt printer preference into STATE
+    if (j.receipt_printer_id) {
+      STATE._receiptPrinterId = parseInt(j.receipt_printer_id) || null;
+    }
   } catch {}
 }
 
@@ -8594,6 +8671,25 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     _bindSlider('set-max-face-angles', 'set-max-face-angles-val', v => Math.round(v) + ' angles');
     _bindSlider('set-min-angle-dist',  'set-min-angle-dist-val',  v => parseFloat(v).toFixed(2));
 
+    // Printer settings
+    const rwEl = document.getElementById('setting-receipt-width');
+    if (rwEl && s.receipt_width_mm) rwEl.value = s.receipt_width_mm;
+    const apEl = document.getElementById('setting-auto-print-receipt');
+    if (apEl) apEl.checked = s.auto_print_receipt === 'true';
+    // Populate receipt printer select
+    const rpSel = document.getElementById('setting-receipt-printer');
+    if (rpSel) {
+      rpSel.innerHTML = '<option value="">Auto-detect USB (default)</option>';
+      (LABELS.printers || []).forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = `${p.name} (${p.connection})`;
+        if (String(p.id) === String(s.receipt_printer_id)) opt.selected = true;
+        rpSel.appendChild(opt);
+      });
+    }
+    // Populate label printer config list
+    _renderPrinterConfigList();
+
     // Branding (white-label)
     const _bset = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
     _brandFillFontSelects();
@@ -8661,6 +8757,75 @@ document.getElementById('btn-save-branding')?.addEventListener('click', async ()
     toast('Branding saved - reload to see it (applies within 30s everywhere)', 'success', 3500);
   } catch(e) { toast(e.message, 'error'); }
 });
+
+// ── Printer settings save ─────────────────────────────────────────────────────
+document.getElementById('btn-save-printer-settings')?.addEventListener('click', async () => {
+  const width     = document.getElementById('setting-receipt-width')?.value || '72';
+  const autoprint = document.getElementById('setting-auto-print-receipt')?.checked ? 'true' : 'false';
+  const printerId = document.getElementById('setting-receipt-printer')?.value || '';
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      receipt_width_mm:    width,
+      auto_print_receipt:  autoprint,
+      receipt_printer_id:  printerId,
+    })});
+    STATE._receiptPrinterId = printerId ? parseInt(printerId) : null;
+    _flashSaved('printer-settings-saved');
+    toast('Printer settings saved', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+});
+
+function _renderPrinterConfigList() {
+  const wrap = document.getElementById('printer-config-list');
+  if (!wrap) return;
+  if (!LABELS.printers.length) {
+    wrap.innerHTML = '<div class="text-muted small">No printers configured yet.</div>';
+    return;
+  }
+  wrap.innerHTML = LABELS.printers.map(p => `
+    <div class="d-flex align-items-center gap-2 py-1 border-bottom">
+      <span style="flex:1"><strong>${escapeHtml(p.name)}</strong>
+        <span class="text-muted small ms-1">${p.connection}${p.address ? ' · ' + escapeHtml(p.address) : ''}</span>
+      </span>
+      <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="deletePrinter(${p.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function openAddPrinterModal() {
+  const name    = prompt('Printer name (e.g. XP-365B Receipt):', 'XP-365B');
+  if (!name) return;
+  const connOpts = ['usb', 'bluetooth', 'network'];
+  const conn    = prompt('Connection type (usb / bluetooth / network):', 'usb');
+  if (!connOpts.includes(conn)) { toast('Invalid connection type', 'warning'); return; }
+  const address = prompt(
+    conn === 'usb'       ? 'USB VID:PID (e.g. 2d84:0200) — blank = auto-detect:' :
+    conn === 'bluetooth' ? 'Bluetooth MAC (e.g. XX:XX:XX:XX:XX:XX):' :
+                           'IP:port (e.g. 192.168.1.100:9100):',
+    ''
+  ) || '';
+  try {
+    await api('/api/label-printers', { method: 'POST', body: JSON.stringify({
+      name, model: 'xprinter_xp365b', connection: conn, address,
+    })});
+    await loadLabelPrinters();
+    _renderPrinterConfigList();
+    // Refresh receipt printer select
+    const rpSel = document.getElementById('setting-receipt-printer');
+    if (rpSel) _populatePrinterSelect(rpSel);
+    toast(`Printer "${name}" added`, 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+async function deletePrinter(id) {
+  if (!confirm('Remove this printer?')) return;
+  try {
+    await api(`/api/label-printers/${id}`, { method: 'DELETE' });
+    await loadLabelPrinters();
+    _renderPrinterConfigList();
+    toast('Printer removed', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
 
 // Logo uploads immediately on file selection
 document.getElementById('brand-logo-file')?.addEventListener('change', async (e) => {
@@ -10454,37 +10619,58 @@ function _browserPrintPdf(b64) {
   };
 }
 
-// ── Label Designer ────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════
+// LABEL DESIGNER  — WYSIWYG (server-rendered PNG + overlay handles)
+// ═══════════════════════════════════════════════════════
+//
+// Architecture:
+//   ld-canvas-img    = the rendered PNG from /api/labels/preview
+//   ld-canvas-overlay= transparent div on top; holds drag/resize handles
+//
+// All positions/sizes are stored in mm (LD.elements[].x/y/w/h).
+// LD.scale = CSS pixels per mm at current zoom — derived from canvas size.
+// On every edit we call ldRequestRender() which debounces → server PNG → img.src.
+// Overlay handles are redrawn after each render.
 
 const LD = LABELS._designer;
-const LD_PX = () => LD.PX_PER_MM;  // px/mm
+
+// ── Designer scale: CSS px per mm. Computed from canvas container width on open.
+LD.scale = 6;   // default fallback; recalculated in ldComputeScale()
+
+// Render is always server-side. This is the debounce timer.
+let _ldRenderTimer = null;
+
+// ── Open ─────────────────────────────────────────────────────────────────────
 
 async function openLabelDesigner(existingTemplateId) {
   await loadLabelTemplates();
-  // Populate preview product list
-  const sel = document.getElementById('ld-preview-product');
-  if (sel) {
-    sel.innerHTML = '<option value="">— none —</option>';
-    STATE.products.filter(p => !p.is_archived).forEach(p => {
+
+  // Populate product selector
+  const prodSel = document.getElementById('ld-preview-product');
+  if (prodSel) {
+    prodSel.innerHTML = '<option value="">— no product —</option>';
+    STATE.products.filter(p => !p.is_archived && p.is_for_sale).forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.id; opt.textContent = p.name;
-      sel.appendChild(opt);
+      prodSel.appendChild(opt);
     });
+    if (LABELS._currentProduct) prodSel.value = LABELS._currentProduct.id;
+    prodSel.onchange = ldRequestRender;
   }
 
   if (existingTemplateId) {
     const tmpl = LABELS.templates.find(t => t.id === parseInt(existingTemplateId));
     if (tmpl) {
-      LD.templateId  = tmpl.id;
-      LD.elements    = JSON.parse(JSON.stringify(tmpl.elements));
-      LD.widthMm     = tmpl.width_mm;
-      LD.heightMm    = tmpl.height_mm;
+      LD.templateId = tmpl.id;
+      LD.elements   = JSON.parse(JSON.stringify(tmpl.elements));
+      LD.widthMm    = tmpl.width_mm;
+      LD.heightMm   = tmpl.height_mm;
       document.getElementById('ld-template-name').value = tmpl.name;
-      document.getElementById('ld-category').value = tmpl.category;
-      document.getElementById('ld-width').value    = tmpl.width_mm;
-      document.getElementById('ld-height').value   = tmpl.height_mm;
-      document.getElementById('ld-border').checked = tmpl.border;
-      document.getElementById('ld-bg-color').value = tmpl.background_color || '#ffffff';
+      document.getElementById('ld-category').value      = tmpl.category;
+      document.getElementById('ld-width').value         = tmpl.width_mm;
+      document.getElementById('ld-height').value        = tmpl.height_mm;
+      document.getElementById('ld-border').checked      = tmpl.border;
+      document.getElementById('ld-bg-color').value      = tmpl.background_color || '#ffffff';
       document.getElementById('ld-delete-tmpl-btn').style.display = '';
     }
   } else {
@@ -10499,217 +10685,386 @@ async function openLabelDesigner(existingTemplateId) {
     document.getElementById('ld-delete-tmpl-btn').style.display = 'none';
   }
 
-  // Wire dimension inputs to re-render canvas
-  ['ld-width', 'ld-height'].forEach(id => {
+  ['ld-width','ld-height'].forEach(id => {
     document.getElementById(id).oninput = () => {
-      LD.widthMm  = parseFloat(document.getElementById('ld-width').value)  || 40;
-      LD.heightMm = parseFloat(document.getElementById('ld-height').value) || 20;
-      ldRenderCanvas();
+      LD.widthMm  = parseFloat(document.getElementById('ld-width').value)  || LD.widthMm;
+      LD.heightMm = parseFloat(document.getElementById('ld-height').value) || LD.heightMm;
+      ldRequestRender();
     };
   });
-  document.getElementById('ld-bg-color').oninput  = ldRenderCanvas;
-  document.getElementById('ld-border').onchange   = ldRenderCanvas;
+  document.getElementById('ld-bg-color').oninput = ldRequestRender;
+  document.getElementById('ld-border').onchange  = ldRequestRender;
 
-  ldRenderCanvas();
-  new bootstrap.Modal(document.getElementById('labelDesignerModal')).show();
+  document.getElementById('labelDesignerModal').onkeydown = e => {
+    if ((e.key === 'Delete' || e.key === 'Backspace') &&
+        e.target === document.getElementById('labelDesignerModal') ||
+        e.target.id === 'ld-canvas-wrap' || e.target.id === 'ld-canvas-overlay') {
+      if (LD.selectedIdx != null) { ldRemoveElement(LD.selectedIdx); e.preventDefault(); }
+    }
+  };
+
+  const modal = new bootstrap.Modal(document.getElementById('labelDesignerModal'));
+  modal.show();
+
+  document.getElementById('labelDesignerModal').addEventListener('shown.bs.modal', () => {
+    ldComputeScale();
+    ldRequestRender(true);
+  }, { once: true });
 }
+
+// Calculate display scale so the label fills the available canvas area
+function ldComputeScale() {
+  const scroll = document.getElementById('ld-canvas-scroll');
+  if (!scroll) return;
+  const availW = scroll.clientWidth  - 64;
+  const availH = scroll.clientHeight - 64;
+  const scaleW = availW / LD.widthMm;
+  const scaleH = availH / LD.heightMm;
+  LD.scale = Math.min(scaleW, scaleH, 12);   // cap at 12px/mm (very small labels)
+}
+
+// ── Add element ───────────────────────────────────────────────────────────────
 
 function ldAddElement(type) {
   const defaults = {
-    product_name: { w: 38, h: 6,  font_size: 9,  bold: true  },
+    product_name: { w: Math.min(LD.widthMm - 2, 38), h: 6,  font_size: 9,  bold: true  },
     price:        { w: 20, h: 8,  font_size: 12, bold: true,  align: 'center' },
-    barcode:      { w: 30, h: 12, barcode_format: 'auto' },
+    barcode:      { w: Math.min(LD.widthMm - 4, 34), h: 12, barcode_format: 'auto' },
     sku:          { w: 20, h: 4,  font_size: 6  },
-    store_name:   { w: 38, h: 5,  font_size: 7,  align: 'center' },
+    store_name:   { w: Math.min(LD.widthMm - 2, 38), h: 5,  font_size: 7, align: 'center' },
     store_logo:   { w: 20, h: 10 },
     weight:       { w: 20, h: 5,  font_size: 8  },
-    category:     { w: 30, h: 4,  font_size: 6  },
-    custom_text:  { w: 30, h: 5,  font_size: 8,  value: 'Custom text' },
+    category:     { w: 25, h: 4,  font_size: 6  },
+    custom_text:  { w: 25, h: 5,  font_size: 8, value: 'Custom text' },
   };
-  const el = { type, x: 1, y: 1, color: '#000000', ...defaults[type] };
+  const offset = (LD.elements.length % 5) * 1.5;
+  const el = {
+    type, color: '#000000',
+    x: Math.max(1, (LD.widthMm  - (defaults[type]?.w || 20)) / 2 + offset),
+    y: Math.max(1, (LD.heightMm - (defaults[type]?.h || 6))  / 2 + offset),
+    ...defaults[type],
+  };
   LD.elements.push(el);
   LD.selectedIdx = LD.elements.length - 1;
-  ldRenderCanvas();
   ldShowProps(LD.selectedIdx);
-  ldRefreshPreview();
+  ldRequestRender(true);
 }
 
-function ldRenderCanvas() {
-  const wrap = document.getElementById('ld-canvas-wrap');
-  if (!wrap) return;
-  const W = Math.round(LD.widthMm  * LD_PX());
-  const H = Math.round(LD.heightMm * LD_PX());
-  wrap.style.width  = W + 'px';
-  wrap.style.height = H + 'px';
-  const bg = document.getElementById('ld-bg-color')?.value || '#ffffff';
-  wrap.style.background = bg;
-  const border = document.getElementById('ld-border')?.checked;
-  wrap.style.outline = border ? '2px solid #000' : '1px dashed #ccc';
+// ── Render pipeline ───────────────────────────────────────────────────────────
 
-  // Remove old element divs (keep non-element children)
-  wrap.querySelectorAll('.ld-el').forEach(el => el.remove());
+function ldRequestRender(immediate = false) {
+  clearTimeout(_ldRenderTimer);
+  _ldRenderTimer = setTimeout(ldDoRender, immediate ? 0 : 220);
+}
+
+async function ldDoRender() {
+  const spinner = document.getElementById('ld-canvas-spinner');
+  const img     = document.getElementById('ld-canvas-img');
+  const status  = document.getElementById('ld-render-status');
+  if (spinner) spinner.style.display = 'flex';
+  if (status)  status.textContent = 'rendering...';
+
+  const productId = document.getElementById('ld-preview-product')?.value || null;
+  const template  = ldBuildTemplate();
+
+  try {
+    const res = await fetch('/api/labels/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        product_id: productId ? parseInt(productId) : null,
+        template,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    const blob  = await res.blob();
+    const url   = URL.createObjectURL(blob);
+    const wPx = Math.round(LD.widthMm  * LD.scale);
+    const hPx = Math.round(LD.heightMm * LD.scale);
+    if (img) {
+      img.style.width  = wPx + 'px';
+      img.style.height = hPx + 'px';
+      img.src = url;
+    }
+    if (status) status.textContent = '';
+    ldDrawOverlay();
+  } catch (e) {
+    if (status) status.textContent = 'Error: ' + e.message;
+  } finally {
+    if (spinner) spinner.style.display = 'none';
+  }
+}
+
+function ldBuildTemplate() {
+  return {
+    width_mm:         parseFloat(document.getElementById('ld-width')?.value)  || LD.widthMm,
+    height_mm:        parseFloat(document.getElementById('ld-height')?.value) || LD.heightMm,
+    elements:         LD.elements,
+    background_color: document.getElementById('ld-bg-color')?.value || '#ffffff',
+    border:           document.getElementById('ld-border')?.checked || false,
+  };
+}
+
+// ── Overlay: selection + drag + resize handles ────────────────────────────────
+
+const _GRIPS = [
+  { id:'nw', cx:0,   cy:0,   cursor:'nw-resize',  dx:-1, dy:-1, dw: 1, dh: 1 },
+  { id:'n',  cx:0.5, cy:0,   cursor:'n-resize',   dx: 0, dy:-1, dw: 0, dh: 1 },
+  { id:'ne', cx:1,   cy:0,   cursor:'ne-resize',  dx: 0, dy:-1, dw: 1, dh: 1 },
+  { id:'e',  cx:1,   cy:0.5, cursor:'e-resize',   dx: 0, dy: 0, dw: 1, dh: 0 },
+  { id:'se', cx:1,   cy:1,   cursor:'se-resize',  dx: 0, dy: 0, dw: 1, dh: 1 },
+  { id:'s',  cx:0.5, cy:1,   cursor:'s-resize',   dx: 0, dy: 0, dw: 0, dh: 1 },
+  { id:'sw', cx:0,   cy:1,   cursor:'sw-resize',  dx:-1, dy: 0, dw: 1, dh: 1 },
+  { id:'w',  cx:0,   cy:0.5, cursor:'w-resize',   dx:-1, dy: 0, dw: 1, dh: 0 },
+];
+
+function ldDrawOverlay() {
+  const overlay = document.getElementById('ld-canvas-overlay');
+  if (!overlay) return;
+  overlay.innerHTML = '';
+  overlay.style.pointerEvents = 'none';
 
   LD.elements.forEach((el, idx) => {
-    const div = document.createElement('div');
-    div.className = 'ld-el';
-    div.style.cssText = `
-      position:absolute;
-      left:${el.x * LD_PX()}px; top:${el.y * LD_PX()}px;
-      width:${el.w * LD_PX()}px; height:${el.h * LD_PX()}px;
-      border:${idx === LD.selectedIdx ? '2px solid #0d6efd' : '1px dashed #aaa'};
-      background:rgba(255,255,255,0.05);
-      cursor:move; user-select:none; overflow:hidden; box-sizing:border-box;
-      font-size:${Math.max(8, (el.font_size || 9) * LD_PX() * 0.6)}px;
-      font-weight:${el.bold ? 'bold' : 'normal'};
-      color:${el.color || '#000'};
-      display:flex; align-items:center;
-      justify-content:${el.align === 'center' ? 'center' : el.align === 'right' ? 'flex-end' : 'flex-start'};
-      padding:1px 2px;
-    `;
-    div.dataset.idx = idx;
-    const label = { product_name: 'Name', price: 'R0.00', barcode: '▐▌█▌▐▌', sku: 'SKU', store_name: 'Store', store_logo: '🖼', weight: '500g', category: 'Category', custom_text: el.value || 'Text' };
-    div.textContent = label[el.type] || el.type;
+    const s    = LD.scale;
+    const x    = el.x * s;
+    const y    = el.y * s;
+    const w    = el.w * s;
+    const h    = el.h * s;
+    const sel  = idx === LD.selectedIdx;
+    const GRIP = 10;
 
-    // Drag to reposition
-    div.addEventListener('mousedown', e => { e.stopPropagation(); ldStartDrag(e, idx, div, wrap); });
-    div.addEventListener('click', e => { e.stopPropagation(); LD.selectedIdx = idx; ldRenderCanvas(); ldShowProps(idx); });
-    wrap.appendChild(div);
+    const ghost = document.createElement('div');
+    ghost.style.cssText = `
+      position:absolute; left:${x}px; top:${y}px; width:${w}px; height:${h}px;
+      box-sizing:border-box; cursor:move; pointer-events:all;
+      border:${sel ? '2px solid #0d6efd' : '1px dashed rgba(0,100,255,.35)'};
+      background:${sel ? 'rgba(13,110,253,.06)' : 'transparent'};
+    `;
+    ghost.title = el.type;
+    ghost.addEventListener('mousedown', e => { e.stopPropagation(); ldStartMove(e, idx); });
+    ghost.addEventListener('click',     e => { e.stopPropagation(); ldSelectElement(idx); });
+    overlay.appendChild(ghost);
+
+    if (sel) {
+      _GRIPS.forEach(g => {
+        const grip = document.createElement('div');
+        const gx   = x + g.cx * w - GRIP / 2;
+        const gy   = y + g.cy * h - GRIP / 2;
+        grip.style.cssText = `
+          position:absolute; left:${gx}px; top:${gy}px;
+          width:${GRIP}px; height:${GRIP}px;
+          background:#0d6efd; border:2px solid #fff; border-radius:2px;
+          cursor:${g.cursor}; pointer-events:all; box-sizing:border-box;
+        `;
+        grip.addEventListener('mousedown', e => { e.stopPropagation(); ldStartResize(e, idx, g); });
+        overlay.appendChild(grip);
+      });
+    }
   });
+
+  const bg = document.createElement('div');
+  bg.style.cssText = 'position:absolute;inset:0;pointer-events:all;cursor:default';
+  bg.addEventListener('mousedown', () => ldSelectElement(null));
+  overlay.insertBefore(bg, overlay.firstChild);
 }
 
-function ldStartDrag(e, idx, div, wrap) {
-  LD.selectedIdx = idx; ldRenderCanvas(); ldShowProps(idx);
-  const startX = e.clientX; const startY = e.clientY;
-  const origX  = LD.elements[idx].x; const origY = LD.elements[idx].y;
+function ldSelectElement(idx) {
+  LD.selectedIdx = idx;
+  ldDrawOverlay();
+  ldShowProps(idx);
+}
+
+// ── Move (drag entire element) ────────────────────────────────────────────────
+
+function ldStartMove(e, idx) {
+  ldSelectElement(idx);
+  const s     = LD.scale;
+  const origX = LD.elements[idx].x;
+  const origY = LD.elements[idx].y;
+  const startX = e.clientX, startY = e.clientY;
+
   const onMove = ev => {
-    const dx = (ev.clientX - startX) / LD_PX();
-    const dy = (ev.clientY - startY) / LD_PX();
-    LD.elements[idx].x = Math.max(0, Math.round((origX + dx) * 10) / 10);
-    LD.elements[idx].y = Math.max(0, Math.round((origY + dy) * 10) / 10);
-    ldRenderCanvas();
-    ldUpdatePropsPosition(idx);
+    const dx = (ev.clientX - startX) / s;
+    const dy = (ev.clientY - startY) / s;
+    LD.elements[idx].x = Math.max(0, parseFloat((origX + dx).toFixed(1)));
+    LD.elements[idx].y = Math.max(0, parseFloat((origY + dy).toFixed(1)));
+    ldDrawOverlay();
+    ldSyncPropsPosition(idx);
+    ldRequestRender();
   };
-  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); ldRefreshPreview(); };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    ldRequestRender(true);
+  };
   document.addEventListener('mousemove', onMove);
   document.addEventListener('mouseup', onUp);
 }
 
+// ── Resize (drag a grip) ──────────────────────────────────────────────────────
+
+function ldStartResize(e, idx, grip) {
+  e.preventDefault();
+  const s      = LD.scale;
+  const el     = LD.elements[idx];
+  const origX  = el.x, origY  = el.y;
+  const origW  = el.w, origH  = el.h;
+  const startX = e.clientX, startY = e.clientY;
+  const MIN    = 2;
+
+  const onMove = ev => {
+    const dx = (ev.clientX - startX) / s;
+    const dy = (ev.clientY - startY) / s;
+    let nx = origX, ny = origY, nw = origW, nh = origH;
+    if (grip.dw) nw = Math.max(MIN, origW + dx * (grip.dx < 0 ? -1 : 1));
+    if (grip.dh) nh = Math.max(MIN, origH + dy * (grip.dy < 0 ? -1 : 1));
+    if (grip.dx < 0) nx = Math.max(0, Math.min(origX + origW - MIN, origX + dx));
+    if (grip.dy < 0) ny = Math.max(0, Math.min(origY + origH - MIN, origY + dy));
+    el.x = parseFloat(nx.toFixed(1));
+    el.y = parseFloat(ny.toFixed(1));
+    el.w = parseFloat(nw.toFixed(1));
+    el.h = parseFloat(nh.toFixed(1));
+    ldDrawOverlay();
+    ldSyncPropsSize(idx);
+    ldRequestRender();
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    ldRequestRender(true);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+// ── Properties panel ─────────────────────────────────────────────────────────
+
 function ldShowProps(idx) {
   const panel = document.getElementById('ld-props-content');
-  if (!panel || idx == null || !LD.elements[idx]) { if (panel) panel.innerHTML = '<span class="text-muted small">Select an element.</span>'; return; }
+  if (!panel) return;
+  if (idx == null || !LD.elements[idx]) {
+    panel.innerHTML = '<div class="text-muted small mt-2">Click an element on the label to select it.<br><br>Drag to move &bull; Drag corners/edges to resize.</div>';
+    return;
+  }
   const el = LD.elements[idx];
+  const typeLabel = {
+    product_name:'Product Name', price:'Price', barcode:'Barcode', sku:'SKU',
+    store_name:'Store Name', store_logo:'Store Logo', weight:'Weight',
+    category:'Category', custom_text:'Custom Text',
+  }[el.type] || el.type;
+
   panel.innerHTML = `
+    <div class="fw-semibold small mb-3" style="color:#0d6efd">${typeLabel}</div>
+
     <div class="mb-2">
-      <label class="form-label mb-1 small">Type</label>
-      <div class="fw-semibold small">${el.type}</div>
+      <label class="form-label mb-1 small fw-semibold">Position &amp; Size (mm)</label>
+      <div class="row g-1">
+        <div class="col-6">
+          <label class="form-label mb-0" style="font-size:10px">X</label>
+          <input id="ld-prop-x" type="number" class="form-control form-control-sm" value="${el.x}" step="0.5" oninput="ldPropChange('x',+this.value)">
+        </div>
+        <div class="col-6">
+          <label class="form-label mb-0" style="font-size:10px">Y</label>
+          <input id="ld-prop-y" type="number" class="form-control form-control-sm" value="${el.y}" step="0.5" oninput="ldPropChange('y',+this.value)">
+        </div>
+        <div class="col-6">
+          <label class="form-label mb-0" style="font-size:10px">Width</label>
+          <input id="ld-prop-w" type="number" class="form-control form-control-sm" value="${el.w}" step="0.5" min="2" oninput="ldPropChange('w',+this.value)">
+        </div>
+        <div class="col-6">
+          <label class="form-label mb-0" style="font-size:10px">Height</label>
+          <input id="ld-prop-h" type="number" class="form-control form-control-sm" value="${el.h}" step="0.5" min="2" oninput="ldPropChange('h',+this.value)">
+        </div>
+      </div>
     </div>
-    <div class="mb-2 row g-1">
-      <div class="col-6"><label class="form-label mb-1 small">X (mm)</label><input id="ld-prop-x" type="number" class="form-control form-control-sm" value="${el.x}" step="0.5" oninput="ldUpdateProp('x',+this.value)"></div>
-      <div class="col-6"><label class="form-label mb-1 small">Y (mm)</label><input id="ld-prop-y" type="number" class="form-control form-control-sm" value="${el.y}" step="0.5" oninput="ldUpdateProp('y',+this.value)"></div>
-      <div class="col-6"><label class="form-label mb-1 small">W (mm)</label><input id="ld-prop-w" type="number" class="form-control form-control-sm" value="${el.w}" step="0.5" min="2" oninput="ldUpdateProp('w',+this.value)"></div>
-      <div class="col-6"><label class="form-label mb-1 small">H (mm)</label><input id="ld-prop-h" type="number" class="form-control form-control-sm" value="${el.h}" step="0.5" min="2" oninput="ldUpdateProp('h',+this.value)"></div>
-    </div>
+
     ${el.type !== 'barcode' && el.type !== 'store_logo' ? `
     <div class="mb-2">
-      <label class="form-label mb-1 small">Font size</label>
-      <input type="number" class="form-control form-control-sm" value="${el.font_size || 9}" min="5" max="48" oninput="ldUpdateProp('font_size',+this.value)">
-    </div>
-    <div class="mb-2 d-flex gap-2 align-items-center">
-      <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="ld-prop-bold" ${el.bold ? 'checked' : ''} onchange="ldUpdateProp('bold',this.checked)"><label class="form-check-label small" for="ld-prop-bold">Bold</label></div>
-      <select class="form-select form-select-sm" oninput="ldUpdateProp('align',this.value)">
-        <option value="left" ${el.align==='left'||!el.align?'selected':''}>Left</option>
-        <option value="center" ${el.align==='center'?'selected':''}>Center</option>
-        <option value="right"  ${el.align==='right' ?'selected':''}>Right</option>
-      </select>
-    </div>
-    <div class="mb-2">
-      <label class="form-label mb-1 small">Colour</label>
-      <input type="color" class="form-control form-control-color form-control-sm" value="${el.color||'#000000'}" oninput="ldUpdateProp('color',this.value)">
+      <label class="form-label mb-1 small fw-semibold">Text</label>
+      <div class="d-flex align-items-center gap-1 mb-1">
+        <span style="font-size:10px;min-width:28px">Size</span>
+        <input type="number" class="form-control form-control-sm" style="width:60px" value="${el.font_size || 9}" min="5" max="72" oninput="ldPropChange('font_size',+this.value)">
+        <span style="font-size:10px">pt</span>
+        <div class="form-check mb-0 ms-1">
+          <input class="form-check-input" type="checkbox" id="ld-prop-bold" ${el.bold ? 'checked' : ''} onchange="ldPropChange('bold',this.checked)">
+          <label class="form-check-label small" for="ld-prop-bold">Bold</label>
+        </div>
+      </div>
+      <div class="btn-group btn-group-sm w-100 mb-1">
+        <button class="btn ${!el.align||el.align==='left' ?'btn-secondary':'btn-outline-secondary'}" onclick="ldPropChange('align','left')">Left</button>
+        <button class="btn ${el.align==='center'?'btn-secondary':'btn-outline-secondary'}"  onclick="ldPropChange('align','center')">Center</button>
+        <button class="btn ${el.align==='right' ?'btn-secondary':'btn-outline-secondary'}"  onclick="ldPropChange('align','right')">Right</button>
+      </div>
+      <label class="form-label mb-1 small fw-semibold">Colour</label>
+      <input type="color" class="form-control form-control-color w-100" value="${el.color||'#000000'}" oninput="ldPropChange('color',this.value)">
     </div>
     ` : ''}
+
     ${el.type === 'barcode' ? `
     <div class="mb-2">
-      <label class="form-label mb-1 small">Format</label>
-      <select class="form-select form-select-sm" oninput="ldUpdateProp('barcode_format',this.value)">
-        <option value="auto"    ${el.barcode_format==='auto'   ||!el.barcode_format?'selected':''}>Auto</option>
-        <option value="code128" ${el.barcode_format==='code128'?'selected':''}>Code128</option>
+      <label class="form-label mb-1 small fw-semibold">Barcode Format</label>
+      <select class="form-select form-select-sm" onchange="ldPropChange('barcode_format',this.value)">
+        <option value="auto"    ${el.barcode_format==='auto'   ||!el.barcode_format?'selected':''}>Auto-detect</option>
+        <option value="code128" ${el.barcode_format==='code128'?'selected':''}>Code 128</option>
         <option value="ean13"   ${el.barcode_format==='ean13'  ?'selected':''}>EAN-13</option>
-        <option value="code39"  ${el.barcode_format==='code39' ?'selected':''}>Code39</option>
+        <option value="code39"  ${el.barcode_format==='code39' ?'selected':''}>Code 39</option>
         <option value="qrcode"  ${el.barcode_format==='qrcode' ?'selected':''}>QR Code</option>
       </select>
     </div>
     ` : ''}
+
     ${el.type === 'custom_text' ? `
     <div class="mb-2">
-      <label class="form-label mb-1 small">Text value</label>
-      <input type="text" class="form-control form-control-sm" value="${escapeHtml(el.value||'')}" oninput="ldUpdateProp('value',this.value)">
+      <label class="form-label mb-1 small fw-semibold">Text Content</label>
+      <input type="text" class="form-control form-control-sm" value="${escapeHtml(el.value||'')}" oninput="ldPropChange('value',this.value)">
     </div>
     ` : ''}
-    <button class="btn btn-outline-danger btn-sm w-100 mt-2" onclick="ldRemoveElement(${idx})">Remove Element</button>
+
+    <hr class="my-2">
+    <button class="btn btn-outline-danger btn-sm w-100" onclick="ldRemoveElement(${idx})">Remove element</button>
   `;
 }
 
-function ldUpdateProp(key, value) {
+function ldPropChange(key, value) {
   if (LD.selectedIdx == null || !LD.elements[LD.selectedIdx]) return;
   LD.elements[LD.selectedIdx][key] = value;
-  ldRenderCanvas();
-  setTimeout(ldRefreshPreview, 400);
+  ldDrawOverlay();
+  ldShowProps(LD.selectedIdx);
+  ldRequestRender();
 }
 
-function ldUpdatePropsPosition(idx) {
-  const xEl = document.getElementById('ld-prop-x');
-  const yEl = document.getElementById('ld-prop-y');
-  if (xEl) xEl.value = LD.elements[idx].x;
-  if (yEl) yEl.value = LD.elements[idx].y;
+function ldSyncPropsPosition(idx) {
+  const el = LD.elements[idx];
+  const xEl = document.getElementById('ld-prop-x'); if (xEl) xEl.value = el.x;
+  const yEl = document.getElementById('ld-prop-y'); if (yEl) yEl.value = el.y;
+}
+function ldSyncPropsSize(idx) {
+  const el = LD.elements[idx];
+  const wEl = document.getElementById('ld-prop-w'); if (wEl) wEl.value = el.w;
+  const hEl = document.getElementById('ld-prop-h'); if (hEl) hEl.value = el.h;
+  ldSyncPropsPosition(idx);
 }
 
 function ldRemoveElement(idx) {
   LD.elements.splice(idx, 1);
   LD.selectedIdx = null;
-  ldRenderCanvas();
-  const panel = document.getElementById('ld-props-content');
-  if (panel) panel.innerHTML = '<span class="text-muted small">Select an element.</span>';
-  ldRefreshPreview();
+  ldShowProps(null);
+  ldRequestRender(true);
 }
 
-async function ldRefreshPreview() {
-  const productId = document.getElementById('ld-preview-product')?.value || null;
-  const template  = {
-    width_mm: parseFloat(document.getElementById('ld-width')?.value) || LD.widthMm,
-    height_mm: parseFloat(document.getElementById('ld-height')?.value) || LD.heightMm,
-    elements: LD.elements,
-    background_color: document.getElementById('ld-bg-color')?.value || '#ffffff',
-    border: document.getElementById('ld-border')?.checked || false,
-  };
-  const img = document.getElementById('ld-preview-img');
-  const ph  = document.getElementById('ld-preview-ph');
-  try {
-    const res = await fetch('/api/labels/preview', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_id: productId ? parseInt(productId) : null, template }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    const blob = await res.blob();
-    if (img) { img.src = URL.createObjectURL(blob); img.style.display = ''; }
-    if (ph)  ph.style.display = 'none';
-  } catch (e) {
-    if (ph) { ph.textContent = e.message; ph.style.display = ''; }
-    if (img) img.style.display = 'none';
-  }
-}
+// ── Save / Delete ─────────────────────────────────────────────────────────────
 
 async function ldSaveTemplate(andPrint) {
   const name = document.getElementById('ld-template-name')?.value.trim();
-  if (!name) { toast('Enter a template name', 'warning'); return; }
+  if (!name) { toast('Enter a template name first', 'warning'); return; }
   const body = {
     name,
     description: '',
-    width_mm:   parseFloat(document.getElementById('ld-width')?.value)  || LD.widthMm,
-    height_mm:  parseFloat(document.getElementById('ld-height')?.value) || LD.heightMm,
-    category:   document.getElementById('ld-category')?.value || 'custom',
-    elements:   LD.elements,
+    width_mm:         parseFloat(document.getElementById('ld-width')?.value)  || LD.widthMm,
+    height_mm:        parseFloat(document.getElementById('ld-height')?.value) || LD.heightMm,
+    category:         document.getElementById('ld-category')?.value || 'custom',
+    elements:         LD.elements,
     background_color: document.getElementById('ld-bg-color')?.value || '#ffffff',
-    border:     document.getElementById('ld-border')?.checked || false,
+    border:           document.getElementById('ld-border')?.checked || false,
   };
   try {
     let saved;
@@ -10718,6 +11073,7 @@ async function ldSaveTemplate(andPrint) {
     } else {
       saved = await api('/api/label-templates', { method: 'POST', body: JSON.stringify(body) });
       LD.templateId = saved.id;
+      document.getElementById('ld-delete-tmpl-btn').style.display = '';
     }
     LABELS._currentTemplateId = saved.id;
     await loadLabelTemplates();
@@ -10730,7 +11086,7 @@ async function ldSaveTemplate(andPrint) {
 }
 
 async function ldDeleteTemplate() {
-  if (!LD.templateId || !confirm('Delete this template?')) return;
+  if (!LD.templateId || !confirm('Delete this template? This cannot be undone.')) return;
   try {
     await api(`/api/label-templates/${LD.templateId}`, { method: 'DELETE' });
     toast('Template deleted', 'success');
@@ -10739,10 +11095,9 @@ async function ldDeleteTemplate() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// Show bulk print button when on products tab (all roles)
+// ── Show bulk print button only on products tab ───────────────────────────────
 document.addEventListener('shown.bs.tab', e => {
   const tabId = e.target?.getAttribute('data-bs-target') || e.target?.href?.split('#')[1];
   const bulkBtn = document.getElementById('btn-bulk-print-labels');
   if (bulkBtn) bulkBtn.classList.toggle('hidden', tabId !== '#products');
 });
-

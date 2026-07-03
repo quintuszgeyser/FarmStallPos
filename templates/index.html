@@ -425,10 +425,9 @@
 
 
 {% if is_qa %}
-<div id="qa-banner" style="background:#f0ad4e;color:#000;text-align:center;padding:6px 4px;font-weight:bold;font-size:13px;position:fixed;top:0;left:0;right:0;z-index:9999;border-bottom:3px solid #d9534f;letter-spacing:1px">
-  ⚠ QA MODE - TEST DATA ONLY - Scale sync disabled - Not for live use
+<div id="qa-banner" title="QA MODE — test data only, scale sync disabled" style="background:#f0ad4e;color:#000;padding:3px 8px;font-weight:bold;font-size:11px;position:fixed;bottom:12px;right:12px;z-index:9999;border-radius:4px;border:2px solid #d9534f;letter-spacing:.5px;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:default;white-space:nowrap">
+  ⚠ QA
 </div>
-<style>body { margin-top: 36px !important; }</style>
 {% endif %}
 <!-- Backup-health banner (ISSUE gap): populated by _checkBackupHealth() from /api/health. Hidden unless there's a warning. -->
 <div id="backup-warning-banner" class="admin-only hidden" style="background:#f0ad4e;color:#000;text-align:center;padding:6px 4px;font-weight:bold;font-size:13px;border-bottom:3px solid #d9534f"></div>
@@ -990,6 +989,7 @@
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="suppliers">Supplier Spend</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="channels">Channels</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="customers">Customers</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="dow">Day of Week</button>
       </div>
       <div class="text-muted small mb-1" id="chart-click-hint" style="display:none">Click a bar to drill into those transactions</div>
       <div id="stats-chart-area" style="position:relative; height:320px;">
@@ -1001,6 +1001,7 @@
         <canvas id="chart-suppliers" style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-channels"  style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-customers" style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-dow"       style="display:none; width:100%; height:100%"></canvas>
       </div>
 
       <!-- ── Employee Performance ── -->
@@ -1222,6 +1223,50 @@
               <button class="btn btn-primary btn-sm" id="btn-save-branding">Save branding</button>
               <span id="branding-saved" class="text-success small ms-2 hidden">Saved</span>
               <div class="text-muted small mt-1">Leave a field blank to use the default look. The logo saves on selection.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Printer Settings ── -->
+        <div class="card mb-3 admin-only hidden">
+          <div class="card-header fw-semibold">🖨️ Printer Settings</div>
+          <div class="card-body d-flex flex-wrap gap-4">
+
+            <div style="min-width:260px;flex:1">
+              <div class="fw-semibold mb-2" style="border-bottom:1px solid #dee2e6;padding-bottom:4px">🖨️ Receipt Printer</div>
+              <div class="mb-2">
+                <label class="form-label fw-semibold small mb-1">Printer</label>
+                <select id="setting-receipt-printer" class="form-select form-select-sm">
+                  <option value="">Auto-detect USB (default)</option>
+                </select>
+                <div class="text-muted small mt-1">Receipts and labels share the same XP-365B printer.</div>
+              </div>
+              <div class="mb-2">
+                <label class="form-label fw-semibold small mb-1" for="setting-receipt-width">Receipt paper width (mm)</label>
+                <input type="number" id="setting-receipt-width" class="form-control form-control-sm" style="max-width:100px"
+                       value="72" min="48" max="82" step="1"
+                       title="80mm roll = 72mm usable. XP-365B max = 82mm">
+                <div class="text-muted small mt-1">Standard 80mm roll → use 72mm. Max for XP-365B: 82mm.</div>
+              </div>
+              <div class="mb-2">
+                <div class="form-check form-switch">
+                  <input class="form-check-input" type="checkbox" id="setting-auto-print-receipt">
+                  <label class="form-check-label small" for="setting-auto-print-receipt">Auto-print receipt after each sale</label>
+                </div>
+              </div>
+            </div>
+
+            <div style="min-width:260px;flex:1">
+              <div class="fw-semibold mb-2" style="border-bottom:1px solid #dee2e6;padding-bottom:4px">🏷️ Label Printers</div>
+              <div id="printer-config-list" class="mb-2">
+                <div class="text-muted small">Loading…</div>
+              </div>
+              <button class="btn btn-outline-primary btn-sm" onclick="openAddPrinterModal()">+ Add Printer</button>
+            </div>
+
+            <div class="w-100">
+              <button class="btn btn-primary btn-sm" id="btn-save-printer-settings">Save printer settings</button>
+              <span id="printer-settings-saved" class="text-success small ms-2 hidden">Saved</span>
             </div>
           </div>
         </div>
@@ -2908,74 +2953,94 @@
 
 <!-- ═══════════════ LABEL DESIGNER MODAL ═══════════════ -->
 <div class="modal fade" id="labelDesignerModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-fullscreen modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <h5 class="modal-title">✏ Label Designer</h5>
-        <div class="d-flex gap-2 ms-3 flex-wrap">
-          <input id="ld-template-name" class="form-control form-control-sm" placeholder="Template name" style="width:200px">
-          <select id="ld-category" class="form-select form-select-sm" style="width:160px">
-            <option value="small_barcode">Small Barcode</option>
-            <option value="shelf">Shelf Label</option>
-            <option value="sticker">Product Sticker</option>
-            <option value="price_tag">Price Tag</option>
-            <option value="custom">Custom</option>
-          </select>
-          <input type="number" id="ld-width" class="form-control form-control-sm" placeholder="W mm" style="width:80px" min="10" max="120" step="0.5">
-          <input type="number" id="ld-height" class="form-control form-control-sm" placeholder="H mm" style="width:80px" min="10" max="300" step="0.5">
-          <div class="form-check form-switch ms-1 mt-1">
-            <input class="form-check-input" type="checkbox" id="ld-border">
-            <label class="form-check-label small" for="ld-border">Border</label>
-          </div>
-          <input type="color" id="ld-bg-color" value="#ffffff" class="form-control form-control-color form-control-sm" title="Background colour" style="width:40px">
+  <div class="modal-dialog modal-fullscreen">
+    <div class="modal-content" style="display:flex;flex-direction:column;height:100vh">
+
+      <!-- ── Header bar ── -->
+      <div class="modal-header py-2 flex-shrink-0" style="gap:8px;flex-wrap:wrap">
+        <h5 class="modal-title me-2">✏ Label Designer</h5>
+        <input id="ld-template-name" class="form-control form-control-sm" placeholder="Template name" style="width:180px">
+        <select id="ld-category" class="form-select form-select-sm" style="width:140px">
+          <option value="small_barcode">Small Barcode</option>
+          <option value="shelf">Shelf Label</option>
+          <option value="sticker">Product Sticker</option>
+          <option value="price_tag">Price Tag</option>
+          <option value="custom">Custom</option>
+        </select>
+        <div class="d-flex align-items-center gap-1">
+          <label class="small text-muted mb-0">W</label>
+          <input type="number" id="ld-width"  class="form-control form-control-sm" style="width:68px" min="10" max="120" step="0.5" placeholder="mm">
+          <label class="small text-muted mb-0">H</label>
+          <input type="number" id="ld-height" class="form-control form-control-sm" style="width:68px" min="10" max="300" step="0.5" placeholder="mm">
+          <label class="small text-muted mb-0 ms-1">mm</label>
         </div>
+        <div class="form-check form-switch mb-0 ms-1">
+          <input class="form-check-input" type="checkbox" id="ld-border">
+          <label class="form-check-label small" for="ld-border">Border</label>
+        </div>
+        <input type="color" id="ld-bg-color" value="#ffffff" class="form-control form-control-color form-control-sm" title="Background" style="width:36px;padding:2px">
+        <div class="d-flex align-items-center gap-1 ms-1">
+          <label class="small text-muted mb-0">Product</label>
+          <select id="ld-preview-product" class="form-select form-select-sm" style="width:170px"></select>
+        </div>
+        <span id="ld-render-status" class="small text-muted ms-1"></span>
         <button type="button" class="btn-close ms-auto" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body p-0 d-flex" style="overflow:hidden;height:calc(100vh - 130px)">
-        <!-- Element palette -->
-        <div style="width:180px;min-width:180px;border-right:1px solid #dee2e6;padding:12px;overflow-y:auto;background:#f8f9fa">
-          <div class="fw-semibold small mb-2">Add Element</div>
-          <div id="ld-element-palette" class="d-flex flex-column gap-1">
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('product_name')">Aa Product Name</button>
+
+      <!-- ── Body: palette | canvas | props ── -->
+      <div class="d-flex flex-grow-1" style="overflow:hidden;min-height:0">
+
+        <!-- Left: element palette -->
+        <div style="width:164px;min-width:164px;border-right:1px solid #dee2e6;padding:10px;overflow-y:auto;background:#f8f9fa;flex-shrink:0">
+          <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:10px;letter-spacing:.5px">Add element</div>
+          <div class="d-flex flex-column gap-1">
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('product_name')">Aa Name</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('price')">💰 Price</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('barcode')">█ Barcode</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('sku')">🔖 SKU / Code</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('sku')">🔖 SKU</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_name')">🏪 Store Name</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_logo')">🖼 Store Logo</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_logo')">🖼 Logo</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('weight')">⚖ Weight</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('category')">📁 Category</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('custom_text')">✏ Custom Text</button>
           </div>
-          <hr>
-          <div class="fw-semibold small mb-2">Preview Product</div>
-          <select id="ld-preview-product" class="form-select form-select-sm mb-2" onchange="ldRefreshPreview()">
-            <option value="">— none —</option>
-          </select>
-          <div class="fw-semibold small mb-2 mt-2">Preview</div>
-          <div id="ld-preview-wrap" style="border:1px dashed #ccc;border-radius:4px;min-height:100px;display:flex;align-items:center;justify-content:center;background:#fff">
-            <img id="ld-preview-img" src="" alt="" style="max-width:100%;max-height:160px;display:none">
-            <span id="ld-preview-ph" class="text-muted" style="font-size:11px">preview here</span>
+          <hr class="my-2">
+          <div class="text-muted" style="font-size:10px;line-height:1.4">
+            Click to add.<br>Drag to move.<br>Drag corners/edges to resize.<br>Click to select + edit properties.
           </div>
         </div>
-        <!-- Canvas area -->
-        <div style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:24px;background:#e9ecef">
-          <div id="ld-canvas-wrap" style="position:relative;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.15)">
-            <!-- elements rendered here by JS -->
+
+        <!-- Centre: WYSIWYG canvas (server-rendered PNG + overlay handles) -->
+        <div id="ld-canvas-scroll" style="flex:1;overflow:auto;display:flex;align-items:flex-start;justify-content:center;padding:32px;background:#e9ecef;min-width:0">
+          <!-- Outer wrapper fixes the rendered size; overlay sits on top -->
+          <div id="ld-canvas-wrap" style="position:relative;display:inline-block;box-shadow:0 2px 16px rgba(0,0,0,.18);cursor:default">
+            <!-- The server-rendered PNG — this IS the label -->
+            <img id="ld-canvas-img" src="" alt="label" draggable="false"
+                 style="display:block;max-width:none;image-rendering:pixelated">
+            <div id="ld-canvas-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">
+              <!-- selection handles injected here by JS -->
+            </div>
+            <div id="ld-canvas-spinner" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.6);font-size:20px">⏳</div>
           </div>
         </div>
-        <!-- Properties panel -->
-        <div id="ld-props-panel" style="width:220px;min-width:220px;border-left:1px solid #dee2e6;padding:12px;overflow-y:auto;background:#f8f9fa">
-          <div class="fw-semibold small mb-2">Element Properties</div>
-          <div id="ld-props-content" class="text-muted small">Select an element to edit its properties.</div>
+
+        <!-- Right: properties panel -->
+        <div id="ld-props-panel" style="width:230px;min-width:230px;border-left:1px solid #dee2e6;padding:12px;overflow-y:auto;background:#f8f9fa;flex-shrink:0">
+          <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:10px;letter-spacing:.5px">Properties</div>
+          <div id="ld-props-content" class="text-muted small">Click an element on the label to edit it.</div>
         </div>
-      </div>
-      <div class="modal-footer py-2">
+
+      </div><!-- /body -->
+
+      <!-- ── Footer ── -->
+      <div class="modal-footer py-2 flex-shrink-0">
         <button type="button" class="btn btn-outline-danger btn-sm me-auto" id="ld-delete-tmpl-btn" onclick="ldDeleteTemplate()" style="display:none">Delete Template</button>
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-outline-primary" onclick="ldSaveTemplate(false)">Save Template</button>
-        <button type="button" class="btn btn-primary" onclick="ldSaveTemplate(true)">Save &amp; Print</button>
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-outline-primary btn-sm" onclick="ldSaveTemplate(false)">Save Template</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="ldSaveTemplate(true)">Save &amp; Print</button>
       </div>
-    </div>
+
+    </div><!-- /modal-content -->
   </div>
 </div>
 </body>
