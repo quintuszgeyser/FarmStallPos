@@ -148,21 +148,6 @@ def _build_product_status(p) -> dict:
 # Low-level scale protocol helpers (outbound connect, confirmed from Wireshark)
 # ---------------------------------------------------------------------------
 
-def _num2bcd(value: int, num_digits: int) -> bytes:
-    num_bytes = (num_digits + 1) // 2
-    result = bytearray(num_bytes)
-    pos = num_bytes - 1
-    for i in range(num_digits, 0, -1):
-        digit = value % 10
-        value //= 10
-        if (num_digits - i) % 2 == 0:
-            result[pos] = digit
-        else:
-            result[pos] |= (digit << 4)
-            pos -= 1
-    return bytes(result)
-
-
 def _recv_exact(sock, n):
     buf = bytearray()
     while len(buf) < n:

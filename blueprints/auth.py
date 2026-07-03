@@ -9,14 +9,38 @@ from models import db, User, UserSession
 bp = Blueprint('auth', __name__)
 
 
+_login_attempts = {}   # {ip: [timestamp, ...]} — in-memory, resets on worker restart
+
 @bp.route('/api/login', methods=['POST'])
 def api_login():
-    data     = request.json or {}
+    from flask import request as _req
+    import time as _time
+    from werkzeug.security import check_password_hash as _check
+
+    # Brute-force guard: max 10 attempts per IP per 60s
+    ip   = _req.remote_addr or 'unknown'
+    now  = _time.monotonic()
+    wins = _login_attempts.get(ip, [])
+    wins = [t for t in wins if now - t < 60]
+    if len(wins) >= 10:
+        return jsonify({'ok': False, 'error': 'Too many attempts — try again in a minute'}), 429
+    _login_attempts[ip] = wins
+
+    data     = _req.json or {}
     username = data.get('username', '').strip()
     password = data.get('password', '')
+
     user = User.query.filter_by(username=username).first()
-    if not user or not check_password_hash(user.password_hash, password) or not user.active:
+    # Always run check_password_hash to avoid timing-based username enumeration
+    dummy = user.password_hash if user else generate_password_hash('dummy-constant')
+    valid = _check(dummy, password)
+
+    if not user or not valid or not user.active:
+        _login_attempts[ip] = wins + [now]   # record failed attempt
         return jsonify({'ok': False, 'error': 'Invalid credentials'}), 401
+
+    # Clear session before setting user_id (prevent session fixation)
+    session.clear()
     session['user_id'] = user.id
     sess = UserSession(user_id=user.id, logged_in=datetime.utcnow())
     db.session.add(sess)

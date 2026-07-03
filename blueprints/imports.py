@@ -235,7 +235,23 @@ def api_import_products():
     results = []
     total_errors = 0
 
+    # Detect duplicate product_codes within the same CSV batch before processing
+    seen_codes = {}
+    for idx, raw in enumerate(raw_rows, start=2):
+        pc = _parse_int(raw.get('product_code'))
+        if pc is not None:
+            if pc in seen_codes:
+                results.append({'row': idx, 'name': raw.get('name', ''), 'action': 'error',
+                                'error': f'product_code {pc} appears twice in this file (first at row {seen_codes[pc]})',
+                                'error_code': 'DUPLICATE_IN_BATCH'})
+                total_errors += 1
+                raw['_skip'] = True
+            else:
+                seen_codes[pc] = idx
+
     for idx, raw in enumerate(raw_rows, start=2):  # row 1 = header
+        if raw.get('_skip'):
+            continue
         name = _normalize_name(raw.get('name', ''))
         if not name:
             results.append({'row': idx, 'name': '', 'action': 'error',

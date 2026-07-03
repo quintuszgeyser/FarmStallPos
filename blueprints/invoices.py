@@ -157,8 +157,11 @@ def api_invoices_finalise(inv_id):
     if inv.sale_id: inv.status = 'finalised'; db.session.commit(); return jsonify({'ok': True, 'sale_id': inv.sale_id})
     lines = _json.loads(inv.lines_json or '[]')
     if not lines: return jsonify({'error': 'Invoice has no items'}), 400
+    if float(inv.total or 0) <= 0:
+        return jsonify({'error': 'Invoice total must be positive'}), 400
     sale_uuid = str(uuid.uuid4()); now = datetime.utcnow(); u = current_user()
     sale_user_id = get_online_user_id() if is_online else (u.id if u else None)
+    inv_payment_method = 'card' if is_online else 'invoice'
     for line in lines:
         name = (line.get('name') or '').strip(); qty_disp = Decimal(str(line.get('qty', 1))); unit_price = Decimal(str(line.get('unit_price', 0))); unit = line.get('unit', 'unit')
         base_name = name.split('(')[0].strip() if '(' in name else name
@@ -172,7 +175,9 @@ def api_invoices_finalise(inv_id):
             elif p.product_type == 'recipe':
                 for rl in RecipeLine.query.filter_by(product_id=p.id).all():
                     consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * qty_disp, sale_uuid, now)
-            db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=p.id, qty=qty_disp, unit_price=unit_price, user_id=sale_user_id))
+            db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=p.id, qty=qty_disp,
+                                unit_price=unit_price, user_id=sale_user_id,
+                                payment_method=inv_payment_method))
     inv.sale_id = sale_uuid; inv.status = 'finalised'; db.session.commit()
     return jsonify({'ok': True, 'sale_id': sale_uuid})
 

@@ -303,9 +303,16 @@ def api_customers_cleanup_empty():
     '''), {'cutoff': cutoff}).fetchall()
     ids = [r[0] for r in rows]
     if not ids: return jsonify({'ok': True, 'deleted': 0})
-    id_list = ','.join(str(i) for i in ids)
-    db.session.execute(text(f'DELETE FROM customer_exclusions WHERE customer_id_a IN ({id_list}) OR customer_id_b IN ({id_list})'))
-    db.session.execute(text(f'DELETE FROM customer_merge_log WHERE source_id IN ({id_list}) OR primary_id IN ({id_list})'))
+    # Use parameterised ANY(:ids) to avoid raw f-string SQL injection risk
+    id_array = ids  # list of Python ints from the SELECT above
+    db.session.execute(
+        text('DELETE FROM customer_exclusions WHERE customer_id_a = ANY(:ids) OR customer_id_b = ANY(:ids)'),
+        {'ids': id_array},
+    )
+    db.session.execute(
+        text('DELETE FROM customer_merge_log WHERE source_id = ANY(:ids) OR primary_id = ANY(:ids)'),
+        {'ids': id_array},
+    )
     for cid in ids:
         c = db.session.get(Customer, cid)
         if c: db.session.delete(c)
@@ -994,28 +1001,29 @@ def api_customers_acknowledge_visit(vid):
 
 @bp.route('/api/customers/faces_raw', methods=['GET'])
 def api_customers_faces_raw():
-    if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
+    # Biometric data — admin or recognition service only (POPIA compliance)
+    if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     rows = CustomerFace.query.filter_by(active=True).all()
     return jsonify([{'customer_id': r.customer_id, 'embedding_b64': base64.b64encode(r.embedding).decode()} for r in rows])
 
 
 @bp.route('/api/customers/gaits_raw', methods=['GET'])
 def api_customers_gaits_raw():
-    if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
+    if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     rows = CustomerGait.query.filter_by(active=True).all()
     return jsonify([{'customer_id': r.customer_id, 'features_b64': base64.b64encode(r.gait_features).decode()} for r in rows])
 
 
 @bp.route('/api/customers/<int:cid>/faces_raw', methods=['GET'])
 def api_customer_faces_raw(cid):
-    if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
+    if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     rows = CustomerFace.query.filter_by(customer_id=cid, active=True).order_by(CustomerFace.enrolled_at.desc()).limit(10).all()
     return jsonify([{'embedding_b64': base64.b64encode(r.embedding).decode(), 'camera': r.camera_source, 'quality': float(r.quality) if r.quality is not None else None} for r in rows])
 
 
 @bp.route('/api/customers/<int:cid>/gaits_raw', methods=['GET'])
 def api_customer_gaits_raw(cid):
-    if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
+    if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     rows = CustomerGait.query.filter_by(customer_id=cid, active=True).all()
     return jsonify([{'features_b64': base64.b64encode(r.gait_features).decode()} for r in rows])
 

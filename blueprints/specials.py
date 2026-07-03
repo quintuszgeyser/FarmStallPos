@@ -1,10 +1,29 @@
 import json as _json
+import re as _re
 from decimal import Decimal
 
 from flask import Blueprint, jsonify, request
 
 from helpers import require_login, require_role
 from models import db, Special, SpecialLine, Product
+
+_TIME_RE = _re.compile(r'^\d{2}:\d{2}$')
+
+def _validate_schedule(schedule):
+    """Validate schedule list structure. Returns error string or None."""
+    if not isinstance(schedule, list):
+        return 'schedule must be a list'
+    for item in schedule:
+        if not isinstance(item, dict):
+            return 'each schedule entry must be an object'
+        day = item.get('day')
+        if not isinstance(day, int) or day < 0 or day > 6:
+            return 'schedule day must be integer 0-6'
+        for field in ('start', 'end'):
+            val = item.get(field, '')
+            if not _TIME_RE.match(str(val)):
+                return f'schedule {field} must be HH:MM format'
+    return None
 
 bp = Blueprint('specials', __name__)
 
@@ -54,6 +73,10 @@ def api_specials_post():
     if price is None:
         return jsonify({'error': 'special_price required'}), 400
     schedule = data.get('schedule', [])
+    if schedule:
+        err = _validate_schedule(schedule)
+        if err:
+            return jsonify({'error': f'Invalid schedule: {err}'}), 400
     s = Special(
         name=name,
         special_price=Decimal(str(price)),
@@ -63,9 +86,13 @@ def api_specials_post():
     db.session.add(s)
     db.session.flush()
     for l in lines:
+        p = db.session.get(Product, int(l['product_id']))
+        if not p or p.is_archived or not p.is_for_sale:
+            db.session.rollback()
+            return jsonify({'error': f'Product {l["product_id"]} is archived or not for sale'}), 400
         db.session.add(SpecialLine(
             special_id=s.id,
-            product_id=int(l['product_id']),
+            product_id=p.id,
             qty=int(l.get('qty', 1)),
         ))
     db.session.commit()
@@ -83,14 +110,22 @@ def api_specials_update(sid):
     if 'name'          in data: s.name          = data['name'].strip()
     if 'special_price' in data: s.special_price = Decimal(str(data['special_price']))
     if 'active'        in data: s.active        = bool(data['active'])
-    if 'schedule'      in data:
+    if 'schedule' in data:
+        if data['schedule']:
+            err = _validate_schedule(data['schedule'])
+            if err:
+                return jsonify({'error': f'Invalid schedule: {err}'}), 400
         s.schedule = _json.dumps(data['schedule']) if data['schedule'] else None
     if 'lines' in data:
         SpecialLine.query.filter_by(special_id=sid).delete()
         for l in data['lines']:
+            p = db.session.get(Product, int(l['product_id']))
+            if not p or p.is_archived or not p.is_for_sale:
+                db.session.rollback()
+                return jsonify({'error': f'Product {l["product_id"]} is archived or not for sale'}), 400
             db.session.add(SpecialLine(
                 special_id=sid,
-                product_id=int(l['product_id']),
+                product_id=p.id,
                 qty=int(l.get('qty', 1)),
             ))
     db.session.commit()

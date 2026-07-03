@@ -818,6 +818,7 @@ def strong_migrate():
             pg_try("ALTER TABLE sales ADD COLUMN payment_method VARCHAR(16)")
             pg_try("ALTER TABLE sales ADD COLUMN cash_tendered NUMERIC(10,2)")
             pg_try("ALTER TABLE sales ADD COLUMN card_amount NUMERIC(10,2)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_sales_payment_method ON sales (payment_method)")
 
             # till sessions for end-of-day cash-up (ISSUE-33)
             conn.exec_driver_sql("""
