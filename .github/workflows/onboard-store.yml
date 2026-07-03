@@ -1,0 +1,327 @@
+name: Onboard New Store
+
+# Triggered manually from GitHub Actions → Run workflow.
+# Takes a fresh Ubuntu 24.04 server (clean install, SSH accessible as root)
+# from zero to fully running POS + web application.
+#
+# What you need ONCE (per operator, stored as repo secrets):
+#   ONBOARD_SSH_PRIVATE_KEY  — your SSH private key (you can SSH the target box as root)
+#   GHCR_PAT                 — GitHub PAT with read:packages (pulls the pinned image)
+#   SUPPORT_AGE_PUB          — your central support age public key (for backup decryption)
+#
+# What you supply per onboard (workflow inputs):
+#   store_name    — "Boer & Butcher"   (display name; store_id is derived from this)
+#   server_host   — 192.168.1.50       (LAN IP or Tailscale IP the runner can reach)
+#   tailscale_key — tskey-auth-...     (reusable, no-expiry key from tailscale.com)
+#   image_version — v2.2.0             (defaults to latest release tag)
+
+on:
+  workflow_dispatch:
+    inputs:
+      store_name:
+        description: 'Store display name (e.g. "Boer & Butcher")'
+        required: true
+        type: string
+      server_host:
+        description: 'Target server IP or hostname (must be SSH-reachable from runner)'
+        required: true
+        type: string
+      tailscale_key:
+        description: 'Tailscale reusable auth key (tskey-auth-...) — for remote access after install'
+        required: true
+        type: string
+      image_version:
+        description: 'Image version to install (e.g. v2.2.0)'
+        required: false
+        default: 'latest-release'
+        type: string
+      enable_web_shop:
+        description: 'Enable web shop container?'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['false', 'true']
+
+jobs:
+  onboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      TARGET: ${{ github.event.inputs.server_host }}
+
+    steps:
+      # ── 0. Resolve image version ──────────────────────────────────────────
+      - name: Resolve image version
+        id: ver
+        run: |
+          INPUT="${{ github.event.inputs.image_version }}"
+          if [ "$INPUT" = "latest-release" ] || [ -z "$INPUT" ]; then
+            TAG=$(curl -s "https://api.github.com/repos/${{ github.repository }}/releases/latest" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'])")
+            [ -n "$TAG" ] || { echo "::error::Could not resolve latest release tag"; exit 1; }
+            echo "version=$TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$INPUT" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── 1. Derive store_id from store_name ────────────────────────────────
+      - name: Derive store_id
+        id: ids
+        run: |
+          # Convert display name → kebab-case store_id (max 40 chars)
+          STORE_ID=$(echo "${{ github.event.inputs.store_name }}" \
+            | python3 -c "
+          import sys, re
+          name = sys.stdin.read().strip()
+          slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:40]
+          print(slug)
+          ")
+          echo "store_id=$STORE_ID" >> "$GITHUB_OUTPUT"
+          echo "Resolved: '${{ github.event.inputs.store_name }}' → '$STORE_ID'"
+
+      # ── 2. Set up SSH ─────────────────────────────────────────────────────
+      - name: Set up SSH agent
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.ONBOARD_SSH_PRIVATE_KEY }}" > ~/.ssh/onboard_key
+          chmod 600 ~/.ssh/onboard_key
+          ssh-keyscan -H "$TARGET" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      # ── 3. Install base dependencies on target ────────────────────────────
+      - name: Install dependencies on target
+        run: |
+          ssh -i ~/.ssh/onboard_key -o StrictHostKeyChecking=no root@"$TARGET" bash -s <<'REMOTE'
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+
+          echo "=== Updating apt ==="
+          apt-get update -qq
+
+          echo "=== Installing Docker ==="
+          if ! command -v docker >/dev/null 2>&1; then
+            curl -fsSL https://get.docker.com | sh
+          else
+            echo "Docker already installed: $(docker --version)"
+          fi
+
+          echo "=== Installing tools ==="
+          apt-get install -y -qq git gettext-base python3-yaml age openssl curl
+
+          echo "=== Installing Tailscale ==="
+          if ! command -v tailscale >/dev/null 2>&1; then
+            curl -fsSL https://tailscale.com/install.sh | sh
+          else
+            echo "Tailscale already installed"
+          fi
+
+          docker --version
+          age --version
+          python3 -c "import yaml; print('python3-yaml ok')"
+          echo "=== Dependencies ready ==="
+          REMOTE
+
+      # ── 4. Deploy appliance scripts to target ─────────────────────────────
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Upload appliance scripts to target
+        run: |
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" "mkdir -p /opt/farmpos/appliance/lib /opt/farmpos/appliance/postgres-init"
+          scp -i ~/.ssh/onboard_key -r \
+            farm_pos_web/appliance/register-store.sh \
+            farm_pos_web/appliance/update.sh \
+            farm_pos_web/appliance/backup.sh \
+            farm_pos_web/appliance/restore.sh \
+            farm_pos_web/appliance/fleet-status.sh \
+            farm_pos_web/appliance/env.template \
+            farm_pos_web/appliance/compose.template.yml \
+            farm_pos_web/appliance/store.example.yml \
+            root@"$TARGET":/opt/farmpos/appliance/
+          scp -i ~/.ssh/onboard_key -r \
+            farm_pos_web/appliance/lib/ \
+            root@"$TARGET":/opt/farmpos/appliance/
+          scp -i ~/.ssh/onboard_key -r \
+            farm_pos_web/appliance/postgres-init/ \
+            root@"$TARGET":/opt/farmpos/appliance/
+          # Make scripts executable (LF-safe via .gitattributes)
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" \
+            "chmod +x /opt/farmpos/appliance/register-store.sh \
+                       /opt/farmpos/appliance/update.sh \
+                       /opt/farmpos/appliance/backup.sh \
+                       /opt/farmpos/appliance/restore.sh \
+                       /opt/farmpos/appliance/fleet-status.sh"
+
+      # ── 5. Deploy support age public key ──────────────────────────────────
+      - name: Deploy support age public key
+        run: |
+          echo "${{ secrets.SUPPORT_AGE_PUB }}" | \
+            ssh -i ~/.ssh/onboard_key root@"$TARGET" \
+            "cat > /opt/farmpos/appliance/support_age.pub"
+
+      # ── 6. Write store.yml on target ──────────────────────────────────────
+      - name: Write store.yml on target
+        env:
+          STORE_ID:   ${{ steps.ids.outputs.store_id }}
+          STORE_NAME: ${{ github.event.inputs.store_name }}
+          STORE_VER:  ${{ steps.ver.outputs.version }}
+          TS_KEY:     ${{ github.event.inputs.tailscale_key }}
+          WEB_SHOP:   ${{ github.event.inputs.enable_web_shop }}
+        run: |
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" bash -s \
+            "$STORE_ID" "$STORE_NAME" "$STORE_VER" "$TS_KEY" "$WEB_SHOP" <<'REMOTE'
+          set -euo pipefail
+          STORE_ID="$1" STORE_NAME="$2" VER="$3" TS_KEY="$4" WEB_SHOP="$5"
+          mkdir -p /opt/farmpos
+          cat > /opt/farmpos/store.yml <<YML
+          store_id: ${STORE_ID}
+          store_name: "${STORE_NAME}"
+          store_tagline: "${STORE_NAME}"
+          store_legal: "${STORE_NAME}"
+          store_subtitle: ""
+          timezone: "Africa/Johannesburg"
+          farmpos_version: "${VER}"
+          scale:
+            enabled: false
+            ip: ""
+            port: 7061
+          web_shop:
+            enabled: ${WEB_SHOP}
+            domain: ""
+            payfast_merchant_id: ""
+            payfast_merchant_key: ""
+            payfast_passphrase: ""
+          backup:
+            target: ""
+            time: "02:00"
+          tailscale:
+            enabled: true
+            auth_key: "${TS_KEY}"
+          control_center_url: ""
+          alerts:
+            email: ""
+          YML
+          # Fix indentation (heredoc adds leading spaces)
+          python3 -c "
+          import yaml, sys
+          with open('/opt/farmpos/store.yml') as f:
+              d = yaml.safe_load(f)
+          with open('/opt/farmpos/store.yml','w') as f:
+              yaml.safe_dump(d, f, sort_keys=False, allow_unicode=True)
+          "
+          echo "store.yml written for ${STORE_ID} (${VER})"
+          REMOTE
+
+      # ── 7. Log in to GHCR on target ───────────────────────────────────────
+      - name: Log target in to GHCR
+        run: |
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" \
+            "echo '${{ secrets.GHCR_PAT }}' | docker login ghcr.io -u quintuszgeyser --password-stdin"
+
+      # ── 8. Run register-store.sh (non-interactive) ────────────────────────
+      - name: Run register-store.sh
+        run: |
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" \
+            "FARMPOS_HOME=/opt/farmpos bash /opt/farmpos/appliance/register-store.sh"
+
+      # ── 9. Verify health ──────────────────────────────────────────────────
+      - name: Verify POS health
+        run: |
+          # Health check from the runner via the target's IP
+          for i in $(seq 1 15); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' \
+              --connect-timeout 5 "http://$TARGET:5000/health" || true)
+            if [ "$code" = "200" ]; then
+              echo "POS health: OK"
+              break
+            fi
+            echo "Waiting... ($i/15)"
+            sleep 4
+          done
+          [ "$code" = "200" ] || { echo "::error::POS did not respond healthy"; exit 1; }
+
+      # ── 10. Run handover checks + print summary ───────────────────────────
+      - name: Handover checks & summary
+        run: |
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" bash -s <<'REMOTE'
+          set -euo pipefail
+          FARMPOS_HOME=/opt/farmpos
+          . /opt/farmpos/appliance/lib/common.sh
+          STORE_ID="$(yaml_get $FARMPOS_HOME/store.yml store_id)"
+          VER="$(yaml_get $FARMPOS_HOME/store.yml farmpos_version)"
+
+          echo ""
+          echo "════════════════════════════════════════════════════"
+          echo " HANDOVER CHECKS — $STORE_ID"
+          echo "════════════════════════════════════════════════════"
+
+          PASS=0; FAIL=0
+
+          check() {
+            local label="$1"; shift
+            if eval "$@" >/dev/null 2>&1; then
+              echo "  ✅ $label"
+              PASS=$((PASS+1))
+            else
+              echo "  ❌ $label"
+              FAIL=$((FAIL+1))
+            fi
+          }
+
+          check "POS container healthy" \
+            "docker inspect farmpos-app --format '{{.State.Health.Status}}' | grep -q healthy"
+          check "Postgres container healthy" \
+            "docker inspect farmpos-postgres --format '{{.State.Health.Status}}' | grep -q healthy"
+          check "/health endpoint 200" \
+            "curl -sf http://localhost:5000/health"
+          check "Nightly backup cron installed" \
+            "crontab -l | grep -q backup.sh"
+          check "Secrets directory exists (mode 700)" \
+            "test -d $FARMPOS_HOME/secrets"
+          check "backup_age.key generated" \
+            "test -s $FARMPOS_HOME/secrets/backup_age.key"
+          check "support_age.pub deployed" \
+            "test -s $FARMPOS_HOME/secrets/support_age.pub"
+          check "Tailscale connected" \
+            "tailscale status | grep -v 'not logged in' | grep -q 'farmpos-'"
+
+          echo ""
+          echo "  $PASS passed | $FAIL failed"
+
+          LAN_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+          TS_IP=$(tailscale ip -4 2>/dev/null || echo "pending")
+          ADMIN_PASS=$(cat $FARMPOS_HOME/secrets/admin_pass 2>/dev/null || echo "see secrets/admin_pass")
+
+          echo ""
+          echo "════════════════════════════════════════════════════"
+          echo " STORE READY — $STORE_ID  ($VER)"
+          echo ""
+          echo "  POS (LAN):      http://${LAN_IP}:5000"
+          echo "  POS (Tailscale): http://${TS_IP}:5000"
+          echo "  Admin login:    admin / ${ADMIN_PASS}"
+          echo ""
+          echo "  ⚠  CHANGE the admin password on first login"
+          echo "  ⚠  ESCROW the backup key:"
+          echo "       $FARMPOS_HOME/secrets/backup_age.key"
+          echo "  ⚠  Load product catalog: Products tab → ⬆ Import CSV"
+          echo "════════════════════════════════════════════════════"
+          echo ""
+
+          # Fail the job if any check failed
+          [ "$FAIL" = "0" ] || exit 1
+          REMOTE
+
+      # ── 11. First backup ──────────────────────────────────────────────────
+      - name: Run first backup
+        run: |
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" \
+            "FARMPOS_HOME=/opt/farmpos bash /opt/farmpos/appliance/backup.sh"
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" \
+            "ls -lh /opt/farmpos/data/backups/ && echo 'Backup present'"
+
+      # ── Always: print container logs on failure ───────────────────────────
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          ssh -i ~/.ssh/onboard_key root@"$TARGET" \
+            "docker compose -f /opt/farmpos/docker-compose.yml logs --tail 60 || true" || true
