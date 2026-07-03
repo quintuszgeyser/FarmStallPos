@@ -1,8 +1,10 @@
+import csv
+import io
 import uuid
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from sqlalchemy import func
 
 from helpers import (
@@ -305,3 +307,160 @@ def api_purchases_post():
     p.stock_qty = (p.stock_qty or 0) + qty
     db.session.commit()
     return jsonify({'ok': True})
+
+
+# ── Opening Stock CSV Import (ISSUE-34) ──────────────────────────────────────
+# Template columns: product_code, qty, unit, unit_cost, received_date (optional)
+# Seeds stock_batches without a supplier purchase-run so new stores start with
+# correct FIFO COGS from day one.
+
+_OPENING_STOCK_COLS = ['product_code', 'qty', 'unit', 'unit_cost', 'received_date']
+
+
+@bp.route('/api/stock/opening-import-template', methods=['GET'])
+def api_opening_stock_template():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    header = ','.join(_OPENING_STOCK_COLS)
+    example = '1001,10,kg,25.50,2026-01-01'
+    content = f'{header}\n{example}\n'
+    return Response(
+        content,
+        mimetype='text/csv',
+        headers={'Content-Disposition': 'attachment; filename="opening_stock_template.csv"'},
+    )
+
+
+@bp.route('/api/stock/opening-import', methods=['POST'])
+def api_opening_stock_import():
+    """Import opening stock batches from CSV. Mode=preview returns rows without
+    committing. Mode=import commits. Idempotent: duplicate (product_code, received_date)
+    pairs in the same file are summed; re-running the same CSV adds another batch."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    mode = request.args.get('mode', 'preview')
+    f = request.files.get('file')
+    if not f:
+        return jsonify({'error': 'file required'}), 400
+
+    try:
+        text_data = f.read().decode('utf-8-sig')
+    except Exception:
+        return jsonify({'error': 'Could not decode file as UTF-8'}), 400
+
+    reader = csv.DictReader(io.StringIO(text_data))
+    missing = {'product_code', 'qty', 'unit_cost'} - set(reader.fieldnames or [])
+    if missing:
+        return jsonify({'error': f'Missing columns: {", ".join(sorted(missing))}'}), 400
+
+    results = []
+    errors  = []
+    batches_to_add = []
+    u = current_user()
+
+    for idx, row in enumerate(reader, start=2):
+        code_raw  = (row.get('product_code') or '').strip()
+        qty_raw   = (row.get('qty') or '').strip()
+        unit_raw  = (row.get('unit') or '').strip() or 'unit'
+        cost_raw  = (row.get('unit_cost') or '').strip()
+        date_raw  = (row.get('received_date') or '').strip()
+
+        if not code_raw and not qty_raw and not cost_raw:
+            continue  # blank row
+
+        try:
+            product_code = int(code_raw)
+        except (ValueError, TypeError):
+            errors.append({'row': idx, 'error': f'Invalid product_code: {code_raw!r}'})
+            continue
+
+        try:
+            qty = Decimal(qty_raw)
+            if qty <= 0:
+                raise ValueError('qty must be > 0')
+        except Exception:
+            errors.append({'row': idx, 'error': f'Invalid qty: {qty_raw!r}'})
+            continue
+
+        try:
+            unit_cost = Decimal(cost_raw)
+            if unit_cost < 0:
+                raise ValueError('unit_cost must be >= 0')
+        except Exception:
+            errors.append({'row': idx, 'error': f'Invalid unit_cost: {cost_raw!r}'})
+            continue
+
+        p = Product.query.filter_by(product_code=product_code).first()
+        if not p:
+            errors.append({'row': idx, 'error': f'product_code {product_code} not found'})
+            continue
+        if p.product_type not in ('stock_item',):
+            errors.append({'row': idx, 'error': f'{p.name} is {p.product_type} (only stock_item supported)'})
+            continue
+
+        conversion = _unit_conversion(p, unit_raw)
+        qty_base   = qty * Decimal(str(conversion))
+        cost_per_base = unit_cost / Decimal(str(conversion)) if conversion != 1 else unit_cost
+
+        received_at = datetime.utcnow()
+        if date_raw:
+            from helpers import _parse_dt
+            parsed = _parse_dt(date_raw)
+            if parsed:
+                received_at = parsed
+
+        batches_to_add.append({
+            'product_id': p.id,
+            'product_name': p.name,
+            'product_code': product_code,
+            'qty_base': float(qty_base),
+            'base_unit': p.base_unit,
+            'cost_per_base_unit': float(cost_per_base),
+            'received_at': received_at,
+            'user_id': u.id if u else None,
+            'row': idx,
+        })
+        results.append({
+            'row': idx,
+            'product_code': product_code,
+            'name': p.name,
+            'qty_base': float(qty_base),
+            'base_unit': p.base_unit,
+            'cost_per_base_unit': float(cost_per_base),
+            'received_at': received_at.isoformat(),
+            'status': 'ok',
+        })
+
+    if mode == 'preview':
+        return jsonify({
+            'mode': 'preview',
+            'rows_ok': len(results),
+            'rows_error': len(errors),
+            'rows': results,
+            'errors': errors,
+        })
+
+    if errors:
+        return jsonify({
+            'error': f'{len(errors)} row(s) failed validation — fix errors or use preview first',
+            'errors': errors,
+        }), 400
+
+    for b in batches_to_add:
+        db.session.add(StockBatch(
+            product_id=b['product_id'],
+            qty_purchased_base=Decimal(str(b['qty_base'])),
+            qty_remaining_base=Decimal(str(b['qty_base'])),
+            cost_per_base_unit=Decimal(str(b['cost_per_base_unit'])),
+            purchased_at=b['received_at'],
+            user_id=b['user_id'],
+        ))
+    db.session.commit()
+
+    return jsonify({
+        'mode': 'import',
+        'rows_imported': len(batches_to_add),
+        'rows_error': 0,
+        'rows': results,
+    })

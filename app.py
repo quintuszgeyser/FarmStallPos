@@ -20,7 +20,7 @@ from models import (
     Customer, CustomerPlate, CustomerFace, CustomerGait,
     CustomerVisit, PlateDetection, Supplier,
     ScaleSyncRun, ScaleSnapshot, ScalePluLog, ScaleKeyboardPreset, ScaleAdvertMessage,
-    ProductImportRun, DeploySchedule,
+    ProductImportRun, DeploySchedule, TillSession,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
@@ -818,6 +818,26 @@ def strong_migrate():
             pg_try("ALTER TABLE sales ADD COLUMN payment_method VARCHAR(16)")
             pg_try("ALTER TABLE sales ADD COLUMN cash_tendered NUMERIC(10,2)")
 
+            # till sessions for end-of-day cash-up (ISSUE-33)
+            conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS till_sessions (
+              id              SERIAL PRIMARY KEY,
+              opened_at       TIMESTAMP NOT NULL,
+              closed_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+              opened_by       INTEGER REFERENCES users(id),
+              closed_by       INTEGER REFERENCES users(id),
+              opening_float   NUMERIC(10,2) NOT NULL DEFAULT 0,
+              counted_cash    NUMERIC(10,2) NOT NULL,
+              pos_cash_sales  NUMERIC(10,2) NOT NULL,
+              pos_card_sales  NUMERIC(10,2) NOT NULL DEFAULT 0,
+              pos_total_sales NUMERIC(10,2) NOT NULL,
+              expected_cash   NUMERIC(10,2) NOT NULL,
+              over_under      NUMERIC(10,2) NOT NULL,
+              void_total      NUMERIC(10,2) NOT NULL DEFAULT 0,
+              notes           TEXT
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_till_sessions_closed ON till_sessions (closed_at)")
+
             # append-only audit trail for voids/edits (ISSUE-31)
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS audit_log (
@@ -1586,6 +1606,7 @@ def _register_routes(_app):
     from blueprints.imports         import bp as imports_bp
     from blueprints.deploy_schedule import bp as deploy_schedule_bp
     from blueprints.branding        import bp as branding_bp
+    from blueprints.till_sessions   import bp as till_sessions_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1605,6 +1626,7 @@ def _register_routes(_app):
     _app.register_blueprint(imports_bp)
     _app.register_blueprint(deploy_schedule_bp)
     _app.register_blueprint(branding_bp)
+    _app.register_blueprint(till_sessions_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

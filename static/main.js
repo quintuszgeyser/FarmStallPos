@@ -4180,6 +4180,12 @@ function renderTransactions(trs) {
       btnMgr.textContent = 'Edit / Void';
       btnMgr.onclick = () => openTxModal(t);
       right.appendChild(btnMgr);
+
+      const btnReturn = document.createElement('button');
+      btnReturn.className = 'btn btn-outline-warning btn-sm';
+      btnReturn.textContent = '↩ Return';
+      btnReturn.onclick = () => openReturnModal(t);
+      right.appendChild(btnReturn);
       // Resolve flag button
       if (t.flagged && !t.flag_resolved) {
         const btnResolve = document.createElement('button');
@@ -4354,6 +4360,124 @@ document.getElementById('btn-tx-void')?.addEventListener('click', async () => {
     loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
     await loadProducts();
     await loadIngredients();
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// ── Return Items (ISSUE-32) ──────────────────────────────────────────────────
+let _returnTx = null;
+
+function openReturnModal(t) {
+  _returnTx = t;
+  document.getElementById('return-modal-title').textContent = `#${String(t.id).slice(0,8)}`;
+  document.getElementById('return-modal-meta').textContent =
+    `${new Date(t.date_time).toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
+  document.getElementById('return-reason').value = '';
+
+  const tbody = document.getElementById('return-body');
+  tbody.innerHTML = '';
+  t.lines.forEach((ln, idx) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${ln.name}</td>
+      <td class="text-muted">${fmtQty(ln.qty)}</td>
+      <td><input type="number" class="form-control form-control-sm return-qty-input"
+           data-idx="${idx}" data-pid="${ln.product_id}"
+           data-max="${ln.qty}" data-price="${ln.unit_price}"
+           min="0" max="${ln.qty}" step="0.001" value="0"></td>
+      <td class="return-refund-cell small">R0.00</td>
+    `;
+    tbody.appendChild(tr);
+  });
+  tbody.querySelectorAll('.return-qty-input').forEach(inp => inp.addEventListener('input', _updateReturnTotal));
+  _updateReturnTotal();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('returnModal')).show();
+}
+
+function _updateReturnTotal() {
+  let total = 0;
+  document.querySelectorAll('.return-qty-input').forEach(inp => {
+    const qty   = Math.min(parseFloat(inp.value) || 0, parseFloat(inp.dataset.max));
+    const price = parseFloat(inp.dataset.price) || 0;
+    const refund = qty * price;
+    total += refund;
+    const cell = inp.closest('tr').querySelector('.return-refund-cell');
+    if (cell) cell.textContent = `R${fmt(refund)}`;
+  });
+  const el = document.getElementById('return-total');
+  if (el) el.textContent = `Total refund: R${fmt(total)}`;
+}
+
+document.getElementById('btn-return-confirm')?.addEventListener('click', async () => {
+  if (!_returnTx) return;
+  const reason = document.getElementById('return-reason').value.trim();
+  if (!reason) return toast('Return reason required', 'warning');
+
+  const lines = [];
+  document.querySelectorAll('.return-qty-input').forEach(inp => {
+    const qty = parseFloat(inp.value) || 0;
+    if (qty > 0) lines.push({ product_id: parseInt(inp.dataset.pid), qty });
+  });
+  if (lines.length === 0) return toast('Select at least one item to return', 'warning');
+
+  try {
+    await api(`/api/transactions/${_returnTx.id}/return`, {
+      method: 'POST', body: JSON.stringify({ lines, reason })
+    });
+    toast('Return processed - stock restored', 'success');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('returnModal')).hide();
+    loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
+    await loadProducts();
+    await loadIngredients();
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// ── Close Till / Z-Report (ISSUE-33) ────────────────────────────────────────
+let _tillSummary = null;
+
+async function openCloseTillModal() {
+  try {
+    _tillSummary = await api('/api/till/sessions/summary');
+    document.getElementById('ct-period-start').textContent =
+      new Date(_tillSummary.period_start).toLocaleString('en-ZA');
+    document.getElementById('ct-cash-sales').textContent  = `R${fmt(_tillSummary.cash_sales)}`;
+    document.getElementById('ct-card-sales').textContent  = `R${fmt(_tillSummary.card_sales)}`;
+    document.getElementById('ct-total-sales').textContent = `R${fmt(_tillSummary.total_sales)}`;
+    document.getElementById('ct-void-total').textContent  = `R${fmt(_tillSummary.void_total)}`;
+    document.getElementById('ct-opening-float').value     = fmt(_tillSummary.suggested_opening_float);
+    document.getElementById('ct-counted-cash').value      = '';
+    document.getElementById('ct-over-under').classList.add('hidden');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('closeTillModal')).show();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+document.getElementById('ct-counted-cash')?.addEventListener('input', () => {
+  if (!_tillSummary) return;
+  const counted  = parseFloat(document.getElementById('ct-counted-cash').value) || 0;
+  const float_   = parseFloat(document.getElementById('ct-opening-float').value) || 0;
+  const expected = float_ + _tillSummary.cash_sales;
+  const diff     = counted - expected;
+  const el       = document.getElementById('ct-over-under');
+  if (document.getElementById('ct-counted-cash').value === '') { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.className = `alert py-2 small ${diff < -0.01 ? 'alert-danger' : diff > 0.01 ? 'alert-warning' : 'alert-success'}`;
+  el.textContent = `Expected cash: R${fmt(expected)} | ${diff >= 0 ? 'Over' : 'Short'}: R${fmt(Math.abs(diff))}${Math.abs(diff) < 0.01 ? ' ✓ Balanced' : ''}`;
+});
+
+document.getElementById('btn-close-till-confirm')?.addEventListener('click', async () => {
+  const counted = document.getElementById('ct-counted-cash').value.trim();
+  if (!counted) return toast('Enter the counted cash amount', 'warning');
+  const payload = {
+    counted_cash: parseFloat(counted),
+    opening_float: parseFloat(document.getElementById('ct-opening-float').value) || 0,
+    opened_at: _tillSummary?.period_start,
+    notes: document.getElementById('ct-notes').value.trim(),
+  };
+  try {
+    const res = await api('/api/till/sessions', { method: 'POST', body: JSON.stringify(payload) });
+    const diff = res.over_under;
+    const msg  = `Till closed. ${diff >= 0 ? 'Over' : 'Short'} R${fmt(Math.abs(diff))}.`;
+    toast(msg, Math.abs(diff) < 0.01 ? 'success' : 'warning', 5000);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('closeTillModal')).hide();
   } catch (e) { toast(e.message, 'error'); }
 });
 
@@ -5559,6 +5683,75 @@ async function doImport(mode) {
     toast('Import failed: ' + e.message, 'danger');
   }
 }
+
+// ── Opening Stock Import (ISSUE-34) ─────────────────────────────────────────
+let _osPreviewData = null;
+
+function openOpeningStockModal() {
+  _osPreviewData = null;
+  document.getElementById('os-import-file').value = '';
+  document.getElementById('os-import-preview').classList.add('hidden');
+  document.getElementById('btn-os-import').classList.add('hidden');
+  document.getElementById('os-import-body').innerHTML = '';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('openingStockModal')).show();
+}
+
+document.getElementById('btn-os-preview')?.addEventListener('click', async () => {
+  const fileEl = document.getElementById('os-import-file');
+  if (!fileEl.files[0]) return toast('Select a CSV file first', 'warning');
+  const formData = new FormData();
+  formData.append('file', fileEl.files[0]);
+  try {
+    const resp = await fetch('/api/stock/opening-import?mode=preview', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok) { toast(data.error || 'Preview failed', 'danger'); return; }
+    _osPreviewData = data;
+
+    const summary = document.getElementById('os-import-summary');
+    summary.textContent = `${data.rows_ok} row(s) OK, ${data.rows_error} error(s)`;
+    summary.className = data.rows_error > 0 ? 'mb-2 small fw-bold text-warning' : 'mb-2 small fw-bold text-success';
+
+    const errDiv = document.getElementById('os-import-errors');
+    if (data.errors && data.errors.length) {
+      errDiv.innerHTML = data.errors.map(e => `Row ${e.row}: ${e.error}`).join('<br>');
+      errDiv.classList.remove('hidden');
+    } else {
+      errDiv.classList.add('hidden');
+    }
+
+    const tbody = document.getElementById('os-import-body');
+    tbody.innerHTML = data.rows.map(r => `
+      <tr>
+        <td>${r.row}</td><td>${r.product_code}</td><td>${r.name}</td>
+        <td>${r.qty_base?.toFixed(3)}</td><td>${r.base_unit || ''}</td>
+        <td>R${fmt(r.cost_per_base_unit)}</td>
+        <td>${r.received_at ? r.received_at.slice(0,10) : '-'}</td>
+      </tr>`).join('');
+    document.getElementById('os-import-preview').classList.remove('hidden');
+    if (data.rows_ok > 0 && data.rows_error === 0) {
+      document.getElementById('os-import-count').textContent = data.rows_ok;
+      document.getElementById('btn-os-import').classList.remove('hidden');
+    } else {
+      document.getElementById('btn-os-import').classList.add('hidden');
+    }
+  } catch (e) { toast('Preview error: ' + e.message, 'danger'); }
+});
+
+document.getElementById('btn-os-import')?.addEventListener('click', async () => {
+  if (!_osPreviewData) return;
+  if (!confirm(`Import ${_osPreviewData.rows_ok} opening stock row(s)? This cannot be undone.`)) return;
+  const fileEl = document.getElementById('os-import-file');
+  const formData = new FormData();
+  formData.append('file', fileEl.files[0]);
+  try {
+    const resp = await fetch('/api/stock/opening-import?mode=import', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (!resp.ok) { toast(data.error || 'Import failed', 'danger'); return; }
+    toast(`Opening stock imported: ${data.rows_imported} batch(es) created`, 'success', 5000);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('openingStockModal')).hide();
+    await loadIngredients();
+  } catch (e) { toast('Import error: ' + e.message, 'danger'); }
+});
 
 // ═══════════════════════════════════════════════════════
 // SCALE MONITOR

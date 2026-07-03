@@ -575,7 +575,10 @@
           <button id="btn-tx-yesterday" class="btn btn-outline-secondary btn-sm">Yesterday</button>
           <button id="btn-tx-week" class="btn btn-outline-secondary btn-sm">This Week</button>
         </div>
-        <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-trans">Refresh</button>
+        <div class="d-flex gap-2">
+          <button class="btn btn-outline-secondary btn-sm admin-only hidden" id="btn-close-till" onclick="openCloseTillModal()">🧾 Close Till</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-trans">Refresh</button>
+        </div>
       </div>
       <div class="small text-muted mt-1 teller-only" id="tx-teller-note">Showing your last 5 transactions</div>
       <div id="transactions-list" class="mt-3"></div>
@@ -623,6 +626,7 @@
           <input id="products-filter" class="form-control form-control-sm" placeholder="Filter…" style="width:180px">
           <button id="btn-new-product" class="btn btn-outline-primary btn-sm">+ New Product</button>
           <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()">⬆ Import CSV</button>
+          <button id="btn-import-opening-stock" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openOpeningStockModal()">⬆ Opening Stock</button>
           <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
         </div>
       </div>
@@ -1841,6 +1845,115 @@
       </div>
       <div class="modal-footer py-2">
         <button id="btn-flag-submit" class="btn btn-warning w-100">Flag for Admin Review</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ RETURN ITEMS MODAL ═══════════ -->
+<div class="modal fade" id="returnModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Return Items — <span id="return-modal-title"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="small text-muted mb-2" id="return-modal-meta"></div>
+        <p class="small">Select which items to return and the quantity. Stock is restored to FIFO batches.</p>
+        <table class="table table-sm" id="return-table">
+          <thead><tr><th>Product</th><th style="width:90px">Orig Qty</th><th style="width:110px">Return Qty</th><th style="width:90px">Refund</th></tr></thead>
+          <tbody id="return-body"></tbody>
+        </table>
+        <div class="fw-bold text-end mb-2" id="return-total"></div>
+        <div class="mb-2">
+          <label class="form-label small">Reason (required)</label>
+          <input id="return-reason" class="form-control form-control-sm" placeholder="e.g. Customer returned damaged item">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-return-confirm" class="btn btn-warning">Process Return</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ CLOSE TILL MODAL ═══════════ -->
+<div class="modal fade" id="closeTillModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Close Till — Z-Report</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div id="close-till-summary" class="mb-3 small">
+          <div class="d-flex justify-content-between"><span>Period start:</span><span id="ct-period-start">-</span></div>
+          <div class="d-flex justify-content-between"><span>Cash sales:</span><span id="ct-cash-sales">-</span></div>
+          <div class="d-flex justify-content-between"><span>Card sales:</span><span id="ct-card-sales">-</span></div>
+          <div class="d-flex justify-content-between fw-bold border-top pt-1"><span>Total sales:</span><span id="ct-total-sales">-</span></div>
+          <div class="d-flex justify-content-between text-muted"><span>Voids in period:</span><span id="ct-void-total">-</span></div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small">Opening float (cash in drawer at start)</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">R</span>
+            <input id="ct-opening-float" type="number" step="0.01" min="0" class="form-control" value="0">
+          </div>
+        </div>
+        <div class="mb-2">
+          <label class="form-label small fw-bold">Counted cash (physical count now)</label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">R</span>
+            <input id="ct-counted-cash" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
+          </div>
+        </div>
+        <div id="ct-over-under" class="alert py-2 small hidden"></div>
+        <div class="mb-2">
+          <label class="form-label small">Notes (optional)</label>
+          <input id="ct-notes" class="form-control form-control-sm" placeholder="e.g. R20 float adjustment">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-close-till-confirm" class="btn btn-primary">Close Till &amp; Save Z-Report</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ OPENING STOCK IMPORT MODAL ═══════════ -->
+<div class="modal fade" id="openingStockModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">⬆ Import Opening Stock</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="small text-muted">Seeds FIFO stock batches for <strong>stock_item</strong> products without a supplier purchase-run. Required columns: <code>product_code, qty, unit, unit_cost</code>. Optional: <code>received_date</code>.</p>
+        <div class="mb-2 d-flex gap-2">
+          <a href="/api/stock/opening-import-template" class="btn btn-outline-secondary btn-sm">⬇ Download Template</a>
+        </div>
+        <div class="mb-2">
+          <input type="file" id="os-import-file" accept=".csv" class="form-control form-control-sm">
+        </div>
+        <div id="os-import-preview" class="hidden">
+          <div id="os-import-summary" class="mb-2 small fw-bold"></div>
+          <div id="os-import-errors" class="text-danger small mb-2 hidden"></div>
+          <div class="table-responsive" style="max-height:300px;overflow-y:auto">
+            <table class="table table-sm small" id="os-import-table">
+              <thead><tr><th>Row</th><th>PLU</th><th>Name</th><th>Qty (base)</th><th>Unit</th><th>Cost/base</th><th>Date</th></tr></thead>
+              <tbody id="os-import-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-os-preview" class="btn btn-outline-primary btn-sm">Preview</button>
+        <button id="btn-os-import" class="btn btn-success hidden">Import <span id="os-import-count"></span> rows</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
       </div>
     </div>
   </div>

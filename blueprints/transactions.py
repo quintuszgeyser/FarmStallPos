@@ -244,6 +244,98 @@ def api_transaction_flag(sale_id):
     return jsonify({'ok': True})
 
 
+@bp.route('/api/transactions/<sale_id>/return', methods=['POST'])
+def api_transaction_return(sale_id):
+    """Post-session return: partial or full reversal with FIFO stock restore.
+
+    Accepts a list of {product_id, qty} to return. Creates a negative-qty Sale
+    row (return_of=<sale_id>) so the original remains intact for SARS audit.
+    Restores stock to FIFO batches via reverse_fifo on the new return_id.
+    """
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    lines = data.get('lines', [])  # [{product_id, qty}]
+    reason = (data.get('reason') or '').strip()
+    if not lines:
+        return jsonify({'error': 'lines required'}), 400
+    if not reason:
+        return jsonify({'error': 'reason required'}), 400
+
+    # Load the original sale to validate product_ids and qtys
+    orig_rows = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
+    if not orig_rows:
+        return jsonify({'error': 'Transaction not found or already voided'}), 404
+
+    orig_by_pid = {}
+    for r in orig_rows:
+        orig_by_pid.setdefault(r.product_id, Decimal('0'))
+        orig_by_pid[r.product_id] += Decimal(str(r.qty))
+
+    u = current_user()
+    now = datetime.utcnow()
+    return_uuid = str(uuid.uuid4())
+
+    returned_lines = []
+    for item in lines:
+        pid = int(item['product_id'])
+        qty = Decimal(str(item['qty']))
+        if qty <= 0:
+            continue
+        orig_qty = orig_by_pid.get(pid, Decimal('0'))
+        if qty > orig_qty:
+            return jsonify({'error': f'Return qty {qty} exceeds original {orig_qty} for product {pid}'}), 400
+
+        # Find the unit_price from the original rows
+        orig_row = next((r for r in orig_rows if r.product_id == pid), None)
+        unit_price = orig_row.unit_price if orig_row else Decimal('0')
+
+        # Negative-qty sale row marks this as a return
+        db.session.add(Sale(
+            sale_id=return_uuid,
+            date_time=now,
+            product_id=pid,
+            qty=-qty,
+            unit_price=unit_price,
+            user_id=u.id if u else None,
+            void_reason=f'return:{sale_id}:{reason}',
+            payment_method='return',
+        ))
+
+        # Restore stock
+        p = db.session.get(Product, pid, with_for_update=True)
+        if p and p.product_type == 'simple':
+            p.stock_qty = (p.stock_qty or 0) + int(qty)
+        elif p and p.product_type in ('stock_item', 'recipe'):
+            # Re-add a stock batch for the returned quantity at the original cost
+            orig_batch_cost = Decimal('0')
+            consumptions = StockConsumption.query.filter_by(sale_id=sale_id, ingredient_id=pid).all()
+            if consumptions:
+                total_consumed = sum(Decimal(str(c.qty_consumed_base)) for c in consumptions)
+                if total_consumed > 0:
+                    orig_batch_cost = sum(
+                        Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
+                        for c in consumptions
+                    ) / total_consumed
+            if orig_batch_cost <= 0:
+                # fallback: use the unit_price as cost (approximate)
+                orig_batch_cost = unit_price
+            db.session.add(StockBatch(
+                product_id=pid,
+                qty_purchased_base=qty,
+                qty_remaining_base=qty,
+                cost_per_base_unit=orig_batch_cost,
+                purchased_at=now,
+                user_id=u.id if u else None,
+            ))
+        returned_lines.append({'product_id': pid, 'qty': float(qty)})
+
+    _audit('sale_return', sale_id, _serialize_sale_rows(orig_rows),
+           note=f'return_id={return_uuid} reason={reason}')
+    db.session.commit()
+    return jsonify({'ok': True, 'return_id': return_uuid, 'lines': returned_lines})
+
+
 @bp.route('/api/transactions/<sale_id>/void', methods=['POST'])
 def api_transaction_void(sale_id):
     if not require_role('admin'):

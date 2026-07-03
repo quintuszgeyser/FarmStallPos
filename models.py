@@ -444,6 +444,26 @@ class CustomerVisit(db.Model):
     acknowledged     = db.Column(db.Boolean,     nullable=False, default=False)
 
 
+class TillSession(db.Model):
+    """End-of-day cash-up record. One row per till close (ISSUE-33).
+    Captures opening float, counted cash, and computes over/under vs POS cash sales."""
+    __tablename__ = 'till_sessions'
+    id              = db.Column(db.Integer, primary_key=True)
+    opened_at       = db.Column(db.DateTime, nullable=False)                    # start of trading period
+    closed_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    opened_by       = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    closed_by       = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    opening_float   = db.Column(Numeric(10, 2), nullable=False, default=0)      # cash in drawer at open
+    counted_cash    = db.Column(Numeric(10, 2), nullable=False)                 # physical count at close
+    pos_cash_sales  = db.Column(Numeric(10, 2), nullable=False)                 # POS cash sales in period
+    pos_card_sales  = db.Column(Numeric(10, 2), nullable=False, default=0)
+    pos_total_sales = db.Column(Numeric(10, 2), nullable=False)
+    expected_cash   = db.Column(Numeric(10, 2), nullable=False)                 # opening_float + pos_cash_sales
+    over_under      = db.Column(Numeric(10, 2), nullable=False)                 # counted_cash - expected_cash
+    void_total      = db.Column(Numeric(10, 2), nullable=False, default=0)
+    notes           = db.Column(db.Text, nullable=True)
+
+
 class PlateDetection(db.Model):
     __tablename__ = 'plate_detections'
     id            = db.Column(db.Integer, primary_key=True)
