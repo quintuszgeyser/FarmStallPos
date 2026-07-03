@@ -30,6 +30,7 @@ web_shop:
   payfast_merchant_id: ""
   payfast_merchant_key: ""
   payfast_passphrase: ""          # moves to secrets/ on future hardening pass
+  payfast_sandbox: true           # set to false when PayFast merchant account is live
 
 # Nightly off-box backup target (rclone remote). Leave blank for local-only.
 backup:

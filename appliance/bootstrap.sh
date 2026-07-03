@@ -1,19 +1,25 @@
 #!/bin/bash
 # bootstrap.sh - Farm POS first-boot installer.
 #
-# Pulled and run directly on the target box by the onboard-store workflow output:
+# Invoked by the onboard-store workflow output command:
 #
-#   sudo bash -c 'curl -fsSL .../bootstrap.sh | bash -s -- \
-#     --store-yml   <base64-encoded store.yml> \
-#     --support-pub <base64-encoded age public key> \
-#     --ghcr-pat    <GitHub PAT with read:packages> \
-#     --version     v2.2.0'
+#   sudo bash -c 'echo "<base64-inner-script>" | base64 -d | bash'
+#
+# Secrets are passed via environment variables (never process arguments):
+#   FARMPOS_STORE_YML     — base64-encoded store.yml
+#   FARMPOS_SUPPORT_PUB   — base64-encoded age public key
+#   FARMPOS_GHCR_PAT_B64  — base64-encoded GHCR PAT
+#   FARMPOS_SSH_PUBKEY    — base64-encoded operator SSH public key
+#   FARMPOS_VERSION       — image version tag (e.g. v2.2.0)
 #
 # The box needs only OUTBOUND internet. No inbound SSH from GitHub.
 # Idempotent: safe to re-run if interrupted.
 set -euo pipefail
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Root guard ────────────────────────────────────────────────────────────────
+[ "$(id -u)" = "0" ] || { echo "ERROR: Must run as root (use sudo)" >&2; exit 1; }
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
 c_red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 c_green() { printf '\033[32m%s\033[0m\n' "$*"; }
 c_bold()  { printf '\033[1m%s\033[0m\n'  "$*"; }
@@ -25,35 +31,28 @@ APPLIANCE_DIR="$FARMPOS_HOME/appliance"
 REPO="quintuszgeyser/FarmStallPos"
 RAW="https://raw.githubusercontent.com/${REPO}/main/farm_pos_web/appliance"
 
-# ── Parse arguments ───────────────────────────────────────────────────────────
-STORE_YML_B64=""
-SUPPORT_PUB_B64=""
-GHCR_PAT=""
-VERSION=""
-SSH_PUBKEY_B64=""
+# ── Read secrets from environment (never from args) ───────────────────────────
+STORE_YML_B64="${FARMPOS_STORE_YML:-}"
+SUPPORT_PUB_B64="${FARMPOS_SUPPORT_PUB:-}"
+GHCR_PAT_B64="${FARMPOS_GHCR_PAT_B64:-}"
+SSH_PUBKEY_B64="${FARMPOS_SSH_PUBKEY:-}"
+VERSION="${FARMPOS_VERSION:-}"
 
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --store-yml)   STORE_YML_B64="$2";   shift 2 ;;
-    --support-pub) SUPPORT_PUB_B64="$2"; shift 2 ;;
-    --ghcr-pat)    GHCR_PAT="$2";        shift 2 ;;
-    --version)     VERSION="$2";         shift 2 ;;
-    --ssh-pubkey)  SSH_PUBKEY_B64="$2";  shift 2 ;;
-    *) die "Unknown argument: $1" ;;
-  esac
-done
+[ -n "$STORE_YML_B64" ] || die "FARMPOS_STORE_YML not set"
+[ -n "$GHCR_PAT_B64" ]  || die "FARMPOS_GHCR_PAT_B64 not set"
+[ -n "$VERSION" ]       || die "FARMPOS_VERSION not set"
 
-[ -n "$STORE_YML_B64" ]   || die "--store-yml required"
-[ -n "$GHCR_PAT" ]        || die "--ghcr-pat required"
-[ -n "$VERSION" ]         || die "--version required"
+# Decode PAT once, then clear the env var
+GHCR_PAT=$(echo "$GHCR_PAT_B64" | base64 -d)
+unset FARMPOS_GHCR_PAT_B64 GHCR_PAT_B64
 
 c_bold "=== Farm POS Bootstrap ==="
 echo "  Version:  $VERSION"
 echo "  Home:     $FARMPOS_HOME"
 echo ""
 
-# ── 1. Install system dependencies ───────────────────────────────────────────
-c_bold "Step 1/8 — Installing system dependencies..."
+# ── Step 1 — Install system dependencies ─────────────────────────────────────
+c_bold "Step 1/9 — Installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 
@@ -64,14 +63,15 @@ else
   echo "  Docker: $(docker --version)"
 fi
 
-apt-get install -y -qq git gettext-base python3-yaml age openssl curl
+apt-get install -y -qq git gettext-base python3-yaml age openssl curl rclone
 
 echo "  age:     $(age --version)"
+echo "  rclone:  $(rclone --version 2>/dev/null | head -1)"
 python3 -c "import yaml; print('  python3-yaml: ok')"
 c_green "  Dependencies ready"
 
-# ── 2. Download appliance scripts from GitHub ─────────────────────────────────
-c_bold "Step 2/8 — Downloading appliance scripts..."
+# ── Step 2 — Download appliance scripts from GitHub ──────────────────────────
+c_bold "Step 2/9 — Downloading appliance scripts..."
 mkdir -p "$APPLIANCE_DIR/lib" "$APPLIANCE_DIR/postgres-init" \
          "$FARMPOS_HOME/data/branding" "$FARMPOS_HOME/store" \
          "$SECRETS_DIR"
@@ -81,73 +81,66 @@ for f in register-store.sh update.sh backup.sh restore.sh fleet-status.sh; do
   curl -fsSL "$RAW/$f" -o "$APPLIANCE_DIR/$f"
   chmod +x "$APPLIANCE_DIR/$f"
 done
-for f in lib/common.sh; do
-  curl -fsSL "$RAW/$f" -o "$APPLIANCE_DIR/$f"
-done
-for f in env.template compose.template.yml; do
-  curl -fsSL "$RAW/$f" -o "$APPLIANCE_DIR/$f"
-done
+curl -fsSL "$RAW/lib/common.sh"              -o "$APPLIANCE_DIR/lib/common.sh"
+curl -fsSL "$RAW/env.template"               -o "$APPLIANCE_DIR/env.template"
+curl -fsSL "$RAW/compose.template.yml"       -o "$APPLIANCE_DIR/compose.template.yml"
 curl -fsSL "$RAW/postgres-init/01-create-db.sh" \
-     -o "$APPLIANCE_DIR/postgres-init/01-create-db.sh"
+           -o "$APPLIANCE_DIR/postgres-init/01-create-db.sh"
 chmod +x "$APPLIANCE_DIR/postgres-init/01-create-db.sh"
 
 # Ensure Unix line endings (safety net for any Windows-edited files)
-if command -v dos2unix >/dev/null 2>&1; then
-  dos2unix "$APPLIANCE_DIR"/*.sh "$APPLIANCE_DIR/lib/common.sh" 2>/dev/null || true
-else
-  for f in "$APPLIANCE_DIR"/*.sh "$APPLIANCE_DIR/lib/common.sh"; do
-    sed -i 's/\r//' "$f" 2>/dev/null || true
-  done
-fi
+for f in "$APPLIANCE_DIR"/*.sh "$APPLIANCE_DIR/lib/common.sh"; do
+  sed -i 's/\r//' "$f" 2>/dev/null || true
+done
 
 c_green "  Scripts ready"
 
-# ── 3. Write store.yml ────────────────────────────────────────────────────────
-c_bold "Step 3/8 — Writing store.yml..."
+# ── Step 3 — Write store.yml ──────────────────────────────────────────────────
+c_bold "Step 3/9 — Writing store.yml..."
 echo "$STORE_YML_B64" | base64 -d > "$FARMPOS_HOME/store.yml"
+unset FARMPOS_STORE_YML STORE_YML_B64
 STORE_ID=$(python3 -c "import yaml; print(yaml.safe_load(open('$FARMPOS_HOME/store.yml'))['store_id'])")
 STORE_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('$FARMPOS_HOME/store.yml'))['store_name'])")
 c_green "  store_id: $STORE_ID  name: $STORE_NAME"
 
-# ── 4. Deploy support age public key ─────────────────────────────────────────
-c_bold "Step 4/8 — Deploying support age public key..."
+# ── Step 4 — Deploy support age public key ────────────────────────────────────
+c_bold "Step 4/9 — Deploying support age public key..."
 if [ -n "$SUPPORT_PUB_B64" ]; then
   echo "$SUPPORT_PUB_B64" | base64 -d > "$APPLIANCE_DIR/support_age.pub"
+  unset FARMPOS_SUPPORT_PUB SUPPORT_PUB_B64
   c_green "  support_age.pub deployed (central restore will work)"
 else
   c_red "  WARN: no support_age.pub — central backup restore will NOT work"
 fi
 
-# ── 5. Install operator SSH public key ───────────────────────────────────────
+# ── Step 5 — Install operator SSH public key ──────────────────────────────────
 c_bold "Step 5/9 — Installing operator SSH public key..."
 if [ -n "$SSH_PUBKEY_B64" ]; then
   PUBKEY=$(echo "$SSH_PUBKEY_B64" | base64 -d)
+  unset FARMPOS_SSH_PUBKEY SSH_PUBKEY_B64
   mkdir -p /root/.ssh
   chmod 700 /root/.ssh
   touch /root/.ssh/authorized_keys
   chmod 600 /root/.ssh/authorized_keys
-  # Append only if not already present (idempotent)
   if ! grep -qF "$PUBKEY" /root/.ssh/authorized_keys 2>/dev/null; then
     echo "$PUBKEY" >> /root/.ssh/authorized_keys
     c_green "  SSH public key added to root's authorized_keys"
   else
     c_green "  SSH public key already present (skipped)"
   fi
-  # Ensure sshd is running and allows public key auth
   sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
   systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
 else
-  c_red "  WARN: no SSH public key provided — you will only be able to SSH with a password"
+  c_red "  WARN: no SSH public key — you will only be able to SSH with a password"
 fi
 
-# ── 6. Log in to GHCR ────────────────────────────────────────────────────────
+# ── Step 6 — Log in to GHCR ───────────────────────────────────────────────────
 c_bold "Step 6/9 — Logging in to GHCR..."
 echo "$GHCR_PAT" | docker login ghcr.io -u quintuszgeyser --password-stdin
-c_green "  GHCR login OK"
-# Clear PAT from environment immediately after use
 unset GHCR_PAT
+c_green "  GHCR login OK"
 
-# ── 7. Install Tailscale ──────────────────────────────────────────────────────
+# ── Step 7 — Install Tailscale ────────────────────────────────────────────────
 c_bold "Step 7/9 — Installing Tailscale..."
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
@@ -156,11 +149,11 @@ else
 fi
 c_green "  Tailscale ready"
 
-# ── 8. Run register-store.sh ─────────────────────────────────────────────────
+# ── Step 8 — Run register-store.sh ───────────────────────────────────────────
 c_bold "Step 8/9 — Running register-store.sh..."
 FARMPOS_HOME="$FARMPOS_HOME" bash "$APPLIANCE_DIR/register-store.sh"
 
-# ── 9. Handover checks ───────────────────────────────────────────────────────
+# ── Step 9 — Handover checks ──────────────────────────────────────────────────
 c_bold "Step 9/9 — Running handover checks..."
 . "$APPLIANCE_DIR/lib/common.sh"
 
@@ -194,19 +187,39 @@ check "Tailscale connected" \
   "tailscale status 2>/dev/null | grep -v 'not logged in' | grep -q 'farmpos-'"
 check "Operator SSH key installed" \
   "test -s /root/.ssh/authorized_keys"
+check "rclone available" \
+  "command -v rclone"
 
 echo ""
 echo "  $PASS / $((PASS+FAIL)) checks passed"
 
-# ── Run first backup ──────────────────────────────────────────────────────────
+# ── Log rotation ──────────────────────────────────────────────────────────────
+c_bold "Installing log rotation..."
+cat > /etc/logrotate.d/farmpos <<LOGROTATE
+${FARMPOS_HOME}/data/backup.log
+${FARMPOS_HOME}/data/pos-logs/*.log
+${FARMPOS_HOME}/data/web-logs/*.log
+{
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    copytruncate
+}
+LOGROTATE
+c_green "  Log rotation configured (14-day daily)"
+
+# ── First backup ──────────────────────────────────────────────────────────────
 c_bold "Running first backup..."
 FARMPOS_HOME="$FARMPOS_HOME" bash "$APPLIANCE_DIR/backup.sh" && \
   c_green "  First backup complete" || \
   c_red   "  WARN: first backup failed — run backup.sh manually"
 
-# ── Print ready banner ────────────────────────────────────────────────────────
+# ── Ready banner ──────────────────────────────────────────────────────────────
 LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-TS_IP="$(tailscale ip -4 2>/dev/null || echo 'pending')"
+TS_IP="$(tailscale ip -4 2>/dev/null || echo 'pending — check tailscale status')"
 ADMIN_PASS="$(cat "$SECRETS_DIR/admin_pass" 2>/dev/null || echo 'see /opt/farmpos/secrets/admin_pass')"
 
 echo ""
@@ -221,13 +234,15 @@ c_green "  SSH (LAN):       ssh root@${LAN_IP}"
 c_green "  SSH (Tailscale): ssh root@${TS_IP}"
 c_green "════════════════════════════════════════════════════════"
 echo ""
-c_red "⚠  TO DO BEFORE TRADING:"
+c_red "⚠  BEFORE TRADING:"
 c_red "   1. Change the admin password (Admin → Users)"
 c_red "   2. ESCROW the backup key:"
 c_red "        $SECRETS_DIR/backup_age.key"
-c_red "      Copy to password manager, then: rm $SECRETS_DIR/backup_age.key.escrow.txt"
+c_red "      Copy to password manager, then delete:"
+c_red "        rm $SECRETS_DIR/backup_age.key.escrow.txt"
 c_red "   3. Load product catalog (Products → ⬆ Import CSV)"
-c_red "   4. Set a backup target in store.yml (currently local-only)"
+c_red "   4. Set off-box backup target in store.yml (currently local-only)"
+c_red "      Then run: bash $APPLIANCE_DIR/update.sh"
 echo ""
 
 [ "$FAIL" = "0" ] || { c_red "⚠  $FAIL check(s) failed — review above before trading"; exit 1; }

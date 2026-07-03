@@ -72,7 +72,7 @@ services:
       PAYFAST_MERCHANT_ID: ${PAYFAST_MERCHANT_ID:-}
       PAYFAST_MERCHANT_KEY: ${PAYFAST_MERCHANT_KEY:-}
       PAYFAST_PASSPHRASE: ${PAYFAST_PASSPHRASE:-}
-      PAYFAST_SANDBOX: "true"
+      PAYFAST_SANDBOX: ${PAYFAST_SANDBOX:-true}
     volumes:
       # The web app's /product_images/<f> route serves from /app/product_images
       # (os.path.dirname(__file__)/product_images), NOT /app/static/. Mount there

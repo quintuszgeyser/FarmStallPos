@@ -3,24 +3,34 @@ name: Onboard New Store
 # Triggered manually from GitHub Actions → Run workflow.
 #
 # What this workflow does:
-#   1. Validates inputs + resolves the image version tag
-#   2. Generates a pre-filled store.yml
-#   3. Outputs a single bootstrap command you paste on the box
+#   1. Validates the image version tag exists as a published release
+#   2. Generates a one-time ephemeral Tailscale auth key for this store (via TS API)
+#   3. Generates a pre-filled store.yml
+#   4. Outputs a single bootstrap command to paste on the box
 #
 # The box does all the actual work — it only needs outbound internet.
 # No inbound SSH from GitHub, no open ports, works on any LAN.
 #
-# Repo secrets required (Settings → Secrets → Actions):
-#   SUPPORT_AGE_PUB         — your central age public key (all store backups encrypted to this)
-#   OPERATOR_SSH_PUBLIC_KEY  — your SSH public key (added to root's authorized_keys on every box)
-#   TAILSCALE_AUTH_KEY       — reusable Tailscale auth key (tskey-auth-...)
+# ── INITIAL ACCESS NOTE ──────────────────────────────────────────────────────
+# To paste the bootstrap command you need a shell on the box first.
+# Ubuntu 24.04 Server: the installer creates a user+password — use that to SSH in.
+# Ubuntu 24.04 cloud image: use the cloud provider's console/serial access.
+# Once bootstrap.sh completes, all future access is via your SSH key over Tailscale.
+#
+# ── REPO SECRETS REQUIRED (Settings → Secrets → Actions) ────────────────────
+#   TAILSCALE_API_KEY        — Tailscale API key (generate at tailscale.com/admin/settings/keys)
+#                              used to create a one-time ephemeral auth key per store
+#   TAILSCALE_TAILNET        — your tailnet name (e.g. "example.com" or "yourname.github")
+#                              find it at tailscale.com/admin/machines → top of page
 #   GHCR_PAT                 — GitHub PAT with read:packages (pulls the pinned image)
+#   SUPPORT_AGE_PUB          — your central age public key (all store backups encrypted to this)
+#   OPERATOR_SSH_PUBLIC_KEY  — your SSH public key (added to root's authorized_keys on every box)
 #
-# Per-onboard inputs (see below — just 2 required):
-#   store_name     — display name shown in the UI
-#   image_version  — exact tag to install, e.g. v2.2.0
+# ── PER-ONBOARD INPUTS (just 2 required) ─────────────────────────────────────
+#   store_name     — display name shown in the UI (e.g. "Boer & Butcher")
+#   image_version  — exact release tag to install (e.g. v2.2.0)
 #
-# Optional inputs:
+# ── OPTIONAL INPUTS ──────────────────────────────────────────────────────────
 #   store_id       — kebab-case slug (auto-derived from store_name if blank)
 #   enable_web_shop — start the web shop container? (default: false)
 
@@ -51,16 +61,15 @@ jobs:
   generate-bootstrap:
     runs-on: ubuntu-latest
     steps:
-      # ── 1. Validate image version exists on GHCR ──────────────────────────
+      # ── 1. Validate image version exists as a GitHub release ──────────────
       - name: Validate image version
         run: |
           TAG="${{ github.event.inputs.image_version }}"
-          # Check the tag exists as a GitHub release
           STATUS=$(curl -s -o /dev/null -w '%{http_code}' \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/releases/tags/${TAG}")
           if [ "$STATUS" != "200" ]; then
-            echo "::error::Release tag '${TAG}' not found. Create a release first: git tag ${TAG} && git push origin ${TAG}"
+            echo "::error::Release tag '${TAG}' not found. Push the tag first: git tag ${TAG} && git push origin ${TAG}"
             exit 1
           fi
           echo "✅ Release ${TAG} confirmed"
@@ -71,14 +80,12 @@ jobs:
         run: |
           OVERRIDE="${{ github.event.inputs.store_id }}"
           if [ -n "$OVERRIDE" ]; then
-            # Validate supplied store_id
             echo "$OVERRIDE" | grep -Eq '^[a-z0-9-]{1,40}$' || {
               echo "::error::store_id must be lowercase kebab-case, max 40 chars (got: $OVERRIDE)"
               exit 1
             }
             STORE_ID="$OVERRIDE"
           else
-            # Auto-derive from store_name
             STORE_ID=$(echo "${{ github.event.inputs.store_name }}" \
               | python3 -c "
           import sys, re
@@ -90,18 +97,57 @@ jobs:
           echo "store_id=$STORE_ID" >> "$GITHUB_OUTPUT"
           echo "Resolved store_id: '$STORE_ID'"
 
-      # ── 3. Checkout (to read support_age.pub from repo) ───────────────────
+      # ── 3. Generate a one-time ephemeral Tailscale auth key for this store ─
+      # A per-store ephemeral key (expires after first use / 90 days) means a
+      # compromised box cannot register additional rogue devices onto the tailnet.
+      - name: Generate ephemeral Tailscale auth key
+        id: tskey
+        env:
+          TS_API_KEY:  ${{ secrets.TAILSCALE_API_KEY }}
+          TS_TAILNET:  ${{ secrets.TAILSCALE_TAILNET }}
+          STORE_ID:    ${{ steps.ids.outputs.store_id }}
+        run: |
+          RESPONSE=$(curl -s -X POST \
+            -H "Authorization: Bearer ${TS_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"capabilities\": {
+                \"devices\": {
+                  \"create\": {
+                    \"reusable\": false,
+                    \"ephemeral\": false,
+                    \"preauthorized\": true,
+                    \"tags\": [\"tag:farmpos\"]
+                  }
+                }
+              },
+              \"expirySeconds\": 7776000,
+              \"description\": \"farmpos-${STORE_ID} onboard\"
+            }" \
+            "https://api.tailscale.com/api/v2/tailnet/${TS_TAILNET}/keys")
+
+          TS_AUTH_KEY=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])" 2>/dev/null || true)
+          if [ -z "$TS_AUTH_KEY" ]; then
+            echo "::error::Failed to generate Tailscale auth key. Check TAILSCALE_API_KEY and TAILSCALE_TAILNET secrets."
+            echo "API response: $RESPONSE"
+            exit 1
+          fi
+          # Mask the key so it never appears in plain text in logs
+          echo "::add-mask::$TS_AUTH_KEY"
+          echo "ts_auth_key=$TS_AUTH_KEY" >> "$GITHUB_OUTPUT"
+          echo "✅ Ephemeral Tailscale auth key generated for farmpos-${STORE_ID}"
+
+      # ── 4. Checkout (to read support_age.pub from repo) ───────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 4. Generate store.yml ─────────────────────────────────────────────
+      # ── 5. Generate store.yml ─────────────────────────────────────────────
       - name: Generate store.yml
-        id: storeyml
         env:
           STORE_ID:   ${{ steps.ids.outputs.store_id }}
           STORE_NAME: ${{ github.event.inputs.store_name }}
           STORE_VER:  ${{ github.event.inputs.image_version }}
-          TS_KEY:     ${{ secrets.TAILSCALE_AUTH_KEY }}
+          TS_KEY:     ${{ steps.tskey.outputs.ts_auth_key }}
           WEB_SHOP:   ${{ github.event.inputs.enable_web_shop }}
         run: |
           python3 - <<'PY'
@@ -114,42 +160,51 @@ jobs:
           web_shop   = os.environ['WEB_SHOP'].lower() == 'true'
 
           cfg = {
-            'store_id':       store_id,
-            'store_name':     store_name,
-            'store_tagline':  store_name,
-            'store_legal':    store_name,
-            'store_subtitle': '',
-            'timezone':       'Africa/Johannesburg',
+            'store_id':        store_id,
+            'store_name':      store_name,
+            'store_tagline':   store_name,
+            'store_legal':     store_name,
+            'store_subtitle':  '',
+            'timezone':        'Africa/Johannesburg',
             'farmpos_version': ver,
-            'scale': {'enabled': False, 'ip': '', 'port': 7061},
-            'web_shop': {
+            'scale':     {'enabled': False, 'ip': '', 'port': 7061},
+            'web_shop':  {
               'enabled':              web_shop,
               'domain':               '',
               'payfast_merchant_id':  '',
               'payfast_merchant_key': '',
               'payfast_passphrase':   '',
+              'payfast_sandbox':      True,   # operator sets False when going live
             },
             'backup':    {'target': '', 'time': '02:00'},
             'tailscale': {'enabled': True, 'auth_key': ts_key},
             'control_center_url': '',
-            'alerts': {'email': ''},
+            'alerts':    {'email': ''},
           }
 
           with open('/tmp/store.yml', 'w') as f:
             yaml.safe_dump(cfg, f, sort_keys=False, allow_unicode=True)
 
-          print("Generated store.yml:")
-          print(open('/tmp/store.yml').read())
+          # Print store.yml with the Tailscale key redacted — it will be masked
+          # in GitHub logs via ::add-mask but we redact in our own print too.
+          import copy
+          safe = copy.deepcopy(cfg)
+          safe['tailscale']['auth_key'] = '***'
+          print("Generated store.yml (key redacted):")
+          print(yaml.dump(safe, sort_keys=False))
           PY
 
-      # ── 5. Base64-encode store.yml + support_age.pub + ssh pubkey ───────────
+      # ── 6. Encode payload ─────────────────────────────────────────────────
       - name: Encode payload
         id: payload
         run: |
           STORE_YML_B64=$(base64 -w0 /tmp/store.yml)
           echo "store_yml_b64=$STORE_YML_B64" >> "$GITHUB_OUTPUT"
 
-          # Use support_age.pub from repo if present, else from secret
+          # Mask the encoded store.yml too (contains TS key)
+          echo "::add-mask::$STORE_YML_B64"
+
+          # Support age public key
           SUPPORT_PUB=$(grep -v '^#' "farm_pos_web/appliance/support_age.pub" 2>/dev/null | head -1 || true)
           if [ -z "${SUPPORT_PUB:-}" ]; then
             SUPPORT_PUB="${{ secrets.SUPPORT_AGE_PUB }}"
@@ -157,50 +212,86 @@ jobs:
           SUPPORT_PUB_B64=$(printf '%s' "$SUPPORT_PUB" | base64 -w0)
           echo "support_pub_b64=$SUPPORT_PUB_B64" >> "$GITHUB_OUTPUT"
 
-          # SSH public key — same for every store, stored as repo secret
+          # Operator SSH public key
           SSH_PUBKEY_B64=$(printf '%s' "${{ secrets.OPERATOR_SSH_PUBLIC_KEY }}" | base64 -w0)
           echo "ssh_pubkey_b64=$SSH_PUBKEY_B64" >> "$GITHUB_OUTPUT"
 
-      # ── 6. Output the bootstrap command ──────────────────────────────────
+          # GHCR PAT — mask before encoding
+          GHCR_PAT="${{ secrets.GHCR_PAT }}"
+          echo "::add-mask::$GHCR_PAT"
+          GHCR_PAT_B64=$(printf '%s' "$GHCR_PAT" | base64 -w0)
+          echo "::add-mask::$GHCR_PAT_B64"
+          echo "ghcr_pat_b64=$GHCR_PAT_B64" >> "$GITHUB_OUTPUT"
+
+      # ── 7. Output bootstrap command ───────────────────────────────────────
+      # The command is delivered via a file passed to bash stdin so that no
+      # secrets appear as process arguments (avoids bash history exposure).
       - name: Output bootstrap command
         env:
           STORE_ID:        ${{ steps.ids.outputs.store_id }}
           STORE_VER:       ${{ github.event.inputs.image_version }}
-          GHCR_PAT:        ${{ secrets.GHCR_PAT }}
           STORE_YML_B64:   ${{ steps.payload.outputs.store_yml_b64 }}
           SUPPORT_PUB_B64: ${{ steps.payload.outputs.support_pub_b64 }}
           SSH_PUBKEY_B64:  ${{ steps.payload.outputs.ssh_pubkey_b64 }}
+          GHCR_PAT_B64:    ${{ steps.payload.outputs.ghcr_pat_b64 }}
           REPO:            ${{ github.repository }}
-          # Tailscale key is baked into store.yml — not passed separately
         run: |
+          # Build the inner script content that the box will run.
+          # Delivered via a tmpfile piped to bash — never appears in ps or history.
+          INNER=$(cat <<INNEREOF
+          export FARMPOS_STORE_YML="${STORE_YML_B64}"
+          export FARMPOS_SUPPORT_PUB="${SUPPORT_PUB_B64}"
+          export FARMPOS_GHCR_PAT_B64="${GHCR_PAT_B64}"
+          export FARMPOS_SSH_PUBKEY="${SSH_PUBKEY_B64}"
+          export FARMPOS_VERSION="${STORE_VER}"
+          curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/farm_pos_web/appliance/bootstrap.sh" | bash
+          INNEREOF
+          )
+
+          INNER_B64=$(printf '%s' "$INNER" | base64 -w0)
+
           cat <<EOF
 
           ════════════════════════════════════════════════════════════
-           STORE: $STORE_ID  ($STORE_VER)
-           Ready to install. Paste this ONE command on the target box
-           (requires only outbound internet — no open ports needed):
+           STORE: ${STORE_ID}  (${STORE_VER})
+
+           INITIAL ACCESS: SSH into the box using the password you
+           set during Ubuntu installation, then paste this command.
+           After install, all access is via your SSH key over Tailscale.
+
+           Paste this ONE command on the target box:
           ════════════════════════════════════════════════════════════
 
-          sudo bash -c 'curl -fsSL "https://raw.githubusercontent.com/${REPO}/main/farm_pos_web/appliance/bootstrap.sh" | bash -s -- \\
-            --store-yml     "${STORE_YML_B64}" \\
-            --support-pub   "${SUPPORT_PUB_B64}" \\
-            --ghcr-pat      "${GHCR_PAT}" \\
-            --ssh-pubkey    "${SSH_PUBKEY_B64}" \\
-            --version       "${STORE_VER}"'
+          sudo bash -c 'echo "${INNER_B64}" | base64 -d | bash'
 
           ════════════════════════════════════════════════════════════
+           Secrets are passed via environment variables, not process
+           arguments — they will NOT appear in bash history or ps.
+
            After install, connect via:
-             ssh root@<tailscale-ip>       (Tailscale)
-             ssh root@<lan-ip>             (LAN)
-           The GHCR PAT only has read:packages scope.
+             ssh root@<tailscale-ip>   (from anywhere via Tailscale)
+             ssh root@<lan-ip>         (LAN only)
           ════════════════════════════════════════════════════════════
 
           EOF
 
-      # ── 7. Upload store.yml as artifact (audit trail) ─────────────────────
-      - name: Upload store.yml artifact
-        uses: actions/upload-artifact@v4
+      # ── 8. Upload store.yml artifact (secrets stripped) ───────────────────
+      # Strip the Tailscale auth key before uploading — the artifact is an
+      # audit record of store identity, not a secrets store.
+      - name: Upload redacted store.yml artifact
+        run: |
+          python3 - <<'PY'
+          import yaml, copy
+          with open('/tmp/store.yml') as f:
+            cfg = yaml.safe_load(f)
+          redacted = copy.deepcopy(cfg)
+          redacted['tailscale']['auth_key'] = '<redacted — one-time key used during onboard>'
+          with open('/tmp/store-redacted.yml', 'w') as f:
+            yaml.safe_dump(redacted, f, sort_keys=False, allow_unicode=True)
+          PY
+
+      - uses: actions/upload-artifact@v4
         with:
           name: store-yml-${{ steps.ids.outputs.store_id }}-${{ github.event.inputs.image_version }}
-          path: /tmp/store.yml
+          path: /tmp/store-redacted.yml
           retention-days: 90

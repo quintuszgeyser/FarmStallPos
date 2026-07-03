@@ -82,6 +82,7 @@ WEB_DOMAIN="$(yaml_get "$STORE_YML" web_shop.domain)"
 PAYFAST_MERCHANT_ID="$(yaml_get "$STORE_YML" web_shop.payfast_merchant_id)"
 PAYFAST_MERCHANT_KEY="$(yaml_get "$STORE_YML" web_shop.payfast_merchant_key)"
 PAYFAST_PASSPHRASE="$(yaml_get "$STORE_YML" web_shop.payfast_passphrase)"
+PAYFAST_SANDBOX="$(yaml_or "$STORE_YML" web_shop.payfast_sandbox 'true')"
 c_green "Store: $STORE_NAME ($STORE_ID)  image: $POS_IMAGE  scale: ${SCALE_IP:-<none>}  web: ${WEB_ENABLED:-false}"
 
 # --- 2. Secrets (generate once; never regenerate on re-run) ----------------------
@@ -147,7 +148,7 @@ fi
 export STORE_ID STORE_NAME STORE_TAGLINE STORE_LEGAL STORE_SUBTITLE TZ \
        FARMPOS_VERSION POS_IMAGE WEB_IMAGE POSTGRES_PASSWORD POSTGRES_PASSWORD_URLENC \
        SECRET_KEY ADMIN_PASS SCALE_IP SCALE_PORT \
-       WEB_DOMAIN PAYFAST_MERCHANT_ID PAYFAST_MERCHANT_KEY PAYFAST_PASSPHRASE
+       WEB_DOMAIN PAYFAST_MERCHANT_ID PAYFAST_MERCHANT_KEY PAYFAST_PASSPHRASE PAYFAST_SANDBOX
 envsubst < "$HERE/env.template" > "$FARMPOS_HOME/.env"
 chmod 600 "$FARMPOS_HOME/.env"
 cp "$HERE/compose.template.yml" "$FARMPOS_HOME/docker-compose.yml"
@@ -177,7 +178,7 @@ fi
 # --- 5. Health-gate -------------------------------------------------------------
 c_bold "Waiting for POS to become healthy..."
 ok=0
-for i in $(seq 1 45); do
+for i in $(seq 1 90); do
   code="$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/health || true)"
   [ "$code" = "200" ] && { ok=1; break; }
   sleep 2
