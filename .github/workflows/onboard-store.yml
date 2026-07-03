@@ -11,8 +11,10 @@ name: Onboard New Store
 # No inbound SSH from GitHub, no open ports, works on any LAN.
 #
 # Repo secrets required (Settings → Secrets → Actions):
-#   SUPPORT_AGE_PUB        — your central age public key (all store backups encrypted to this)
-#   OPERATOR_SSH_PUBLIC_KEY — your SSH public key (added to root's authorized_keys on every box)
+#   SUPPORT_AGE_PUB         — your central age public key (all store backups encrypted to this)
+#   OPERATOR_SSH_PUBLIC_KEY  — your SSH public key (added to root's authorized_keys on every box)
+#   TAILSCALE_AUTH_KEY       — reusable Tailscale auth key (tskey-auth-...)
+#   GHCR_PAT                 — GitHub PAT with read:packages (pulls the pinned image)
 #
 # Per-onboard inputs (see below):
 #   store_name     — display name shown in the UI
@@ -36,10 +38,6 @@ on:
         type: string
       image_version:
         description: 'Image version to install (e.g. v2.2.0) — must be a published release tag'
-        required: true
-        type: string
-      tailscale_key:
-        description: 'Tailscale reusable auth key (tskey-auth-...)'
         required: true
         type: string
       ghcr_pat:
@@ -107,7 +105,7 @@ jobs:
           STORE_ID:   ${{ steps.ids.outputs.store_id }}
           STORE_NAME: ${{ github.event.inputs.store_name }}
           STORE_VER:  ${{ github.event.inputs.image_version }}
-          TS_KEY:     ${{ github.event.inputs.tailscale_key }}
+          TS_KEY:     ${{ secrets.TAILSCALE_AUTH_KEY }}
           WEB_SHOP:   ${{ github.event.inputs.enable_web_shop }}
         run: |
           python3 - <<'PY'
@@ -177,6 +175,7 @@ jobs:
           SUPPORT_PUB_B64: ${{ steps.payload.outputs.support_pub_b64 }}
           SSH_PUBKEY_B64:  ${{ steps.payload.outputs.ssh_pubkey_b64 }}
           REPO:            ${{ github.repository }}
+          # Tailscale key is baked into store.yml — not passed separately
         run: |
           cat <<EOF
 
