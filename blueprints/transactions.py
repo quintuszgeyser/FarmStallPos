@@ -131,6 +131,8 @@ def api_transactions_post():
     cart = data.get('cart', [])
     if not cart:
         return jsonify({'error': 'Empty cart'}), 400
+    if len(cart) > 100:
+        return jsonify({'error': 'Cart too large (max 100 items)'}), 400
 
     sale_uuid    = str(uuid.uuid4())
     now          = datetime.utcnow()
@@ -161,8 +163,18 @@ def api_transactions_post():
     for item in cart:
         pid        = int(item['product_id'])
         qty        = Decimal(str(item.get('qty', 1)))
-        unit_price = Decimal(str(item.get('unit_price')))
         subs_raw   = item.get('subs', {})
+        # Always use the server-side price — never trust the client-supplied value.
+        _prod_price = Product.query.with_entities(
+            Product.price, Product.price_per_unit, Product.sold_by_weight
+        ).filter_by(id=pid).first()
+        if _prod_price is None:
+            return jsonify({'error': f'Product {pid} not found'}), 404
+        # sold_by_weight items bill per base unit (price_per_unit); all others use price
+        if _prod_price.sold_by_weight and _prod_price.price_per_unit:
+            unit_price = Decimal(str(_prod_price.price_per_unit))
+        else:
+            unit_price = Decimal(str(_prod_price.price or 0))
         subs       = {int(k): int(v) for k, v in subs_raw.items()} if subs_raw else {}
         extras     = item.get('extras', [])
         item_discount = item.get('item_discount')
@@ -460,8 +472,19 @@ def api_transaction_edit(sale_id):
         row.void_reason = 'superseded by edit'
     reverse_fifo(sale_id)
     for idx, item in enumerate(lines):
-        pid = int(item['product_id']); qty = Decimal(str(item.get('qty', 1))); unit_price = Decimal(str(item.get('unit_price')))
+        pid       = int(item['product_id'])
+        qty       = Decimal(str(item.get('qty', 1)))
+        subs_raw  = item.get('subs', {})
+        subs_edit = {int(k): int(v) for k, v in subs_raw.items()} if subs_raw else {}
         if qty <= 0: continue
+        # Always use server-side price on edit (same rule as checkout).
+        _ep = Product.query.with_entities(
+            Product.price, Product.price_per_unit, Product.sold_by_weight
+        ).filter_by(id=pid).first()
+        if _ep and _ep.sold_by_weight and _ep.price_per_unit:
+            unit_price = Decimal(str(_ep.price_per_unit))
+        else:
+            unit_price = Decimal(str((_ep.price if _ep else None) or 0))
         # payment_method preserved from original; cash/card tender only on first new line
         _first = (idx == 0)
         db.session.add(Sale(sale_id=sale_id, date_time=now, product_id=pid, qty=qty,
@@ -474,7 +497,10 @@ def api_transaction_edit(sale_id):
         if p.product_type == 'simple': p.stock_qty = max(0, (p.stock_qty or 0) - int(qty))
         elif p.product_type == 'stock_item': consume_fifo(pid, qty, sale_id, now)
         elif p.product_type == 'recipe':
+            # Use substitution map from the edited lines (GAP-NEW-05: was using RecipeLine defaults)
             for rl in RecipeLine.query.filter_by(product_id=pid).all():
-                consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * qty, sale_id, now)
+                actual_id = subs_edit.get(rl.ingredient_id, rl.ingredient_id)
+                if actual_id == -1: continue
+                consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_id, now)
     db.session.commit()
     return jsonify({'ok': True})

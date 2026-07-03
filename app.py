@@ -21,6 +21,7 @@ from models import (
     CustomerVisit, PlateDetection, Supplier,
     ScaleSyncRun, ScaleSnapshot, ScalePluLog, ScaleKeyboardPreset, ScaleAdvertMessage,
     ProductImportRun, DeploySchedule, TillSession,
+    LabelTemplate, LabelPrintJob, LabelPrinter,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
@@ -1358,6 +1359,91 @@ def strong_migrate():
         pg_try("ALTER TABLE products ADD CONSTRAINT fk_products_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL")
         pg_try("CREATE INDEX IF NOT EXISTS ix_products_category_id ON products (category_id)")
 
+        # ── Label printing subsystem ───────────────────────────────────────────
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS label_templates (
+              id               SERIAL PRIMARY KEY,
+              name             VARCHAR(100) NOT NULL,
+              description      VARCHAR(300),
+              width_mm         NUMERIC(6,2) NOT NULL,
+              height_mm        NUMERIC(6,2) NOT NULL,
+              category         VARCHAR(30) NOT NULL DEFAULT 'custom',
+              elements_json    TEXT NOT NULL DEFAULT '[]',
+              background_color VARCHAR(10) NOT NULL DEFAULT '#ffffff',
+              border           BOOLEAN NOT NULL DEFAULT FALSE,
+              is_archived      BOOLEAN NOT NULL DEFAULT FALSE,
+              created_by       INTEGER REFERENCES users(id),
+              created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at       TIMESTAMPTZ
+            )
+        """)
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS label_print_jobs (
+              id          SERIAL PRIMARY KEY,
+              template_id INTEGER REFERENCES label_templates(id),
+              product_id  INTEGER REFERENCES products(id),
+              qty         INTEGER NOT NULL DEFAULT 1,
+              printer_id  INTEGER,
+              status      VARCHAR(20) NOT NULL DEFAULT 'sent',
+              user_id     INTEGER REFERENCES users(id),
+              printed_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              notes       TEXT
+            )
+        """)
+        pg_try("CREATE INDEX IF NOT EXISTS ix_label_jobs_printed ON label_print_jobs(printed_at DESC)")
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS label_printers (
+              id         SERIAL PRIMARY KEY,
+              name       VARCHAR(80)  NOT NULL,
+              model      VARCHAR(60)  NOT NULL DEFAULT 'xprinter_xp365b',
+              connection VARCHAR(20)  NOT NULL DEFAULT 'usb',
+              address    VARCHAR(120),
+              is_active  BOOLEAN NOT NULL DEFAULT TRUE,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        """)
+        # Seed four built-in templates (idempotent — skip if they already exist)
+        pg_try("""
+            INSERT INTO label_templates (name, description, width_mm, height_mm, category, elements_json, border)
+            SELECT 'Small Barcode Label', '40×20mm — barcode + name + price', 40, 20, 'small_barcode',
+            '[{"type":"product_name","x":1,"y":1,"w":38,"h":5,"font_size":6,"bold":true},
+              {"type":"barcode","x":1,"y":7,"w":24,"h":11,"barcode_format":"auto"},
+              {"type":"price","x":26,"y":7,"w":12,"h":11,"font_size":10,"bold":true,"align":"center"},
+              {"type":"sku","x":1,"y":17,"w":38,"h":3,"font_size":5}]',
+            true
+            WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE name = 'Small Barcode Label')
+        """)
+        pg_try("""
+            INSERT INTO label_templates (name, description, width_mm, height_mm, category, elements_json, border)
+            SELECT 'Shelf Label', '60×30mm — product name, price, weight, category', 60, 30, 'shelf',
+            '[{"type":"store_name","x":1,"y":1,"w":58,"h":5,"font_size":6,"align":"center"},
+              {"type":"product_name","x":1,"y":7,"w":58,"h":7,"font_size":9,"bold":true,"align":"center"},
+              {"type":"category","x":1,"y":14,"w":58,"h":4,"font_size":6,"align":"center"},
+              {"type":"price","x":10,"y":19,"w":40,"h":9,"font_size":14,"bold":true,"align":"center"},
+              {"type":"sku","x":1,"y":27,"w":58,"h":3,"font_size":5}]',
+            true
+            WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE name = 'Shelf Label')
+        """)
+        pg_try("""
+            INSERT INTO label_templates (name, description, width_mm, height_mm, category, elements_json, border)
+            SELECT 'Product Sticker', '50×50mm — logo, name, price, barcode', 50, 50, 'sticker',
+            '[{"type":"store_logo","x":1,"y":1,"w":48,"h":12},
+              {"type":"product_name","x":1,"y":14,"w":48,"h":8,"font_size":9,"bold":true,"align":"center"},
+              {"type":"price","x":1,"y":23,"w":48,"h":10,"font_size":14,"bold":true,"align":"center"},
+              {"type":"barcode","x":5,"y":34,"w":40,"h":13,"barcode_format":"auto"},
+              {"type":"sku","x":1,"y":47,"w":48,"h":3,"font_size":5,"align":"center"}]',
+            false
+            WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE name = 'Product Sticker')
+        """)
+        pg_try("""
+            INSERT INTO label_templates (name, description, width_mm, height_mm, category, elements_json, border)
+            SELECT 'Price Tag', '30×15mm — name + price only', 30, 15, 'price_tag',
+            '[{"type":"product_name","x":1,"y":1,"w":28,"h":5,"font_size":6,"bold":false},
+              {"type":"price","x":1,"y":7,"w":28,"h":7,"font_size":11,"bold":true,"align":"center"}]',
+            true
+            WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE name = 'Price Tag')
+        """)
+
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
         if sales_count == 0:
@@ -1615,6 +1701,7 @@ def _register_routes(_app):
     from blueprints.deploy_schedule import bp as deploy_schedule_bp
     from blueprints.branding        import bp as branding_bp
     from blueprints.till_sessions   import bp as till_sessions_bp
+    from blueprints.labels          import bp as labels_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1635,6 +1722,7 @@ def _register_routes(_app):
     _app.register_blueprint(deploy_schedule_bp)
     _app.register_blueprint(branding_bp)
     _app.register_blueprint(till_sessions_bp)
+    _app.register_blueprint(labels_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

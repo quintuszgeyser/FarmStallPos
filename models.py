@@ -465,6 +465,61 @@ class TillSession(db.Model):
     notes           = db.Column(db.Text, nullable=True)
 
 
+# ── Label Printing Subsystem ──────────────────────────────────────────────────
+
+class LabelTemplate(db.Model):
+    """
+    A reusable drag-and-drop label layout. Elements are stored as JSON.
+    Each element: {type, x, y, w, h, font_size, align, bold, color,
+                   barcode_format, value}
+    Dimensions in mm. category: small_barcode | shelf | sticker | price_tag | custom
+    """
+    __tablename__ = 'label_templates'
+    id               = db.Column(db.Integer, primary_key=True)
+    name             = db.Column(db.String(100), nullable=False)
+    description      = db.Column(db.String(300), nullable=True)
+    width_mm         = db.Column(Numeric(6, 2), nullable=False)
+    height_mm        = db.Column(Numeric(6, 2), nullable=False)
+    category         = db.Column(db.String(30), nullable=False, default='custom')
+    elements_json    = db.Column(db.Text, nullable=False, default='[]')
+    background_color = db.Column(db.String(10), nullable=False, default='#ffffff')
+    border           = db.Column(db.Boolean, nullable=False, default=False)
+    is_archived      = db.Column(db.Boolean, nullable=False, default=False)
+    created_by       = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at       = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    updated_at       = db.Column(db.DateTime(timezone=True), nullable=True)
+
+
+class LabelPrintJob(db.Model):
+    """Audit log: every label print event — user, product, template, qty, outcome."""
+    __tablename__ = 'label_print_jobs'
+    id          = db.Column(db.Integer, primary_key=True)
+    template_id = db.Column(db.Integer, db.ForeignKey('label_templates.id'), nullable=True)
+    product_id  = db.Column(db.Integer, db.ForeignKey('products.id'),        nullable=True)
+    qty         = db.Column(db.Integer, nullable=False, default=1)
+    printer_id  = db.Column(db.Integer, nullable=True)   # LabelPrinter.id (soft ref)
+    status      = db.Column(db.String(20), nullable=False, default='sent')  # sent|failed|browser_print
+    user_id     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    printed_at  = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    notes       = db.Column(db.Text, nullable=True)
+
+
+class LabelPrinter(db.Model):
+    """
+    Configured printers per store. One row per physical printer.
+    connection: usb | bluetooth | network
+    address:    USB vid:pid, BT MAC, or IP:port for network printers.
+    """
+    __tablename__ = 'label_printers'
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(80),  nullable=False)
+    model      = db.Column(db.String(60),  nullable=False, default='xprinter_xp365b')
+    connection = db.Column(db.String(20),  nullable=False, default='usb')
+    address    = db.Column(db.String(120), nullable=True)   # USB vid:pid | BT MAC | IP:port
+    is_active  = db.Column(db.Boolean, nullable=False, default=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+
 class PlateDetection(db.Model):
     __tablename__ = 'plate_detections'
     id            = db.Column(db.Integer, primary_key=True)

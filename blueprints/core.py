@@ -44,7 +44,7 @@ def version():
 @bp.route('/api/logs')
 def api_logs():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
-    n = int(request.args.get('n', 200))
+    n = min(int(request.args.get('n', 200)), 2000)
     try:
         with open(LOG_PATH, 'r', encoding='utf-8') as f:
             lines = f.readlines()

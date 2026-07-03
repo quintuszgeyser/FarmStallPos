@@ -611,6 +611,7 @@ function renderProductsCards() {
             <button class="btn btn-outline-danger btn-sm"  data-writeoff-id="${p.id}"  data-writeoff-name="${p.name}">Write Off</button>
           ` : ''}
           <button class="btn btn-outline-primary btn-sm"   data-edit-product>Edit</button>
+          <button class="btn btn-outline-secondary btn-sm" data-print-label="${p.id}" title="Print label">🏷</button>
           ${p.is_archived
             ? `<button class="btn btn-outline-success btn-sm" data-restore-product>Restore</button>`
             : `<button class="btn btn-outline-secondary btn-sm" data-archive-product>Archive</button>`}
@@ -644,6 +645,7 @@ function renderProductsCards() {
       header.querySelector('[data-edit-product]')?.addEventListener('click', e => { e.stopPropagation(); openProductEditor(p); });
       header.querySelector('[data-archive-product]')?.addEventListener('click', e => { e.stopPropagation(); openArchiveModal(p); });
       header.querySelector('[data-restore-product]')?.addEventListener('click', e => { e.stopPropagation(); openRestoreModal(p); });
+      header.querySelector(`[data-print-label="${p.id}"]`)?.addEventListener('click', e => { e.stopPropagation(); openLabelPrintModal(p); });
 
       card.appendChild(header);
       card.appendChild(body);
@@ -669,6 +671,10 @@ function renderProductsCards() {
       btnEdit.className = 'btn btn-outline-primary btn-sm'; btnEdit.textContent = 'Edit';
       btnEdit.onclick = () => openProductEditor(p);
       actions.appendChild(btnEdit);
+      const btnPrint = document.createElement('button');
+      btnPrint.className = 'btn btn-outline-secondary btn-sm'; btnPrint.textContent = '🏷';
+      btnPrint.title = 'Print label'; btnPrint.onclick = () => openLabelPrintModal(p);
+      actions.appendChild(btnPrint);
       if (p.is_archived) {
         const btn = document.createElement('button');
         btn.className = 'btn btn-outline-success btn-sm'; btn.textContent = 'Restore';
@@ -3642,11 +3648,9 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     if (splitTotal < cartTotal) {
       return toast(`Split total R${fmt(cashTendered + cardAmount)} is less than cart total R${fmt(cartSubtotal)}`, 'warning');
     }
-  } else if (payMethod === 'cash') {
-    const cashInput = document.getElementById('split-cash-input');
-    cashTendered = cashInput && cashInput.closest('#split-payment-row')?.classList.contains('hidden')
-      ? null
-      : (parseFloat(cashInput?.value) || null);
+    if (cashTendered <= 0 || cardAmount <= 0) {
+      return toast('Enter amounts for both Cash and Card in a split payment', 'warning');
+    }
   }
 
   const requestBody = {
@@ -3661,6 +3665,10 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   try {
     const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(requestBody) });
     STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; renderCart();
+    // Reset split inputs for the next sale
+    document.getElementById('split-cash-input').value = '';
+    document.getElementById('split-card-input').value = '';
+    document.getElementById('split-balance').textContent = '';
     await loadTransactions();
     await loadProducts();
     const kitchenMsg = j.kitchen_orders > 0 ? ` - ${j.kitchen_orders} kitchen order${j.kitchen_orders > 1 ? 's' : ''} queued` : '';
@@ -3687,9 +3695,20 @@ document.querySelectorAll('input[name="pay-method"]').forEach(radio => {
     if (!splitRow) return;
     if (radio.value === 'split' && radio.checked) {
       splitRow.classList.remove('hidden');
+      // Pre-fill: put full total into card, 0 into cash so teller only edits one field
+      const total = parseFloat(document.getElementById('cart-total')?.textContent || '0');
+      const cashEl = document.getElementById('split-cash-input');
+      const cardEl = document.getElementById('split-card-input');
+      if (cashEl && cardEl && !cashEl.value && !cardEl.value) {
+        cashEl.value = '';
+        cardEl.value = total > 0 ? fmt(total) : '';
+      }
       _updateSplitBalance();
+      document.getElementById('split-cash-input')?.focus();
     } else if (radio.checked) {
       splitRow.classList.add('hidden');
+      document.getElementById('split-cash-input').value = '';
+      document.getElementById('split-card-input').value = '';
     }
   });
 });
@@ -3702,10 +3721,10 @@ function _updateSplitBalance() {
   const el = document.getElementById('split-balance');
   if (!el) return;
   if (remaining > 0.001) {
-    el.textContent = `R${fmt(remaining)} unallocated`;
+    el.textContent = `R${fmt(remaining)} still unallocated`;
     el.className = 'small text-danger';
   } else if (remaining < -0.001) {
-    el.textContent = `R${fmt(Math.abs(remaining))} over`;
+    el.textContent = `R${fmt(Math.abs(remaining))} over total`;
     el.className = 'small text-warning';
   } else {
     el.textContent = '✓ Balanced';
@@ -3713,8 +3732,31 @@ function _updateSplitBalance() {
   }
 }
 
-document.getElementById('split-cash-input')?.addEventListener('input', _updateSplitBalance);
-document.getElementById('split-card-input')?.addEventListener('input', _updateSplitBalance);
+// Auto-fill the other field when one is edited
+document.getElementById('split-cash-input')?.addEventListener('input', () => {
+  const total = parseFloat(document.getElementById('cart-total')?.textContent || '0');
+  const cash  = parseFloat(document.getElementById('split-cash-input').value) || 0;
+  const cardEl = document.getElementById('split-card-input');
+  const remainder = Math.round((total - cash) * 100) / 100;
+  cardEl.value = remainder >= 0 ? fmt(remainder) : '0.00';
+  _updateSplitBalance();
+});
+
+document.getElementById('split-card-input')?.addEventListener('input', () => {
+  const total = parseFloat(document.getElementById('cart-total')?.textContent || '0');
+  const card  = parseFloat(document.getElementById('split-card-input').value) || 0;
+  const cashEl = document.getElementById('split-cash-input');
+  const remainder = Math.round((total - card) * 100) / 100;
+  cashEl.value = remainder >= 0 ? fmt(remainder) : '0.00';
+  _updateSplitBalance();
+});
+
+document.getElementById('split-reset-btn')?.addEventListener('click', () => {
+  document.getElementById('split-cash-input').value = '';
+  document.getElementById('split-card-input').value = '';
+  _updateSplitBalance();
+  document.getElementById('split-cash-input')?.focus();
+});
 
 // ═══════════════════════════════════════════════════════
 // WEIGHT ENTRY MODAL
@@ -4463,7 +4505,7 @@ async function printReceipt(saleId) {
     const vat    = r.vat_registered ? `\nVAT (${r.vat_rate}%): R${fmt(r.vat_amount)}` : '';
     const vatNum = r.vat_registered && r.vat_number ? `VAT No: ${r.vat_number}\n` : '';
     const content = [
-      r.store_name || '',
+      r.store_name || 'Farm Stall',
       r.store_legal ? `(${r.store_legal})` : '',
       vatNum,
       new Date(r.date_time).toLocaleString('en-ZA'),
@@ -4588,7 +4630,7 @@ document.getElementById('ct-counted-cash')?.addEventListener('input', () => {
   if (!_tillSummary) return;
   const counted  = parseFloat(document.getElementById('ct-counted-cash').value) || 0;
   const float_   = parseFloat(document.getElementById('ct-opening-float').value) || 0;
-  const expected = float_ + _tillSummary.cash_sales;
+  const expected = float_ + _tillSummary.cash_sales - (_tillSummary.cash_refunds || 0);
   const diff     = counted - expected;
   const el       = document.getElementById('ct-over-under');
   if (document.getElementById('ct-counted-cash').value === '') { el.classList.add('hidden'); return; }
@@ -4597,7 +4639,9 @@ document.getElementById('ct-counted-cash')?.addEventListener('input', () => {
   el.textContent = `Expected cash: R${fmt(expected)} | ${diff >= 0 ? 'Over' : 'Short'}: R${fmt(Math.abs(diff))}${Math.abs(diff) < 0.01 ? ' ✓ Balanced' : ''}`;
 });
 
-document.getElementById('btn-close-till-confirm')?.addEventListener('click', async () => {
+document.getElementById('btn-close-till-confirm')?.addEventListener('click', async (ev) => {
+  const btn = ev.currentTarget;
+  if (btn.disabled) return;
   const counted = document.getElementById('ct-counted-cash').value.trim();
   if (!counted) return toast('Enter the counted cash amount', 'warning');
   const payload = {
@@ -4606,13 +4650,14 @@ document.getElementById('btn-close-till-confirm')?.addEventListener('click', asy
     opened_at: _tillSummary?.period_start,
     notes: document.getElementById('ct-notes').value.trim(),
   };
+  btn.disabled = true;
   try {
     const res = await api('/api/till/sessions', { method: 'POST', body: JSON.stringify(payload) });
     const diff = res.over_under;
     const msg  = `Till closed. ${diff >= 0 ? 'Over' : 'Short'} R${fmt(Math.abs(diff))}.`;
     toast(msg, Math.abs(diff) < 0.01 ? 'success' : 'warning', 5000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('closeTillModal')).hide();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) { toast(e.message, 'error'); btn.disabled = false; }
 });
 
 // ═══════════════════════════════════════════════════════
@@ -10165,3 +10210,539 @@ document.getElementById('btn-save-shipping-fees')?.addEventListener('click', asy
     btn.disabled = false;
   }
 });
+
+// ═══════════════════════════════════════════════════════
+// LABEL PRINTING SUBSYSTEM
+// ═══════════════════════════════════════════════════════
+
+const LABELS = {
+  templates: [],
+  printers:  [],
+  _currentProduct: null,
+  _currentTemplateId: null,
+  _designer: {
+    templateId: null,
+    elements: [],
+    selectedIdx: null,
+    widthMm: 40,
+    heightMm: 20,
+    PX_PER_MM: 4,   // canvas display scale (4px = 1mm)
+  },
+};
+
+// ── Data loaders ──────────────────────────────────────────────────────────────
+
+async function loadLabelTemplates() {
+  try {
+    LABELS.templates = await api('/api/label-templates');
+  } catch (e) { LABELS.templates = []; }
+}
+
+async function loadLabelPrinters() {
+  try {
+    LABELS.printers = await api('/api/label-printers');
+  } catch (e) { LABELS.printers = []; }
+}
+
+function _populateTemplateSelect(selectEl, selectedId) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '';
+  if (!LABELS.templates.length) {
+    selectEl.innerHTML = '<option value="">No templates — create one</option>';
+    return;
+  }
+  const cats = { small_barcode: 'Small Barcode', shelf: 'Shelf', sticker: 'Sticker', price_tag: 'Price Tag', custom: 'Custom' };
+  const grouped = {};
+  LABELS.templates.forEach(t => {
+    (grouped[t.category] = grouped[t.category] || []).push(t);
+  });
+  Object.entries(grouped).forEach(([cat, tmpls]) => {
+    const grp = document.createElement('optgroup');
+    grp.label = cats[cat] || cat;
+    tmpls.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = t.id; opt.textContent = `${t.name} (${t.width_mm}×${t.height_mm}mm)`;
+      if (String(t.id) === String(selectedId)) opt.selected = true;
+      grp.appendChild(opt);
+    });
+    selectEl.appendChild(grp);
+  });
+}
+
+function _populatePrinterSelect(selectEl) {
+  if (!selectEl) return;
+  selectEl.innerHTML = '<option value="">Default / Browser Print</option>';
+  LABELS.printers.forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id; opt.textContent = `${p.name} (${p.connection})`;
+    selectEl.appendChild(opt);
+  });
+}
+
+// ── Single-product print modal ────────────────────────────────────────────────
+
+async function openLabelPrintModal(product) {
+  LABELS._currentProduct = product;
+  await loadLabelTemplates();
+  await loadLabelPrinters();
+  document.getElementById('lp-product-name').textContent = product.name;
+  document.getElementById('lp-qty').value = 1;
+  document.getElementById('lp-status').textContent = '';
+  _populateTemplateSelect(document.getElementById('lp-template-select'), LABELS._currentTemplateId);
+  _populatePrinterSelect(document.getElementById('lp-printer-select'));
+  // Auto-preview on template change
+  document.getElementById('lp-template-select').onchange = refreshLabelPreview;
+  const modal = new bootstrap.Modal(document.getElementById('labelPrintModal'));
+  modal.show();
+  if (LABELS.templates.length) refreshLabelPreview();
+}
+
+async function refreshLabelPreview() {
+  const tmplId    = document.getElementById('lp-template-select')?.value;
+  const productId = LABELS._currentProduct?.id;
+  const img       = document.getElementById('lp-preview-img');
+  const ph        = document.getElementById('lp-preview-placeholder');
+  if (!tmplId) { if (img) img.style.display = 'none'; if (ph) ph.style.display = ''; return; }
+  LABELS._currentTemplateId = tmplId;
+  try {
+    const res = await fetch('/api/labels/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: productId, template_id: parseInt(tmplId) }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    if (img) { img.src = url; img.style.display = ''; }
+    if (ph)  ph.style.display = 'none';
+  } catch (e) {
+    if (ph) { ph.textContent = `Preview failed: ${e.message}`; ph.style.display = ''; }
+    if (img) img.style.display = 'none';
+  }
+}
+
+function adjLabelQty(delta) {
+  const el = document.getElementById('lp-qty');
+  if (!el) return;
+  el.value = Math.max(1, Math.min(500, (parseInt(el.value) || 1) + delta));
+}
+function setLabelQty(n) { const el = document.getElementById('lp-qty'); if (el) el.value = n; }
+
+async function executeLabelPrint() {
+  const tmplId    = parseInt(document.getElementById('lp-template-select')?.value);
+  const qty       = parseInt(document.getElementById('lp-qty')?.value) || 1;
+  const printerId = document.getElementById('lp-printer-select')?.value || null;
+  const statusEl  = document.getElementById('lp-status');
+  const productId = LABELS._currentProduct?.id;
+  if (!tmplId)    { toast('Select a template first', 'warning'); return; }
+  if (!productId) { toast('No product selected', 'warning');     return; }
+  const btn = document.getElementById('lp-print-btn');
+  btn.disabled = true; if (statusEl) statusEl.textContent = 'Sending…';
+  try {
+    const result = await api('/api/labels/print', {
+      method: 'POST', body: JSON.stringify({ product_id: productId, template_id: tmplId, qty, printer_id: printerId }),
+    });
+    toast(`${qty} label${qty > 1 ? 's' : ''} sent to printer`, 'success');
+    if (statusEl) statusEl.textContent = `✓ Job #${result.job_id} — ${qty} label${qty > 1 ? 's' : ''}`;
+    bootstrap.Modal.getInstance(document.getElementById('labelPrintModal'))?.hide();
+  } catch (e) {
+    toast(`Print failed: ${e.message}`, 'error');
+    if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Bulk print modal ──────────────────────────────────────────────────────────
+
+async function openBulkLabelModal() {
+  await loadLabelTemplates();
+  await loadLabelPrinters();
+  _populateTemplateSelect(document.getElementById('bulk-template-select'), LABELS._currentTemplateId);
+  _populatePrinterSelect(document.getElementById('bulk-printer-select'));
+  document.getElementById('bulk-status').textContent = '';
+  document.getElementById('bulk-filter').value = '';
+  renderBulkProductList(STATE.products.filter(p => !p.is_archived));
+  new bootstrap.Modal(document.getElementById('bulkLabelModal')).show();
+}
+
+function renderBulkProductList(products) {
+  const wrap = document.getElementById('bulk-product-list');
+  if (!wrap) return;
+  if (!products.length) { wrap.innerHTML = '<div class="text-muted small">No products.</div>'; return; }
+  wrap.innerHTML = products.map(p => `
+    <div class="d-flex align-items-center gap-2 py-1 border-bottom bulk-product-row" data-product-id="${p.id}">
+      <input type="checkbox" class="form-check-input bulk-chk" data-pid="${p.id}">
+      <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+      <span class="text-muted small me-1">${p.price != null ? 'R' + fmt(p.price) : ''}</span>
+      <select class="form-select form-select-sm bulk-row-template" style="width:160px" data-pid="${p.id}"></select>
+      <input type="number" class="form-control form-control-sm bulk-row-qty" data-pid="${p.id}" value="1" min="1" max="500" style="width:60px">
+    </div>
+  `).join('');
+  // Populate per-row template selects
+  wrap.querySelectorAll('.bulk-row-template').forEach(sel => {
+    _populateTemplateSelect(sel, LABELS._currentTemplateId);
+  });
+  _updateBulkCount();
+  wrap.querySelectorAll('.bulk-chk').forEach(chk => chk.addEventListener('change', _updateBulkCount));
+}
+
+function filterBulkProducts() {
+  const q = (document.getElementById('bulk-filter')?.value || '').toLowerCase();
+  const prods = STATE.products.filter(p => !p.is_archived && (!q || p.name.toLowerCase().includes(q)));
+  renderBulkProductList(prods);
+}
+
+function bulkSelectAll() {
+  document.querySelectorAll('.bulk-chk').forEach(c => c.checked = true);
+  _updateBulkCount();
+}
+function bulkSelectNone() {
+  document.querySelectorAll('.bulk-chk').forEach(c => c.checked = false);
+  _updateBulkCount();
+}
+function _updateBulkCount() {
+  const n = document.querySelectorAll('.bulk-chk:checked').length;
+  const el = document.getElementById('bulk-selected-count');
+  if (el) el.textContent = `${n} selected`;
+}
+
+function applyBulkDefaults() {
+  const tmplId = document.getElementById('bulk-template-select')?.value;
+  const qty    = document.getElementById('bulk-default-qty')?.value || 1;
+  document.querySelectorAll('.bulk-row-template').forEach(sel => { if (tmplId) sel.value = tmplId; });
+  document.querySelectorAll('.bulk-row-qty').forEach(inp => inp.value = qty);
+}
+
+async function executeBulkPrint() {
+  const printerId = document.getElementById('bulk-printer-select')?.value || null;
+  const statusEl  = document.getElementById('bulk-status');
+  const items = [];
+  document.querySelectorAll('.bulk-chk:checked').forEach(chk => {
+    const pid    = chk.dataset.pid;
+    const row    = chk.closest('.bulk-product-row');
+    const tmplId = row?.querySelector('.bulk-row-template')?.value;
+    const qty    = parseInt(row?.querySelector('.bulk-row-qty')?.value) || 1;
+    if (pid && tmplId) items.push({ product_id: parseInt(pid), template_id: parseInt(tmplId), qty });
+  });
+  if (!items.length) { toast('Select at least one product with a template', 'warning'); return; }
+  if (statusEl) statusEl.textContent = `Rendering ${items.length} product(s)…`;
+  try {
+    const result = await api('/api/labels/print-bulk', {
+      method: 'POST', body: JSON.stringify({ items, printer_id: printerId }),
+    });
+    toast(`${result.pages} label${result.pages > 1 ? 's' : ''} sent to printer for ${items.length} product(s)`, 'success');
+    bootstrap.Modal.getInstance(document.getElementById('bulkLabelModal'))?.hide();
+  } catch (e) {
+    toast(`Bulk print failed: ${e.message}`, 'error');
+    if (statusEl) statusEl.textContent = `Error: ${e.message}`;
+  }
+}
+
+// ── Browser PDF print (USB / Bluetooth path) ─────────────────────────────────
+
+function _browserPrintPdf(b64) {
+  const bytes  = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+  const blob   = new Blob([bytes], { type: 'application/pdf' });
+  const url    = URL.createObjectURL(blob);
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;border:0';
+  document.body.appendChild(iframe);
+  iframe.src = url;
+  iframe.onload = () => {
+    try { iframe.contentWindow.print(); } catch (e) { window.open(url, '_blank'); }
+    setTimeout(() => { document.body.removeChild(iframe); URL.revokeObjectURL(url); }, 60000);
+  };
+}
+
+// ── Label Designer ────────────────────────────────────────────────────────────
+
+const LD = LABELS._designer;
+const LD_PX = () => LD.PX_PER_MM;  // px/mm
+
+async function openLabelDesigner(existingTemplateId) {
+  await loadLabelTemplates();
+  // Populate preview product list
+  const sel = document.getElementById('ld-preview-product');
+  if (sel) {
+    sel.innerHTML = '<option value="">— none —</option>';
+    STATE.products.filter(p => !p.is_archived).forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.id; opt.textContent = p.name;
+      sel.appendChild(opt);
+    });
+  }
+
+  if (existingTemplateId) {
+    const tmpl = LABELS.templates.find(t => t.id === parseInt(existingTemplateId));
+    if (tmpl) {
+      LD.templateId  = tmpl.id;
+      LD.elements    = JSON.parse(JSON.stringify(tmpl.elements));
+      LD.widthMm     = tmpl.width_mm;
+      LD.heightMm    = tmpl.height_mm;
+      document.getElementById('ld-template-name').value = tmpl.name;
+      document.getElementById('ld-category').value = tmpl.category;
+      document.getElementById('ld-width').value    = tmpl.width_mm;
+      document.getElementById('ld-height').value   = tmpl.height_mm;
+      document.getElementById('ld-border').checked = tmpl.border;
+      document.getElementById('ld-bg-color').value = tmpl.background_color || '#ffffff';
+      document.getElementById('ld-delete-tmpl-btn').style.display = '';
+    }
+  } else {
+    LD.templateId = null; LD.elements = []; LD.selectedIdx = null;
+    LD.widthMm = 40; LD.heightMm = 20;
+    document.getElementById('ld-template-name').value = 'New Template';
+    document.getElementById('ld-category').value      = 'custom';
+    document.getElementById('ld-width').value         = 40;
+    document.getElementById('ld-height').value        = 20;
+    document.getElementById('ld-border').checked      = false;
+    document.getElementById('ld-bg-color').value      = '#ffffff';
+    document.getElementById('ld-delete-tmpl-btn').style.display = 'none';
+  }
+
+  // Wire dimension inputs to re-render canvas
+  ['ld-width', 'ld-height'].forEach(id => {
+    document.getElementById(id).oninput = () => {
+      LD.widthMm  = parseFloat(document.getElementById('ld-width').value)  || 40;
+      LD.heightMm = parseFloat(document.getElementById('ld-height').value) || 20;
+      ldRenderCanvas();
+    };
+  });
+  document.getElementById('ld-bg-color').oninput  = ldRenderCanvas;
+  document.getElementById('ld-border').onchange   = ldRenderCanvas;
+
+  ldRenderCanvas();
+  new bootstrap.Modal(document.getElementById('labelDesignerModal')).show();
+}
+
+function ldAddElement(type) {
+  const defaults = {
+    product_name: { w: 38, h: 6,  font_size: 9,  bold: true  },
+    price:        { w: 20, h: 8,  font_size: 12, bold: true,  align: 'center' },
+    barcode:      { w: 30, h: 12, barcode_format: 'auto' },
+    sku:          { w: 20, h: 4,  font_size: 6  },
+    store_name:   { w: 38, h: 5,  font_size: 7,  align: 'center' },
+    store_logo:   { w: 20, h: 10 },
+    weight:       { w: 20, h: 5,  font_size: 8  },
+    category:     { w: 30, h: 4,  font_size: 6  },
+    custom_text:  { w: 30, h: 5,  font_size: 8,  value: 'Custom text' },
+  };
+  const el = { type, x: 1, y: 1, color: '#000000', ...defaults[type] };
+  LD.elements.push(el);
+  LD.selectedIdx = LD.elements.length - 1;
+  ldRenderCanvas();
+  ldShowProps(LD.selectedIdx);
+  ldRefreshPreview();
+}
+
+function ldRenderCanvas() {
+  const wrap = document.getElementById('ld-canvas-wrap');
+  if (!wrap) return;
+  const W = Math.round(LD.widthMm  * LD_PX());
+  const H = Math.round(LD.heightMm * LD_PX());
+  wrap.style.width  = W + 'px';
+  wrap.style.height = H + 'px';
+  const bg = document.getElementById('ld-bg-color')?.value || '#ffffff';
+  wrap.style.background = bg;
+  const border = document.getElementById('ld-border')?.checked;
+  wrap.style.outline = border ? '2px solid #000' : '1px dashed #ccc';
+
+  // Remove old element divs (keep non-element children)
+  wrap.querySelectorAll('.ld-el').forEach(el => el.remove());
+
+  LD.elements.forEach((el, idx) => {
+    const div = document.createElement('div');
+    div.className = 'ld-el';
+    div.style.cssText = `
+      position:absolute;
+      left:${el.x * LD_PX()}px; top:${el.y * LD_PX()}px;
+      width:${el.w * LD_PX()}px; height:${el.h * LD_PX()}px;
+      border:${idx === LD.selectedIdx ? '2px solid #0d6efd' : '1px dashed #aaa'};
+      background:rgba(255,255,255,0.05);
+      cursor:move; user-select:none; overflow:hidden; box-sizing:border-box;
+      font-size:${Math.max(8, (el.font_size || 9) * LD_PX() * 0.6)}px;
+      font-weight:${el.bold ? 'bold' : 'normal'};
+      color:${el.color || '#000'};
+      display:flex; align-items:center;
+      justify-content:${el.align === 'center' ? 'center' : el.align === 'right' ? 'flex-end' : 'flex-start'};
+      padding:1px 2px;
+    `;
+    div.dataset.idx = idx;
+    const label = { product_name: 'Name', price: 'R0.00', barcode: '▐▌█▌▐▌', sku: 'SKU', store_name: 'Store', store_logo: '🖼', weight: '500g', category: 'Category', custom_text: el.value || 'Text' };
+    div.textContent = label[el.type] || el.type;
+
+    // Drag to reposition
+    div.addEventListener('mousedown', e => { e.stopPropagation(); ldStartDrag(e, idx, div, wrap); });
+    div.addEventListener('click', e => { e.stopPropagation(); LD.selectedIdx = idx; ldRenderCanvas(); ldShowProps(idx); });
+    wrap.appendChild(div);
+  });
+}
+
+function ldStartDrag(e, idx, div, wrap) {
+  LD.selectedIdx = idx; ldRenderCanvas(); ldShowProps(idx);
+  const startX = e.clientX; const startY = e.clientY;
+  const origX  = LD.elements[idx].x; const origY = LD.elements[idx].y;
+  const onMove = ev => {
+    const dx = (ev.clientX - startX) / LD_PX();
+    const dy = (ev.clientY - startY) / LD_PX();
+    LD.elements[idx].x = Math.max(0, Math.round((origX + dx) * 10) / 10);
+    LD.elements[idx].y = Math.max(0, Math.round((origY + dy) * 10) / 10);
+    ldRenderCanvas();
+    ldUpdatePropsPosition(idx);
+  };
+  const onUp = () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); ldRefreshPreview(); };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+function ldShowProps(idx) {
+  const panel = document.getElementById('ld-props-content');
+  if (!panel || idx == null || !LD.elements[idx]) { if (panel) panel.innerHTML = '<span class="text-muted small">Select an element.</span>'; return; }
+  const el = LD.elements[idx];
+  panel.innerHTML = `
+    <div class="mb-2">
+      <label class="form-label mb-1 small">Type</label>
+      <div class="fw-semibold small">${el.type}</div>
+    </div>
+    <div class="mb-2 row g-1">
+      <div class="col-6"><label class="form-label mb-1 small">X (mm)</label><input id="ld-prop-x" type="number" class="form-control form-control-sm" value="${el.x}" step="0.5" oninput="ldUpdateProp('x',+this.value)"></div>
+      <div class="col-6"><label class="form-label mb-1 small">Y (mm)</label><input id="ld-prop-y" type="number" class="form-control form-control-sm" value="${el.y}" step="0.5" oninput="ldUpdateProp('y',+this.value)"></div>
+      <div class="col-6"><label class="form-label mb-1 small">W (mm)</label><input id="ld-prop-w" type="number" class="form-control form-control-sm" value="${el.w}" step="0.5" min="2" oninput="ldUpdateProp('w',+this.value)"></div>
+      <div class="col-6"><label class="form-label mb-1 small">H (mm)</label><input id="ld-prop-h" type="number" class="form-control form-control-sm" value="${el.h}" step="0.5" min="2" oninput="ldUpdateProp('h',+this.value)"></div>
+    </div>
+    ${el.type !== 'barcode' && el.type !== 'store_logo' ? `
+    <div class="mb-2">
+      <label class="form-label mb-1 small">Font size</label>
+      <input type="number" class="form-control form-control-sm" value="${el.font_size || 9}" min="5" max="48" oninput="ldUpdateProp('font_size',+this.value)">
+    </div>
+    <div class="mb-2 d-flex gap-2 align-items-center">
+      <div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="ld-prop-bold" ${el.bold ? 'checked' : ''} onchange="ldUpdateProp('bold',this.checked)"><label class="form-check-label small" for="ld-prop-bold">Bold</label></div>
+      <select class="form-select form-select-sm" oninput="ldUpdateProp('align',this.value)">
+        <option value="left" ${el.align==='left'||!el.align?'selected':''}>Left</option>
+        <option value="center" ${el.align==='center'?'selected':''}>Center</option>
+        <option value="right"  ${el.align==='right' ?'selected':''}>Right</option>
+      </select>
+    </div>
+    <div class="mb-2">
+      <label class="form-label mb-1 small">Colour</label>
+      <input type="color" class="form-control form-control-color form-control-sm" value="${el.color||'#000000'}" oninput="ldUpdateProp('color',this.value)">
+    </div>
+    ` : ''}
+    ${el.type === 'barcode' ? `
+    <div class="mb-2">
+      <label class="form-label mb-1 small">Format</label>
+      <select class="form-select form-select-sm" oninput="ldUpdateProp('barcode_format',this.value)">
+        <option value="auto"    ${el.barcode_format==='auto'   ||!el.barcode_format?'selected':''}>Auto</option>
+        <option value="code128" ${el.barcode_format==='code128'?'selected':''}>Code128</option>
+        <option value="ean13"   ${el.barcode_format==='ean13'  ?'selected':''}>EAN-13</option>
+        <option value="code39"  ${el.barcode_format==='code39' ?'selected':''}>Code39</option>
+        <option value="qrcode"  ${el.barcode_format==='qrcode' ?'selected':''}>QR Code</option>
+      </select>
+    </div>
+    ` : ''}
+    ${el.type === 'custom_text' ? `
+    <div class="mb-2">
+      <label class="form-label mb-1 small">Text value</label>
+      <input type="text" class="form-control form-control-sm" value="${escapeHtml(el.value||'')}" oninput="ldUpdateProp('value',this.value)">
+    </div>
+    ` : ''}
+    <button class="btn btn-outline-danger btn-sm w-100 mt-2" onclick="ldRemoveElement(${idx})">Remove Element</button>
+  `;
+}
+
+function ldUpdateProp(key, value) {
+  if (LD.selectedIdx == null || !LD.elements[LD.selectedIdx]) return;
+  LD.elements[LD.selectedIdx][key] = value;
+  ldRenderCanvas();
+  setTimeout(ldRefreshPreview, 400);
+}
+
+function ldUpdatePropsPosition(idx) {
+  const xEl = document.getElementById('ld-prop-x');
+  const yEl = document.getElementById('ld-prop-y');
+  if (xEl) xEl.value = LD.elements[idx].x;
+  if (yEl) yEl.value = LD.elements[idx].y;
+}
+
+function ldRemoveElement(idx) {
+  LD.elements.splice(idx, 1);
+  LD.selectedIdx = null;
+  ldRenderCanvas();
+  const panel = document.getElementById('ld-props-content');
+  if (panel) panel.innerHTML = '<span class="text-muted small">Select an element.</span>';
+  ldRefreshPreview();
+}
+
+async function ldRefreshPreview() {
+  const productId = document.getElementById('ld-preview-product')?.value || null;
+  const template  = {
+    width_mm: parseFloat(document.getElementById('ld-width')?.value) || LD.widthMm,
+    height_mm: parseFloat(document.getElementById('ld-height')?.value) || LD.heightMm,
+    elements: LD.elements,
+    background_color: document.getElementById('ld-bg-color')?.value || '#ffffff',
+    border: document.getElementById('ld-border')?.checked || false,
+  };
+  const img = document.getElementById('ld-preview-img');
+  const ph  = document.getElementById('ld-preview-ph');
+  try {
+    const res = await fetch('/api/labels/preview', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ product_id: productId ? parseInt(productId) : null, template }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    if (img) { img.src = URL.createObjectURL(blob); img.style.display = ''; }
+    if (ph)  ph.style.display = 'none';
+  } catch (e) {
+    if (ph) { ph.textContent = e.message; ph.style.display = ''; }
+    if (img) img.style.display = 'none';
+  }
+}
+
+async function ldSaveTemplate(andPrint) {
+  const name = document.getElementById('ld-template-name')?.value.trim();
+  if (!name) { toast('Enter a template name', 'warning'); return; }
+  const body = {
+    name,
+    description: '',
+    width_mm:   parseFloat(document.getElementById('ld-width')?.value)  || LD.widthMm,
+    height_mm:  parseFloat(document.getElementById('ld-height')?.value) || LD.heightMm,
+    category:   document.getElementById('ld-category')?.value || 'custom',
+    elements:   LD.elements,
+    background_color: document.getElementById('ld-bg-color')?.value || '#ffffff',
+    border:     document.getElementById('ld-border')?.checked || false,
+  };
+  try {
+    let saved;
+    if (LD.templateId) {
+      saved = await api(`/api/label-templates/${LD.templateId}`, { method: 'PUT', body: JSON.stringify(body) });
+    } else {
+      saved = await api('/api/label-templates', { method: 'POST', body: JSON.stringify(body) });
+      LD.templateId = saved.id;
+    }
+    LABELS._currentTemplateId = saved.id;
+    await loadLabelTemplates();
+    toast(`Template "${name}" saved`, 'success');
+    if (andPrint && LABELS._currentProduct) {
+      bootstrap.Modal.getInstance(document.getElementById('labelDesignerModal'))?.hide();
+      await openLabelPrintModal(LABELS._currentProduct);
+    }
+  } catch (e) { toast(`Save failed: ${e.message}`, 'error'); }
+}
+
+async function ldDeleteTemplate() {
+  if (!LD.templateId || !confirm('Delete this template?')) return;
+  try {
+    await api(`/api/label-templates/${LD.templateId}`, { method: 'DELETE' });
+    toast('Template deleted', 'success');
+    bootstrap.Modal.getInstance(document.getElementById('labelDesignerModal'))?.hide();
+    await loadLabelTemplates();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Show bulk print button when on products tab (all roles)
+document.addEventListener('shown.bs.tab', e => {
+  const tabId = e.target?.getAttribute('data-bs-target') || e.target?.href?.split('#')[1];
+  const bulkBtn = document.getElementById('btn-bulk-print-labels');
+  if (bulkBtn) bulkBtn.classList.toggle('hidden', tabId !== '#products');
+});
+

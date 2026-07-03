@@ -243,8 +243,14 @@ def api_stock_adjustment_edit(adj_id):
         adj.cost_written_off = Decimal(str(adj.cost_written_off or 0)) + Decimal(str(extra_cost))
     elif diff < 0:
         restore_qty = abs(diff)
-        batch = StockBatch.query.filter_by(product_id=p.id).order_by(StockBatch.purchased_at.desc()).first()
-        if batch: batch.qty_remaining_base = float(Decimal(str(batch.qty_remaining_base)) + restore_qty)
+        # Restore to oldest batch (FIFO ascending) — the batch that consume_fifo took from.
+        batch = StockBatch.query.filter_by(product_id=p.id).filter(
+            StockBatch.qty_remaining_base > 0
+        ).order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc()).first()
+        if not batch:
+            # All batches exhausted — fall back to most-recent to avoid losing the qty
+            batch = StockBatch.query.filter_by(product_id=p.id).order_by(StockBatch.purchased_at.desc()).first()
+        if batch: batch.qty_remaining_base = Decimal(str(batch.qty_remaining_base)) + restore_qty
         if old_qty_base > 0: adj.cost_written_off = Decimal(str(adj.cost_written_off or 0)) * (new_qty_base / old_qty_base)
     adj.qty_change_base = -new_qty_base
     adj.reason = new_reason
