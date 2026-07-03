@@ -45,7 +45,10 @@ services:
       # Per-store logo overrides the image default (falls back to shipped logo if absent).
       - ./store/logo.svg:/app/static/logo.svg:ro
     ports:
-      - "5000:5000"
+      # Bind to all interfaces so the LAN health-check and browser access work.
+      # Docker bypasses ufw — on a public-IP box add a firewall rule externally
+      # or change this to "127.0.0.1:5000:5000" for Tailscale-only access.
+      - "0.0.0.0:5000:5000"
     networks: [farmpos_network]
 
   # Web shop - only included when web_shop.enabled=true in store.yml.

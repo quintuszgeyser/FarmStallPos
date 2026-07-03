@@ -82,7 +82,7 @@ WEB_DOMAIN="$(yaml_get "$STORE_YML" web_shop.domain)"
 PAYFAST_MERCHANT_ID="$(yaml_get "$STORE_YML" web_shop.payfast_merchant_id)"
 PAYFAST_MERCHANT_KEY="$(yaml_get "$STORE_YML" web_shop.payfast_merchant_key)"
 PAYFAST_PASSPHRASE="$(yaml_get "$STORE_YML" web_shop.payfast_passphrase)"
-PAYFAST_SANDBOX="$(yaml_or "$STORE_YML" web_shop.payfast_sandbox 'true')"
+PAYFAST_SANDBOX="$(yaml_or "$STORE_YML" web_shop.payfast_sandbox 'true' | tr '[:upper:]' '[:lower:]')"
 c_green "Store: $STORE_NAME ($STORE_ID)  image: $POS_IMAGE  scale: ${SCALE_IP:-<none>}  web: ${WEB_ENABLED:-false}"
 
 # --- 2. Secrets (generate once; never regenerate on re-run) ----------------------
@@ -129,12 +129,17 @@ if [ "$TS_ENABLED" = "True" ] || [ "$TS_ENABLED" = "true" ]; then
   if ! tailscale status >/dev/null 2>&1 || tailscale status | grep -q 'not logged in'; then
     if [ -n "$TS_AUTH_KEY" ]; then
       c_bold "Joining Tailscale network as farmpos-${STORE_ID}..."
-      tailscale up --authkey "$TS_AUTH_KEY" --hostname "farmpos-${STORE_ID}" --accept-routes
-      c_green "Tailscale: connected as farmpos-${STORE_ID}"
-      tailscale ip -4 2>/dev/null | xargs -I{} c_green "Tailscale IP: {}"
+      if tailscale up --authkey "$TS_AUTH_KEY" --hostname "farmpos-${STORE_ID}" --accept-routes; then
+        c_green "Tailscale: connected as farmpos-${STORE_ID}"
+        tailscale ip -4 2>/dev/null | xargs -I{} c_green "Tailscale IP: {}"
+      else
+        c_red "WARN: tailscale up failed — the auth key may have already been used (it is single-use)."
+        c_red "      Re-run the 'Onboard New Store' GitHub Actions workflow to generate a fresh key,"
+        c_red "      then re-run: FARMPOS_HOME=$FARMPOS_HOME bash $HERE/register-store.sh"
+      fi
     else
       c_red "WARN: tailscale.enabled=true but no auth_key in store.yml - skipping Tailscale join."
-      c_red "      Get a key from tailscale.com/admin/settings/keys and re-run register-store.sh."
+      c_red "      Re-run the 'Onboard New Store' GitHub Actions workflow to get an auth key."
     fi
   else
     c_green "Tailscale already connected - skipping join."
@@ -168,7 +173,7 @@ fi
 cd "$FARMPOS_HOME"
 c_bold "Pulling pinned image + starting stack..."
 if [ "$WEB_ENABLED" = "True" ] || [ "$WEB_ENABLED" = "true" ]; then
-  docker compose pull
+  docker compose --profile web pull
   docker compose --profile web up -d
 else
   docker compose pull pos postgres

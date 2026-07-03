@@ -270,7 +270,9 @@ jobs:
 
           ════════════════════════════════════════════════════════════
            Secrets passed via env vars — NOT in bash history or ps.
-           Tailscale key is single-use and expires in 90 days.
+           ⚠  This command is ONE-TIME USE — the Tailscale key is
+              consumed on first join. If the box needs to be wiped
+              and re-provisioned, run this workflow again.
 
            After install, all future access via your SSH key:
              ssh root@<tailscale-ip>   (anywhere via Tailscale)

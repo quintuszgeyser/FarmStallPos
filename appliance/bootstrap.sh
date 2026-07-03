@@ -83,6 +83,14 @@ fi
 
 apt-get install -y -qq git gettext-base python3-yaml age openssl curl rclone screen
 
+# age 1.2.0+ removed age-keygen as a standalone binary; shim it so register-store.sh
+# finds it regardless of which package version is installed
+if ! command -v age-keygen >/dev/null 2>&1 && command -v age >/dev/null 2>&1; then
+  printf '#!/bin/bash\nexec age keygen "$@"\n' > /usr/local/bin/age-keygen
+  chmod +x /usr/local/bin/age-keygen
+  echo "  age-keygen: shimmed from 'age keygen'"
+fi
+
 echo "  age:     $(age --version)"
 echo "  rclone:  $(rclone --version 2>/dev/null | head -1)"
 python3 -c "import yaml; print('  python3-yaml: ok')"
@@ -167,6 +175,8 @@ fi
 c_bold "Step 7/10 — Logging in to GHCR..."
 echo "$GHCR_PAT" | docker login ghcr.io -u quintuszgeyser --password-stdin
 unset GHCR_PAT
+# Lock down the docker credential file (base64-encoded PAT, root-only)
+chmod 600 /root/.docker/config.json 2>/dev/null || true
 c_green "  GHCR login OK"
 
 # ── Step 8 — Install Tailscale ────────────────────────────────────────────────
