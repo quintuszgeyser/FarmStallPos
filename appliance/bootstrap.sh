@@ -12,8 +12,9 @@
 #   FARMPOS_SSH_PUBKEY    — base64-encoded operator SSH public key
 #   FARMPOS_VERSION       — image version tag (e.g. v2.2.0)
 #
-# The box needs only OUTBOUND internet. No inbound SSH from GitHub.
-# Idempotent: safe to re-run if interrupted.
+# Idempotent: safe to re-run if interrupted. If the session was lost mid-run,
+# save secrets to a tempfile and re-source them:
+#   sudo bash -c 'echo "<INNER_B64>" | base64 -d > /tmp/farmpos-resume.sh && bash /tmp/farmpos-resume.sh'
 set -euo pipefail
 
 # ── Root guard ────────────────────────────────────────────────────────────────
@@ -38,11 +39,11 @@ GHCR_PAT_B64="${FARMPOS_GHCR_PAT_B64:-}"
 SSH_PUBKEY_B64="${FARMPOS_SSH_PUBKEY:-}"
 VERSION="${FARMPOS_VERSION:-}"
 
-[ -n "$STORE_YML_B64" ] || die "FARMPOS_STORE_YML not set"
-[ -n "$GHCR_PAT_B64" ]  || die "FARMPOS_GHCR_PAT_B64 not set"
-[ -n "$VERSION" ]       || die "FARMPOS_VERSION not set"
+[ -n "$STORE_YML_B64" ] || die "FARMPOS_STORE_YML not set — re-paste the full bootstrap command"
+[ -n "$GHCR_PAT_B64" ]  || die "FARMPOS_GHCR_PAT_B64 not set — re-paste the full bootstrap command"
+[ -n "$VERSION" ]       || die "FARMPOS_VERSION not set — re-paste the full bootstrap command"
 
-# Decode PAT once, then clear the env var
+# Decode PAT immediately, clear the encoded form
 GHCR_PAT=$(echo "$GHCR_PAT_B64" | base64 -d)
 unset FARMPOS_GHCR_PAT_B64 GHCR_PAT_B64
 
@@ -51,8 +52,25 @@ echo "  Version:  $VERSION"
 echo "  Home:     $FARMPOS_HOME"
 echo ""
 
-# ── Step 1 — Install system dependencies ─────────────────────────────────────
-c_bold "Step 1/9 — Installing system dependencies..."
+# ── Step 1 — Swap file (prevent OOM during image pull on low-RAM boxes) ───────
+c_bold "Step 1/10 — Checking swap..."
+TOTAL_RAM_MB=$(awk '/MemTotal/ {printf "%d", $2/1024}' /proc/meminfo)
+if [ "$(swapon --show | wc -l)" -le 1 ] && [ "$TOTAL_RAM_MB" -lt 4096 ]; then
+  c_bold "  RAM: ${TOTAL_RAM_MB}MB — creating 2GB swap file..."
+  if [ ! -f /swapfile ]; then
+    fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048 status=none
+    chmod 600 /swapfile
+    mkswap /swapfile -q
+  fi
+  swapon /swapfile 2>/dev/null || true
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  c_green "  Swap: $(free -h | awk '/Swap/ {print $2}')"
+else
+  c_green "  Swap OK (RAM: ${TOTAL_RAM_MB}MB, swap: $(free -h | awk '/Swap/ {print $2}'))"
+fi
+
+# ── Step 2 — Install system dependencies ─────────────────────────────────────
+c_bold "Step 2/10 — Installing system dependencies..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 
@@ -63,15 +81,15 @@ else
   echo "  Docker: $(docker --version)"
 fi
 
-apt-get install -y -qq git gettext-base python3-yaml age openssl curl rclone
+apt-get install -y -qq git gettext-base python3-yaml age openssl curl rclone screen
 
 echo "  age:     $(age --version)"
 echo "  rclone:  $(rclone --version 2>/dev/null | head -1)"
 python3 -c "import yaml; print('  python3-yaml: ok')"
 c_green "  Dependencies ready"
 
-# ── Step 2 — Download appliance scripts from GitHub ──────────────────────────
-c_bold "Step 2/9 — Downloading appliance scripts..."
+# ── Step 3 — Download appliance scripts from GitHub ──────────────────────────
+c_bold "Step 3/10 — Downloading appliance scripts..."
 mkdir -p "$APPLIANCE_DIR/lib" "$APPLIANCE_DIR/postgres-init" \
          "$FARMPOS_HOME/data/branding" "$FARMPOS_HOME/store" \
          "$SECRETS_DIR"
@@ -81,30 +99,29 @@ for f in register-store.sh update.sh backup.sh restore.sh fleet-status.sh; do
   curl -fsSL "$RAW/$f" -o "$APPLIANCE_DIR/$f"
   chmod +x "$APPLIANCE_DIR/$f"
 done
-curl -fsSL "$RAW/lib/common.sh"              -o "$APPLIANCE_DIR/lib/common.sh"
-curl -fsSL "$RAW/env.template"               -o "$APPLIANCE_DIR/env.template"
-curl -fsSL "$RAW/compose.template.yml"       -o "$APPLIANCE_DIR/compose.template.yml"
-curl -fsSL "$RAW/postgres-init/01-create-db.sh" \
-           -o "$APPLIANCE_DIR/postgres-init/01-create-db.sh"
+curl -fsSL "$RAW/lib/common.sh"                 -o "$APPLIANCE_DIR/lib/common.sh"
+curl -fsSL "$RAW/env.template"                  -o "$APPLIANCE_DIR/env.template"
+curl -fsSL "$RAW/compose.template.yml"          -o "$APPLIANCE_DIR/compose.template.yml"
+curl -fsSL "$RAW/postgres-init/01-create-db.sh" -o "$APPLIANCE_DIR/postgres-init/01-create-db.sh"
 chmod +x "$APPLIANCE_DIR/postgres-init/01-create-db.sh"
 
-# Ensure Unix line endings (safety net for any Windows-edited files)
+# Strip Windows line endings (safety net)
 for f in "$APPLIANCE_DIR"/*.sh "$APPLIANCE_DIR/lib/common.sh"; do
   sed -i 's/\r//' "$f" 2>/dev/null || true
 done
 
 c_green "  Scripts ready"
 
-# ── Step 3 — Write store.yml ──────────────────────────────────────────────────
-c_bold "Step 3/9 — Writing store.yml..."
+# ── Step 4 — Write store.yml ──────────────────────────────────────────────────
+c_bold "Step 4/10 — Writing store.yml..."
 echo "$STORE_YML_B64" | base64 -d > "$FARMPOS_HOME/store.yml"
 unset FARMPOS_STORE_YML STORE_YML_B64
 STORE_ID=$(python3 -c "import yaml; print(yaml.safe_load(open('$FARMPOS_HOME/store.yml'))['store_id'])")
 STORE_NAME=$(python3 -c "import yaml; print(yaml.safe_load(open('$FARMPOS_HOME/store.yml'))['store_name'])")
 c_green "  store_id: $STORE_ID  name: $STORE_NAME"
 
-# ── Step 4 — Deploy support age public key ────────────────────────────────────
-c_bold "Step 4/9 — Deploying support age public key..."
+# ── Step 5 — Deploy support age public key ────────────────────────────────────
+c_bold "Step 5/10 — Deploying support age public key..."
 if [ -n "$SUPPORT_PUB_B64" ]; then
   echo "$SUPPORT_PUB_B64" | base64 -d > "$APPLIANCE_DIR/support_age.pub"
   unset FARMPOS_SUPPORT_PUB SUPPORT_PUB_B64
@@ -113,8 +130,8 @@ else
   c_red "  WARN: no support_age.pub — central backup restore will NOT work"
 fi
 
-# ── Step 5 — Install operator SSH public key ──────────────────────────────────
-c_bold "Step 5/9 — Installing operator SSH public key..."
+# ── Step 6 — Install operator SSH public key + harden SSH ────────────────────
+c_bold "Step 6/10 — Hardening SSH..."
 if [ -n "$SSH_PUBKEY_B64" ]; then
   PUBKEY=$(echo "$SSH_PUBKEY_B64" | base64 -d)
   unset FARMPOS_SSH_PUBKEY SSH_PUBKEY_B64
@@ -124,37 +141,49 @@ if [ -n "$SSH_PUBKEY_B64" ]; then
   chmod 600 /root/.ssh/authorized_keys
   if ! grep -qF "$PUBKEY" /root/.ssh/authorized_keys 2>/dev/null; then
     echo "$PUBKEY" >> /root/.ssh/authorized_keys
-    c_green "  SSH public key added to root's authorized_keys"
+    c_green "  Operator SSH key added"
   else
-    c_green "  SSH public key already present (skipped)"
+    c_green "  Operator SSH key already present (skipped)"
   fi
-  sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
-  systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
 else
-  c_red "  WARN: no SSH public key — you will only be able to SSH with a password"
+  c_red "  WARN: no SSH public key — password SSH will remain enabled"
 fi
 
-# ── Step 6 — Log in to GHCR ───────────────────────────────────────────────────
-c_bold "Step 6/9 — Logging in to GHCR..."
+# Harden sshd: enable pubkey auth, disable password auth (safe only after key installed)
+SSHD_CFG=/etc/ssh/sshd_config
+if [ -s /root/.ssh/authorized_keys ]; then
+  sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/'   "$SSHD_CFG"
+  sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CFG"
+  # Ensure the directives exist if sed matched nothing (fresh minimal image)
+  grep -q '^PubkeyAuthentication'   "$SSHD_CFG" || echo 'PubkeyAuthentication yes'   >> "$SSHD_CFG"
+  grep -q '^PasswordAuthentication' "$SSHD_CFG" || echo 'PasswordAuthentication no'  >> "$SSHD_CFG"
+  systemctl reload sshd 2>/dev/null || service ssh reload 2>/dev/null || true
+  c_green "  SSH hardened: PubkeyAuthentication yes, PasswordAuthentication no"
+else
+  c_red "  WARN: no authorized_keys — leaving PasswordAuthentication enabled"
+fi
+
+# ── Step 7 — Log in to GHCR ───────────────────────────────────────────────────
+c_bold "Step 7/10 — Logging in to GHCR..."
 echo "$GHCR_PAT" | docker login ghcr.io -u quintuszgeyser --password-stdin
 unset GHCR_PAT
 c_green "  GHCR login OK"
 
-# ── Step 7 — Install Tailscale ────────────────────────────────────────────────
-c_bold "Step 7/9 — Installing Tailscale..."
+# ── Step 8 — Install Tailscale ────────────────────────────────────────────────
+c_bold "Step 8/10 — Installing Tailscale..."
 if ! command -v tailscale >/dev/null 2>&1; then
   curl -fsSL https://tailscale.com/install.sh | sh
 else
-  echo "  Tailscale already installed"
+  echo "  Tailscale already installed: $(tailscale --version | head -1)"
 fi
 c_green "  Tailscale ready"
 
-# ── Step 8 — Run register-store.sh ───────────────────────────────────────────
-c_bold "Step 8/9 — Running register-store.sh..."
+# ── Step 9 — Run register-store.sh ───────────────────────────────────────────
+c_bold "Step 9/10 — Running register-store.sh..."
 FARMPOS_HOME="$FARMPOS_HOME" bash "$APPLIANCE_DIR/register-store.sh"
 
-# ── Step 9 — Handover checks ──────────────────────────────────────────────────
-c_bold "Step 9/9 — Running handover checks..."
+# ── Step 10 — Handover checks ─────────────────────────────────────────────────
+c_bold "Step 10/10 — Running handover checks..."
 . "$APPLIANCE_DIR/lib/common.sh"
 
 PASS=0; FAIL=0
@@ -187,6 +216,8 @@ check "Tailscale connected" \
   "tailscale status 2>/dev/null | grep -v 'not logged in' | grep -q 'farmpos-'"
 check "Operator SSH key installed" \
   "test -s /root/.ssh/authorized_keys"
+check "Password SSH disabled" \
+  "grep -q '^PasswordAuthentication no' /etc/ssh/sshd_config"
 check "rclone available" \
   "command -v rclone"
 
@@ -218,9 +249,17 @@ FARMPOS_HOME="$FARMPOS_HOME" bash "$APPLIANCE_DIR/backup.sh" && \
   c_red   "  WARN: first backup failed — run backup.sh manually"
 
 # ── Ready banner ──────────────────────────────────────────────────────────────
-LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
-TS_IP="$(tailscale ip -4 2>/dev/null || echo 'pending — check tailscale status')"
-ADMIN_PASS="$(cat "$SECRETS_DIR/admin_pass" 2>/dev/null || echo 'see /opt/farmpos/secrets/admin_pass')"
+# Pick the LAN IP — prefer the first non-Docker, non-loopback IPv4 address
+LAN_IP=$(ip -4 addr show scope global | \
+  awk '/inet / {print $2}' | \
+  cut -d/ -f1 | \
+  grep -v '^172\.' | \
+  grep -v '^10\.255\.' | \
+  head -1)
+LAN_IP="${LAN_IP:-$(hostname -I 2>/dev/null | awk '{print $1}')}"
+
+TS_IP="$(tailscale ip -4 2>/dev/null || echo 'pending — check: tailscale status')"
+ADMIN_PASS="$(cat "$SECRETS_DIR/admin_pass" 2>/dev/null || echo "see $SECRETS_DIR/admin_pass")"
 
 echo ""
 c_green "════════════════════════════════════════════════════════"

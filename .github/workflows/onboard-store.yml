@@ -98,8 +98,9 @@ jobs:
           echo "Resolved store_id: '$STORE_ID'"
 
       # ── 3. Generate a one-time ephemeral Tailscale auth key for this store ─
-      # A per-store ephemeral key (expires after first use / 90 days) means a
-      # compromised box cannot register additional rogue devices onto the tailnet.
+      # Per-store ephemeral + preauthorized key (no tags — avoids ACL tag
+      # pre-creation requirement). Single-use, 90-day TTL. A compromised box
+      # cannot register rogue devices since the key is already consumed.
       - name: Generate ephemeral Tailscale auth key
         id: tskey
         env:
@@ -115,9 +116,8 @@ jobs:
                 \"devices\": {
                   \"create\": {
                     \"reusable\": false,
-                    \"ephemeral\": false,
-                    \"preauthorized\": true,
-                    \"tags\": [\"tag:farmpos\"]
+                    \"ephemeral\": true,
+                    \"preauthorized\": true
                   }
                 }
               },
@@ -128,11 +128,11 @@ jobs:
 
           TS_AUTH_KEY=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['key'])" 2>/dev/null || true)
           if [ -z "$TS_AUTH_KEY" ]; then
-            echo "::error::Failed to generate Tailscale auth key. Check TAILSCALE_API_KEY and TAILSCALE_TAILNET secrets."
+            echo "::error::Failed to generate Tailscale auth key."
+            echo "::error::Check: TAILSCALE_API_KEY valid? TAILSCALE_TAILNET='${TS_TAILNET}' correct?"
             echo "API response: $RESPONSE"
             exit 1
           fi
-          # Mask the key so it never appears in plain text in logs
           echo "::add-mask::$TS_AUTH_KEY"
           echo "ts_auth_key=$TS_AUTH_KEY" >> "$GITHUB_OUTPUT"
           echo "✅ Ephemeral Tailscale auth key generated for farmpos-${STORE_ID}"
@@ -174,7 +174,7 @@ jobs:
               'payfast_merchant_id':  '',
               'payfast_merchant_key': '',
               'payfast_passphrase':   '',
-              'payfast_sandbox':      True,   # operator sets False when going live
+              'payfast_sandbox':      'true',  # lowercase string — yaml_or reads it as-is
             },
             'backup':    {'target': '', 'time': '02:00'},
             'tailscale': {'enabled': True, 'auth_key': ts_key},
@@ -254,22 +254,26 @@ jobs:
 
           ════════════════════════════════════════════════════════════
            STORE: ${STORE_ID}  (${STORE_VER})
-
-           INITIAL ACCESS: SSH into the box using the password you
-           set during Ubuntu installation, then paste this command.
-           After install, all access is via your SSH key over Tailscale.
-
-           Paste this ONE command on the target box:
           ════════════════════════════════════════════════════════════
+
+           STEP 1 — Get a shell on the box:
+             Ubuntu Server: ssh <installer-user>@<lan-ip>  (password you set during install)
+             Cloud image:   use cloud provider's serial/console access
+
+           STEP 2 — Start a screen session so the install survives disconnects:
+             screen -S farmpos
+             (if disconnected: screen -r farmpos to reconnect)
+
+           STEP 3 — Paste this ONE command (takes ~5-10 min):
 
           sudo bash -c 'echo "${INNER_B64}" | base64 -d | bash'
 
           ════════════════════════════════════════════════════════════
-           Secrets are passed via environment variables, not process
-           arguments — they will NOT appear in bash history or ps.
+           Secrets passed via env vars — NOT in bash history or ps.
+           Tailscale key is single-use and expires in 90 days.
 
-           After install, connect via:
-             ssh root@<tailscale-ip>   (from anywhere via Tailscale)
+           After install, all future access via your SSH key:
+             ssh root@<tailscale-ip>   (anywhere via Tailscale)
              ssh root@<lan-ip>         (LAN only)
           ════════════════════════════════════════════════════════════
 
