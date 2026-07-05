@@ -5691,6 +5691,8 @@ document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStat
 document.getElementById('stats-product-filter')?.addEventListener('change', loadStats);
 document.getElementById('stats-start')?.addEventListener('change', loadStats);
 document.getElementById('stats-end')?.addEventListener('change', loadStats);
+document.getElementById('stats-start')?.addEventListener('input', loadStats);
+document.getElementById('stats-end')?.addEventListener('input', loadStats);
 _initStatsPresets();
 
 // ── Exports - all use the active stats filters ──
