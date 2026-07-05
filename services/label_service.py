@@ -531,7 +531,7 @@ def _hex_to_rgb(hex_color: str):
 def _resolve_logo(logo_file: str) -> Optional[str]:
     if not logo_file:
         return None
-    base = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data', 'branding')
+    base = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'static', 'branding')
     path = os.path.join(base, logo_file)
     return path if os.path.exists(path) else None
 

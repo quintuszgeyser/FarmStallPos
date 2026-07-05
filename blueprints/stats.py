@@ -63,9 +63,11 @@ def api_stats():
     try: user_id_filter = int(request.args.get('user_id')) if request.args.get('user_id') else None
     except (ValueError, TypeError): user_id_filter = None
 
-    sale_q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, Sale.payment_method != 'return')
+    not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+    sale_q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, not_return)
     if product_id_filter:
-        sale_ids_with_product = {r.sale_id for r in db.session.query(Sale.sale_id).filter(Sale.product_id == product_id_filter, Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, Sale.payment_method != 'return').all()}
+        not_return2 = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+        sale_ids_with_product = {r.sale_id for r in db.session.query(Sale.sale_id).filter(Sale.product_id == product_id_filter, Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, not_return2).all()}
         sale_q = sale_q.filter(Sale.product_id == product_id_filter, Sale.sale_id.in_(sale_ids_with_product))
     if user_id_filter:
         sale_ids_by_user = {r.sale_id for r in db.session.query(Sale.sale_id).filter(Sale.user_id == user_id_filter, Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False).all()}
