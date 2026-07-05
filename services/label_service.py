@@ -152,7 +152,7 @@ class LabelRenderService:
             if logo_path and os.path.exists(logo_path):
                 try:
                     logo = Image.open(logo_path).convert('RGBA')
-                    logo.thumbnail((ew, eh), Image.LANCZOS)
+                    logo.thumbnail((ew, eh), Image.Resampling.LANCZOS)
                     img.paste(logo, (ex, ey), logo)
                 except Exception as e:
                     log.debug('Logo paste failed: %s', e)
@@ -213,7 +213,7 @@ class LabelRenderService:
             qr.add_data(value)
             qr.make(fit=True)
             qr_img = qr.make_image(fill_color='black', back_color='white').convert('RGB')
-            return qr_img.resize((w_px, h_px), Image.LANCZOS)
+            return qr_img.resize((w_px, h_px), Image.Resampling.LANCZOS)
 
         if not _BARCODE_OK:
             return None
@@ -233,7 +233,7 @@ class LabelRenderService:
             BC(value, writer=writer).write(buf, options=opts)
             buf.seek(0)
             hi_res = Image.open(buf).convert('RGB')
-            return hi_res.resize((w_px, h_px), Image.LANCZOS)
+            return hi_res.resize((w_px, h_px), Image.Resampling.LANCZOS)
         except Exception as e:
             log.debug('Barcode render failed (%s %s): %s', fmt, value, e)
             return None
