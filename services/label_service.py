@@ -81,11 +81,14 @@ class LabelRenderService:
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def render_png(self, template: dict, product=None) -> bytes:
-        """Return PNG bytes — browser preview at 203 DPI (same image that goes to printer)."""
+    def render_png(self, template: dict, product=None, dpr: int = 1) -> bytes:
+        """Return PNG bytes sized for the screen's physical pixel density (dpr=1..3)."""
         img = self.render_image(template, product)
+        if dpr > 1:
+            w, h = img.size
+            img  = img.resize((w * dpr, h * dpr), Image.Resampling.LANCZOS)
         buf = io.BytesIO()
-        img.save(buf, format='PNG', dpi=(self.RENDER_DPI, self.RENDER_DPI))
+        img.save(buf, format='PNG', dpi=(self.RENDER_DPI * dpr, self.RENDER_DPI * dpr))
         return buf.getvalue()
 
     def render_image(self, template: dict, product=None) -> 'Image':

@@ -2889,7 +2889,7 @@
             </div>
             <div class="mt-2 d-flex gap-2">
               <button type="button" class="btn btn-outline-secondary btn-sm" onclick="refreshLabelPreview()">↻ Refresh Preview</button>
-              <button type="button" class="btn btn-outline-primary btn-sm admin-only" onclick="openLabelDesigner()">✏ Edit Template</button>
+              <button type="button" class="btn btn-outline-primary btn-sm admin-only" onclick="openLabelDesigner(document.getElementById('lp-template-select')?.value)">✏ Edit Template</button>
             </div>
           </div>
         </div>
@@ -3016,7 +3016,7 @@
           <div id="ld-canvas-wrap" style="position:relative;display:inline-block;box-shadow:0 2px 16px rgba(0,0,0,.18);cursor:default;min-width:160px;min-height:80px">
             <!-- The server-rendered PNG — this IS the label -->
             <img id="ld-canvas-img" src="" alt="label" draggable="false"
-                 style="display:block;max-width:none;image-rendering:pixelated;min-width:160px;min-height:80px">
+                 style="display:block;max-width:none;image-rendering:-webkit-optimize-contrast;image-rendering:crisp-edges;image-rendering:pixelated;min-width:160px;min-height:80px">
             <div id="ld-canvas-overlay" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none">
               <!-- selection handles injected here by JS -->
             </div>

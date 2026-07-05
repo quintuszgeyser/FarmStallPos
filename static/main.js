@@ -5689,6 +5689,8 @@ document.querySelectorAll('[data-chart-tab]').forEach(btn => {
 });
 document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
 document.getElementById('stats-product-filter')?.addEventListener('change', loadStats);
+document.getElementById('stats-start')?.addEventListener('change', loadStats);
+document.getElementById('stats-end')?.addEventListener('change', loadStats);
 _initStatsPresets();
 
 // ── Exports - all use the active stats filters ──
@@ -10477,7 +10479,10 @@ async function refreshLabelPreview() {
     if (!res.ok) throw new Error(await res.text());
     const blob = await res.blob();
     const url  = URL.createObjectURL(blob);
-    if (img) { img.src = url; img.style.display = ''; }
+    if (img) {
+      if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
+      img.src = url; img.style.display = '';
+    }
     if (ph)  ph.style.display = 'none';
   } catch (e) {
     if (ph) { ph.textContent = `Preview failed: ${e.message}`; ph.style.display = ''; }
@@ -10776,6 +10781,7 @@ async function ldDoRender() {
       body: JSON.stringify({
         product_id: productId ? parseInt(productId) : null,
         template,
+        dpr: Math.min(Math.ceil(window.devicePixelRatio || 1), 3),
       }),
     });
     if (!res.ok) {
@@ -10789,6 +10795,7 @@ async function ldDoRender() {
     if (img) {
       img.style.width  = wPx + 'px';
       img.style.height = hPx + 'px';
+      if (img.src.startsWith('blob:')) URL.revokeObjectURL(img.src);
       img.src = url;
     }
     if (status) status.textContent = '';
@@ -10841,18 +10848,19 @@ function ldDrawOverlay() {
     const w    = el.w * s;
     const h    = el.h * s;
     const sel  = idx === LD.selectedIdx;
-    const GRIP = 10;
+    const GRIP = 22;
 
     const ghost = document.createElement('div');
     ghost.style.cssText = `
       position:absolute; left:${x}px; top:${y}px; width:${w}px; height:${h}px;
-      box-sizing:border-box; cursor:move; pointer-events:all;
+      box-sizing:border-box; cursor:move; pointer-events:all; touch-action:none;
       border:${sel ? '2px solid #0d6efd' : '1px dashed rgba(0,100,255,.35)'};
       background:${sel ? 'rgba(13,110,253,.06)' : 'transparent'};
     `;
     ghost.title = el.type;
-    ghost.addEventListener('mousedown', e => { e.stopPropagation(); ldStartMove(e, idx); });
-    ghost.addEventListener('click',     e => { e.stopPropagation(); ldSelectElement(idx); });
+    ghost.addEventListener('mousedown',  e => { e.stopPropagation(); ldStartMove(e, idx); });
+    ghost.addEventListener('touchstart', e => { e.stopPropagation(); e.preventDefault(); ldStartMove(e, idx); }, { passive: false });
+    ghost.addEventListener('click',      e => { e.stopPropagation(); ldSelectElement(idx); });
     overlay.appendChild(ghost);
 
     if (sel) {
@@ -10863,10 +10871,11 @@ function ldDrawOverlay() {
         grip.style.cssText = `
           position:absolute; left:${gx}px; top:${gy}px;
           width:${GRIP}px; height:${GRIP}px;
-          background:#0d6efd; border:2px solid #fff; border-radius:2px;
-          cursor:${g.cursor}; pointer-events:all; box-sizing:border-box;
+          background:#0d6efd; border:2px solid #fff; border-radius:3px;
+          cursor:${g.cursor}; pointer-events:all; box-sizing:border-box; touch-action:none;
         `;
-        grip.addEventListener('mousedown', e => { e.stopPropagation(); ldStartResize(e, idx, g); });
+        grip.addEventListener('mousedown',  e => { e.stopPropagation(); ldStartResize(e, idx, g); });
+        grip.addEventListener('touchstart', e => { e.stopPropagation(); e.preventDefault(); ldStartResize(e, idx, g); }, { passive: false });
         overlay.appendChild(grip);
       });
     }
@@ -10874,7 +10883,8 @@ function ldDrawOverlay() {
 
   const bg = document.createElement('div');
   bg.style.cssText = 'position:absolute;inset:0;pointer-events:all;cursor:default';
-  bg.addEventListener('mousedown', () => ldSelectElement(null));
+  bg.addEventListener('mousedown',  () => ldSelectElement(null));
+  bg.addEventListener('touchstart', () => ldSelectElement(null));
   overlay.insertBefore(bg, overlay.firstChild);
 }
 
@@ -10887,15 +10897,19 @@ function ldSelectElement(idx) {
 // ── Move (drag entire element) ────────────────────────────────────────────────
 
 function ldStartMove(e, idx) {
+  if (e.preventDefault) e.preventDefault();
   ldSelectElement(idx);
-  const s     = LD.scale;
-  const origX = LD.elements[idx].x;
-  const origY = LD.elements[idx].y;
-  const startX = e.clientX, startY = e.clientY;
+  const s      = LD.scale;
+  const origX  = LD.elements[idx].x;
+  const origY  = LD.elements[idx].y;
+  const pt     = ldGetCoords(e);
+  const startX = pt.clientX, startY = pt.clientY;
 
   const onMove = ev => {
-    const dx = (ev.clientX - startX) / s;
-    const dy = (ev.clientY - startY) / s;
+    if (ev.preventDefault) ev.preventDefault();
+    const p  = ldGetCoords(ev);
+    const dx = (p.clientX - startX) / s;
+    const dy = (p.clientY - startY) / s;
     LD.elements[idx].x = Math.max(0, parseFloat((origX + dx).toFixed(1)));
     LD.elements[idx].y = Math.max(0, parseFloat((origY + dy).toFixed(1)));
     ldDrawOverlay();
@@ -10904,27 +10918,34 @@ function ldStartMove(e, idx) {
   };
   const onUp = () => {
     document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('mouseup',   onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend',  onUp);
     ldRequestRender(true);
   };
   document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  document.addEventListener('mouseup',   onUp);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend',  onUp);
 }
 
 // ── Resize (drag a grip) ──────────────────────────────────────────────────────
 
 function ldStartResize(e, idx, grip) {
-  e.preventDefault();
+  if (e.preventDefault) e.preventDefault();
   const s      = LD.scale;
   const el     = LD.elements[idx];
   const origX  = el.x, origY  = el.y;
   const origW  = el.w, origH  = el.h;
-  const startX = e.clientX, startY = e.clientY;
+  const pt     = ldGetCoords(e);
+  const startX = pt.clientX, startY = pt.clientY;
   const MIN    = 2;
 
   const onMove = ev => {
-    const dx = (ev.clientX - startX) / s;
-    const dy = (ev.clientY - startY) / s;
+    if (ev.preventDefault) ev.preventDefault();
+    const p  = ldGetCoords(ev);
+    const dx = (p.clientX - startX) / s;
+    const dy = (p.clientY - startY) / s;
     let nx = origX, ny = origY, nw = origW, nh = origH;
     if (grip.dw) nw = Math.max(MIN, origW + dx * (grip.dx < 0 ? -1 : 1));
     if (grip.dh) nh = Math.max(MIN, origH + dy * (grip.dy < 0 ? -1 : 1));
@@ -10940,11 +10961,15 @@ function ldStartResize(e, idx, grip) {
   };
   const onUp = () => {
     document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('mouseup',   onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend',  onUp);
     ldRequestRender(true);
   };
   document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup', onUp);
+  document.addEventListener('mouseup',   onUp);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend',  onUp);
 }
 
 // ── Properties panel ─────────────────────────────────────────────────────────
@@ -11039,7 +11064,7 @@ function ldPropChange(key, value) {
   if (LD.selectedIdx == null || !LD.elements[LD.selectedIdx]) return;
   LD.elements[LD.selectedIdx][key] = value;
   ldDrawOverlay();
-  ldShowProps(LD.selectedIdx);
+  if (key === 'align') ldSyncPropsAlign(LD.selectedIdx);
   ldRequestRender();
 }
 
@@ -11053,6 +11078,20 @@ function ldSyncPropsSize(idx) {
   const wEl = document.getElementById('ld-prop-w'); if (wEl) wEl.value = el.w;
   const hEl = document.getElementById('ld-prop-h'); if (hEl) hEl.value = el.h;
   ldSyncPropsPosition(idx);
+}
+function ldSyncPropsAlign(idx) {
+  const el = LD.elements[idx];
+  const aligns = ['left', 'center', 'right'];
+  document.querySelectorAll('#ld-props-content .btn-group .btn').forEach((btn, i) => {
+    if (i >= aligns.length) return;
+    const active = el.align === aligns[i] || (!el.align && aligns[i] === 'left');
+    btn.className = `btn ${active ? 'btn-secondary' : 'btn-outline-secondary'}`;
+  });
+}
+function ldGetCoords(e) {
+  if (e.touches && e.touches.length)         return e.touches[0];
+  if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0];
+  return e;
 }
 
 function ldRemoveElement(idx) {
@@ -11088,6 +11127,11 @@ async function ldSaveTemplate(andPrint) {
     }
     LABELS._currentTemplateId = saved.id;
     await loadLabelTemplates();
+    const lpSel = document.getElementById('lp-template-select');
+    if (lpSel) {
+      _populateTemplateSelect(lpSel, saved.id);
+      if (!andPrint) refreshLabelPreview();
+    }
     toast(`Template "${name}" saved`, 'success');
     if (andPrint && LABELS._currentProduct) {
       bootstrap.Modal.getInstance(document.getElementById('labelDesignerModal'))?.hide();

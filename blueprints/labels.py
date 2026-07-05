@@ -181,11 +181,12 @@ def api_labels_preview():
         return jsonify({'error': 'template or template_id required'}), 400
 
     product = db.session.get(Product, int(product_id)) if product_id else None
+    dpr     = min(max(1, int(data.get('dpr', 1))), 3)
 
     branding = _get_branding()
     svc = LabelRenderService(branding)
     try:
-        png_bytes = svc.render_png(template, product)
+        png_bytes = svc.render_png(template, product, dpr=dpr)
     except Exception as e:
         log.exception('Label preview failed')
         return jsonify({'error': str(e)}), 500
