@@ -317,7 +317,7 @@ def api_import_products():
 
     # Acquire atomic import lock
     lock_result = db.session.execute(db.text(
-        "UPDATE settings SET value='true', updated_at=NOW() "
+        "UPDATE settings SET value='true' "
         "WHERE key='import_in_progress' AND value='false' RETURNING key"
     )).fetchone()
     if not lock_result:
