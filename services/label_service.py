@@ -171,7 +171,7 @@ class LabelRenderService:
 
         # font_size is in typographic points. Convert to pixels at render DPI.
         # 1 pt = 1/72 inch → px = pt × DPI / 72
-        pt    = max(4, el.get('font_size', 9))
+        pt    = max(4, float(el.get('font_size') or 9))
         px_sz = max(6, int(round(pt * DPI / 72)))
         bold  = el.get('bold', False)
         font  = _load_font(px_sz, bold)

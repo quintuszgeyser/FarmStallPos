@@ -10704,8 +10704,8 @@ async function openLabelDesigner(existingTemplateId) {
 
   document.getElementById('labelDesignerModal').onkeydown = e => {
     if ((e.key === 'Delete' || e.key === 'Backspace') &&
-        e.target === document.getElementById('labelDesignerModal') ||
-        e.target.id === 'ld-canvas-wrap' || e.target.id === 'ld-canvas-overlay') {
+        (e.target === document.getElementById('labelDesignerModal') ||
+         e.target.id === 'ld-canvas-wrap' || e.target.id === 'ld-canvas-overlay')) {
       if (LD.selectedIdx != null) { ldRemoveElement(LD.selectedIdx); e.preventDefault(); }
     }
   };
@@ -10745,10 +10745,12 @@ function ldAddElement(type) {
     custom_text:  { w: 25, h: 5,  font_size: 8, value: 'Custom text' },
   };
   const offset = (LD.elements.length % 5) * 1.5;
+  const elW = defaults[type]?.w || 20;
+  const elH = defaults[type]?.h || 6;
   const el = {
     type, color: '#000000',
-    x: Math.max(1, (LD.widthMm  - (defaults[type]?.w || 20)) / 2 + offset),
-    y: Math.max(1, (LD.heightMm - (defaults[type]?.h || 6))  / 2 + offset),
+    x: Math.min(Math.max(1, (LD.widthMm  - elW) / 2 + offset), Math.max(1, LD.widthMm  - elW)),
+    y: Math.min(Math.max(1, (LD.heightMm - elH) / 2 + offset), Math.max(1, LD.heightMm - elH)),
     ...defaults[type],
   };
   LD.elements.push(el);
@@ -11020,7 +11022,7 @@ function ldShowProps(idx) {
       <label class="form-label mb-1 small fw-semibold">Text</label>
       <div class="d-flex align-items-center gap-1 mb-1">
         <span style="font-size:10px;min-width:28px">Size</span>
-        <input type="number" class="form-control form-control-sm" style="width:60px" value="${el.font_size || 9}" min="5" max="72" oninput="ldPropChange('font_size',+this.value)">
+        <input type="number" class="form-control form-control-sm" style="width:60px" value="${el.font_size ?? 9}" min="5" max="72" oninput="{ const v=+this.value; if(this.value!==''&&!isNaN(v)) ldPropChange('font_size', Math.max(5,Math.min(72,v))); }">
         <span style="font-size:10px">pt</span>
         <div class="form-check mb-0 ms-1">
           <input class="form-check-input" type="checkbox" id="ld-prop-bold" ${el.bold ? 'checked' : ''} onchange="ldPropChange('bold',this.checked)">
