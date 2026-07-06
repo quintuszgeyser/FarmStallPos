@@ -600,6 +600,7 @@ function renderProductsCards() {
         <div style="min-width:0;flex:1">
           <span class="fw-semibold">${p.name}</span>
           <span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>
+          ${p.product_code ? `<span class="text-muted ms-1" style="font-size:11px">PLU&nbsp;${p.product_code}</span>` : ''}
           ${stockBadge}
           ${priceDisplay ? `<span class="text-success ms-2 fw-semibold">${priceDisplay}</span>` : ''}
           ${marginLabel ? `<span class="text-muted ms-2" style="font-size:11px">${marginLabel}</span>` : ''}
@@ -658,6 +659,7 @@ function renderProductsCards() {
       main.innerHTML = `
         <div class="product-title">${p.name}
           <span class="badge bg-light text-dark ms-1" style="font-size:10px">${typeLabel}</span>
+          ${p.product_code ? `<span class="text-muted ms-1" style="font-size:11px">PLU&nbsp;${p.product_code}</span>` : ''}
         </div>
         <div class="d-flex gap-3 align-items-center mt-1" style="flex-wrap:wrap">
           ${priceDisplay ? `<span class="fw-semibold text-success">${priceDisplay}</span>` : '<span class="text-muted small">no price</span>'}
