@@ -113,10 +113,12 @@ def _match_condition(p, cond):
     return True
 
 
-def _filter_products(conditions, include_archived=False):
+def _filter_products(conditions, include_archived=False, exclude_ids=None):
     q = Product.query
     if not include_archived:
         q = q.filter(Product.is_archived == False)
+    if exclude_ids:
+        q = q.filter(~Product.id.in_(exclude_ids))
     products = q.order_by(Product.name.asc()).all()
     if not conditions:
         return products
@@ -226,7 +228,7 @@ def api_bulk_filter():
     conditions = data.get('conditions', [])
     include_archived = bool(data.get('include_archived', False))
     page     = max(1, int(data.get('page', 1)))
-    per_page = min(200, max(10, int(data.get('per_page', 50))))
+    per_page = min(500, max(10, int(data.get('per_page', 50))))
 
     matched = _filter_products(conditions, include_archived)
     total   = len(matched)
@@ -250,8 +252,9 @@ def api_bulk_preview():
     conditions = data.get('conditions', [])
     actions    = data.get('actions', [])
     include_archived = bool(data.get('include_archived', False))
+    exclude_ids = [int(i) for i in data.get('exclude_ids', []) if str(i).isdigit()]
 
-    matched = _filter_products(conditions, include_archived)
+    matched = _filter_products(conditions, include_archived, exclude_ids or None)
     changes = []
     for p in matched[:500]:  # cap preview at 500 products
         product_changes = []
@@ -311,11 +314,12 @@ def api_bulk_apply():
     actions    = data.get('actions', [])
     description = (data.get('description') or '').strip()[:200] or None
     include_archived = bool(data.get('include_archived', False))
+    exclude_ids = [int(i) for i in data.get('exclude_ids', []) if str(i).isdigit()]
 
     if not actions:
         return jsonify({'error': 'No actions specified'}), 400
 
-    matched = _filter_products(conditions, include_archived)
+    matched = _filter_products(conditions, include_archived, exclude_ids or None)
     if not matched:
         return jsonify({'ok': True, 'affected': 0, 'run_id': None})
 

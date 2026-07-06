@@ -11644,6 +11644,8 @@ document.addEventListener('shown.bs.tab', e => {
 let _bulkFields   = null; // loaded once from /api/products/bulk/fields
 let _bulkMatched  = 0;    // count from last filter run
 let _bulkPreviewData = null; // last preview result
+let _bulkFilteredProducts = []; // products returned by last filter run
+let _bulkExcludedIds = new Set(); // product IDs unchecked by user
 
 async function _bulkEnsureFields() {
   if (_bulkFields) return _bulkFields;
@@ -11660,6 +11662,10 @@ function openBulkEditor() {
   if (filterTab) bootstrap.Tab.getOrCreateInstance(filterTab).show();
   document.getElementById('bulk-filter-result').textContent = '';
   document.getElementById('bulk-action-scope').textContent = '';
+  const matchedList = document.getElementById('bulk-filter-matched-list');
+  if (matchedList) matchedList.innerHTML = '';
+  _bulkFilteredProducts = [];
+  _bulkExcludedIds = new Set();
 }
 
 // ── Condition builder ────────────────────────────────────────────────────────
@@ -11777,15 +11783,53 @@ async function bulkRunFilter() {
   try {
     const resp = await api('/api/products/bulk/filter', {
       method: 'POST',
-      body: JSON.stringify({ conditions, include_archived: includeArchived, per_page: 10 }),
+      body: JSON.stringify({ conditions, include_archived: includeArchived, per_page: 500 }),
     });
     _bulkMatched = resp.total;
+    _bulkFilteredProducts = resp.products || [];
+    _bulkExcludedIds = new Set();
     resultEl.textContent = `${resp.total} product${resp.total !== 1 ? 's' : ''} matched.`;
     document.getElementById('bulk-action-scope').textContent = `Applies to ${resp.total} product${resp.total !== 1 ? 's' : ''}`;
+    _renderBulkFilteredList();
     // Auto-advance to Action tab
     const actionTabLink = document.getElementById('bulk-tab-action-link');
     if (actionTabLink) bootstrap.Tab.getOrCreateInstance(actionTabLink).show();
   } catch(e) { resultEl.textContent = `Error: ${e.message}`; }
+}
+
+function _renderBulkFilteredList() {
+  const wrap = document.getElementById('bulk-filter-matched-list');
+  if (!wrap) return;
+  if (!_bulkFilteredProducts.length) { wrap.innerHTML = ''; return; }
+  const typeLabel = { stock_item: 'Stock', simple: 'Simple', recipe: 'Recipe' };
+  wrap.innerHTML = `
+    <div class="d-flex justify-content-between align-items-center mb-1 mt-3">
+      <span class="small fw-semibold text-muted">Matched products — uncheck to exclude from action</span>
+      <span class="small text-muted" id="bulk-included-count">${_bulkFilteredProducts.length} included</span>
+    </div>
+    <div style="max-height:200px;overflow-y:auto;border:1px solid #dee2e6;border-radius:4px;padding:4px 8px">
+      ${_bulkFilteredProducts.map(p => `
+        <div class="d-flex align-items-center gap-2 py-1 border-bottom" style="font-size:13px">
+          <input type="checkbox" class="form-check-input bulk-filter-chk" data-pid="${p.id}" checked>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+          <span class="badge bg-secondary" style="font-size:10px">${typeLabel[p.product_type] || p.product_type}</span>
+          ${p.price != null ? `<span class="text-muted" style="font-size:11px;min-width:50px;text-align:right">R${fmt(p.price)}</span>` : ''}
+        </div>
+      `).join('')}
+    </div>
+  `;
+  wrap.querySelectorAll('.bulk-filter-chk').forEach(chk => {
+    chk.addEventListener('change', () => {
+      const pid = parseInt(chk.dataset.pid);
+      if (chk.checked) _bulkExcludedIds.delete(pid);
+      else             _bulkExcludedIds.add(pid);
+      const included = _bulkFilteredProducts.length - _bulkExcludedIds.size;
+      const countEl = document.getElementById('bulk-included-count');
+      if (countEl) countEl.textContent = `${included} included`;
+      document.getElementById('bulk-action-scope').textContent =
+        `Applies to ${included} product${included !== 1 ? 's' : ''}`;
+    });
+  });
 }
 
 // ── Action builder ───────────────────────────────────────────────────────────
@@ -11900,11 +11944,12 @@ async function bulkRunPreview() {
   document.getElementById('bulk-preview-tbody').innerHTML = '';
 
   try {
+    const excludeIds = [..._bulkExcludedIds];
     const resp = await api('/api/products/bulk/preview', {
       method: 'POST',
-      body: JSON.stringify({ conditions, actions, include_archived: includeArchived }),
+      body: JSON.stringify({ conditions, actions, include_archived: includeArchived, exclude_ids: excludeIds }),
     });
-    _bulkPreviewData = { conditions, actions, includeArchived };
+    _bulkPreviewData = { conditions, actions, includeArchived, excludeIds };
 
     const summaryEl = document.getElementById('bulk-preview-summary');
     summaryEl.innerHTML = `
@@ -11936,7 +11981,7 @@ async function bulkRunPreview() {
 
 async function bulkApply() {
   if (!_bulkPreviewData) { toast('Run Preview first', 'warning'); return; }
-  const { conditions, actions, includeArchived } = _bulkPreviewData;
+  const { conditions, actions, includeArchived, excludeIds } = _bulkPreviewData;
   const description = document.getElementById('bulk-description')?.value?.trim() || '';
   const statusEl = document.getElementById('bulk-apply-status');
   statusEl.textContent = 'Applying…';
@@ -11944,7 +11989,7 @@ async function bulkApply() {
   try {
     const resp = await api('/api/products/bulk/apply', {
       method: 'POST',
-      body: JSON.stringify({ conditions, actions, include_archived: includeArchived, description }),
+      body: JSON.stringify({ conditions, actions, include_archived: includeArchived, description, exclude_ids: excludeIds || [] }),
     });
     statusEl.textContent = `Done — ${resp.affected} product${resp.affected !== 1 ? 's' : ''} updated.`;
     toast(`Bulk edit applied — ${resp.affected} products updated`, 'success');
