@@ -10657,6 +10657,7 @@ let _ldRenderTimer = null;
 
 async function openLabelDesigner(existingTemplateId) {
   await loadLabelTemplates();
+  _populateDesignerLoadSelect(existingTemplateId ? parseInt(existingTemplateId) : null);
 
   // Populate product selector
   const prodSel = document.getElementById('ld-preview-product');
@@ -11141,6 +11142,7 @@ async function ldSaveTemplate(andPrint) {
     }
     LABELS._currentTemplateId = saved.id;
     await loadLabelTemplates();
+    _populateDesignerLoadSelect(saved.id);
     const lpSel = document.getElementById('lp-template-select');
     if (lpSel) {
       _populateTemplateSelect(lpSel, saved.id);
@@ -11162,6 +11164,55 @@ async function ldDeleteTemplate() {
     bootstrap.Modal.getInstance(document.getElementById('labelDesignerModal'))?.hide();
     await loadLabelTemplates();
   } catch (e) { toast(e.message, 'error'); }
+}
+
+function ldNewTemplate() {
+  LD.templateId = null; LD.elements = []; LD.selectedIdx = null;
+  LD.widthMm = 40; LD.heightMm = 20;
+  document.getElementById('ld-template-name').value = 'New Template';
+  document.getElementById('ld-category').value      = 'custom';
+  document.getElementById('ld-width').value         = 40;
+  document.getElementById('ld-height').value        = 20;
+  document.getElementById('ld-border').checked      = false;
+  document.getElementById('ld-bg-color').value      = '#ffffff';
+  document.getElementById('ld-delete-tmpl-btn').style.display = 'none';
+  document.getElementById('ld-load-select').value   = '';
+  ldShowProps(null);
+  ldRequestRender(true);
+}
+
+function _populateDesignerLoadSelect(selectedId) {
+  const sel = document.getElementById('ld-load-select');
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— load existing —</option>';
+  LABELS.templates.forEach(t => {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = `${t.name} (${t.width_mm}×${t.height_mm}mm)`;
+    if (t.id === selectedId) opt.selected = true;
+    sel.appendChild(opt);
+  });
+}
+
+function ldLoadSelectedTemplate(idStr) {
+  const id = parseInt(idStr);
+  if (!id) return;
+  const tmpl = LABELS.templates.find(t => t.id === id);
+  if (!tmpl) return;
+  LD.templateId = tmpl.id;
+  LD.elements   = JSON.parse(JSON.stringify(tmpl.elements));
+  LD.widthMm    = tmpl.width_mm;
+  LD.heightMm   = tmpl.height_mm;
+  LD.selectedIdx = null;
+  document.getElementById('ld-template-name').value = tmpl.name;
+  document.getElementById('ld-category').value      = tmpl.category;
+  document.getElementById('ld-width').value         = tmpl.width_mm;
+  document.getElementById('ld-height').value        = tmpl.height_mm;
+  document.getElementById('ld-border').checked      = tmpl.border;
+  document.getElementById('ld-bg-color').value      = tmpl.background_color || '#ffffff';
+  document.getElementById('ld-delete-tmpl-btn').style.display = '';
+  ldShowProps(null);
+  ldRequestRender(true);
 }
 
 // ── Show bulk print button only on products tab ───────────────────────────────
