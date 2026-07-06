@@ -678,7 +678,7 @@
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings"><i class="bi bi-gear me-1"></i>Configuration</button></li>
     {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor"><i class="bi bi-bar-chart-line me-1"></i>Monitor</button></li>{% endif %}
     <li class="nav-item pos-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()"><i class="bi bi-speedometer2 me-1"></i>Scale</button></li>
-    {% if is_qa %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()"><i class="bi bi-rocket me-1"></i>Deploy</button></li>{% endif %}
+    {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()"><i class="bi bi-rocket me-1"></i>Deploy</button></li>{% endif %}
   </ul>
 
   <!-- Global barcode trap: outside tab panes so it stays focusable on any tab -->
