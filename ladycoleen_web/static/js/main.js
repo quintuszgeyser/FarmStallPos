@@ -33,23 +33,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Cart count badge in header
-  const badge = document.getElementById('nav-cart-count');
-  if (badge) {
-    const updateBadge = () => {
-      const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
-      const count = cart.reduce((sum, i) => sum + (i.sold_by_weight ? 1 : i.qty), 0);
-      if (count > 0) {
-        badge.textContent = count > 99 ? '99+' : count;
-        badge.style.display = '';
-      } else {
-        badge.style.display = 'none';
-      }
-    };
-    updateBadge();
-    // Update when localStorage changes (e.g. item added on another tab or same page)
-    window.addEventListener('storage', updateBadge);
-    // Also expose so pages can call it after adding to cart
-    window._updateCartBadge = updateBadge;
-  }
+  // Cart count badges in header (desktop nav + mobile persistent button)
+  const _updateCartBadge = () => {
+    const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
+    const count = cart.reduce((sum, i) => sum + (i.sold_by_weight ? 1 : i.qty), 0);
+    const label = count > 99 ? '99+' : count;
+    for (const id of ['nav-cart-count', 'nav-cart-count-mobile']) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      el.textContent = label;
+      el.style.display = count > 0 ? '' : 'none';
+    }
+  };
+  _updateCartBadge();
+  window.addEventListener('storage', _updateCartBadge);
+  window._updateCartBadge = _updateCartBadge;
 });
