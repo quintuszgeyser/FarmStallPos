@@ -333,23 +333,37 @@ def _plu_range(sold_by_weight, unit_type, product_type):
 
 def _assign_product_code(sold_by_weight, unit_type, product_type):
     """Assign the smallest available product_code gap for the given product type.
-    Uses SELECT FOR UPDATE advisory approach - caller must be inside a transaction.
+    For fixed-price products also skips codes whose auto-generated barcode is
+    already taken by another product (guards against barcode/product_code mismatch
+    in existing data).
+    Uses table lock - caller must be inside a transaction.
     """
     lo, hi = _plu_range(sold_by_weight, unit_type, product_type)
     from sqlalchemy import text as _text
-    # Lock the range to prevent concurrent allocation of the same code
     db.session.execute(_text("LOCK TABLE products IN SHARE ROW EXCLUSIVE MODE"))
-    row = db.session.execute(_text("""
-        SELECT s.code FROM generate_series(CAST(:lo AS int), CAST(:hi AS int)) AS s(code)
-        WHERE NOT EXISTS (
-            SELECT 1 FROM products WHERE product_code = s.code
-        )
-        ORDER BY s.code
-        LIMIT 1
-    """), {'lo': lo, 'hi': hi}).fetchone()
-    if not row:
-        raise ValueError(f"Product code range {lo}-{hi} exhausted")
-    return row[0]
+
+    used_codes = {r[0] for r in db.session.execute(_text(
+        "SELECT product_code FROM products "
+        "WHERE product_code >= :lo AND product_code <= :hi"
+    ), {'lo': lo, 'hi': hi}).fetchall()}
+
+    # For fixed-price products the barcode is derived from the product_code.
+    # Pre-load all barcodes so we can skip any code whose barcode is already taken.
+    check_barcode = not sold_by_weight and unit_type != 'volume'
+    used_barcodes = set()
+    if check_barcode:
+        used_barcodes = {r[0] for r in db.session.execute(_text(
+            "SELECT barcode FROM products WHERE barcode IS NOT NULL"
+        )).fetchall()}
+
+    for code in range(lo, hi + 1):
+        if code in used_codes:
+            continue
+        if check_barcode and _gen_barcode_from_code(code) in used_barcodes:
+            continue
+        return code
+
+    raise ValueError(f"Product code range {lo}-{hi} exhausted")
 
 
 def validate_product_code(new_code, product_id=None):
