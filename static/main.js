@@ -10710,7 +10710,7 @@ async function openLabelDesigner(existingTemplateId) {
     }
   };
 
-  const modal = new bootstrap.Modal(document.getElementById('labelDesignerModal'));
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('labelDesignerModal'));
   modal.show();
 
   document.getElementById('labelDesignerModal').addEventListener('shown.bs.modal', () => {

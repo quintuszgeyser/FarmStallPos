@@ -221,8 +221,8 @@ class LabelRenderService:
             # Render at 4× target resolution for sharp bars, then downscale
             scale = 4
             opts = {
-                'write_text': False,
-                'module_height': (h_px * scale) / DPI * 25.4,   # mm at scale DPI
+                'write_text': True,
+                'module_height': (h_px * scale * 0.75) / DPI * 25.4,   # mm at scale DPI — leave 25% for text
                 'module_width':  0.8,
                 'quiet_zone':    2,
                 'dpi':           DPI * scale,

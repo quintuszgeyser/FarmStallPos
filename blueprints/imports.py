@@ -456,7 +456,15 @@ def _apply_fields(product, fields, is_new, raw):
             if bc:
                 product.barcode = bc
             else:
-                product.barcode = _gen_barcode_from_code(product.product_code)
+                generated = _gen_barcode_from_code(product.product_code)
+                conflict = Product.query.filter_by(barcode=generated).first()
+                if conflict:
+                    raise ValueError(
+                        f'Auto-generated barcode {generated} already belongs to '
+                        f'"{conflict.name}" (product_code={conflict.product_code}). '
+                        f'Add the product_code to the CSV row to match and update it instead.'
+                    )
+                product.barcode = generated
     else:
         # Only update product_code if explicitly provided and different
         pc = _parse_int(raw.get('product_code'))
@@ -466,11 +474,29 @@ def _apply_fields(product, fields, is_new, raw):
 
 
 def _do_import_partial(results, raw_rows, allow_name_match):
-    """Write valid rows one by one, skip errors."""
+    """Write valid rows one by one, skip errors. Uses savepoints to isolate row-level failures."""
+    from sqlalchemy.exc import IntegrityError
     for idx, (result, raw) in enumerate(zip(results, raw_rows), start=2):
         if result['action'] == 'error':
             continue
-        _write_row(result, raw, allow_name_match)
+        sp = db.session.begin_nested()
+        try:
+            _write_row(result, raw, allow_name_match)
+            sp.commit()
+        except IntegrityError as e:
+            sp.rollback()
+            orig = getattr(e, 'orig', None)
+            detail = str(orig) if orig else str(e)
+            if 'DETAIL:' in detail:
+                detail = detail.split('DETAIL:')[-1].strip()
+            result['action'] = 'error'
+            result['error'] = f'Duplicate value — {detail}'
+            result['error_code'] = 'INTEGRITY_ERROR'
+        except ValueError as e:
+            sp.rollback()
+            result['action'] = 'error'
+            result['error'] = str(e)
+            result['error_code'] = 'BARCODE_CONFLICT'
 
 
 def _do_import_strict(results, raw_rows, allow_name_match):
