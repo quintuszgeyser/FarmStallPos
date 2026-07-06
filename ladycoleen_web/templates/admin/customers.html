@@ -11,7 +11,7 @@
   <a href="?tab=online"
      class="btn btn-sm {% if tab == 'online' %}lc-btn-primary{% else %}lc-btn-outline{% endif %}">
     Online Only
-    <span class="ms-1 text-muted small fw-normal" title="Web customers not yet merged with a POS customer">⚬</span>
+    <i class="bi bi-info-circle ms-1 text-muted small" title="Web customers not yet merged with a POS customer"></i>
   </a>
 </div>
 
@@ -40,7 +40,7 @@
     <tr>
       <td>{{ c.name }}</td>
       <td>{{ c.email }}</td>
-      <td>{{ c.phone or '-' }}</td>
+      <td>{{ c.phone or '—' }}</td>
       <td>{{ c.created_at.strftime('%d %b %Y') }}</td>
       <td>{{ c.cake_orders.count() }}</td>
       <td>

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Checkout - {{ store_name_full }}{% endblock %}
+{% block title %}Checkout - Lady Coleen Farm Shop{% endblock %}
 {% block content %}
 <div class="container py-4" style="max-width:600px">
   <h2 class="lc-heading fw-bold mb-4">Checkout</h2>
@@ -20,127 +20,98 @@
     <div class="lc-card p-3 mb-4">
       <h6 class="fw-bold mb-2">Order Summary</h6>
       <div id="summary-lines"></div>
-      <div class="d-flex justify-content-between small mt-2 pt-2 border-top">
-        <span>Subtotal</span><span id="summary-subtotal">R0.00</span>
-      </div>
-      <div class="d-flex justify-content-between small mt-1">
-        <span>Shipping</span><span id="summary-shipping">R0.00</span>
-      </div>
       <div class="d-flex justify-content-between fw-bold mt-2 pt-2 border-top">
         <span>Total</span><span id="summary-total">R0.00</span>
       </div>
     </div>
 
+    <!-- Stock warning banner -->
     <div id="stock-warning-banner" class="alert alert-warning d-none mb-3" style="font-size:.875rem">
-      ⚠ Some items exceed available stock. These will be ordered and may take longer to fulfil.
+      <i class="bi bi-exclamation-triangle me-1"></i>Some items exceed available stock. These will be ordered and may take longer to fulfil.
     </div>
 
     <div id="form-error" class="alert alert-danger d-none mb-3"></div>
 
-    <form id="checkout-form" novalidate>
+    <form id="checkout-form">
+      <h5 class="fw-bold mb-3">Your Details</h5>
 
-      <!-- STEP 1: Email (only for guests) -->
-      <div id="step-email">
-        <h5 class="fw-bold mb-3">Your Details</h5>
-        <div class="mb-3">
-          <label class="form-label fw-semibold">Email *</label>
-          <input type="email" class="form-control lc-input" id="f-email" autocomplete="email" placeholder="your@email.com">
-          <div id="email-spinner" class="form-text d-none text-muted">Checking…</div>
-        </div>
+      <!-- Email — checked against database on blur -->
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Email *</label>
+        <input type="email" class="form-control lc-input" id="f-email" required autocomplete="email">
+        <div id="email-checking" class="form-text d-none">Checking…</div>
       </div>
 
-      <!-- STEP 2a: Existing account → login -->
-      <div id="step-login" class="d-none">
-        <div class="mb-3">
-          <label class="form-label fw-semibold">Password</label>
-          <input type="password" class="form-control lc-input" id="f-password-login" autocomplete="current-password">
-          <div class="form-text">Welcome back! Enter your password to continue. <a href="#" id="forgot-link" class="lc-link">Forgot password?</a></div>
-          <div id="login-error" class="text-danger small mt-1 d-none"></div>
-        </div>
-        <button type="button" class="btn lc-btn-primary w-100 mb-3" id="btn-do-login">Continue</button>
-        <div class="text-center small text-muted">
-          Not you? <a href="#" id="change-email-link" class="lc-link">Use a different email</a>
-        </div>
+      <!-- Password — shown only if email matches an existing account -->
+      <div id="password-block" class="mb-3 d-none">
+        <label class="form-label fw-semibold">Password</label>
+        <input type="password" class="form-control lc-input" id="f-password" autocomplete="current-password">
+        <div class="form-text">You have an account — enter your password to link this order, or <a href="#" id="skip-login-link" class="lc-link">continue as guest</a>.</div>
+        <div id="login-error" class="text-danger small mt-1 d-none"></div>
       </div>
 
-      <!-- STEP 2b: New account → create password -->
-      <div id="step-register" class="d-none">
-        <div class="mb-3">
-          <label class="form-label fw-semibold">Create a password</label>
-          <input type="password" class="form-control lc-input" id="f-password-register" autocomplete="new-password" placeholder="Min 8 characters">
-          <div class="form-text">Save your details for faster checkout next time.</div>
-          <div id="register-error" class="text-danger small mt-1 d-none"></div>
-        </div>
-      </div>
-
-      <!-- STEP 3: Details + delivery (shown after auth) -->
-      <div id="step-details" class="d-none">
-        <div id="logged-in-banner" class="alert alert-success py-2 mb-3 d-none" style="font-size:.875rem">
-          ✓ Signed in - your details have been pre-filled.
-          <a href="#" id="logout-link" class="lc-link ms-2">Not you?</a>
-        </div>
-
+      <!-- Name + Phone — hidden until email checked (pre-filled if logged in) -->
+      <div id="name-phone-block">
         <div class="mb-3">
           <label class="form-label fw-semibold">Name *</label>
-          <input type="text" class="form-control lc-input" id="f-name" autocomplete="name" required>
+          <input type="text" class="form-control lc-input" id="f-name" required autocomplete="name">
         </div>
         <div class="mb-4">
           <label class="form-label fw-semibold">Phone</label>
           <input type="tel" class="form-control lc-input" id="f-phone" autocomplete="tel">
         </div>
-
-        <h5 class="fw-bold mb-3">Collection / Delivery</h5>
-        <div class="mb-3">
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="radio" name="delivery" id="d-collect" value="collection" checked onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-collect">Collect from farm shop <span class="text-success fw-semibold">- Free</span></label>
-          </div>
-          <div class="form-check mb-2">
-            <input class="form-check-input" type="radio" name="delivery" id="d-deliver" value="delivery" onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-deliver">Deliver to my address <span class="text-muted">- R99</span></label>
-          </div>
-          <div class="form-check">
-            <input class="form-check-input" type="radio" name="delivery" id="d-pudo" value="pudo" onchange="toggleDelivery()">
-            <label class="form-check-label" for="d-pudo">Pudo locker-to-locker <span class="text-muted">- R69</span></label>
-          </div>
-        </div>
-
-        <div id="address-block" class="mb-3 d-none">
-          <label class="form-label fw-semibold">Delivery Address *</label>
-          <textarea class="form-control lc-input" id="f-address" rows="2"></textarea>
-        </div>
-
-        <div id="pudo-block" class="mb-3 d-none">
-          <div class="lc-card p-3">
-            <p class="small text-muted mb-3">Enter your preferred Pudo point. We'll confirm the booking and send a waybill by email.</p>
-            <div class="mb-2">
-              <label class="form-label fw-semibold">Pudo Point Name *</label>
-              <input type="text" class="form-control lc-input" id="f-pudo-name" placeholder="e.g. Pick n Pay Stellenbosch">
-            </div>
-            <div class="row g-2">
-              <div class="col-6">
-                <label class="form-label fw-semibold">Suburb *</label>
-                <input type="text" class="form-control lc-input" id="f-pudo-suburb">
-              </div>
-              <div class="col-6">
-                <label class="form-label fw-semibold">City *</label>
-                <input type="text" class="form-control lc-input" id="f-pudo-city">
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="mb-4">
-          <label class="form-label fw-semibold">Notes</label>
-          <textarea class="form-control lc-input" id="f-notes" rows="2" placeholder="Any special requests…"></textarea>
-        </div>
-
-        <button type="submit" class="btn lc-btn-primary w-100 btn-lg" id="submit-btn">
-          Pay Now - R<span id="btn-total">0.00</span>
-        </button>
-        <p class="text-muted small text-center mt-2">🔒 Secure checkout via PayFast</p>
       </div>
 
+      <h5 class="fw-bold mb-3">Collection / Delivery</h5>
+      <div class="mb-3">
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="radio" name="delivery" id="d-collect" value="collection" checked onchange="toggleDelivery()">
+          <label class="form-check-label" for="d-collect">Collection from farm stall</label>
+        </div>
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="radio" name="delivery" id="d-deliver" value="delivery" onchange="toggleDelivery()">
+          <label class="form-check-label" for="d-deliver">Delivery to my address</label>
+        </div>
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="delivery" id="d-pudo" value="pudo" onchange="toggleDelivery()">
+          <label class="form-check-label" for="d-pudo">Pudo courier (collect from a Pudo point)</label>
+        </div>
+      </div>
+
+      <div id="address-block" class="mb-3 d-none">
+        <label class="form-label fw-semibold">Delivery Address *</label>
+        <textarea class="form-control lc-input" id="f-address" rows="2"></textarea>
+      </div>
+
+      <div id="pudo-block" class="mb-3 d-none">
+        <div class="lc-card p-3">
+          <p class="small text-muted mb-3">Enter your preferred Pudo point. We'll confirm the booking and send a waybill by email.</p>
+          <div class="mb-2">
+            <label class="form-label fw-semibold">Pudo Point Name *</label>
+            <input type="text" class="form-control lc-input" id="f-pudo-name" placeholder="e.g. Pick n Pay Stellenbosch">
+          </div>
+          <div class="row g-2">
+            <div class="col-6">
+              <label class="form-label fw-semibold">Suburb *</label>
+              <input type="text" class="form-control lc-input" id="f-pudo-suburb" placeholder="e.g. Stellenbosch">
+            </div>
+            <div class="col-6">
+              <label class="form-label fw-semibold">City *</label>
+              <input type="text" class="form-control lc-input" id="f-pudo-city" placeholder="e.g. Cape Town">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Notes</label>
+        <textarea class="form-control lc-input" id="f-notes" rows="2" placeholder="Any special requests…"></textarea>
+      </div>
+
+      <button type="submit" class="btn lc-btn-primary w-100 btn-lg" id="submit-btn">
+        Pay Now - R<span id="btn-total">0.00</span>
+      </button>
+      <p class="text-muted small text-center mt-2"><i class="bi bi-lock me-1"></i>Secure checkout via PayFast</p>
     </form>
   </div>
 </div>
@@ -148,225 +119,165 @@
 
 {% block scripts %}
 <script>
-// ── Cart ─────────────────────────────────────────────────────────────────────
 const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
-if (!cart.length) window.location = '/farmshop/products';
 
-// Shipping fees by delivery method - injected from server settings (editable in POS)
-const SHIPPING_FEES = {{ shipping_fees | tojson }};
-
-let subtotal = 0;
+// Render order summary
 let total = 0;
 const lines = document.getElementById('summary-lines');
 let anyExceedsStock = false;
 cart.forEach(item => {
   const lineTotal = item.sold_by_weight ? item.price : item.price * item.qty;
-  subtotal += lineTotal;
+  total += lineTotal;
   const thumbSrc = item.image_url ? `/product_images/${item.image_url.replace('.jpg','_thumb.jpg')}` : null;
-  const imgHtml  = thumbSrc ? `<img src="${thumbSrc}" alt="" loading="lazy" width="32" height="32" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">` : '';
-  let stockNote  = '';
+  const imgHtml = thumbSrc
+    ? `<img src="${thumbSrc}" alt="" loading="lazy" decoding="async" width="32" height="32" style="width:32px;height:32px;object-fit:cover;border-radius:4px;flex-shrink:0">`
+    : '';
+  let stockNote = '';
   if (item.available_qty !== undefined) {
-    if (item.available_qty <= 0)           { stockNote = `<div class="text-danger" style="font-size:.7rem">Available on order</div>`; anyExceedsStock = true; }
-    else if (item.qty > item.available_qty){ stockNote = `<div class="text-danger" style="font-size:.7rem">${item.qty - item.available_qty} on order</div>`; anyExceedsStock = true; }
+    if (item.available_qty <= 0) {
+      stockNote = `<div class="text-danger" style="font-size:.7rem">Available on order</div>`;
+      anyExceedsStock = true;
+    } else if (item.qty > item.available_qty) {
+      stockNote = `<div class="text-danger" style="font-size:.7rem">${item.qty - item.available_qty} on order</div>`;
+      anyExceedsStock = true;
+    }
   }
   lines.innerHTML += `<div class="d-flex align-items-center justify-content-between small mb-1 gap-2">
-    <div class="d-flex align-items-center gap-2">${imgHtml}<div><span>${item.name} ${item.sold_by_weight ? item.display||'' : 'x'+item.qty}</span>${stockNote}</div></div>
-    <span>R${lineTotal.toFixed(2)}</span></div>`;
+    <div class="d-flex align-items-center gap-2">${imgHtml}<div><span>${item.name} ${item.sold_by_weight ? item.display || '' : 'x'+item.qty}</span>${stockNote}</div></div>
+    <span>R${lineTotal.toFixed(2)}</span>
+  </div>`;
 });
 document.getElementById('stock-warning-banner').classList.toggle('d-none', !anyExceedsStock);
+document.getElementById('summary-total').textContent = 'R' + total.toFixed(2);
+document.getElementById('btn-total').textContent = total.toFixed(2);
 
-// Recompute subtotal + shipping + total based on the selected delivery method
-function recomputeTotals() {
-  const val = document.querySelector('input[name="delivery"]:checked').value;
-  const shipping = SHIPPING_FEES[val] || 0;
-  total = subtotal + shipping;
-  document.getElementById('summary-subtotal').textContent = 'R' + subtotal.toFixed(2);
-  document.getElementById('summary-shipping').textContent =
-    shipping > 0 ? 'R' + shipping.toFixed(2) : 'Free';
-  document.getElementById('summary-total').textContent = 'R' + total.toFixed(2);
-  document.getElementById('btn-total').textContent = total.toFixed(2);
-}
-recomputeTotals();
+if (!cart.length) window.location = '/farmshop/products';
 
 function toggleDelivery() {
   const val = document.querySelector('input[name="delivery"]:checked').value;
   document.getElementById('address-block').classList.toggle('d-none', val !== 'delivery');
   document.getElementById('pudo-block').classList.toggle('d-none', val !== 'pudo');
-  recomputeTotals();
 }
 
-// ── State ─────────────────────────────────────────────────────────────────────
-let _resolvedEmail = '';
-let _isNewAccount  = false;
-
-function _prefill(customer) {
-  if (customer.name)  document.getElementById('f-name').value  = customer.name;
-  if (customer.email) _resolvedEmail = customer.email;
-  if (customer.phone) document.getElementById('f-phone').value = customer.phone;
-}
-
-function _showDetails(loggedIn) {
-  document.getElementById('step-email').classList.add('d-none');
-  document.getElementById('step-login').classList.add('d-none');
-  document.getElementById('step-register').classList.add('d-none');
-  document.getElementById('step-details').classList.remove('d-none');
-  document.getElementById('logged-in-banner').classList.toggle('d-none', !loggedIn);
-  document.getElementById('form-error').classList.add('d-none');
-}
-
-// ── Boot: already logged in ───────────────────────────────────────────────────
+// ── Pre-fill if already logged in ────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
   if (!LC.isLoggedIn()) return;
   const res = await LC.api('/api/auth/me');
-  if (!res.ok) { LC.setToken(null); return; }
+  if (!res.ok) return;
   const { customer } = await res.json();
-  _prefill(customer);
-  _showDetails(true);
+  if (customer.name)  document.getElementById('f-name').value  = customer.name;
+  if (customer.email) {
+    document.getElementById('f-email').value = customer.email;
+    document.getElementById('password-block').classList.add('d-none');
+  }
+  if (customer.phone) document.getElementById('f-phone').value = customer.phone;
 });
 
-// ── Email blur: check account ─────────────────────────────────────────────────
-let _lastChecked = '';
+// ── Email blur: check if account exists ──────────────────────────────────────
+let _emailHasAccount = false;
+let _lastCheckedEmail = '';
+
 document.getElementById('f-email').addEventListener('blur', async () => {
   const email = document.getElementById('f-email').value.trim().toLowerCase();
-  if (!email || email === _lastChecked) return;
-  _lastChecked   = email;
-  _resolvedEmail = email;
+  if (!email || email === _lastCheckedEmail || LC.isLoggedIn()) return;
+  _lastCheckedEmail = email;
 
-  const spinner = document.getElementById('email-spinner');
-  spinner.classList.remove('d-none');
+  const checking = document.getElementById('email-checking');
+  checking.classList.remove('d-none');
+
   try {
-    const res  = await fetch('/api/auth/check-email', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
+    const res = await fetch('/api/auth/check-email', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
       body: JSON.stringify({ email })
     });
     const data = await res.json();
-    _isNewAccount = !data.exists;
-    // Show login or register step, hide details until resolved
-    document.getElementById('step-login').classList.toggle('d-none', !data.exists);
-    document.getElementById('step-register').classList.toggle('d-none', data.exists);
-    // For new accounts: jump straight to details (password + details on same screen)
-    if (!data.exists) {
-      document.getElementById('step-details').classList.remove('d-none');
-    }
+    _emailHasAccount = data.exists;
+    document.getElementById('password-block').classList.toggle('d-none', !data.exists);
+    if (data.exists) document.getElementById('f-password').focus();
+  } catch(e) {
+    _emailHasAccount = false;
   } finally {
-    spinner.classList.add('d-none');
+    checking.classList.add('d-none');
   }
 });
 
-// ── Login ─────────────────────────────────────────────────────────────────────
-document.getElementById('btn-do-login').addEventListener('click', async () => {
-  const pw  = document.getElementById('f-password-login').value;
-  const err = document.getElementById('login-error');
-  err.classList.add('d-none');
-  if (!pw) { err.textContent = 'Please enter your password.'; err.classList.remove('d-none'); return; }
-
-  const res  = await LC.api('/api/auth/login', {
-    method: 'POST', body: JSON.stringify({ email: _resolvedEmail, password: pw })
-  });
-  const data = await res.json();
-  if (!res.ok) { err.textContent = data.error || 'Incorrect password'; err.classList.remove('d-none'); return; }
-
-  LC.setToken(data.token);
-  _prefill(data.customer);
-  _showDetails(true);
-});
-
-// ── Forgot password ───────────────────────────────────────────────────────────
-document.getElementById('forgot-link').addEventListener('click', e => {
+// Skip login — continue as guest
+document.getElementById('skip-login-link').addEventListener('click', (e) => {
   e.preventDefault();
-  window.location = `/forgot-password?email=${encodeURIComponent(_resolvedEmail)}`;
+  document.getElementById('password-block').classList.add('d-none');
+  document.getElementById('f-password').value = '';
+  _emailHasAccount = false;
 });
 
-// ── Change email ──────────────────────────────────────────────────────────────
-document.getElementById('change-email-link').addEventListener('click', e => {
-  e.preventDefault();
-  _lastChecked = ''; _resolvedEmail = '';
-  document.getElementById('step-login').classList.add('d-none');
-  document.getElementById('step-register').classList.add('d-none');
-  document.getElementById('step-details').classList.add('d-none');
-  document.getElementById('step-email').classList.remove('d-none');
-  document.getElementById('f-email').value = '';
-  document.getElementById('f-email').focus();
-});
-
-// ── Logout ────────────────────────────────────────────────────────────────────
-document.getElementById('logout-link').addEventListener('click', e => {
-  e.preventDefault();
-  LC.setToken(null);
-  window.location.reload();
-});
-
-// ── Submit ────────────────────────────────────────────────────────────────────
+// ── Form submit ───────────────────────────────────────────────────────────────
 document.getElementById('checkout-form').addEventListener('submit', async (e) => {
   e.preventDefault();
   const btn = document.getElementById('submit-btn');
-  const err = document.getElementById('form-error');
-  btn.disabled = true; btn.textContent = 'Processing…';
-  err.classList.add('d-none');
+  btn.disabled = true;
+  btn.textContent = 'Processing…';
+  document.getElementById('form-error').classList.add('d-none');
+  document.getElementById('login-error').classList.add('d-none');
 
-  // If details step not visible yet, form submit shouldn't fire - bail silently
-  if (document.getElementById('step-details').classList.contains('d-none')) {
-    btn.disabled = false; btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`; return;
-  }
+  const email    = document.getElementById('f-email').value.trim();
+  const password = document.getElementById('f-password').value;
+  const deliveryMethod = document.querySelector('input[name="delivery"]:checked').value;
 
-  const email    = _resolvedEmail || document.getElementById('f-email').value.trim();
-  const name     = document.getElementById('f-name').value.trim();
-  const phone    = document.getElementById('f-phone').value.trim();
-  const delivery = document.querySelector('input[name="delivery"]:checked').value;
-
-  if (!name) {
-    err.textContent = 'Please enter your name.'; err.classList.remove('d-none');
-    btn.disabled = false; btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`; return;
-  }
-  if (delivery === 'pudo') {
-    const ok = document.getElementById('f-pudo-name').value.trim()
-            && document.getElementById('f-pudo-suburb').value.trim()
-            && document.getElementById('f-pudo-city').value.trim();
-    if (!ok) {
-      err.textContent = 'Please fill in all Pudo point details.'; err.classList.remove('d-none');
-      btn.disabled = false; btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`; return;
+  if (deliveryMethod === 'pudo') {
+    const name   = document.getElementById('f-pudo-name').value.trim();
+    const suburb = document.getElementById('f-pudo-suburb').value.trim();
+    const city   = document.getElementById('f-pudo-city').value.trim();
+    if (!name || !suburb || !city) {
+      document.getElementById('form-error').textContent = 'Please fill in all Pudo point details.';
+      document.getElementById('form-error').classList.remove('d-none');
+      btn.disabled = false;
+      btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`;
+      return;
     }
   }
 
-  // New account: register before payment
-  if (_isNewAccount && !LC.isLoggedIn()) {
-    const pw     = document.getElementById('f-password-register').value;
-    const regErr = document.getElementById('register-error');
-    regErr.classList.add('d-none');
-    if (!pw || pw.length < 8) {
-      regErr.textContent = 'Password must be at least 8 characters.'; regErr.classList.remove('d-none');
-      btn.disabled = false; btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`; return;
-    }
-    const regRes  = await fetch('/api/auth/register', {
-      method: 'POST', headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({ name, email, phone: phone || undefined, password: pw })
+  // If account exists and password entered, log in first
+  if (_emailHasAccount && password && !LC.isLoggedIn()) {
+    const loginRes = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ email, password })
     });
-    const regData = await regRes.json();
-    if (!regRes.ok) {
-      regErr.textContent = regData.error || 'Could not create account.'; regErr.classList.remove('d-none');
-      btn.disabled = false; btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`; return;
+    const loginData = await loginRes.json();
+    if (!loginRes.ok) {
+      document.getElementById('login-error').textContent = loginData.error || 'Incorrect password';
+      document.getElementById('login-error').classList.remove('d-none');
+      btn.disabled = false;
+      btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`;
+      return;
     }
-    LC.setToken(regData.token);
+    LC.setToken(loginData.token);
+    // Pre-fill name/phone from account
+    if (loginData.customer.name  && !document.getElementById('f-name').value)
+      document.getElementById('f-name').value  = loginData.customer.name;
+    if (loginData.customer.phone && !document.getElementById('f-phone').value)
+      document.getElementById('f-phone').value = loginData.customer.phone;
   }
+
+  const payload = {
+    items: cart.map(item => ({ product_id: item.id, qty: item.qty })),
+    guest_name:       document.getElementById('f-name').value.trim(),
+    guest_email:      email,
+    guest_phone:      document.getElementById('f-phone').value.trim(),
+    delivery_method:  deliveryMethod,
+    delivery_address: document.getElementById('f-address').value.trim(),
+    pudo_point_name:  document.getElementById('f-pudo-name').value.trim(),
+    pudo_suburb:      document.getElementById('f-pudo-suburb').value.trim(),
+    pudo_city:        document.getElementById('f-pudo-city').value.trim(),
+    pudo_point_id:    '',
+    notes:            document.getElementById('f-notes').value.trim(),
+  };
 
   const headers = {'Content-Type':'application/json'};
   if (LC.token) headers['Authorization'] = 'Bearer ' + LC.token;
 
-  const res  = await fetch('/api/farmshop/payfast/initiate', {
-    method: 'POST', headers,
-    body: JSON.stringify({
-      items:            cart.map(i => ({ product_id: i.id, qty: i.qty })),
-      guest_name:       name,
-      guest_email:      email,
-      guest_phone:      phone,
-      delivery_method:  delivery,
-      delivery_address: document.getElementById('f-address').value.trim(),
-      pudo_point_name:  document.getElementById('f-pudo-name').value.trim(),
-      pudo_suburb:      document.getElementById('f-pudo-suburb').value.trim(),
-      pudo_city:        document.getElementById('f-pudo-city').value.trim(),
-      pudo_point_id:    '',
-      notes:            document.getElementById('f-notes').value.trim(),
-    })
+  const res = await fetch('/api/farmshop/payfast/initiate', {
+    method: 'POST', headers, body: JSON.stringify(payload)
   });
   const data = await res.json();
 
@@ -374,16 +285,18 @@ document.getElementById('checkout-form').addEventListener('submit', async (e) =>
     localStorage.removeItem('lc_cart');
     if (window._updateCartBadge) window._updateCartBadge();
     const form = document.createElement('form');
-    form.method = 'POST'; form.action = data.payfast_url;
+    form.method = 'POST';
+    form.action = data.payfast_url;
     data.fields.forEach(([k, v]) => {
       const input = document.createElement('input');
       input.type = 'hidden'; input.name = k; input.value = v;
       form.appendChild(input);
     });
-    document.body.appendChild(form); form.submit();
+    document.body.appendChild(form);
+    form.submit();
   } else {
-    err.textContent = data.error || 'Something went wrong. Please try again.';
-    err.classList.remove('d-none');
+    document.getElementById('form-error').textContent = data.error || 'Something went wrong';
+    document.getElementById('form-error').classList.remove('d-none');
     btn.disabled = false;
     btn.innerHTML = `Pay Now - R<span id="btn-total">${total.toFixed(2)}</span>`;
   }

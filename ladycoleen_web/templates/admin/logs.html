@@ -6,7 +6,7 @@
   <div class="d-flex gap-2 align-items-center">
     <span id="test-email-result" class="small text-muted"></span>
     <button class="btn lc-btn-outline btn-sm" onclick="sendTestEmail()" id="btn-test-email">
-      ✉ Send Test Email
+      <i class="bi bi-envelope me-1"></i>Send Test Email
     </button>
   </div>
 </div>
@@ -25,18 +25,18 @@ async function sendTestEmail() {
   const btn = document.getElementById('btn-test-email');
   const res  = document.getElementById('test-email-result');
   btn.disabled = true;
-  btn.textContent = 'Sending…';
+  btn.innerHTML = 'Sending…';
   const r = await fetch('/api/admin/test-email', { method: 'POST' });
   const d = await r.json().catch(() => ({}));
   if (r.ok) {
-    res.textContent = '✅ ' + (d.message || 'Sent!');
+    res.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>' + (d.message || 'Sent!');
     res.className = 'small text-success';
   } else {
-    res.textContent = '❌ ' + (d.error || 'Failed - check logs');
+    res.innerHTML = '<i class="bi bi-x-circle me-1"></i>' + (d.error || 'Failed - check logs');
     res.className = 'small text-danger';
   }
   btn.disabled = false;
-  btn.textContent = '✉ Send Test Email';
+  btn.innerHTML = '<i class="bi bi-envelope me-1"></i>Send Test Email';
 }
 </script>
 {% endblock %}

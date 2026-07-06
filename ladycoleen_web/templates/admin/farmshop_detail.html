@@ -2,7 +2,7 @@
 {% block title %}{{ order.reference }}{% endblock %}
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-4">
-  <a href="/admin/farmshop" class="btn lc-btn-outline">← Back</a>
+  <a href="/admin/farmshop" class="btn lc-btn-outline"><i class="bi bi-arrow-left me-1"></i>Back</a>
   <h2 class="lc-heading fw-bold mb-0">{{ order.reference }}</h2>
   <span class="badge lc-status-{{ order.status }} fs-6">{{ order.status.title() }}</span>
 </div>
@@ -23,8 +23,8 @@
     <div class="lc-card p-4 mb-4">
       <h5 class="fw-bold mb-3">Order Details</h5>
       <table class="table table-sm lc-table">
-        <tr><th width="130">Customer</th><td>{{ order.guest_name or '-' }}</td></tr>
-        <tr><th>Email</th><td>{{ order.guest_email or '-' }}</td></tr>
+        <tr><th width="130">Customer</th><td>{{ order.guest_name or '—' }}</td></tr>
+        <tr><th>Email</th><td>{{ order.guest_email or '—' }}</td></tr>
         {% if order.guest_phone %}<tr><th>Phone</th><td>{{ order.guest_phone }}</td></tr>{% endif %}
         <tr><th>Delivery</th><td>{{ order.delivery_method.title() }}</td></tr>
         {% if order.delivery_method == 'pudo' and order.pudo_point_name %}
@@ -51,12 +51,6 @@
         {% endfor %}
         </tbody>
         <tfoot>
-          {% if order.shipping_fee and order.shipping_fee > 0 %}
-          <tr><td colspan="3" class="text-end">Subtotal</td>
-              <td>R{{ "%.2f"|format(order.subtotal) }}</td></tr>
-          <tr><td colspan="3" class="text-end">Shipping</td>
-              <td>R{{ "%.2f"|format(order.shipping_fee) }}</td></tr>
-          {% endif %}
           <tr><td colspan="3" class="fw-bold text-end">Total</td>
               <td class="fw-bold">R{{ "%.2f"|format(order.total) }}</td></tr>
         </tfoot>
@@ -69,7 +63,7 @@
     {% if order.invoice_id %}
     <div class="lc-card p-4 mb-3">
       <h5 class="fw-bold mb-3">POS Invoice</h5>
-      <p class="text-success mb-1">✅ Invoice in POS (ID: {{ order.invoice_id }})</p>
+      <p class="text-success mb-1"><i class="bi bi-check-circle-fill me-1"></i>Invoice in POS (ID: {{ order.invoice_id }})</p>
       <p class="small text-muted mb-0">View in POS → Invoices tab → search <code>{{ order.reference }}</code></p>
     </div>
     {% endif %}
@@ -77,7 +71,7 @@
     <!-- Stock deduction confirmation -->
     {% if order.pos_sale_id %}
     <div class="alert alert-success mb-3">
-      <strong>✅ Stock Deducted</strong><br>
+      <strong><i class="bi bi-check-circle-fill me-1"></i>Stock Deducted</strong><br>
       POS Sale ID: <code>{{ order.pos_sale_id[:8] }}…</code>
     </div>
     {% endif %}
@@ -91,7 +85,7 @@
         The payment record is preserved. The order can be re-confirmed afterwards.
       </p>
       <button class="btn btn-outline-danger w-100" onclick="undoOrder()">
-        ↩ Undo & Restore Stock
+        <i class="bi bi-arrow-counterclockwise me-1"></i>Undo & Restore Stock
       </button>
     </div>
     {% endif %}
@@ -99,7 +93,7 @@
     <!-- Draft state - awaiting re-confirmation after undo -->
     {% if order.status == 'draft' and not order.pos_sale_id %}
     <div class="alert alert-warning mb-3">
-      <strong>⚠ Order undone</strong> - stock has been restored.<br>
+      <strong><i class="bi bi-exclamation-triangle me-1"></i>Order undone</strong> - stock has been restored.<br>
       <span class="small">Re-confirm below to deduct stock again.</span>
     </div>
     {% endif %}
@@ -123,7 +117,7 @@
     {% if order.payment_reference %}
     <div class="lc-card p-4 mb-3">
       <h5 class="fw-bold mb-3">Payment</h5>
-      <p class="text-success mb-1">✅ Paid via Paygate</p>
+      <p class="text-success mb-1"><i class="bi bi-check-circle-fill me-1"></i>Paid via Paygate</p>
       <p class="small text-muted mb-0">Reference: <code>{{ order.payment_reference }}</code></p>
     </div>
     {% endif %}

@@ -11,7 +11,7 @@
     'customer_confirmed': ('Quote Accepted',          'primary',   'You\'ve accepted the quote! We\'ll confirm your order shortly.'),
     'confirmed':          ('Confirmed',               'primary',   'Your order is confirmed. We\'ll start baking soon!'),
     'in_production':      ('Being Made',              'info',      'Your cake is in production!'),
-    'completed':          ('Ready for Collection',    'success',   'Your cake is ready! Come collect at the farm shop.'),
+    'completed':          ('Ready for Collection',    'success',   'Your cake is ready! Come collect at the farm stall.'),
     'cancelled':          ('Cancelled',               'danger',    'This order has been cancelled. Please contact us if you have questions.'),
   } %}
   {% set label, color, message = status_map.get(order.status, ('Unknown', 'secondary', '')) %}
@@ -53,7 +53,7 @@
     </div>
 
     <button class="btn lc-btn-primary w-100 mb-2" id="accept-btn" onclick="acceptQuote()">
-      ✓ Accept This Quote
+      <i class="bi bi-check-lg me-1"></i>Accept This Quote
     </button>
     <a href="https://wa.me/27000000000?text=Hi%2C%20I%20have%20a%20question%20about%20order%20{{ order.reference }}"
        class="btn lc-btn-outline w-100" target="_blank">
@@ -75,21 +75,21 @@
 async function acceptQuote() {
   const btn = document.getElementById('accept-btn');
   btn.disabled = true;
-  btn.textContent = 'Accepting…';
+  btn.innerHTML = 'Accepting…';
   document.getElementById('accept-error').classList.add('d-none');
 
   const res = await fetch('/api/cakes/orders/{{ order.reference }}/accept', { method: 'POST' });
   if (res.ok) {
     document.getElementById('accept-success').classList.remove('d-none');
     btn.classList.replace('lc-btn-primary', 'btn-success');
-    btn.textContent = '✓ Quote Accepted';
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Quote Accepted';
     setTimeout(() => location.reload(), 1500);
   } else {
     const d = await res.json().catch(() => ({}));
     document.getElementById('accept-error').textContent = d.error || 'Something went wrong - please try again.';
     document.getElementById('accept-error').classList.remove('d-none');
     btn.disabled = false;
-    btn.textContent = '✓ Accept This Quote';
+    btn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Accept This Quote';
   }
 }
 </script>

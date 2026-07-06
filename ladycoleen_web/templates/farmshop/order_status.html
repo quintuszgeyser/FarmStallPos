@@ -20,10 +20,6 @@
     <p>{{ message }}</p>
     <table class="table table-sm lc-table">
       <tr><th>Delivery</th><td>{{ order.delivery_method.title() }}</td></tr>
-      {% if order.shipping_fee and order.shipping_fee > 0 %}
-      <tr><th>Subtotal</th><td>R{{ "%.2f"|format(order.subtotal) }}</td></tr>
-      <tr><th>Shipping</th><td>R{{ "%.2f"|format(order.shipping_fee) }}</td></tr>
-      {% endif %}
       <tr><th>Total</th><td><strong>R{{ "%.2f"|format(order.total) }}</strong></td></tr>
       <tr><th>Placed</th><td>{{ order.created_at.strftime('%d %b %Y %H:%M') }}</td></tr>
     </table>
@@ -41,7 +37,7 @@
 
   {% if order.payment_reference %}
   <div class="lc-card p-3 mb-4 d-flex align-items-center gap-3">
-    <span style="font-size:1.5rem">✅</span>
+    <i class="bi bi-check-circle-fill text-success" style="font-size:1.5rem"></i>
     <div>
       <p class="fw-semibold mb-0 small">Payment confirmed</p>
       <p class="text-muted mb-0 small" style="font-family:monospace">{{ order.payment_reference }}</p>

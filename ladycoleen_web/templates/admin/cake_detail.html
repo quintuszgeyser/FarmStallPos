@@ -2,7 +2,7 @@
 {% block title %}{{ order.reference }}{% endblock %}
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-4">
-  <a href="/admin/cakes" class="btn lc-btn-outline">← Back</a>
+  <a href="/admin/cakes" class="btn lc-btn-outline"><i class="bi bi-arrow-left me-1"></i>Back</a>
   <h2 class="lc-heading fw-bold mb-0">{{ order.reference }}</h2>
   <span class="badge lc-status-{{ order.status }} fs-6">{{ order.status.replace('_',' ').title() }}</span>
 </div>
@@ -47,7 +47,7 @@
         <label class="form-label fw-semibold">Notes to Customer</label>
         <textarea class="form-control lc-input" id="notes-input" rows="2">{{ order.admin_notes or '' }}</textarea>
       </div>
-      <button class="btn lc-btn-primary w-100" onclick="sendQuote()">Send Quote →</button>
+      <button class="btn lc-btn-primary w-100" onclick="sendQuote()">Send Quote <i class="bi bi-send ms-1"></i></button>
       {% endif %}
     </div>
 
@@ -76,7 +76,7 @@
     <div class="lc-card p-4">
       <h5 class="fw-bold mb-3">POS Invoice</h5>
       {% if order.invoice_id %}
-      <p class="text-success mb-1">✅ Invoice in POS (ID: {{ order.invoice_id }})</p>
+      <p class="text-success mb-1"><i class="bi bi-check-circle-fill me-1"></i>Invoice in POS (ID: {{ order.invoice_id }})</p>
       <p class="small text-muted mb-3">View in POS → Invoices tab → search <code>{{ order.reference }}</code></p>
       <a href="/admin/cakes/{{ order.id }}/invoice/pdf" class="btn lc-btn-primary w-100" target="_blank">
         ↓ Download PDF Invoice

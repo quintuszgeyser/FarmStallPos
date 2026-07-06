@@ -153,6 +153,8 @@ Key conventions:
 - `displayQty(qty_base, unitType)` + `displayCost(cost_per_base, qty_base, unitType)` - always use these together for stock quantities
 - `_globalMarkupPct` - loaded from `/api/settings`, never read from DOM
 - USB barcode scanner: global `keydown` listener, only active on Teller tab when no input is focused
+- **Icons: use Bootstrap Icons 1.11.3** (`<i class="bi bi-*"></i>`) — loaded in `<head>`. Never use emoji in buttons, labels, or headings. Full icon list: https://icons.getbootstrap.com
+- **No emoji in UI** — both POS (`farm_pos_web`) and website (`ladycoleen_web`) use Bootstrap Icons only. Email templates may still use emoji (renders fine in mail clients).
 
 ### Product Types
 
