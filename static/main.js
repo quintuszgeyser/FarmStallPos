@@ -1205,6 +1205,7 @@ function openProductEditor(p) {
   document.getElementById('p-plu-conflict')?.classList.add('hidden');
   const _st = document.getElementById('p-scale-tare'); if (_st) _st.value = p?.scale_tare || '';
   const _ssl = document.getElementById('p-scale-shelf-life'); if (_ssl) _ssl.value = p?.scale_shelf_life || '';
+  const _sus = document.getElementById('p-stat-unit-size'); if (_sus) _sus.value = p?.stat_unit_size ?? '';
   const _sm1 = document.getElementById('p-scale-msg1'); if (_sm1) _sm1.value = p?.scale_msg1 || '';
   const _sm2 = document.getElementById('p-scale-msg2'); if (_sm2) _sm2.value = p?.scale_msg2 || '';
   if (document.getElementById('p-scale-open-price')) document.getElementById('p-scale-open-price').checked = !!p?.scale_open_price;
@@ -2161,6 +2162,8 @@ function buildProductPayload() {
     scale_msg2:        scaleMsg2Raw || null,
     scale_open_price:  document.getElementById('p-scale-open-price')?.checked || false,
     scale_prohibit:    document.getElementById('p-scale-prohibit')?.checked || false,
+    // Stats normalisation
+    stat_unit_size: (() => { const v = document.getElementById('p-stat-unit-size')?.value; return v ? parseFloat(v) : null; })(),
   };
 }
 
@@ -5270,8 +5273,16 @@ function _showChartTab(tab) {
     const c = document.getElementById('chart-top');
     c.style.display = '';
     const products = j.top_products || [];
-    drawBarChart(c, products.map(x => x.name), products.map(x => x.qty_sold), {
-      color: '#e65100', valueSuffix: ' units',
+    // Use normalized_qty when stat_unit_size is configured, otherwise raw qty
+    const qtyVals = products.map(x => x.stat_unit_size ? x.normalized_qty : x.qty_sold);
+    const qtyLabels = products.map(x => {
+      if (x.stat_unit_size) return `${x.normalized_qty} portions`;
+      const unit = x.base_unit || 'units';
+      return `${x.qty_sold} ${unit}`;
+    });
+    drawBarChart(c, products.map(x => x.name), qtyVals, {
+      color: '#e65100', valueSuffix: '',
+      tooltipFormatter: (val, i) => qtyLabels[i] || String(val),
       onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id),
     });
   } else if (tab === 'top-rev') {
@@ -11184,9 +11195,383 @@ function ldLoadSelectedTemplate(idStr) {
   ldRequestRender(true);
 }
 
-// ── Show bulk print button only on products tab ───────────────────────────────
+// ── Show bulk print / bulk edit buttons only on products tab ─────────────────
 document.addEventListener('shown.bs.tab', e => {
   const tabId = e.target?.getAttribute('data-bs-target') || e.target?.href?.split('#')[1];
   const bulkBtn = document.getElementById('btn-bulk-print-labels');
   if (bulkBtn) bulkBtn.classList.toggle('hidden', tabId !== '#products');
+  const bulkEditBtn = document.getElementById('btn-bulk-edit');
+  if (bulkEditBtn) bulkEditBtn.classList.toggle('hidden', tabId !== '#products');
 });
+
+// ══════════════════════════════════════════════════════════════════════════════
+// BULK PRODUCT EDITOR
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _bulkFields   = null; // loaded once from /api/products/bulk/fields
+let _bulkMatched  = 0;    // count from last filter run
+let _bulkPreviewData = null; // last preview result
+
+async function _bulkEnsureFields() {
+  if (_bulkFields) return _bulkFields;
+  _bulkFields = await api('/api/products/bulk/fields');
+  return _bulkFields;
+}
+
+function openBulkEditor() {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkEditorModal'));
+  modal.show();
+  _bulkEnsureFields();
+  // Reset to Filter tab
+  const filterTab = document.querySelector('#bulk-tabs .nav-link');
+  if (filterTab) bootstrap.Tab.getOrCreateInstance(filterTab).show();
+  document.getElementById('bulk-filter-result').textContent = '';
+  document.getElementById('bulk-action-scope').textContent = '';
+}
+
+// ── Condition builder ────────────────────────────────────────────────────────
+
+const _BULK_OP_LABELS = {
+  contains: 'contains', not_contains: "doesn't contain", starts: 'starts with',
+  ends: 'ends with', eq: 'equals', ne: 'not equals',
+  empty: 'is empty', populated: 'is filled',
+  gt: '>', gte: '>=', lt: '<', lte: '<=',
+};
+
+function _bulkOpsForType(type) {
+  if (type === 'bool')    return ['eq', 'empty', 'populated'];
+  if (type === 'float' || type === 'int') return ['eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'empty', 'populated'];
+  return ['contains', 'not_contains', 'starts', 'ends', 'eq', 'ne', 'empty', 'populated'];
+}
+
+function bulkAddCondition() {
+  const fields = _bulkFields?.filterable || [];
+  const row = document.createElement('div');
+  row.className = 'd-flex gap-2 align-items-center condition-row';
+
+  const fieldSel = document.createElement('select');
+  fieldSel.className = 'form-select form-select-sm';
+  fieldSel.style.maxWidth = '180px';
+  fields.forEach(f => {
+    const o = document.createElement('option');
+    o.value = f.key; o.textContent = f.label;
+    fieldSel.appendChild(o);
+  });
+
+  const opSel = document.createElement('select');
+  opSel.className = 'form-select form-select-sm';
+  opSel.style.maxWidth = '160px';
+
+  const valInput = document.createElement('input');
+  valInput.type = 'text';
+  valInput.className = 'form-control form-control-sm';
+  valInput.placeholder = 'value';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'btn btn-outline-danger btn-sm';
+  removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', () => {
+    row.remove();
+    _bulkUpdateNoConditionsHint();
+  });
+
+  function _refreshOps() {
+    const fieldKey = fieldSel.value;
+    const field = fields.find(f => f.key === fieldKey);
+    const ftype = field?.type || 'str';
+    opSel.innerHTML = '';
+    _bulkOpsForType(ftype).forEach(op => {
+      const o = document.createElement('option');
+      o.value = op; o.textContent = _BULK_OP_LABELS[op] || op;
+      opSel.appendChild(o);
+    });
+    _refreshValueInput();
+  }
+
+  function _refreshValueInput() {
+    const op = opSel.value;
+    const fieldKey = fieldSel.value;
+    const field = fields.find(f => f.key === fieldKey);
+    const ftype = field?.type || 'str';
+    const noVal = (op === 'empty' || op === 'populated');
+    valInput.style.display = noVal ? 'none' : '';
+    if (ftype === 'bool') {
+      valInput.type = 'text';
+      valInput.placeholder = 'true / false';
+    } else if (ftype === 'float' || ftype === 'int') {
+      valInput.type = 'number';
+      valInput.placeholder = 'number';
+    } else {
+      valInput.type = 'text';
+      valInput.placeholder = 'value';
+    }
+  }
+
+  fieldSel.addEventListener('change', _refreshOps);
+  opSel.addEventListener('change', _refreshValueInput);
+  _refreshOps();
+
+  row.append(fieldSel, opSel, valInput, removeBtn);
+  document.getElementById('bulk-conditions').appendChild(row);
+  _bulkUpdateNoConditionsHint();
+}
+
+function _bulkUpdateNoConditionsHint() {
+  const noEl = document.getElementById('bulk-no-conditions');
+  const rows = document.querySelectorAll('.condition-row');
+  if (noEl) noEl.style.display = rows.length === 0 ? '' : 'none';
+}
+
+function _bulkGetConditions() {
+  const rows = document.querySelectorAll('.condition-row');
+  return Array.from(rows).map(row => {
+    const [fieldSel, opSel, valInput] = row.querySelectorAll('select, select, input');
+    const sels = row.querySelectorAll('select');
+    const inp  = row.querySelector('input');
+    return {
+      field:    sels[0]?.value,
+      operator: sels[1]?.value,
+      value:    inp?.style.display === 'none' ? '' : (inp?.value || ''),
+    };
+  });
+}
+
+async function bulkRunFilter() {
+  const conditions = _bulkGetConditions();
+  const includeArchived = document.getElementById('bulk-include-archived')?.checked;
+  const resultEl = document.getElementById('bulk-filter-result');
+  resultEl.textContent = 'Filtering…';
+  try {
+    const resp = await api('/api/products/bulk/filter', {
+      method: 'POST',
+      body: JSON.stringify({ conditions, include_archived: includeArchived, per_page: 10 }),
+    });
+    _bulkMatched = resp.total;
+    resultEl.textContent = `${resp.total} product${resp.total !== 1 ? 's' : ''} matched.`;
+    document.getElementById('bulk-action-scope').textContent = `Applies to ${resp.total} product${resp.total !== 1 ? 's' : ''}`;
+    // Auto-advance to Action tab
+    const actionTabLink = document.getElementById('bulk-tab-action-link');
+    if (actionTabLink) bootstrap.Tab.getOrCreateInstance(actionTabLink).show();
+  } catch(e) { resultEl.textContent = `Error: ${e.message}`; }
+}
+
+// ── Action builder ───────────────────────────────────────────────────────────
+
+function bulkAddAction() {
+  const fields = _bulkFields?.editable || [];
+  const row = document.createElement('div');
+  row.className = 'd-flex gap-2 align-items-start flex-wrap action-row border rounded p-2';
+
+  const opSel = document.createElement('select');
+  opSel.className = 'form-select form-select-sm';
+  opSel.style.maxWidth = '110px';
+  ['set', 'replace'].forEach(op => {
+    const o = document.createElement('option'); o.value = op; o.textContent = op; opSel.appendChild(o);
+  });
+
+  const fieldSel = document.createElement('select');
+  fieldSel.className = 'form-select form-select-sm';
+  fieldSel.style.maxWidth = '180px';
+  fields.forEach(f => {
+    const o = document.createElement('option'); o.value = f.key; o.textContent = f.label; fieldSel.appendChild(o);
+  });
+
+  const valueWrap = document.createElement('div');
+  valueWrap.className = 'd-flex gap-2 align-items-center flex-wrap';
+
+  const valInput = document.createElement('input');
+  valInput.className = 'form-control form-control-sm';
+  valInput.style.maxWidth = '180px';
+  valInput.placeholder = 'value';
+
+  // Replace-specific fields
+  const findInput = document.createElement('input');
+  findInput.className = 'form-control form-control-sm'; findInput.style.maxWidth = '140px'; findInput.placeholder = 'find';
+  const replaceInput = document.createElement('input');
+  replaceInput.className = 'form-control form-control-sm'; replaceInput.style.maxWidth = '140px'; replaceInput.placeholder = 'replace with';
+  const caseSensCheck = document.createElement('div');
+  caseSensCheck.innerHTML = '<div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="bulk-case-'+Math.random().toString(36).slice(2)+'" /><label class="form-check-label small">Case-sensitive</label></div>';
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'btn btn-outline-danger btn-sm'; removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', () => { row.remove(); _bulkUpdateNoActionsHint(); });
+
+  function _refresh() {
+    const op = opSel.value;
+    const ftype = (fields.find(f => f.key === fieldSel.value) || {}).type || 'str';
+    valueWrap.innerHTML = '';
+    if (op === 'set') {
+      if (ftype === 'bool') {
+        valInput.type = 'text'; valInput.placeholder = 'true / false';
+      } else if (ftype === 'float' || ftype === 'int') {
+        valInput.type = 'number'; valInput.placeholder = 'number';
+      } else {
+        valInput.type = 'text'; valInput.placeholder = 'value';
+      }
+      const toLabel = document.createElement('span');
+      toLabel.className = 'small text-muted align-self-center'; toLabel.textContent = 'to';
+      valueWrap.append(toLabel, valInput);
+    } else {
+      // replace - only for string fields; show find/replace
+      if (ftype !== 'str') {
+        const warn = document.createElement('span');
+        warn.className = 'small text-danger align-self-center'; warn.textContent = 'Replace only works on text fields';
+        valueWrap.appendChild(warn);
+      } else {
+        valueWrap.append(findInput, document.createTextNode('→'), replaceInput, caseSensCheck);
+      }
+    }
+  }
+
+  opSel.addEventListener('change', _refresh);
+  fieldSel.addEventListener('change', _refresh);
+  _refresh();
+
+  row.append(opSel, fieldSel, valueWrap, removeBtn);
+  document.getElementById('bulk-actions').appendChild(row);
+  _bulkUpdateNoActionsHint();
+}
+
+function _bulkUpdateNoActionsHint() {
+  const noEl = document.getElementById('bulk-no-actions');
+  const rows = document.querySelectorAll('.action-row');
+  if (noEl) noEl.style.display = rows.length === 0 ? '' : 'none';
+}
+
+function _bulkGetActions() {
+  const rows = document.querySelectorAll('.action-row');
+  return Array.from(rows).map(row => {
+    const sels = row.querySelectorAll('select');
+    const op    = sels[0]?.value;
+    const field = sels[1]?.value;
+    if (op === 'set') {
+      const val = row.querySelector('input[type="text"], input[type="number"]')?.value ?? '';
+      return { op, field, value: val };
+    } else {
+      const inputs = row.querySelectorAll('input[type="text"]');
+      const caseCheck = row.querySelector('input[type="checkbox"]');
+      return { op, field, find: inputs[0]?.value || '', replace: inputs[1]?.value || '', case_sensitive: caseCheck?.checked || false };
+    }
+  }).filter(a => a.field);
+}
+
+async function bulkRunPreview() {
+  const conditions = _bulkGetConditions();
+  const actions    = _bulkGetActions();
+  const includeArchived = document.getElementById('bulk-include-archived')?.checked;
+  if (!actions.length) { toast('Add at least one action first', 'warning'); return; }
+
+  const previewTabLink = document.getElementById('bulk-tab-preview-link');
+  if (previewTabLink) bootstrap.Tab.getOrCreateInstance(previewTabLink).show();
+  document.getElementById('bulk-preview-summary').textContent = 'Loading preview…';
+  document.getElementById('bulk-preview-tbody').innerHTML = '';
+
+  try {
+    const resp = await api('/api/products/bulk/preview', {
+      method: 'POST',
+      body: JSON.stringify({ conditions, actions, include_archived: includeArchived }),
+    });
+    _bulkPreviewData = { conditions, actions, includeArchived };
+
+    const summaryEl = document.getElementById('bulk-preview-summary');
+    summaryEl.innerHTML = `
+      Matched: <strong>${resp.matched_total}</strong> products ·
+      Affected: <strong>${resp.affected}</strong> will change
+      ${resp.preview_capped ? '<span class="text-warning ms-2">(preview capped at 500)</span>' : ''}
+    `;
+
+    const tbody = document.getElementById('bulk-preview-tbody');
+    if (!resp.changes.length) {
+      tbody.innerHTML = '<tr><td colspan="4" class="text-muted text-center py-3">No changes</td></tr>';
+      return;
+    }
+    tbody.innerHTML = resp.changes.map(prod =>
+      prod.changes.map((c, ci) => `
+        <tr>
+          ${ci === 0 ? `<td rowspan="${prod.changes.length}" class="align-middle">${escapeHtml(prod.name)}</td>` : ''}
+          <td class="small text-muted">${escapeHtml(c.label)}</td>
+          <td class="small text-danger">${escapeHtml(String(c.old ?? ''))}</td>
+          <td class="small text-success">${escapeHtml(String(c.new ?? ''))}</td>
+        </tr>
+      `).join('')
+    ).join('');
+    document.getElementById('bulk-apply-status').textContent = '';
+  } catch(e) {
+    document.getElementById('bulk-preview-summary').textContent = `Error: ${e.message}`;
+  }
+}
+
+async function bulkApply() {
+  if (!_bulkPreviewData) { toast('Run Preview first', 'warning'); return; }
+  const { conditions, actions, includeArchived } = _bulkPreviewData;
+  const description = document.getElementById('bulk-description')?.value?.trim() || '';
+  const statusEl = document.getElementById('bulk-apply-status');
+  statusEl.textContent = 'Applying…';
+  document.getElementById('bulk-apply-btn').disabled = true;
+  try {
+    const resp = await api('/api/products/bulk/apply', {
+      method: 'POST',
+      body: JSON.stringify({ conditions, actions, include_archived: includeArchived, description }),
+    });
+    statusEl.textContent = `Done — ${resp.affected} product${resp.affected !== 1 ? 's' : ''} updated.`;
+    toast(`Bulk edit applied — ${resp.affected} products updated`, 'success');
+    await loadProducts();
+  } catch(e) {
+    statusEl.textContent = `Error: ${e.message}`;
+    toast(e.message, 'error');
+  } finally {
+    document.getElementById('bulk-apply-btn').disabled = false;
+  }
+}
+
+// ── History & rollback ───────────────────────────────────────────────────────
+
+async function bulkLoadHistory() {
+  const tbody = document.getElementById('bulk-history-tbody');
+  tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">Loading…</td></tr>';
+  try {
+    const runs = await api('/api/products/bulk/history');
+    if (!runs.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center">No history</td></tr>';
+      return;
+    }
+    tbody.innerHTML = runs.map(r => {
+      const when = r.created_at ? new Date(r.created_at).toLocaleString() : '-';
+      const actions = (() => {
+        try {
+          return JSON.parse(r.action_json).map(a =>
+            a.op === 'replace'
+              ? `replace "${a.find}" → "${a.replace}" in ${a.field}`
+              : `set ${a.field}=${a.value}`
+          ).join('; ');
+        } catch { return r.action_json; }
+      })();
+      const rolled = r.rolled_back_at ? `<span class="badge bg-secondary">rolled back</span>` : '';
+      return `<tr>
+        <td class="small">${when}</td>
+        <td class="small">${escapeHtml(r.created_by)}</td>
+        <td class="small">${escapeHtml(r.description || actions)}</td>
+        <td class="text-center">${r.product_count}</td>
+        <td>${rolled}${!r.rolled_back_at ? `<button class="btn btn-outline-warning btn-sm" onclick="bulkRollback(${r.id})">↩ Rollback</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-danger">${e.message}</td></tr>`;
+  }
+}
+
+async function bulkRollback(runId) {
+  if (!confirm('Rollback this bulk edit? The affected products will return to their state before the edit.')) return;
+  try {
+    const resp = await api(`/api/products/bulk/rollback/${runId}`, { method: 'POST' });
+    toast(`Rolled back — ${resp.restored} products restored`, 'success');
+    await loadProducts();
+    await bulkLoadHistory();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// Load history when switching to the history tab
+document.getElementById('bulkEditorModal')?.addEventListener('shown.bs.modal', () => {
+  bulkLoadHistory();
+});
+document.querySelector('[href="#bulk-tab-history"]')?.addEventListener('click', bulkLoadHistory);

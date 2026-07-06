@@ -129,9 +129,29 @@ def api_stats():
     for r in rows:
         top_qty_map[r.product_id] += float(r.qty); top_revenue_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price)
     all_pids = set(top_qty_map.keys()) | set(top_revenue_map.keys())
-    name_map = {p.id: p.name for p in Product.query.filter(Product.id.in_(all_pids)).all()} if all_pids else {}
-    top_by_qty     = [{'product_id': pid, 'name': name_map.get(pid, str(pid)), 'qty_sold': qty, 'revenue': round(top_revenue_map.get(pid, 0), 2)} for pid, qty in sorted(top_qty_map.items(), key=lambda x: x[1], reverse=True)[:10]]
-    top_by_revenue = [{'product_id': pid, 'name': name_map.get(pid, str(pid)), 'revenue': round(rev, 2), 'qty_sold': round(top_qty_map.get(pid, 0), 2)} for pid, rev in sorted(top_revenue_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+    _prod_rows = Product.query.filter(Product.id.in_(all_pids)).with_entities(
+        Product.id, Product.name, Product.stat_unit_size, Product.sold_by_weight, Product.unit_type
+    ).all() if all_pids else []
+    name_map      = {r.id: r.name for r in _prod_rows}
+    stat_unit_map = {r.id: float(r.stat_unit_size) for r in _prod_rows if r.stat_unit_size and r.stat_unit_size > 0}
+    base_unit_map = {r.id: ('g' if r.unit_type == 'weight' else 'ml') for r in _prod_rows if r.sold_by_weight}
+
+    def _norm(pid, qty):
+        s = stat_unit_map.get(pid)
+        return qty / s if s else qty
+
+    top_by_qty = [{
+        'product_id': pid, 'name': name_map.get(pid, str(pid)),
+        'qty_sold': qty, 'normalized_qty': round(_norm(pid, qty), 2),
+        'stat_unit_size': stat_unit_map.get(pid), 'base_unit': base_unit_map.get(pid),
+        'revenue': round(top_revenue_map.get(pid, 0), 2),
+    } for pid, qty in sorted(top_qty_map.items(), key=lambda x: _norm(x[0], x[1]), reverse=True)[:10]]
+    top_by_revenue = [{
+        'product_id': pid, 'name': name_map.get(pid, str(pid)),
+        'revenue': round(rev, 2), 'qty_sold': round(top_qty_map.get(pid, 0), 2),
+        'normalized_qty': round(_norm(pid, top_qty_map.get(pid, 0)), 2),
+        'stat_unit_size': stat_unit_map.get(pid), 'base_unit': base_unit_map.get(pid),
+    } for pid, rev in sorted(top_revenue_map.items(), key=lambda x: x[1], reverse=True)[:10]]
 
     revenue_per_hour = defaultdict(float)
     for r in rows: revenue_per_hour[r.date_time.hour] += float(Decimal(str(r.qty)) * r.unit_price)

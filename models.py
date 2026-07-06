@@ -66,6 +66,9 @@ class Product(db.Model):
     scale_last_sync_status = db.Column(db.String(20), nullable=True)     # ok / error / pending
     scale_last_sync_error  = db.Column(db.Text, nullable=True)
     scale_hash           = db.Column(db.String(64), nullable=True)       # SHA-256 of last sent payload
+    # Stats normalisation — grams/ml products set this to a "typical portion" so rankings
+    # compare fairly against unit products (e.g. 250g = 1 portion of honey)
+    stat_unit_size       = db.Column(Numeric(10, 4), nullable=True)
 
 
 class Category(db.Model):
@@ -115,6 +118,21 @@ class ProductImportRun(db.Model):
     rows_error     = db.Column(db.Integer, nullable=False, default=0)
     imported_by    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     error_log      = db.Column(db.Text, nullable=True)
+
+
+class ProductBulkEditRun(db.Model):
+    """Audit log for bulk product edits. Stores before-state for rollback."""
+    __tablename__ = 'product_bulk_edit_runs'
+    id              = db.Column(db.Integer, primary_key=True)
+    created_at      = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    created_by      = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    description     = db.Column(db.String(200), nullable=True)
+    filter_json     = db.Column(db.Text, nullable=False)
+    action_json     = db.Column(db.Text, nullable=False)
+    product_count   = db.Column(db.Integer, nullable=False, default=0)
+    before_json     = db.Column(db.Text, nullable=True)   # {id: {field: old_val}} for rollback
+    rolled_back_at  = db.Column(db.DateTime(timezone=True), nullable=True)
+    rolled_back_by  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 
 class ScalePluLog(db.Model):

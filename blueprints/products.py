@@ -198,6 +198,11 @@ def api_products_post():
     scale_open_price = bool(data.get('scale_open_price', False))
     scale_prohibit   = bool(data.get('scale_prohibit', False))
 
+    try:
+        stat_unit_size = float(data['stat_unit_size']) if data.get('stat_unit_size') not in (None, '') else None
+    except Exception:
+        stat_unit_size = None
+
     category_id = _resolve_category_id(data)
 
     p = Product(
@@ -215,6 +220,7 @@ def api_products_post():
         scale_tare=scale_tare, scale_shelf_life=scale_shelf_life,
         scale_pack_qty=scale_pack_qty, scale_open_price=scale_open_price,
         scale_msg1=scale_msg1, scale_msg2=scale_msg2, scale_prohibit=scale_prohibit,
+        stat_unit_size=stat_unit_size,
     )
     db.session.add(p)
     db.session.flush()
@@ -295,6 +301,10 @@ def api_products_update():
     if 'margin_pct' in data:
         try: p.margin_pct = float(data['margin_pct']) if data['margin_pct'] is not None else None
         except Exception: return jsonify({'error': 'Invalid margin_pct'}), 400
+
+    if 'stat_unit_size' in data:
+        try: p.stat_unit_size = float(data['stat_unit_size']) if data['stat_unit_size'] not in (None, '') else None
+        except Exception: return jsonify({'error': 'Invalid stat_unit_size'}), 400
 
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None

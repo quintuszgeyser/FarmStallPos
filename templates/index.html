@@ -327,11 +327,11 @@
     #products-card-list { display: block; }
     #products-list { display: none; }
 
-    /* Column widths: Name | PLU | Price | Stock | Actions */
+    /* Column widths: Name | Stock | Price | Barcode | COGS | Markup | Margin */
     .product-col-header,
     .product-row {
       display: grid;
-      grid-template-columns: 1fr 65px 110px 125px auto;
+      grid-template-columns: 1fr 90px 90px 130px 90px 68px 68px;
       column-gap: .75rem;
       padding: .45rem .75rem;
       align-items: center;
@@ -345,48 +345,44 @@
       color: var(--dd-ink);
       position: sticky; top: 0; z-index: 5;
     }
-    .product-col-header > :last-child { text-align: right; }
     .product-row {
       border: 2px solid var(--lc-gold-border);
       border-top: none;
       background: var(--dd-paper);
       transition: background .1s;
+      cursor: pointer;
+      user-select: none;
     }
-    .product-row:hover  { background: #fffbf0; }
+    .product-row:hover   { background: #fffbf0; }
+    .product-row.expanded { background: #fffbf0; }
     .product-row:last-child { border-radius: 0 0 var(--dd-radius) var(--dd-radius); }
     .product-row.is-archived { opacity: .65; }
 
     /* cells */
-    .pr-name { min-width: 0; }
+    .pr-name    { min-width: 0; }
     .pr-name-text { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
-    .pr-plu  { font-size: 13px; color: var(--dd-ink); font-variant-numeric: tabular-nums; }
-    .pr-price { font-size: 14px; font-weight: 600; white-space: nowrap; }
-    .pr-stock { font-size: 13px; white-space: nowrap; }
-    .pr-actions { display: flex; gap: 3px; align-items: center; justify-content: flex-end; flex-wrap: nowrap; }
-    .pr-actions .btn { height: 30px; font-size: 12px; padding: .15rem .4rem; white-space: nowrap; }
-    .pr-expand-btn { background: none; border: 1px solid var(--lc-gold-border); border-radius: 4px; cursor: pointer; font-size: 11px; color: var(--dd-ink); padding: 2px 6px; line-height: 1.6; }
-    .pr-expand-btn:hover { background: var(--lc-gold-light); }
-    .pr-body { grid-column: 1 / -1; display: none; padding-top: .5rem; border-top: 1.5px dashed var(--lc-gold-border); margin-top: .3rem; }
+    .pr-stock   { font-size: 13px; white-space: nowrap; }
+    .pr-price   { font-size: 13px; font-weight: 600; white-space: nowrap; }
+    .pr-barcode { font-size: 12px; color: var(--dd-ink); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
+    .pr-body    { grid-column: 1 / -1; display: none; padding-top: .5rem; border-top: 1.5px dashed var(--lc-gold-border); margin-top: .3rem; }
     .pr-body.open { display: block; }
+    .pr-body-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: .6rem; padding-bottom: .5rem; border-bottom: 1px solid var(--lc-gold-border); }
+    .pr-body-actions .btn { height: 32px; font-size: 13px; padding: .2rem .55rem; }
     .pr-mobile-meta { display: none; }
 
-    /* ── Mobile: single card per product, 2-row layout ── */
+    /* ── Mobile: compact card, data in body on expand ── */
     @media (max-width: 639px) {
       .product-col-header { display: none; }
       .product-row {
-        grid-template-columns: 1fr auto;
-        grid-template-rows: auto auto;
+        grid-template-columns: 1fr;
         border-top: 2px solid var(--lc-gold-border) !important;
         border-radius: var(--dd-radius) !important;
         margin-bottom: .45rem;
-        row-gap: .2rem;
       }
-      .pr-name    { grid-column: 1; grid-row: 1; }
-      .pr-plu, .pr-price, .pr-stock { display: none; }
-      .pr-actions { grid-column: 2; grid-row: 1 / 3; flex-direction: column; align-items: flex-end; gap: 3px; }
-      .pr-actions .btn { height: 28px; font-size: 11px; padding: .1rem .35rem; }
-      .pr-mobile-meta { display: flex; grid-column: 1; grid-row: 2; gap: .5rem; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--dd-ink); }
-      .pr-body { grid-column: 1 / -1; grid-row: 3; }
+      .pr-stock, .pr-price, .pr-barcode, .pr-cogs, .pr-markup, .pr-margin { display: none; }
+      .pr-mobile-meta { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--dd-ink); margin-top: .15rem; }
+      .pr-body { grid-column: 1; }
     }
 
     /* ── Users ── */
@@ -677,6 +673,7 @@
           <button id="btn-new-product" class="btn btn-outline-primary btn-sm">+ New Product</button>
           <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()">⬆ Import CSV</button>
           <button id="btn-import-opening-stock" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openOpeningStockModal()">⬆ Opening Stock</button>
+          <button id="btn-bulk-edit" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openBulkEditor()">✎ Bulk Edit</button>
           <button id="btn-bulk-print-labels" class="btn btn-outline-secondary btn-sm hidden" onclick="openBulkLabelModal()" title="Print labels for selected products">🏷 Print Labels</button>
           <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
         </div>
@@ -2305,6 +2302,12 @@
                 <input id="p-scale-shelf-life" type="number" min="0" class="form-control form-control-sm" placeholder="0">
               </div>
               <div class="col-12">
+                <label class="form-label small mb-1">Stat unit size (g/ml)
+                  <span class="text-muted" title="For stats: how many base units = 1 'portion'. E.g. 250 for 250g honey. Rankings use normalised quantities so weight products compare fairly to unit products.">ⓘ</span>
+                </label>
+                <input id="p-stat-unit-size" type="number" step="1" min="1" class="form-control form-control-sm" placeholder="e.g. 250">
+              </div>
+              <div class="col-12">
                 <label class="form-label small mb-1">Message 1</label>
                 <input id="p-scale-msg1" type="text" class="form-control form-control-sm" placeholder="e.g. Keep refrigerated">
               </div>
@@ -2351,6 +2354,99 @@
 
 
       </div><!-- /modal-body -->
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ BULK PRODUCT EDITOR MODAL ═══════════ -->
+<div class="modal fade" id="bulkEditorModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title">Bulk Product Editor</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0">
+        <!-- Tab nav -->
+        <ul class="nav nav-tabs px-3 pt-2" id="bulk-tabs">
+          <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#bulk-tab-filter">1. Filter</a></li>
+          <li class="nav-item"><a class="nav-link" id="bulk-tab-action-link" data-bs-toggle="tab" href="#bulk-tab-action">2. Action</a></li>
+          <li class="nav-item"><a class="nav-link" id="bulk-tab-preview-link" data-bs-toggle="tab" href="#bulk-tab-preview">3. Preview</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#bulk-tab-history">History</a></li>
+        </ul>
+        <div class="tab-content px-3 py-2">
+
+          <!-- Filter tab -->
+          <div class="tab-pane fade show active" id="bulk-tab-filter">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="bulk-include-archived">
+                <label class="form-check-label small" for="bulk-include-archived">Include archived</label>
+              </div>
+              <button class="btn btn-sm btn-outline-primary" onclick="bulkAddCondition()">+ Add condition</button>
+            </div>
+            <div id="bulk-conditions" class="d-flex flex-column gap-2 mb-3" style="min-height:40px">
+              <div class="text-muted small fst-italic" id="bulk-no-conditions">No conditions — all active products will be matched.</div>
+            </div>
+            <div class="d-flex gap-2 align-items-center">
+              <button class="btn btn-primary btn-sm" onclick="bulkRunFilter()">Filter products</button>
+              <span id="bulk-filter-result" class="small text-muted"></span>
+            </div>
+          </div>
+
+          <!-- Action tab -->
+          <div class="tab-pane fade" id="bulk-tab-action">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="small text-muted" id="bulk-action-scope"></span>
+              <button class="btn btn-sm btn-outline-primary" onclick="bulkAddAction()">+ Add action</button>
+            </div>
+            <div id="bulk-actions" class="d-flex flex-column gap-2 mb-3" style="min-height:40px">
+              <div class="text-muted small fst-italic" id="bulk-no-actions">Add at least one action above.</div>
+            </div>
+            <div>
+              <label class="form-label small mb-1">Description (for audit log)</label>
+              <input id="bulk-description" type="text" class="form-control form-control-sm" placeholder="e.g. Set shelf life for dairy products">
+            </div>
+            <div class="mt-2 d-flex gap-2">
+              <button class="btn btn-primary btn-sm" onclick="bulkRunPreview()">Preview changes</button>
+            </div>
+          </div>
+
+          <!-- Preview tab -->
+          <div class="tab-pane fade" id="bulk-tab-preview">
+            <div id="bulk-preview-summary" class="small text-muted mb-2"></div>
+            <div id="bulk-preview-table-wrap" style="max-height:400px;overflow-y:auto">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light sticky-top">
+                  <tr><th>Product</th><th>Field</th><th>Before</th><th>After</th></tr>
+                </thead>
+                <tbody id="bulk-preview-tbody"></tbody>
+              </table>
+            </div>
+            <div class="mt-3 d-flex gap-2 align-items-center">
+              <button class="btn btn-success btn-sm" id="bulk-apply-btn" onclick="bulkApply()">Apply changes</button>
+              <span id="bulk-apply-status" class="small text-muted"></span>
+            </div>
+          </div>
+
+          <!-- History tab -->
+          <div class="tab-pane fade" id="bulk-tab-history">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <span class="small text-muted">Last 50 bulk edit runs</span>
+              <button class="btn btn-sm btn-outline-secondary" onclick="bulkLoadHistory()">Refresh</button>
+            </div>
+            <div style="max-height:450px;overflow-y:auto">
+              <table class="table table-sm table-hover mb-0">
+                <thead class="table-light sticky-top">
+                  <tr><th>When</th><th>By</th><th>Description</th><th>Products</th><th></th></tr>
+                </thead>
+                <tbody id="bulk-history-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   </div>
 </div>

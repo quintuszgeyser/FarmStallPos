@@ -1324,6 +1324,25 @@ def strong_migrate():
         pg_try("CREATE INDEX IF NOT EXISTS idx_products_product_code ON products(product_code)")
         pg_try("CREATE INDEX IF NOT EXISTS idx_products_name ON products(name)")
 
+        # Stats normalisation: typical serving/portion size for weighted products
+        pg_try("ALTER TABLE products ADD COLUMN stat_unit_size NUMERIC(10,4)")
+
+        # Bulk product edit audit table
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS product_bulk_edit_runs (
+              id            SERIAL PRIMARY KEY,
+              created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              created_by    INTEGER REFERENCES users(id),
+              description   VARCHAR(200),
+              filter_json   TEXT NOT NULL,
+              action_json   TEXT NOT NULL,
+              product_count INTEGER NOT NULL DEFAULT 0,
+              before_json   TEXT,
+              rolled_back_at TIMESTAMPTZ,
+              rolled_back_by INTEGER REFERENCES users(id)
+            )
+        """)
+
         # Settings: add updated_at for TTL-based import lock
         pg_try("ALTER TABLE settings ADD COLUMN updated_at TIMESTAMPTZ DEFAULT NOW()")
 
@@ -1707,6 +1726,7 @@ def _register_routes(_app):
     from blueprints.branding        import bp as branding_bp
     from blueprints.till_sessions   import bp as till_sessions_bp
     from blueprints.labels          import bp as labels_bp
+    from blueprints.bulk            import bp as bulk_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1728,6 +1748,7 @@ def _register_routes(_app):
     _app.register_blueprint(branding_bp)
     _app.register_blueprint(till_sessions_bp)
     _app.register_blueprint(labels_bp)
+    _app.register_blueprint(bulk_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

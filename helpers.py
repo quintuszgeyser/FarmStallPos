@@ -459,6 +459,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'scale_last_synced_at':    p.scale_last_synced_at.isoformat() if p.scale_last_synced_at else None,
         'scale_last_sync_status':  p.scale_last_sync_status,
         'scale_last_sync_error':   p.scale_last_sync_error,
+        'stat_unit_size':          float(p.stat_unit_size) if p.stat_unit_size is not None else None,
         'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
             'filename':      img.filename,
