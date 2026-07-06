@@ -5836,20 +5836,16 @@ async function loadStats() {
   if (label) label.textContent = dateLabel + productLabel;
   _updateExportFilterLabel();
 
-  // Show/hide sections that don't apply to a single-product or single-employee view
-  const kitchenRow   = document.getElementById('stats-row-kitchen');
+  // Supplier chart only makes sense without a user filter (purchases aren't user-attributed)
   const empSection   = document.getElementById('stats-section-employees');
   const suppChartBtn = document.querySelector('[data-chart-tab="suppliers"]');
-  const isFiltered   = !!(productId || userId);
-  if (isFiltered) {
-    if (kitchenRow)   kitchenRow.style.display  = 'none';
+  if (userId && !productId) {
     if (suppChartBtn) suppChartBtn.style.display = 'none';
     if (_statsChartTab === 'suppliers') _statsChartTab = 'daily';
   } else {
-    if (kitchenRow)   kitchenRow.style.display  = '';
     if (suppChartBtn) suppChartBtn.style.display = '';
   }
-  // Employee table: always shown (when filtering by employee it shows that employee's session log)
+  // Employee table and kitchen row are always shown (queries now apply active filters)
   if (empSection) empSection.style.display = '';
 
   // Active filter chips
