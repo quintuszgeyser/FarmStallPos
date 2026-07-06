@@ -560,7 +560,7 @@ function renderProductsCards() {
   // Sticky column header
   const hdr = document.createElement('div');
   hdr.className = 'product-col-header';
-  hdr.innerHTML = '<div>Product</div><div>PLU</div><div>Price</div><div>Stock</div><div>Actions</div>';
+  hdr.innerHTML = '<div>Product</div><div>Stock</div><div>Price</div><div>Barcode</div><div>COGS</div><div>Markup</div><div>Margin</div>';
   wrap.appendChild(hdr);
 
   items.forEach(p => {
@@ -591,8 +591,7 @@ function renderProductsCards() {
       stockMobile = String(p.stock_qty ?? 0);
     }
 
-    const margins   = calcProductMargins(p);
-    const marginTip = margins ? `COGS ${margins.costLabel} · ${margins.markup}% markup / ${margins.margin}% margin` : '';
+    const margins = calcProductMargins(p);
 
     const row = document.createElement('div');
     row.className = `product-row${p.is_archived ? ' is-archived' : ''}`;
@@ -602,62 +601,66 @@ function renderProductsCards() {
       <div class="pr-name">
         <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
         ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
-        ${marginTip ? `<span class="text-muted ms-1" style="font-size:11px" title="${escapeHtml(marginTip)}">· ${margins.margin}%</span>` : ''}
         <div class="pr-mobile-meta">
-          <span class="text-muted">PLU ${p.product_code || '—'}</span>
           ${priceDisplay ? `<span class="text-success fw-semibold">${priceDisplay}</span>` : ''}
           ${stockMobile  ? `<span>${stockMobile}</span>` : ''}
         </div>
       </div>
-      <div class="pr-plu">${p.product_code || '—'}</div>
-      <div class="pr-price ${priceDisplay ? 'text-success' : 'text-muted'}">${priceDisplay || '—'}</div>
       <div class="pr-stock">${stockHtml}</div>
-      <div class="pr-actions">
+      <div class="pr-price ${priceDisplay ? 'text-success' : 'text-muted'}">${priceDisplay || '—'}</div>
+      <div class="pr-barcode">${escapeHtml(p.barcode || '—')}</div>
+      <div class="pr-cogs">${margins ? escapeHtml(margins.costLabel) : '<span class="text-muted">—</span>'}</div>
+      <div class="pr-markup">${margins ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
+      <div class="pr-margin">${margins ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
+      <div class="pr-body"></div>
+    `;
+
+    // Click row to expand/collapse; buttons inside body stop propagation naturally
+    const body = row.querySelector('.pr-body');
+    row.addEventListener('click', e => {
+      if (e.target.closest('button') || e.target.closest('a')) return;
+      const open = body.classList.toggle('open');
+      row.classList.toggle('expanded', open);
+      if (!open || body.children.length > 0) return;
+
+      // Lazy-build body on first open
+      const stockItem = isStockItem ? (STATE._stockItems?.[p.id] || {
+        id: p.id, name: p.name, unit_type: p.unit_type, base_unit: p.base_unit,
+        package_size: p.package_size, package_unit: p.package_unit,
+        sell_packages: [], batches: [], stock_level: p.stock_level || 0,
+      }) : null;
+
+      const actDiv = document.createElement('div');
+      actDiv.className = 'pr-body-actions';
+      actDiv.innerHTML = `
         ${isStockItem ? `
           <button class="btn btn-success btn-sm" data-receive>Receive</button>
           <button class="btn btn-outline-secondary btn-sm" data-stocktake>Stocktake</button>
           <button class="btn btn-outline-danger btn-sm" data-writeoff>Write Off</button>
         ` : ''}
         <button class="btn btn-outline-primary btn-sm" data-edit>Edit</button>
-        <button class="btn btn-outline-secondary btn-sm" data-print title="Print label">🏷</button>
+        <button class="btn btn-outline-secondary btn-sm" data-print>🏷 Label</button>
         ${p.is_archived
           ? `<button class="btn btn-outline-success btn-sm" data-restore>Restore</button>`
           : `<button class="btn btn-outline-secondary btn-sm" data-archive>Archive</button>`}
-        ${isStockItem ? `<button class="pr-expand-btn" data-expand title="Show batches">▾</button>` : ''}
-      </div>
-      ${isStockItem ? `<div class="pr-body"></div>` : ''}
-    `;
-
-    // Wire events
-    row.querySelector('[data-edit]')?.addEventListener('click',    () => openProductEditor(p));
-    row.querySelector('[data-print]')?.addEventListener('click',   () => openLabelPrintModal(p));
-    row.querySelector('[data-archive]')?.addEventListener('click', () => openArchiveModal(p));
-    row.querySelector('[data-restore]')?.addEventListener('click', () => openRestoreModal(p));
-
-    if (isStockItem) {
-      const stockItem = STATE._stockItems?.[p.id] || {
-        id: p.id, name: p.name, unit_type: p.unit_type, base_unit: p.base_unit,
-        package_size: p.package_size, package_unit: p.package_unit,
-        sell_packages: [], batches: [], stock_level: p.stock_level || 0,
-      };
-      row.querySelector('[data-receive]')?.addEventListener('click',   () => openReceiveStockModal(stockItem));
-      row.querySelector('[data-stocktake]')?.addEventListener('click', () => openStocktakeModal(stockItem));
-      row.querySelector('[data-writeoff]')?.addEventListener('click',  () => openWriteoffModal(stockItem));
-
-      const body      = row.querySelector('.pr-body');
-      const expandBtn = row.querySelector('[data-expand]');
-      if (expandBtn && body) {
-        expandBtn.addEventListener('click', () => {
-          const open = body.classList.toggle('open');
-          expandBtn.textContent = open ? '▴' : '▾';
-          if (open && body.children.length === 0) {
-            const sd = STATE._stockItems?.[p.id];
-            if (sd) body.appendChild(_buildStockBody(sd, p));
-            else body.innerHTML = '<div class="text-muted small">No batch data loaded.</div>';
-          }
-        });
+      `;
+      actDiv.querySelector('[data-edit]').addEventListener('click',    () => openProductEditor(p));
+      actDiv.querySelector('[data-print]').addEventListener('click',   () => openLabelPrintModal(p));
+      actDiv.querySelector('[data-archive]')?.addEventListener('click', () => openArchiveModal(p));
+      actDiv.querySelector('[data-restore]')?.addEventListener('click', () => openRestoreModal(p));
+      if (isStockItem && stockItem) {
+        actDiv.querySelector('[data-receive]').addEventListener('click',   () => openReceiveStockModal(stockItem));
+        actDiv.querySelector('[data-stocktake]').addEventListener('click', () => openStocktakeModal(stockItem));
+        actDiv.querySelector('[data-writeoff]').addEventListener('click',  () => openWriteoffModal(stockItem));
       }
-    }
+      body.appendChild(actDiv);
+
+      if (isStockItem) {
+        const sd = STATE._stockItems?.[p.id];
+        if (sd) body.appendChild(_buildStockBody(sd, p));
+        else body.insertAdjacentHTML('beforeend', '<div class="text-muted small">No batch data loaded.</div>');
+      }
+    });
 
     wrap.appendChild(row);
   });
