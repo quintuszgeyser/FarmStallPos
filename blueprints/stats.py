@@ -11,7 +11,7 @@ from helpers import require_role, get_setting, _parse_dt
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment,
-    Sale, KitchenOrder, User, UserSession, Supplier,
+    Sale, KitchenOrder, User, UserSession, Supplier, Customer,
 )
 
 bp = Blueprint('stats', __name__)
@@ -113,11 +113,17 @@ def api_stats():
     gross_profit = total_sales_value - total_cogs
     gross_margin = round(gross_profit / total_sales_value * 100, 1) if total_sales_value > 0 else None
 
-    writeoffs = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt).all()
+    wq = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt)
+    if product_id_filter: wq = wq.filter(StockAdjustment.product_id == product_id_filter)
+    if user_id_filter:    wq = wq.filter(StockAdjustment.user_id    == user_id_filter)
+    writeoffs = wq.all()
     total_writeoff_cost  = float(sum(float(w.cost_written_off or 0) for w in writeoffs))
     total_writeoff_count = len(writeoffs)
 
-    kitchen_in_range = KitchenOrder.query.filter(KitchenOrder.queued_at >= start_dt, KitchenOrder.queued_at <= end_dt).all()
+    kq = KitchenOrder.query.filter(KitchenOrder.queued_at >= start_dt, KitchenOrder.queued_at <= end_dt)
+    if product_id_filter: kq = kq.filter(KitchenOrder.product_id == product_id_filter)
+    if user_id_filter:    kq = kq.filter(KitchenOrder.teller_id  == user_id_filter)
+    kitchen_in_range = kq.all()
     kitchen_completed_list = [k for k in kitchen_in_range if k.status == 'completed']
     now_dt = datetime.utcnow()
     pending_orders = KitchenOrder.query.filter_by(status='pending').order_by(KitchenOrder.queued_at.asc()).all()
@@ -182,7 +188,9 @@ def api_stats():
         if uid not in emp_first or dt < emp_first[uid]: emp_first[uid] = dt
         if uid not in emp_last  or dt > emp_last[uid]:  emp_last[uid]  = dt
 
-    sessions_in_range = UserSession.query.filter(UserSession.logged_in >= start_dt, UserSession.logged_in <= end_dt).all()
+    sq = UserSession.query.filter(UserSession.logged_in >= start_dt, UserSession.logged_in <= end_dt)
+    if user_id_filter: sq = sq.filter(UserSession.user_id == user_id_filter)
+    sessions_in_range = sq.all()
     emp_session_minutes = defaultdict(float); emp_session_count = defaultdict(int); emp_sessions = defaultdict(list)
     emp_first_login = {}; emp_last_activity = {}
     for s in sessions_in_range:
@@ -212,10 +220,9 @@ def api_stats():
     employee_stats.sort(key=lambda x: x['revenue'], reverse=True)
 
     supplier_costs = defaultdict(float)
-    _batches_in_range = StockBatch.query.filter(
-        StockBatch.purchased_at >= start_dt,
-        StockBatch.purchased_at <= end_dt,
-    ).all()
+    bq = StockBatch.query.filter(StockBatch.purchased_at >= start_dt, StockBatch.purchased_at <= end_dt)
+    if product_id_filter: bq = bq.filter(StockBatch.product_id == product_id_filter)
+    _batches_in_range = bq.all()
     _sup_ids = {b.supplier_id for b in _batches_in_range if b.supplier_id}
     _sup_map = {s.id: s.name for s in Supplier.query.filter(Supplier.id.in_(_sup_ids)).all()} if _sup_ids else {}
     for b in _batches_in_range:
@@ -242,6 +249,12 @@ def api_stats():
         _oo_join  = ""
         _oo_flag  = "0"
 
+    # When product/user filters are active, restrict the period CTE to the already-filtered sale_ids
+    _period_filter = ""
+    if sale_ids:
+        sid_csv = ', '.join(f"'{sid}'" for sid in sale_ids)
+        _period_filter = f" AND sale_id IN ({sid_csv})"
+
     cust_row = db.session.execute(_text(f"""
         WITH all_receipts AS (
             SELECT s.sale_id, s.customer_id, MIN(s.date_time) AS sale_at,
@@ -252,7 +265,7 @@ def api_stats():
             {_oo_join}
             GROUP BY s.sale_id, s.customer_id
         ),
-        period AS (SELECT * FROM all_receipts WHERE sale_at >= :s AND sale_at <= :e),
+        period AS (SELECT * FROM all_receipts WHERE sale_at >= :s AND sale_at <= :e{_period_filter}),
         first_purchase AS (
             SELECT customer_id, MIN(sale_at) AS first_sale_at
             FROM all_receipts WHERE customer_id IS NOT NULL AND NOT is_voided
@@ -322,8 +335,12 @@ def api_stats_drilldown():
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
     user_id_filter    = request.args.get('user_id',    type=int)
     product_id_filter = request.args.get('product_id', type=int)
+    voided_filter     = request.args.get('voided') == '1'
 
-    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
+    if voided_filter:
+        q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == True)
+    else:
+        q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
     if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
     if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
     if slice_type == 'day' and slice_val:
@@ -503,8 +520,11 @@ def export_transactions_csv():
     if end_dt < start_dt: start_dt, end_dt = end_dt, start_dt
     try: pid_filter = int(request.args.get('product_id')) if request.args.get('product_id') else None
     except (ValueError, TypeError): pid_filter = None
+    try: uid_filter = int(request.args.get('user_id')) if request.args.get('user_id') else None
+    except (ValueError, TypeError): uid_filter = None
     q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
     if pid_filter: q = q.filter(Sale.product_id == pid_filter)
+    if uid_filter: q = q.filter(Sale.user_id    == uid_filter)
     rows = q.order_by(Sale.date_time.asc(), Sale.sale_id, Sale.id).all()
     pids = {r.product_id for r in rows}; uids = {r.user_id for r in rows if r.user_id}
     pname = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
@@ -536,8 +556,11 @@ def export_profit_csv():
     end_dt   = _parse_dt(request.args.get('end'), is_end=True) or datetime(*date.today().timetuple()[:3], 23, 59, 59)
     try: pid_filter = int(request.args.get('product_id')) if request.args.get('product_id') else None
     except: pid_filter = None
+    try: uid_filter = int(request.args.get('user_id')) if request.args.get('user_id') else None
+    except: uid_filter = None
     q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
     if pid_filter: q = q.filter(Sale.product_id == pid_filter)
+    if uid_filter: q = q.filter(Sale.user_id    == uid_filter)
     rows = q.all()
     sale_ids = list({r.sale_id for r in rows})
     consumptions = StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all() if sale_ids else []
@@ -563,7 +586,14 @@ def export_writeoffs_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
     end_dt   = _parse_dt(request.args.get('end'), is_end=True) or datetime(*date.today().timetuple()[:3], 23, 59, 59)
-    writeoffs = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt).order_by(StockAdjustment.adjusted_at.asc()).all()
+    try: pid_filter_wo = int(request.args.get('product_id')) if request.args.get('product_id') else None
+    except: pid_filter_wo = None
+    try: uid_filter_wo = int(request.args.get('user_id')) if request.args.get('user_id') else None
+    except: uid_filter_wo = None
+    wo_q = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt)
+    if pid_filter_wo: wo_q = wo_q.filter(StockAdjustment.product_id == pid_filter_wo)
+    if uid_filter_wo: wo_q = wo_q.filter(StockAdjustment.user_id    == uid_filter_wo)
+    writeoffs = wo_q.order_by(StockAdjustment.adjusted_at.asc()).all()
     pids = {w.product_id for w in writeoffs}; uids = {w.user_id for w in writeoffs if w.user_id}
     names = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
     users = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
@@ -766,3 +796,54 @@ def api_stats_drilldown_customers():
             'six_plus':    int(freq_row[2] or 0),
         },
     })
+
+
+@bp.route('/api/stats/drilldown/customer-list')
+def api_stats_drilldown_customer_list():
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    start_dt, end_dt  = _parse_range(request.args.get('start'), request.args.get('end'))
+    ctype             = request.args.get('type', 'all')   # 'new' | 'returning' | 'all'
+    user_id_filter    = request.args.get('user_id',    type=int)
+    product_id_filter = request.args.get('product_id', type=int)
+
+    q = db.session.query(Sale).filter(
+        Sale.date_time >= start_dt, Sale.date_time <= end_dt,
+        Sale.voided == False, Sale.customer_id.isnot(None),
+    )
+    if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
+    if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
+    rows = q.all()
+
+    cust_sale_map = defaultdict(set)
+    cust_rev_map  = defaultdict(float)
+    for r in rows:
+        cust_sale_map[r.customer_id].add(r.sale_id)
+        cust_rev_map[r.customer_id] += float(Decimal(str(r.qty)) * r.unit_price)
+
+    cust_ids = list(cust_sale_map.keys())
+    if not cust_ids:
+        return jsonify({'customers': [], 'type': ctype})
+
+    cust_objs = {c.id: c for c in Customer.query.filter(Customer.id.in_(cust_ids)).all()}
+    fp_rows = db.session.query(Sale.customer_id, func.min(Sale.date_time).label('first_at')).filter(
+        Sale.customer_id.in_(cust_ids), Sale.voided == False,
+    ).group_by(Sale.customer_id).all()
+    first_at_map = {r.customer_id: r.first_at for r in fp_rows}
+
+    customers = []
+    for cid in cust_ids:
+        first_at = first_at_map.get(cid)
+        is_new = bool(first_at and start_dt <= first_at <= end_dt)
+        if ctype == 'new'       and not is_new: continue
+        if ctype == 'returning' and     is_new: continue
+        c = cust_objs.get(cid)
+        customers.append({
+            'customer_id':    cid,
+            'name':           c.name if c else f'Customer #{cid}',
+            'visits':         len(cust_sale_map[cid]),
+            'revenue':        round(cust_rev_map[cid], 2),
+            'first_purchase': first_at.isoformat() if first_at else None,
+            'is_new':         is_new,
+        })
+    customers.sort(key=lambda x: x['revenue'], reverse=True)
+    return jsonify({'customers': customers, 'type': ctype})

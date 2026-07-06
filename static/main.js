@@ -5604,6 +5604,58 @@ async function openProfitDrilldown() {
   }
 }
 
+async function openVoidedDrilldown() {
+  document.getElementById('drilldown-title').textContent = 'Voided Transactions';
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
+  try {
+    const params = _statsFilterParams();
+    params.set('voided', '1');
+    const data = await api(`/api/stats/drilldown?${params}`);
+    if (!data.transactions?.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No voided transactions found.</div>';
+      return;
+    }
+    document.getElementById('drilldown-body').innerHTML = _renderDrilldownTransactions(data, {});
+  } catch(e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger p-2">${e.message}</div>`;
+  }
+}
+
+async function openCustomerListDrilldown(type) {
+  const titles = { new: 'New Customers', returning: 'Returning Customers', all: 'Customers' };
+  document.getElementById('drilldown-title').textContent = titles[type] || 'Customers';
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
+  try {
+    const params = _statsFilterParams();
+    params.set('type', type);
+    const data = await api(`/api/stats/drilldown/customer-list?${params}`);
+    const custs = data.customers || [];
+    if (!custs.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">No customers found.</div>';
+      return;
+    }
+    const total = custs.reduce((s, c) => s + c.revenue, 0);
+    let html = `<div class="small text-muted mb-2">${custs.length} customer${custs.length!==1?'s':''} · Total revenue R${fmt(total)}</div>`;
+    html += `<table class="table table-sm table-hover">
+      <thead class="table-light"><tr><th>Customer</th><th>Visits</th><th class="text-end">Revenue</th><th>Type</th><th>First Purchase</th></tr></thead><tbody>`;
+    custs.forEach(c => {
+      html += `<tr>
+        <td>${c.name}</td>
+        <td>${c.visits}</td>
+        <td class="text-end fw-semibold">R${fmt(c.revenue)}</td>
+        <td><span class="badge ${c.is_new ? 'bg-success' : 'bg-secondary'}">${c.is_new ? 'New' : 'Returning'}</span></td>
+        <td class="small text-muted">${c.first_purchase ? c.first_purchase.slice(0,10) : '-'}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('drilldown-body').innerHTML = html;
+  } catch(e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger p-2">${e.message}</div>`;
+  }
+}
+
 function switchChartTab(tab) { _showChartTab(tab); }
 
 function _showChartTab(tab) {
@@ -5685,9 +5737,7 @@ function _showChartTab(tab) {
   } else if (tab === 'channels') {
     const c = document.getElementById('chart-channels');
     c.style.display = '';
-    const start = document.getElementById('stats-start')?.value || todayISO();
-    const end   = document.getElementById('stats-end')?.value   || todayISO();
-    api(`/api/stats/drilldown/channels?start=${start}&end=${end}`).then(d => {
+    api(`/api/stats/drilldown/channels?${_statsFilterParams()}`).then(d => {
       const daily = d.daily || [];
       if (!daily.length) { drawBarChart(c, [], [], {title: 'No channel data'}); return; }
       // Stacked-style: show online vs instore as two separate datasets using colour
@@ -5702,9 +5752,7 @@ function _showChartTab(tab) {
   } else if (tab === 'customers') {
     const c = document.getElementById('chart-customers');
     c.style.display = '';
-    const start = document.getElementById('stats-start')?.value || todayISO();
-    const end   = document.getElementById('stats-end')?.value   || todayISO();
-    api(`/api/stats/drilldown/customers?start=${start}&end=${end}`).then(d => {
+    api(`/api/stats/drilldown/customers?${_statsFilterParams()}`).then(d => {
       const daily = d.new_vs_returning_daily || [];
       const freq  = d.frequency_distribution || {};
       if (!daily.length && !freq.once) { drawBarChart(c, [], [], {title: 'No customer data'}); return; }
@@ -5916,13 +5964,13 @@ async function loadStats() {
     }
 
     // ── New customer / channel cards ──
-    if (el('stat-new-customers'))     { el('stat-new-customers').textContent     = j.new_customers ?? '-';     cardClick(el('stat-new-customers'),     () => switchChartTab('customers')); }
-    if (el('stat-returning-customers')){ el('stat-returning-customers').textContent = j.returning_customers ?? '-'; cardClick(el('stat-returning-customers'), () => switchChartTab('customers')); }
-    if (el('stat-repeat-rate'))       { el('stat-repeat-rate').textContent       = j.repeat_customer_rate != null ? j.repeat_customer_rate + '%' : '-'; cardClick(el('stat-repeat-rate'), () => switchChartTab('customers')); }
-    if (el('stat-rev-per-customer'))  { el('stat-rev-per-customer').textContent  = j.revenue_per_customer != null ? `R${fmt(j.revenue_per_customer)}` : '-'; }
-    if (el('stat-online-rev'))        { el('stat-online-rev').textContent        = j.online_revenue != null ? `R${fmt(j.online_revenue)}` : '-';     cardClick(el('stat-online-rev'),        () => switchChartTab('channels')); }
-    if (el('stat-instore-rev'))       { el('stat-instore-rev').textContent       = j.instore_revenue != null ? `R${fmt(j.instore_revenue)}` : '-';   cardClick(el('stat-instore-rev'),       () => switchChartTab('channels')); }
-    if (el('stat-void-rate'))         { el('stat-void-rate').textContent         = j.void_receipt_rate != null ? j.void_receipt_rate + '%' : '-'; }
+    if (el('stat-new-customers'))      { el('stat-new-customers').textContent      = j.new_customers ?? '-';                                           cardClick(el('stat-new-customers'),      () => openCustomerListDrilldown('new')); }
+    if (el('stat-returning-customers')){ el('stat-returning-customers').textContent = j.returning_customers ?? '-';                                   cardClick(el('stat-returning-customers'), () => openCustomerListDrilldown('returning')); }
+    if (el('stat-repeat-rate'))        { el('stat-repeat-rate').textContent        = j.repeat_customer_rate != null ? j.repeat_customer_rate + '%' : '-'; cardClick(el('stat-repeat-rate'), () => switchChartTab('customers')); }
+    if (el('stat-rev-per-customer'))   { el('stat-rev-per-customer').textContent   = j.revenue_per_customer != null ? `R${fmt(j.revenue_per_customer)}` : '-'; }
+    if (el('stat-online-rev'))         { el('stat-online-rev').textContent         = j.online_revenue  != null ? `R${fmt(j.online_revenue)}`  : '-';  cardClick(el('stat-online-rev'),         () => switchChartTab('channels')); }
+    if (el('stat-instore-rev'))        { el('stat-instore-rev').textContent        = j.instore_revenue != null ? `R${fmt(j.instore_revenue)}` : '-';  cardClick(el('stat-instore-rev'),        () => switchChartTab('channels')); }
+    if (el('stat-void-rate'))          { el('stat-void-rate').textContent          = j.void_receipt_rate != null ? j.void_receipt_rate + '%' : '-';   cardClick(el('stat-void-rate'),          () => openVoidedDrilldown()); }
 
     if (el('stat-best-day') && j.best_day) {
       el('stat-best-day').textContent     = j.best_day.date;
