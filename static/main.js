@@ -28,6 +28,7 @@ let STATE = {
   customerPollInterval: null,  // interval ID for till customer polling
   _cartDiscount:    null,   // {type:'pct'|'amt', value:number} - admin cart-wide discount
   _receiptPrinterId: null,  // LabelPrinter.id to use for receipts (null = auto-detect USB)
+  _selectedProductIds: new Set(),  // product IDs checked in the products tab
 };
 
 // ═══════════════════════════════════════════════════════
@@ -557,10 +558,20 @@ function renderProductsCards() {
     return;
   }
 
-  // Sticky column header
+  // Select-all checkbox in header
   const hdr = document.createElement('div');
   hdr.className = 'product-col-header';
-  hdr.innerHTML = '<div>Product</div><div>Stock</div><div>Price</div><div>Barcode</div><div>COGS</div><div>Markup</div><div>Margin</div>';
+  hdr.innerHTML = `
+    <div><input type="checkbox" id="pr-select-all" title="Select all"></div>
+    <div>Product</div><div>Stock</div><div>Price</div><div>Barcode</div>
+    <div>COGS</div><div>Markup</div><div>Margin</div><div></div>
+  `;
+  hdr.querySelector('#pr-select-all').addEventListener('change', e => {
+    const checked = e.target.checked;
+    wrap.querySelectorAll('.pr-row-check').forEach(cb => {
+      if (cb.checked !== checked) cb.click();
+    });
+  });
   wrap.appendChild(hdr);
 
   items.forEach(p => {
@@ -594,10 +605,12 @@ function renderProductsCards() {
     const margins = calcProductMargins(p);
 
     const row = document.createElement('div');
-    row.className = `product-row${p.is_archived ? ' is-archived' : ''}`;
+    const isSelected = STATE._selectedProductIds.has(p.id);
+    row.className = `product-row${p.is_archived ? ' is-archived' : ''}${isSelected ? ' selected' : ''}`;
     row.dataset.productId = p.id;
 
     row.innerHTML = `
+      <div class="pr-check"><input type="checkbox" class="pr-row-check" ${isSelected ? 'checked' : ''}></div>
       <div class="pr-name">
         <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
         ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
@@ -612,53 +625,78 @@ function renderProductsCards() {
       <div class="pr-cogs">${margins ? escapeHtml(margins.costLabel) : '<span class="text-muted">—</span>'}</div>
       <div class="pr-markup">${margins ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-margin">${margins ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
+      <div class="pr-more-wrap">
+        <button class="pr-more-btn" title="Actions">⋮</button>
+        <div class="pr-more-menu">
+          <button data-menu="edit">✏ Edit</button>
+          <button data-menu="label">🏷 Print Label</button>
+          ${isStockItem ? `
+            <button data-menu="receive">📥 Receive</button>
+            <button data-menu="stocktake">📋 Stocktake</button>
+            <button data-menu="writeoff">🗑 Write Off</button>
+          ` : ''}
+          ${p.is_archived
+            ? `<button data-menu="restore">♻ Restore</button>`
+            : `<button data-menu="archive">📦 Archive</button>`}
+        </div>
+      </div>
       <div class="pr-body"></div>
     `;
 
-    // Click row to expand/collapse; buttons inside body stop propagation naturally
+    // Checkbox: toggle selection
+    const checkbox = row.querySelector('.pr-row-check');
+    checkbox.addEventListener('click', e => {
+      e.stopPropagation();
+      if (checkbox.checked) {
+        STATE._selectedProductIds.add(p.id);
+        row.classList.add('selected');
+      } else {
+        STATE._selectedProductIds.delete(p.id);
+        row.classList.remove('selected');
+      }
+      _updateSelectionBar();
+    });
+
+    // ⋮ button: open/close context menu
+    const moreBtn  = row.querySelector('.pr-more-btn');
+    const moreMenu = row.querySelector('.pr-more-menu');
+    moreBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      // Close any other open menus
+      document.querySelectorAll('.pr-more-menu.open').forEach(m => { if (m !== moreMenu) m.classList.remove('open'); });
+      moreMenu.classList.toggle('open');
+    });
+    document.addEventListener('click', () => moreMenu.classList.remove('open'), { capture: false });
+
+    const stockItem = isStockItem ? (STATE._stockItems?.[p.id] || {
+      id: p.id, name: p.name, unit_type: p.unit_type, base_unit: p.base_unit,
+      package_size: p.package_size, package_unit: p.package_unit,
+      sell_packages: [], batches: [], stock_level: p.stock_level || 0,
+    }) : null;
+
+    moreMenu.querySelector('[data-menu="edit"]')?.addEventListener('click',     e => { e.stopPropagation(); moreMenu.classList.remove('open'); openProductEditor(p); });
+    moreMenu.querySelector('[data-menu="label"]')?.addEventListener('click',    e => { e.stopPropagation(); moreMenu.classList.remove('open'); openLabelPrintModal(p); });
+    moreMenu.querySelector('[data-menu="archive"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openArchiveModal(p); });
+    moreMenu.querySelector('[data-menu="restore"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openRestoreModal(p); });
+    if (isStockItem && stockItem) {
+      moreMenu.querySelector('[data-menu="receive"]')?.addEventListener('click',   e => { e.stopPropagation(); moreMenu.classList.remove('open'); openReceiveStockModal(stockItem); });
+      moreMenu.querySelector('[data-menu="stocktake"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openStocktakeModal(stockItem); });
+      moreMenu.querySelector('[data-menu="writeoff"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openWriteoffModal(stockItem); });
+    }
+
+    // Row click: expand detail (not on checkbox or ⋮)
     const body = row.querySelector('.pr-body');
     row.addEventListener('click', e => {
-      if (e.target.closest('button') || e.target.closest('a')) return;
+      if (e.target.closest('.pr-check') || e.target.closest('.pr-more-wrap')) return;
       const open = body.classList.toggle('open');
-      row.classList.toggle('expanded', open);
+      row.classList.toggle('expanded', open && !isSelected);
       if (!open || body.children.length > 0) return;
-
-      // Lazy-build body on first open
-      const stockItem = isStockItem ? (STATE._stockItems?.[p.id] || {
-        id: p.id, name: p.name, unit_type: p.unit_type, base_unit: p.base_unit,
-        package_size: p.package_size, package_unit: p.package_unit,
-        sell_packages: [], batches: [], stock_level: p.stock_level || 0,
-      }) : null;
-
-      const actDiv = document.createElement('div');
-      actDiv.className = 'pr-body-actions';
-      actDiv.innerHTML = `
-        ${isStockItem ? `
-          <button class="btn btn-success btn-sm" data-receive>Receive</button>
-          <button class="btn btn-outline-secondary btn-sm" data-stocktake>Stocktake</button>
-          <button class="btn btn-outline-danger btn-sm" data-writeoff>Write Off</button>
-        ` : ''}
-        <button class="btn btn-outline-primary btn-sm" data-edit>Edit</button>
-        <button class="btn btn-outline-secondary btn-sm" data-print>🏷 Label</button>
-        ${p.is_archived
-          ? `<button class="btn btn-outline-success btn-sm" data-restore>Restore</button>`
-          : `<button class="btn btn-outline-secondary btn-sm" data-archive>Archive</button>`}
-      `;
-      actDiv.querySelector('[data-edit]').addEventListener('click',    () => openProductEditor(p));
-      actDiv.querySelector('[data-print]').addEventListener('click',   () => openLabelPrintModal(p));
-      actDiv.querySelector('[data-archive]')?.addEventListener('click', () => openArchiveModal(p));
-      actDiv.querySelector('[data-restore]')?.addEventListener('click', () => openRestoreModal(p));
-      if (isStockItem && stockItem) {
-        actDiv.querySelector('[data-receive]').addEventListener('click',   () => openReceiveStockModal(stockItem));
-        actDiv.querySelector('[data-stocktake]').addEventListener('click', () => openStocktakeModal(stockItem));
-        actDiv.querySelector('[data-writeoff]').addEventListener('click',  () => openWriteoffModal(stockItem));
-      }
-      body.appendChild(actDiv);
-
       if (isStockItem) {
         const sd = STATE._stockItems?.[p.id];
         if (sd) body.appendChild(_buildStockBody(sd, p));
-        else body.insertAdjacentHTML('beforeend', '<div class="text-muted small">No batch data loaded.</div>');
+        else body.insertAdjacentHTML('beforeend', '<div class="text-muted small py-2">No batch data loaded.</div>');
+      } else {
+        body.insertAdjacentHTML('beforeend', '<div class="text-muted small py-2">No stock batches — use the ⋮ menu for actions.</div>');
       }
     });
 
@@ -673,6 +711,345 @@ function renderProductsCards() {
   if (productsPane && productsPane.classList.contains('active')) {
     _renderBarcodes(items);
   }
+}
+
+// ═══════════════════════════════════════════════════════
+// PRODUCT SELECTION BAR + BULK ACTIONS
+// ═══════════════════════════════════════════════════════
+
+function _updateSelectionBar() {
+  const count = STATE._selectedProductIds.size;
+  const bar   = document.getElementById('products-sel-bar');
+  const cntEl = document.getElementById('products-sel-count');
+  if (!bar) return;
+
+  if (count === 0) { bar.classList.add('d-none'); return; }
+  bar.classList.remove('d-none');
+  cntEl.textContent = `${count} product${count > 1 ? 's' : ''} selected`;
+
+  // Only show stock-specific actions when at least one stock_item is selected
+  const selectedProds  = (STATE.products || []).filter(p => STATE._selectedProductIds.has(p.id));
+  const anyStockItems  = selectedProds.some(p => p.product_type === 'stock_item');
+  ['receive', 'stocktake', 'writeoff'].forEach(a => {
+    const btn = bar.querySelector(`[data-bulk-action="${a}"]`);
+    if (btn) btn.style.display = anyStockItems ? '' : 'none';
+  });
+}
+
+// Wire selection bar (main.js loads at end of body, DOM is ready)
+document.getElementById('btn-clear-sel')?.addEventListener('click', () => {
+  STATE._selectedProductIds.clear();
+  _updateSelectionBar();
+  document.querySelectorAll('.pr-row-check').forEach(cb => { cb.checked = false; });
+  document.querySelectorAll('.product-row.selected').forEach(r => r.classList.remove('selected'));
+  const selAll = document.getElementById('pr-select-all');
+  if (selAll) selAll.checked = false;
+});
+document.querySelectorAll('[data-bulk-action]').forEach(btn => {
+  btn.addEventListener('click', () => _openBulkAction(btn.dataset.bulkAction));
+});
+
+function _buildUnitOptionsHtml(unitType, packageSize, packageUnit) {
+  return buildUnitOptions(unitType, packageSize, packageUnit)
+    .map(o => `<option value="${escapeHtml(o.value)}" data-conv="${o.conv}">${escapeHtml(o.label)}</option>`)
+    .join('');
+}
+
+function _openBulkAction(action) {
+  const products = (STATE.products || []).filter(p => STATE._selectedProductIds.has(p.id));
+  if (!products.length) return toast('No products selected', 'warning');
+
+  if (action === 'edit') {
+    if (products.length === 1) { openProductEditor(products[0]); return; }
+    openBulkEditor();
+    return;
+  }
+
+  const builders = {
+    receive:   _buildBulkReceive,
+    stocktake: _buildBulkStocktake,
+    writeoff:  _buildBulkWriteoff,
+    labels:    _buildBulkLabels,
+    archive:   _buildBulkArchive,
+  };
+  if (builders[action]) {
+    builders[action](products);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).show();
+  }
+}
+
+function _buildBulkReceive(products) {
+  const items = products.filter(p => p.product_type === 'stock_item');
+  if (!items.length) return toast('No stock items in selection', 'warning');
+  document.getElementById('bulk-action-title').textContent = `Receive Stock — ${items.length} product${items.length > 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-bulk-confirm');
+  btn.textContent = 'Receive All';
+  btn.className   = 'btn btn-success';
+
+  const supOptions = `<option value="">— No supplier —</option>` +
+    (_suppliers || []).map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('');
+
+  document.getElementById('bulk-action-body').innerHTML = items.map(p => `
+    <div class="bulk-section" data-section-pid="${p.id}">
+      <div class="bulk-section-title">${escapeHtml(p.name)}</div>
+      <div class="row g-2">
+        <div class="col-12 col-sm-6">
+          <label class="form-label small mb-1">Supplier</label>
+          <select class="form-select form-select-sm" data-field="supplier">${supOptions}</select>
+        </div>
+        <div class="col-8 col-sm-4">
+          <label class="form-label small mb-1">Quantity</label>
+          <div class="input-group input-group-sm">
+            <input type="number" class="form-control" data-field="qty" step="0.01" min="0" placeholder="0">
+            <select class="form-select" data-field="unit" style="max-width:85px">${_buildUnitOptionsHtml(p.unit_type, p.package_size, p.package_unit)}</select>
+          </div>
+        </div>
+        <div class="col-4 col-sm-2">
+          <label class="form-label small mb-1">Total R</label>
+          <input type="number" class="form-control form-control-sm" data-field="price" step="0.01" min="0" placeholder="0">
+        </div>
+      </div>
+      <div class="text-muted small mt-1" data-field="preview"></div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('#bulk-action-body .bulk-section').forEach(section => {
+    const pid = parseInt(section.dataset.sectionPid);
+    const p   = items.find(x => x.id === pid);
+    const qtyEl   = section.querySelector('[data-field="qty"]');
+    const priceEl = section.querySelector('[data-field="price"]');
+    const unitEl  = section.querySelector('[data-field="unit"]');
+    const preEl   = section.querySelector('[data-field="preview"]');
+    const update  = () => {
+      const qty   = parseFloat(qtyEl.value) || 0;
+      const price = parseFloat(priceEl.value) || 0;
+      const conv  = parseFloat(unitEl.options[unitEl.selectedIndex]?.dataset?.conv || 1);
+      const base  = qty * conv;
+      preEl.textContent = (base > 0 && price > 0)
+        ? `≈ R${(price / base).toFixed(4)} / ${p.base_unit || 'unit'} for ${displayQty(base, p.unit_type)}`
+        : '';
+    };
+    qtyEl.addEventListener('input', update);
+    priceEl.addEventListener('input', update);
+    unitEl.addEventListener('change', update);
+  });
+
+  btn.onclick = async () => {
+    const errs = [], ok = [];
+    for (const section of document.querySelectorAll('#bulk-action-body .bulk-section')) {
+      const pid   = parseInt(section.dataset.sectionPid);
+      const p     = items.find(x => x.id === pid);
+      const qty   = parseFloat(section.querySelector('[data-field="qty"]').value) || 0;
+      const price = parseFloat(section.querySelector('[data-field="price"]').value) || 0;
+      const unit  = section.querySelector('[data-field="unit"]').value;
+      const sid   = parseInt(section.querySelector('[data-field="supplier"]').value) || null;
+      if (qty <= 0 || price <= 0) { errs.push(`${p.name}: qty and cost required`); continue; }
+      try {
+        await api('/api/stock/receive', { method: 'POST', body: JSON.stringify({ product_id: pid, qty, unit, total_price: price, supplier_id: sid }) });
+        ok.push(p.name);
+      } catch (e) { errs.push(`${p.name}: ${e.message}`); }
+    }
+    if (ok.length) toast(`Received: ${ok.join(', ')}`, 'success', 5000);
+    if (errs.length) toast(errs.join(' | '), 'error', 7000);
+    if (ok.length) {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
+      STATE._selectedProductIds.clear(); _updateSelectionBar();
+      await loadIngredients(); await loadProducts();
+    }
+  };
+}
+
+function _buildBulkStocktake(products) {
+  const items = products.filter(p => p.product_type === 'stock_item');
+  if (!items.length) return toast('No stock items in selection', 'warning');
+  document.getElementById('bulk-action-title').textContent = `Stocktake — ${items.length} product${items.length > 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-bulk-confirm');
+  btn.textContent = 'Apply Stocktake';
+  btn.className   = 'btn btn-primary';
+
+  document.getElementById('bulk-action-body').innerHTML = items.map(p => `
+    <div class="bulk-section" data-section-pid="${p.id}">
+      <div class="bulk-section-title">${escapeHtml(p.name)} <span class="text-muted fw-normal" style="font-size:13px">System: ${displayQty(p.stock_level || 0, p.unit_type)}</span></div>
+      <div class="row g-2 align-items-end">
+        <div class="col-7">
+          <label class="form-label small mb-1">Actual count</label>
+          <div class="input-group input-group-sm">
+            <input type="number" class="form-control" data-field="qty" step="0.01" min="0" placeholder="0">
+            <select class="form-select" data-field="unit" style="max-width:85px">${_buildUnitOptionsHtml(p.unit_type, p.package_size, p.package_unit)}</select>
+          </div>
+        </div>
+        <div class="col-12">
+          <div class="small text-muted" data-field="preview"></div>
+        </div>
+        <div class="col-12">
+          <input type="text" class="form-control form-control-sm" data-field="reason" placeholder="Reason / note (required)">
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  document.querySelectorAll('#bulk-action-body .bulk-section').forEach(section => {
+    const pid    = parseInt(section.dataset.sectionPid);
+    const p      = items.find(x => x.id === pid);
+    const qtyEl  = section.querySelector('[data-field="qty"]');
+    const unitEl = section.querySelector('[data-field="unit"]');
+    const preEl  = section.querySelector('[data-field="preview"]');
+    const update = () => {
+      const qty  = parseFloat(qtyEl.value) || 0;
+      const conv = parseFloat(unitEl.options[unitEl.selectedIndex]?.dataset?.conv || 1);
+      const base = qty * conv;
+      const diff = base - (p.stock_level || 0);
+      if (qty <= 0) { preEl.textContent = ''; return; }
+      if (Math.abs(diff) < 0.001) preEl.textContent = '✓ Matches system';
+      else if (diff < 0) preEl.textContent = `⚠ Will remove ${displayQty(Math.abs(diff), p.unit_type)}`;
+      else preEl.textContent = `ℹ Will add ${displayQty(diff, p.unit_type)}`;
+    };
+    qtyEl.addEventListener('input', update);
+    unitEl.addEventListener('change', update);
+  });
+
+  btn.onclick = async () => {
+    const errs = [], ok = [];
+    for (const section of document.querySelectorAll('#bulk-action-body .bulk-section')) {
+      const pid    = parseInt(section.dataset.sectionPid);
+      const p      = items.find(x => x.id === pid);
+      const qty    = parseFloat(section.querySelector('[data-field="qty"]').value) || 0;
+      const unitEl = section.querySelector('[data-field="unit"]');
+      const unit   = unitEl.value;
+      const reason = section.querySelector('[data-field="reason"]').value.trim();
+      const conv   = parseFloat(unitEl.options[unitEl.selectedIndex]?.dataset?.conv || 1);
+      const base   = qty * conv;
+      if (qty < 0) { errs.push(`${p.name}: enter actual count`); continue; }
+      if (!reason) { errs.push(`${p.name}: reason required`); continue; }
+      try {
+        await api('/api/stock/adjust', { method: 'POST', body: JSON.stringify({ product_id: pid, actual_qty: base, unit: p.base_unit || 'g', reason }) });
+        ok.push(p.name);
+      } catch (e) { errs.push(`${p.name}: ${e.message}`); }
+    }
+    if (ok.length) toast(`Stocktake applied: ${ok.join(', ')}`, 'success', 5000);
+    if (errs.length) toast(errs.join(' | '), 'error', 7000);
+    if (ok.length) {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
+      STATE._selectedProductIds.clear(); _updateSelectionBar();
+      await loadIngredients(); await loadProducts();
+    }
+  };
+}
+
+function _buildBulkWriteoff(products) {
+  const items = products.filter(p => p.product_type === 'stock_item');
+  if (!items.length) return toast('No stock items in selection', 'warning');
+  document.getElementById('bulk-action-title').textContent = `Write Off — ${items.length} product${items.length > 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-bulk-confirm');
+  btn.textContent = 'Apply Write-offs';
+  btn.className   = 'btn btn-danger';
+
+  document.getElementById('bulk-action-body').innerHTML = items.map(p => `
+    <div class="bulk-section" data-section-pid="${p.id}">
+      <div class="bulk-section-title">${escapeHtml(p.name)} <span class="text-muted fw-normal" style="font-size:13px">Available: ${displayQty(p.stock_level || 0, p.unit_type)}</span></div>
+      <div class="row g-2">
+        <div class="col-7">
+          <label class="form-label small mb-1">Qty to write off</label>
+          <div class="input-group input-group-sm">
+            <input type="number" class="form-control" data-field="qty" step="0.01" min="0" placeholder="0">
+            <select class="form-select" data-field="unit" style="max-width:85px">${_buildUnitOptionsHtml(p.unit_type, p.package_size, p.package_unit)}</select>
+          </div>
+        </div>
+        <div class="col-12">
+          <input type="text" class="form-control form-control-sm" data-field="reason" placeholder="Reason (required, e.g. Expired)">
+        </div>
+      </div>
+    </div>
+  `).join('');
+
+  btn.onclick = async () => {
+    const errs = [], ok = [];
+    for (const section of document.querySelectorAll('#bulk-action-body .bulk-section')) {
+      const pid    = parseInt(section.dataset.sectionPid);
+      const p      = items.find(x => x.id === pid);
+      const qty    = parseFloat(section.querySelector('[data-field="qty"]').value) || 0;
+      const unit   = section.querySelector('[data-field="unit"]').value;
+      const reason = section.querySelector('[data-field="reason"]').value.trim();
+      if (qty <= 0) { errs.push(`${p.name}: enter qty`); continue; }
+      if (!reason)  { errs.push(`${p.name}: reason required`); continue; }
+      try {
+        await api('/api/stock/writeoff', { method: 'POST', body: JSON.stringify({ product_id: pid, qty, unit, reason }) });
+        ok.push(p.name);
+      } catch (e) { errs.push(`${p.name}: ${e.message}`); }
+    }
+    if (ok.length) toast(`Written off: ${ok.join(', ')}`, 'warning', 5000);
+    if (errs.length) toast(errs.join(' | '), 'error', 7000);
+    if (ok.length) {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
+      STATE._selectedProductIds.clear(); _updateSelectionBar();
+      await loadIngredients(); await loadProducts();
+    }
+  };
+}
+
+function _buildBulkLabels(products) {
+  document.getElementById('bulk-action-title').textContent = `Print Labels — ${products.length} product${products.length > 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-bulk-confirm');
+  btn.textContent = '🏷 Print All';
+  btn.className   = 'btn btn-primary';
+
+  document.getElementById('bulk-action-body').innerHTML = `
+    <p class="text-muted small mb-3">Set the number of labels for each product, then click Print All.</p>
+    ${products.map(p => `
+      <div class="d-flex align-items-center gap-3 mb-2 bulk-section" data-section-pid="${p.id}">
+        <span style="flex:1;font-weight:600;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(p.name)}</span>
+        <div style="display:flex;align-items:center;gap:6px">
+          <label class="form-label mb-0 small">Labels</label>
+          <input type="number" class="form-control form-control-sm" data-field="qty" value="1" min="1" max="200" step="1" style="width:70px">
+        </div>
+      </div>
+    `).join('')}
+  `;
+
+  btn.onclick = async () => {
+    const errs = [], ok = [];
+    for (const section of document.querySelectorAll('#bulk-action-body .bulk-section')) {
+      const pid = parseInt(section.dataset.sectionPid);
+      const p   = products.find(x => x.id === pid);
+      const qty = parseInt(section.querySelector('[data-field="qty"]').value) || 1;
+      try {
+        await api('/api/labels/print', { method: 'POST', body: JSON.stringify({ product_id: pid, copies: qty }) });
+        ok.push(`${p.name} ×${qty}`);
+      } catch (e) { errs.push(`${p.name}: ${e.message}`); }
+    }
+    if (ok.length) toast(`Printed: ${ok.join(', ')}`, 'success', 5000);
+    if (errs.length) toast(errs.join(' | '), 'error', 7000);
+    if (ok.length) bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
+  };
+}
+
+function _buildBulkArchive(products) {
+  document.getElementById('bulk-action-title').textContent = `Archive ${products.length} product${products.length > 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-bulk-confirm');
+  btn.textContent = 'Archive All';
+  btn.className   = 'btn btn-warning text-dark';
+
+  document.getElementById('bulk-action-body').innerHTML = `
+    <p>Archive the following products? They will be hidden from sales but their data is preserved.</p>
+    <ul class="small">${products.map(p => `<li>${escapeHtml(p.name)}</li>`).join('')}</ul>
+  `;
+
+  btn.onclick = async () => {
+    const errs = [], ok = [];
+    for (const p of products) {
+      try {
+        await api(`/api/products/${p.id}/archive`, { method: 'POST' });
+        ok.push(p.name);
+      } catch (e) { errs.push(`${p.name}: ${e.message}`); }
+    }
+    if (ok.length) toast(`Archived: ${ok.join(', ')}`, 'success', 5000);
+    if (errs.length) toast(errs.join(' | '), 'error', 7000);
+    if (ok.length) {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
+      STATE._selectedProductIds.clear(); _updateSelectionBar();
+      await loadProducts();
+    }
+  };
 }
 
 // ═══════════════════════════════════════════════════════

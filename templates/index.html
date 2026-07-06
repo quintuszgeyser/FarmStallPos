@@ -327,13 +327,26 @@
     #products-card-list { display: block; }
     #products-list { display: none; }
 
-    /* Column widths: Name | Stock | Price | Barcode | COGS | Markup | Margin */
+    /* ── Selection bar ── */
+    #products-sel-bar {
+      display: flex; align-items: center; flex-wrap: wrap; gap: .5rem;
+      background: #fff8e1; border: 2px solid var(--lc-gold-border);
+      border-radius: var(--dd-radius); padding: .5rem .75rem; margin-bottom: .4rem;
+      position: sticky; top: 0; z-index: 6;
+    }
+    #products-sel-bar.d-none { display: none !important; }
+    #products-sel-count { font-size: 13px; font-weight: 700; white-space: nowrap; }
+    .sel-bar-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+    .sel-bar-actions .btn { height: 30px; font-size: 12px; padding: .1rem .45rem; }
+    #btn-clear-sel { margin-left: auto; color: #888; font-size: 12px; }
+
+    /* Column widths: ☐ | Name | Stock | Price | Barcode | COGS | Markup | Margin | ⋮ */
     .product-col-header,
     .product-row {
       display: grid;
-      grid-template-columns: 1fr 90px 90px 130px 90px 68px 68px;
-      column-gap: .75rem;
-      padding: .45rem .75rem;
+      grid-template-columns: 24px 1fr 90px 90px 130px 90px 68px 68px 28px;
+      column-gap: .6rem;
+      padding: .45rem .6rem;
       align-items: center;
     }
     .product-col-header {
@@ -355,34 +368,53 @@
     }
     .product-row:hover   { background: #fffbf0; }
     .product-row.expanded { background: #fffbf0; }
+    .product-row.selected { background: #fff3cd; }
+    .product-row.selected:hover { background: #ffecaa; }
     .product-row:last-child { border-radius: 0 0 var(--dd-radius) var(--dd-radius); }
     .product-row.is-archived { opacity: .65; }
 
     /* cells */
+    .pr-check   { display: flex; align-items: center; }
+    .pr-check input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--lc-gold-border); }
     .pr-name    { min-width: 0; }
     .pr-name-text { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .pr-stock   { font-size: 13px; white-space: nowrap; }
     .pr-price   { font-size: 13px; font-weight: 600; white-space: nowrap; }
     .pr-barcode { font-size: 12px; color: var(--dd-ink); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
+    .pr-more-wrap { position: relative; display: flex; justify-content: center; }
+    .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 0 4px; line-height: 1.4; }
+    .pr-more-btn:hover { background: var(--lc-gold-light); border-color: var(--lc-gold-border); color: var(--dd-ink); }
+    .pr-more-menu { display: none; position: absolute; right: 0; top: 100%; z-index: 20; min-width: 140px;
+                    background: #fff; border: 1.5px solid var(--lc-gold-border); border-radius: 6px;
+                    box-shadow: 0 4px 16px rgba(0,0,0,.12); padding: 4px 0; }
+    .pr-more-menu.open { display: block; }
+    .pr-more-menu button { display: block; width: 100%; background: none; border: none; text-align: left;
+                           padding: 6px 14px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+    .pr-more-menu button:hover { background: var(--lc-gold-light); }
     .pr-body    { grid-column: 1 / -1; display: none; padding-top: .5rem; border-top: 1.5px dashed var(--lc-gold-border); margin-top: .3rem; }
     .pr-body.open { display: block; }
-    .pr-body-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: .6rem; padding-bottom: .5rem; border-bottom: 1px solid var(--lc-gold-border); }
-    .pr-body-actions .btn { height: 32px; font-size: 13px; padding: .2rem .55rem; }
     .pr-mobile-meta { display: none; }
 
-    /* ── Mobile: compact card, data in body on expand ── */
+    /* ── Bulk action modal sections ── */
+    .bulk-section { padding: .75rem 0; }
+    .bulk-section + .bulk-section { border-top: 1.5px dashed var(--lc-gold-border); }
+    .bulk-section-title { font-weight: 700; font-size: 15px; margin-bottom: .5rem; }
+
+    /* ── Mobile ── */
     @media (max-width: 639px) {
       .product-col-header { display: none; }
       .product-row {
-        grid-template-columns: 1fr;
+        grid-template-columns: 24px 1fr 28px;
         border-top: 2px solid var(--lc-gold-border) !important;
         border-radius: var(--dd-radius) !important;
         margin-bottom: .45rem;
       }
       .pr-stock, .pr-price, .pr-barcode, .pr-cogs, .pr-markup, .pr-margin { display: none; }
+      .pr-name { grid-column: 2; }
+      .pr-more-wrap { grid-column: 3; }
+      .pr-body { grid-column: 1 / -1; }
       .pr-mobile-meta { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--dd-ink); margin-top: .15rem; }
-      .pr-body { grid-column: 1; }
     }
 
     /* ── Users ── */
@@ -677,6 +709,20 @@
           <button id="btn-bulk-print-labels" class="btn btn-outline-secondary btn-sm hidden" onclick="openBulkLabelModal()" title="Print labels for selected products">🏷 Print Labels</button>
           <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
         </div>
+      </div>
+
+      <!-- Selection toolbar (shown when ≥1 product checked) -->
+      <div id="products-sel-bar" class="d-none">
+        <span id="products-sel-count">0 selected</span>
+        <div class="sel-bar-actions">
+          <button class="btn btn-success btn-sm" data-bulk-action="receive">Receive</button>
+          <button class="btn btn-outline-secondary btn-sm" data-bulk-action="stocktake">Stocktake</button>
+          <button class="btn btn-outline-danger btn-sm" data-bulk-action="writeoff">Write Off</button>
+          <button class="btn btn-outline-secondary btn-sm" data-bulk-action="labels">🏷 Labels</button>
+          <button class="btn btn-outline-primary btn-sm" data-bulk-action="edit">Edit</button>
+          <button class="btn btn-outline-warning btn-sm text-dark" data-bulk-action="archive">Archive</button>
+        </div>
+        <button class="btn btn-link btn-sm" id="btn-clear-sel">✕ Clear</button>
       </div>
 
       <div id="products-card-list" class="mt-1"></div>
@@ -2359,6 +2405,23 @@
 </div>
 
 <!-- ═══════════ BULK PRODUCT EDITOR MODAL ═══════════ -->
+<!-- Bulk Action Modal (receive / stocktake / write-off / labels / archive) -->
+<div class="modal fade" id="bulkActionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title" id="bulk-action-title">Bulk Action</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="bulk-action-body" style="max-height:70vh; overflow-y:auto"></div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btn-bulk-confirm">Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="bulkEditorModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-xl">
     <div class="modal-content">
