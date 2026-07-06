@@ -765,11 +765,15 @@ function _openBulkAction(action) {
     return;
   }
 
+  if (action === 'labels') {
+    openBulkLabelModal(products.map(p => p.id));
+    return;
+  }
+
   const builders = {
     receive:   _buildBulkReceive,
     stocktake: _buildBulkStocktake,
     writeoff:  _buildBulkWriteoff,
-    labels:    _buildBulkLabels,
     archive:   _buildBulkArchive,
   };
   if (builders[action]) {
@@ -10936,24 +10940,29 @@ async function executeLabelPrint() {
 
 // ── Bulk print modal ──────────────────────────────────────────────────────────
 
-async function openBulkLabelModal() {
+async function openBulkLabelModal(preselectIds) {
   await loadLabelTemplates();
   await loadLabelPrinters();
   _populateTemplateSelect(document.getElementById('bulk-template-select'), LABELS._currentTemplateId);
   _populatePrinterSelect(document.getElementById('bulk-printer-select'));
   document.getElementById('bulk-status').textContent = '';
   document.getElementById('bulk-filter').value = '';
-  renderBulkProductList(STATE.products.filter(p => !p.is_archived));
+  const allProducts = STATE.products.filter(p => !p.is_archived);
+  // If called from multi-select toolbar, show only those products (all pre-checked)
+  const showProducts = preselectIds?.length
+    ? allProducts.filter(p => preselectIds.includes(p.id))
+    : allProducts;
+  renderBulkProductList(showProducts, !!preselectIds?.length);
   bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkLabelModal')).show();
 }
 
-function renderBulkProductList(products) {
+function renderBulkProductList(products, allChecked = false) {
   const wrap = document.getElementById('bulk-product-list');
   if (!wrap) return;
   if (!products.length) { wrap.innerHTML = '<div class="text-muted small">No products.</div>'; return; }
   wrap.innerHTML = products.map(p => `
     <div class="d-flex align-items-center gap-2 py-1 border-bottom bulk-product-row" data-product-id="${p.id}">
-      <input type="checkbox" class="form-check-input bulk-chk" data-pid="${p.id}">
+      <input type="checkbox" class="form-check-input bulk-chk" data-pid="${p.id}" ${allChecked ? 'checked' : ''}>
       <span style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
       <span class="text-muted small me-1">${p.price != null ? 'R' + fmt(p.price) : ''}</span>
       <select class="form-select form-select-sm bulk-row-template" style="width:160px" data-pid="${p.id}"></select>
@@ -11619,11 +11628,11 @@ function ldLoadSelectedTemplate(idStr) {
   ldRequestRender(true);
 }
 
-// ── Show bulk print / bulk edit buttons only on products tab ─────────────────
+// ── Show label-templates / bulk edit buttons only on products tab ────────────
 document.addEventListener('shown.bs.tab', e => {
   const tabId = e.target?.getAttribute('data-bs-target') || e.target?.href?.split('#')[1];
-  const bulkBtn = document.getElementById('btn-bulk-print-labels');
-  if (bulkBtn) bulkBtn.classList.toggle('hidden', tabId !== '#products');
+  const tmplBtn = document.getElementById('btn-label-templates');
+  if (tmplBtn) tmplBtn.classList.toggle('hidden', tabId !== '#products');
   const bulkEditBtn = document.getElementById('btn-bulk-edit');
   if (bulkEditBtn) bulkEditBtn.classList.toggle('hidden', tabId !== '#products');
 });
