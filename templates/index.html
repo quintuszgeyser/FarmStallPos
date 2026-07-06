@@ -380,7 +380,9 @@
     .pr-name-text { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .pr-stock   { font-size: 13px; white-space: nowrap; }
     .pr-price   { font-size: 13px; font-weight: 600; white-space: nowrap; }
-    .pr-barcode { font-size: 12px; color: var(--dd-ink); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pr-barcode { font-size: 12px; color: var(--dd-ink); font-variant-numeric: tabular-nums; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+    .pr-barcode-num { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 100%; }
+    .pr-barcode-svg { max-width: 100%; height: auto; display: block; }
     .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
     .pr-more-wrap { position: relative; display: flex; justify-content: center; }
     .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 0 4px; line-height: 1.4; }
@@ -462,6 +464,64 @@
     }
     .kitchen-moved { animation: kitchenPulse .8s ease-out forwards; }
 
+    /* ── Transaction table ── */
+    .tx-hdr, .tx-row {
+      display: grid;
+      grid-template-columns: 100px 1fr 80px 52px 90px 80px 68px auto;
+      align-items: center;
+      gap: 0 8px;
+      padding: 6px 10px;
+    }
+    .tx-hdr {
+      position: sticky; top: 0; background: #fff; z-index: 5;
+      border-bottom: 2px solid #dee2e6;
+      font-size: 12px; font-weight: 600; text-transform: uppercase; color: #6c757d;
+    }
+    .tx-row { border-bottom: 1px solid #f0f0f0; cursor: pointer; transition: background 0.1s; }
+    .tx-row:hover    { background: #f8f9fa; }
+    .tx-row.expanded { background: #f0f4ff; }
+    .tx-row.voided   { opacity: 0.55; }
+    .tx-body { grid-column: 1 / -1; }
+    .tx-body-inner { background: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6; }
+    .tx-line-hdr, .tx-line-row {
+      display: grid;
+      grid-template-columns: 24px 1fr 60px 90px 80px 1fr;
+      gap: 0 8px; align-items: center; padding: 3px 6px; font-size: 13px;
+    }
+    .tx-line-hdr {
+      font-size: 11px; font-weight: 600; text-transform: uppercase; color: #6c757d;
+      border-bottom: 1px solid #dee2e6; margin-bottom: 2px;
+    }
+    .tx-line-row:hover { background: rgba(0,0,0,0.03); }
+    .tx-item-sel-bar {
+      display: flex; align-items: center; gap: 8px; margin-top: 8px;
+      padding: 6px 8px; background: #fff3cd; border-radius: 6px; flex-wrap: wrap;
+    }
+    #tx-adv-filter {
+      background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;
+      padding: 10px 14px; margin-top: 8px;
+    }
+    .tx-actions { display: flex; gap: 4px; align-items: center; }
+    .tx-act {
+      background: none; border: none; cursor: pointer;
+      font-size: 14px; line-height: 1; color: #6c757d; padding: 2px 4px; border-radius: 3px;
+    }
+    .tx-act:hover { color: #212529; background: rgba(0,0,0,0.06); }
+    .tx-act.text-danger { color: #dc3545 !important; }
+    .tx-act.text-danger:hover { color: #a71d2a !important; }
+    .tx-expand-btn {
+      background: none; border: none; cursor: pointer;
+      font-size: 11px; color: #6c757d; transition: transform 0.2s; padding: 2px 4px; border-radius: 3px;
+    }
+    .tx-expand-btn:hover { background: rgba(0,0,0,0.06); }
+    @media (max-width: 575px) {
+      .tx-hdr, .tx-row { grid-template-columns: 90px 1fr auto; }
+      .tx-hdr > div:nth-child(2), .tx-row > div:nth-child(2),
+      .tx-hdr > div:nth-child(3), .tx-row > div:nth-child(3),
+      .tx-hdr > div:nth-child(4), .tx-row > div:nth-child(4),
+      .tx-hdr > div:nth-child(6), .tx-row > div:nth-child(6),
+      .tx-hdr > div:nth-child(7), .tx-row > div:nth-child(7) { display: none !important; }
+    }
 
     /* ── Toasts - doodle style ── */
     #toast-container { position: fixed; bottom: 1rem; right: 1rem; z-index: 9999; display: flex; flex-direction: column; gap: .5rem; }
@@ -652,14 +712,55 @@
           <button id="btn-tx-today" class="btn btn-outline-secondary btn-sm">Today</button>
           <button id="btn-tx-yesterday" class="btn btn-outline-secondary btn-sm">Yesterday</button>
           <button id="btn-tx-week" class="btn btn-outline-secondary btn-sm">This Week</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('tx-adv-filter').classList.toggle('d-none')">⚙ Filters</button>
         </div>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary btn-sm admin-only hidden" id="btn-close-till" onclick="openCloseTillModal()">🧾 Close Till</button>
           <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-trans">Refresh</button>
         </div>
       </div>
+      <!-- Advanced filter panel (admin only, collapsed by default) -->
+      <div id="tx-adv-filter" class="admin-only hidden d-none">
+        <div class="row g-2 align-items-end">
+          <div class="col-sm-3">
+            <label class="form-label small mb-1">Search</label>
+            <input id="tx-adv-search" type="text" class="form-control form-control-sm" placeholder="ID, product, teller…">
+          </div>
+          <div class="col-sm-2">
+            <label class="form-label small mb-1">Employee</label>
+            <select id="tx-adv-user" class="form-select form-select-sm">
+              <option value="">All employees</option>
+            </select>
+          </div>
+          <div class="col-sm-2">
+            <label class="form-label small mb-1">Revenue</label>
+            <div class="d-flex gap-1">
+              <input id="tx-adv-min" type="number" class="form-control form-control-sm" placeholder="Min" min="0" step="0.01">
+              <input id="tx-adv-max" type="number" class="form-control form-control-sm" placeholder="Max" min="0" step="0.01">
+            </div>
+          </div>
+          <div class="col-sm-3">
+            <label class="form-label small mb-1">Status</label>
+            <div class="d-flex gap-2 flex-wrap">
+              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-all" value="all" checked><label class="form-check-label small" for="tx-adv-status-all">All</label></div>
+              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-flagged" value="flagged"><label class="form-check-label small" for="tx-adv-status-flagged">Flagged</label></div>
+              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-voided" value="voided"><label class="form-check-label small" for="tx-adv-status-voided">Voided</label></div>
+              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-returns" value="returns"><label class="form-check-label small" for="tx-adv-status-returns">Returns</label></div>
+            </div>
+          </div>
+          <div class="col-sm-1">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" id="tx-adv-discount">
+              <label class="form-check-label small" for="tx-adv-discount">Discounted</label>
+            </div>
+          </div>
+          <div class="col-auto">
+            <button id="btn-tx-adv-clear" class="btn btn-outline-secondary btn-sm">✕ Clear</button>
+          </div>
+        </div>
+      </div>
       <div class="small text-muted mt-1 teller-only" id="tx-teller-note">Showing your last 5 transactions</div>
-      <div id="transactions-list" class="mt-3"></div>
+      <div id="transactions-list" class="mt-2" style="overflow-x:auto"></div>
     </div>
 
     <!-- ═══════════════ KITCHEN ═══════════════ -->
@@ -1979,9 +2080,22 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p class="small text-muted mb-2">Add a note for the admin to review. The transaction is not changed - it is just flagged for attention.</p>
+        <p class="small text-muted mb-2">Flag this transaction for admin review. The transaction is not changed.</p>
         <input type="hidden" id="flag-sale-id">
-        <textarea id="flag-note" class="form-control" rows="3" placeholder="Describe what happened - e.g. Customer returned item, wrong product scanned, price dispute..."></textarea>
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Reason</label>
+          <div class="d-flex flex-column gap-1">
+            <div class="form-check"><input class="form-check-input" type="radio" name="flag-reason" id="flag-reason-pricing" value="pricing_issue"><label class="form-check-label small" for="flag-reason-pricing">Pricing issue</label></div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="flag-reason" id="flag-reason-damaged" value="damaged_product"><label class="form-check-label small" for="flag-reason-damaged">Damaged product</label></div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="flag-reason" id="flag-reason-fraud" value="fraud"><label class="form-check-label small" for="flag-reason-fraud">Suspected fraud</label></div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="flag-reason" id="flag-reason-manager" value="manager_review"><label class="form-check-label small" for="flag-reason-manager">Manager review needed</label></div>
+            <div class="form-check"><input class="form-check-input" type="radio" name="flag-reason" id="flag-reason-other" value="other" checked><label class="form-check-label small" for="flag-reason-other">Other</label></div>
+          </div>
+        </div>
+        <div>
+          <label for="flag-note" class="form-label small fw-semibold">Notes</label>
+          <textarea id="flag-note" class="form-control" rows="3" placeholder="Describe what happened…"></textarea>
+        </div>
       </div>
       <div class="modal-footer py-2">
         <button id="btn-flag-submit" class="btn btn-warning w-100">Flag for Admin Review</button>

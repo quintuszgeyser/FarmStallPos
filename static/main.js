@@ -29,6 +29,7 @@ let STATE = {
   _cartDiscount:    null,   // {type:'pct'|'amt', value:number} - admin cart-wide discount
   _receiptPrinterId: null,  // LabelPrinter.id to use for receipts (null = auto-detect USB)
   _selectedProductIds: new Set(),  // product IDs checked in the products tab
+  transactions:       [],           // cached transaction list for client-side filter
 };
 
 // ═══════════════════════════════════════════════════════
@@ -621,7 +622,10 @@ function renderProductsCards() {
       </div>
       <div class="pr-stock">${stockHtml}</div>
       <div class="pr-price ${priceDisplay ? 'text-success' : 'text-muted'}">${priceDisplay || '—'}</div>
-      <div class="pr-barcode">${escapeHtml(p.barcode || '—')}</div>
+      <div class="pr-barcode">
+        <span class="pr-barcode-num">${escapeHtml(p.barcode || '—')}</span>
+        ${p.barcode ? `<svg id="bc-${p.id}" class="pr-barcode-svg"></svg>` : ''}
+      </div>
       <div class="pr-cogs">${margins ? escapeHtml(margins.costLabel) : '<span class="text-muted">—</span>'}</div>
       <div class="pr-markup">${margins ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-margin">${margins ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
@@ -1493,14 +1497,12 @@ function _renderBarcodes(items) {
     try {
       JsBarcode(el, p.barcode, {
         format,
-        width:        1.4,
-        height:       36,
-        displayValue: true,
-        fontSize:     10,
+        width:        1.2,
+        height:       28,
+        displayValue: false,
         margin:       2,
         lineColor:    '#222',
         background:   'transparent',
-        textMargin:   2,
       });
     } catch {
       const span = document.createElement('span');
@@ -4602,6 +4604,8 @@ function initTxDatePickers() {
   const e = document.getElementById('tx-end');   if (e && !e.value) e.value = t;
 }
 
+let _txFilter = {};
+
 async function loadTransactions(start, end) {
   if (!STATE.user) return;
   try {
@@ -4613,134 +4617,235 @@ async function loadTransactions(start, end) {
       url += '?' + p.toString();
     }
     const trs = await api(url);
-    renderTransactions(trs);
+    STATE.transactions = trs;
+    _applyTxFilter();
   } catch (e) { console.error('loadTransactions', e); }
 }
 
+function _applyTxFilter() {
+  let list = STATE.transactions || [];
+  const f = _txFilter;
+  if (f.q) {
+    const q = f.q.toLowerCase();
+    list = list.filter(t =>
+      (t.id || '').toLowerCase().includes(q) ||
+      (t.teller || '').toLowerCase().includes(q) ||
+      t.lines?.some(l => (l.name || '').toLowerCase().includes(q))
+    );
+  }
+  if (f.user)   list = list.filter(t => t.teller === f.user);
+  if (f.minRev != null && f.minRev !== '') list = list.filter(t => t.total >= parseFloat(f.minRev));
+  if (f.maxRev != null && f.maxRev !== '') list = list.filter(t => t.total <= parseFloat(f.maxRev));
+  if (f.status === 'flagged')  list = list.filter(t => t.flagged && !t.flag_resolved);
+  if (f.status === 'voided')   list = list.filter(t => t.voided);
+  if (f.status === 'returns')  list = list.filter(t => t.is_return);
+  if (f.hasDiscount) list = list.filter(t => t.lines?.some(l => l.discount));
+  renderTransactions(list);
+}
+
+function _txAdvancedFilterInit() {
+  document.getElementById('tx-adv-search')?.addEventListener('input',  _txReadFilter);
+  document.getElementById('tx-adv-user')?.addEventListener('change',   _txReadFilter);
+  document.getElementById('tx-adv-min')?.addEventListener('input',     _txReadFilter);
+  document.getElementById('tx-adv-max')?.addEventListener('input',     _txReadFilter);
+  document.querySelectorAll('[name="tx-adv-status"]').forEach(r => r.addEventListener('change', _txReadFilter));
+  document.getElementById('tx-adv-discount')?.addEventListener('change', _txReadFilter);
+  document.getElementById('btn-tx-adv-clear')?.addEventListener('click', _txClearFilter);
+}
+
+function _txReadFilter() {
+  _txFilter = {
+    q:           document.getElementById('tx-adv-search')?.value?.trim() || '',
+    user:        document.getElementById('tx-adv-user')?.value || '',
+    minRev:      document.getElementById('tx-adv-min')?.value,
+    maxRev:      document.getElementById('tx-adv-max')?.value,
+    status:      document.querySelector('[name="tx-adv-status"]:checked')?.value || 'all',
+    hasDiscount: document.getElementById('tx-adv-discount')?.checked,
+  };
+  _applyTxFilter();
+}
+
+function _txClearFilter() {
+  _txFilter = {};
+  ['tx-adv-search','tx-adv-min','tx-adv-max'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  const allRadio = document.getElementById('tx-adv-status-all'); if (allRadio) allRadio.checked = true;
+  const disc = document.getElementById('tx-adv-discount'); if (disc) disc.checked = false;
+  const userSel = document.getElementById('tx-adv-user'); if (userSel) userSel.value = '';
+  _applyTxFilter();
+}
+
+_txAdvancedFilterInit();
+
 function renderTransactions(trs) {
-  const host = document.getElementById('transactions-list'); if (!host) return;
-  host.innerHTML = '';
-  if (trs.length === 0) {
-    host.innerHTML = '<div class="text-muted">No transactions found.</div>';
+  const host = document.getElementById('transactions-list');
+  if (!host) return;
+
+  if (!trs.length) {
+    host.innerHTML = '<div class="text-muted small p-3">No transactions found.</div>';
     return;
   }
+
+  const admin = isAdmin();
+
+  const hdr = document.createElement('div');
+  hdr.className = 'tx-hdr';
+  hdr.innerHTML = `
+    <div>#</div>
+    <div>Date &amp; Time</div>
+    <div>User</div>
+    <div>Items</div>
+    <div>Revenue</div>
+    <div class="${admin ? '' : 'd-none'}">COGS</div>
+    <div class="${admin ? '' : 'd-none'}">Margin</div>
+    <div>Actions</div>
+  `;
+  host.innerHTML = '';
+  host.appendChild(hdr);
+
   trs.forEach(t => {
-    const card = document.createElement('div');
-    card.className = 'card mb-2';
-    const body = document.createElement('div');
-    body.className = 'card-body py-2';
+    const sid       = String(t.id).slice(0, 8);
+    const dtStr     = new Date(t.date_time).toLocaleString('en-ZA', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const isVoided  = !!t.voided;
+    const isFlagged = t.flagged && !t.flag_resolved;
+    const isReviewed = t.flagged && t.flag_resolved;
 
-    const header = document.createElement('div');
-    header.className = 'd-flex justify-content-between align-items-start flex-wrap gap-1';
+    const row = document.createElement('div');
+    row.className = `tx-row${isVoided ? ' voided' : ''}`;
+    row.dataset.saleId = t.id;
 
-    const left = document.createElement('div');
-    left.innerHTML = `
-      <strong>#${String(t.id).slice(0,8)}</strong>
-      <span class="text-muted small ms-1">${new Date(t.date_time).toLocaleString('en-ZA')}</span>
-      ${t.teller ? `<span class="badge bg-secondary" style="font-size:11px">${t.teller}</span>` : ''}
+    let badges = '';
+    if (isFlagged)   badges += `<span class="badge bg-warning text-dark ms-1" style="font-size:10px">⚑</span>`;
+    if (isReviewed)  badges += `<span class="badge bg-secondary ms-1" style="font-size:10px">✓</span>`;
+    if (isVoided)    badges += `<span class="badge bg-danger ms-1" style="font-size:10px">Voided</span>`;
+    if (t.is_return) badges += `<span class="badge bg-info text-dark ms-1" style="font-size:10px">Return</span>`;
+
+    const receiptBtn = `<button class="tx-act" data-act="receipt" title="View receipt">🧾</button>`;
+    const editBtn    = admin ? `<button class="tx-act" data-act="edit" title="Edit transaction">✏</button>` : '';
+    const voidBtn    = admin && !isVoided ? `<button class="tx-act text-danger" data-act="void" title="Void transaction">⛔</button>` : '';
+    const expandBtn  = `<button class="tx-expand-btn" title="Expand">▼</button>`;
+
+    row.innerHTML = `
+      <div class="tx-id fw-semibold">#${escapeHtml(sid)}${badges}</div>
+      <div class="tx-dt small text-muted">${dtStr}</div>
+      <div class="tx-user small">${escapeHtml(t.teller || '—')}</div>
+      <div class="tx-items small text-center">${t.lines?.length ?? 0}</div>
+      <div class="tx-rev fw-semibold">R${fmt(t.total)}</div>
+      <div class="tx-cogs small ${admin ? '' : 'd-none'}">${admin && t.cogs != null ? 'R'+fmt(t.cogs) : '—'}</div>
+      <div class="tx-margin small ${admin ? '' : 'd-none'}">${admin && t.margin_pct != null ? t.margin_pct+'%' : '—'}</div>
+      <div class="tx-actions">${receiptBtn}${editBtn}${voidBtn}${expandBtn}</div>
+      <div class="tx-body" style="display:none"></div>
     `;
 
-    const right = document.createElement('div');
-    right.className = 'd-flex align-items-center gap-2 flex-wrap';
-    let summaryHTML = `<strong>R${fmt(t.total)}</strong>`;
-    if (isAdmin()) {
-      if (t.cogs != null)       summaryHTML += ` <span class="small text-success">COGS R${fmt(t.cogs)}</span>`;
-      if (t.margin_pct != null) summaryHTML += ` <span class="small text-success">${t.margin_pct}% margin</span>`;
+    row.querySelector('[data-act="receipt"]')?.addEventListener('click', e => { e.stopPropagation(); previewReceipt(t.id); });
+    if (admin) {
+      row.querySelector('[data-act="edit"]')?.addEventListener('click',  e => { e.stopPropagation(); openTxModal(t); });
+      row.querySelector('[data-act="void"]')?.addEventListener('click',  e => { e.stopPropagation(); openTxModal(t); });
     }
-    if (t.flagged && !t.flag_resolved) summaryHTML += ` <span class="badge bg-warning text-dark">⚑ Flagged</span>`;
-    if (t.flagged && t.flag_resolved)  summaryHTML += ` <span class="badge bg-secondary">✓ Reviewed</span>`;
-    right.innerHTML = summaryHTML;
 
-    // Flag button - all users
-    const btnFlag = document.createElement('button');
-    btnFlag.className = t.flagged && !t.flag_resolved
-      ? 'btn btn-warning btn-sm'
-      : 'btn btn-outline-warning btn-sm';
-    btnFlag.textContent = t.flagged && !t.flag_resolved ? '⚑ Flagged' : '⚑ Flag';
-    btnFlag.onclick = () => openFlagModal(t);
-    right.appendChild(btnFlag);
-
-    if (isAdmin()) {
-      const btnMgr = document.createElement('button');
-      btnMgr.className = 'btn btn-outline-secondary btn-sm';
-      btnMgr.textContent = 'Edit / Void';
-      btnMgr.onclick = () => openTxModal(t);
-      right.appendChild(btnMgr);
-
-      const btnReturn = document.createElement('button');
-      btnReturn.className = 'btn btn-outline-warning btn-sm';
-      btnReturn.textContent = '↩ Return';
-      btnReturn.onclick = () => openReturnModal(t);
-      right.appendChild(btnReturn);
-
-      const btnReceipt = document.createElement('button');
-      btnReceipt.className = 'btn btn-outline-secondary btn-sm';
-      btnReceipt.title = 'Print receipt on thermal printer';
-      btnReceipt.textContent = '🖨 Receipt';
-      btnReceipt.onclick = () => printReceipt(t.id);
-      right.appendChild(btnReceipt);
-
-      const btnReceiptPreview = document.createElement('button');
-      btnReceiptPreview.className = 'btn btn-outline-secondary btn-sm';
-      btnReceiptPreview.title = 'Preview receipt in browser';
-      btnReceiptPreview.textContent = '👁';
-      btnReceiptPreview.onclick = () => previewReceipt(t.id);
-      right.appendChild(btnReceiptPreview);
-      // Resolve flag button
-      if (t.flagged && !t.flag_resolved) {
-        const btnResolve = document.createElement('button');
-        btnResolve.className = 'btn btn-outline-success btn-sm';
-        btnResolve.textContent = '✓ Resolve';
-        btnResolve.onclick = () => resolveFlag(t.id);
-        right.appendChild(btnResolve);
+    function _toggleTxBody() {
+      const body      = row.querySelector('.tx-body');
+      const expBtn    = row.querySelector('.tx-expand-btn');
+      const isOpen    = body.style.display !== 'none';
+      if (isOpen) {
+        body.style.display = 'none';
+        row.classList.remove('expanded');
+        if (expBtn) expBtn.style.transform = '';
+      } else {
+        body.style.display = '';
+        row.classList.add('expanded');
+        if (expBtn) expBtn.style.transform = 'rotate(180deg)';
+        _renderTxBody(body, t, admin);
       }
     }
+    row.addEventListener('click', e => { if (e.target.closest('.tx-actions')) return; _toggleTxBody(); });
+    row.querySelector('.tx-expand-btn')?.addEventListener('click', e => { e.stopPropagation(); _toggleTxBody(); });
 
-    header.appendChild(left); header.appendChild(right);
-    body.appendChild(header);
+    host.appendChild(row);
+  });
+}
 
-    const ul = document.createElement('ul'); ul.className = 'mt-1 mb-0 small';
-    t.lines.forEach(ln => {
-      const li = document.createElement('li');
-      let discNote = '';
-      if (ln.discount) {
-        const parts = [];
-        if (ln.discount.special) parts.push(`Special: ${ln.discount.special}`);
-        if (ln.discount.item) {
-          const d = ln.discount.item;
-          parts.push(d.type === 'pct' ? `${d.value}% item discount` : `R${fmt(d.value)} item discount`);
-        }
-        if (ln.discount.cart) {
-          const d = ln.discount.cart;
-          parts.push(d.type === 'pct' ? `${d.value}% cart discount` : `R${fmt(d.value)} cart discount`);
-        }
-        if (parts.length) discNote = ` <span class="text-success">(${parts.join(' + ')})</span>`;
-      }
-      li.innerHTML = `${ln.name} × ${fmtQty(ln.qty)} @ R${fmt(ln.unit_price)} = R${fmt(ln.subtotal)}${discNote}`;
-      ul.appendChild(li);
-    });
+function _renderTxBody(body, t, admin) {
+  const profit = (t.total - (t.cogs || 0)).toFixed(2);
+  const hasManualDiscount = t.lines?.some(ln => ln.discount?.item || ln.discount?.cart);
+  const discNote = (t.discount_by && hasManualDiscount)
+    ? `<span class="text-success small ms-2">Discount applied by ${escapeHtml(t.discount_by)}</span>` : '';
 
-    // Show discount-by note if a manual discount was applied (not just specials)
-    const hasManualDiscount = t.lines.some(ln => ln.discount?.item || ln.discount?.cart);
-    if (t.discount_by && hasManualDiscount) {
-      const discDiv = document.createElement('div');
-      discDiv.className = 'mt-1 small text-success';
-      discDiv.innerHTML = `<strong>Discount applied by ${t.discount_by}</strong>`;
-      body.appendChild(discDiv);
+  const flagNote = t.flagged && t.flag_note
+    ? `<div class="small px-2 py-1 rounded mb-2 ${t.flag_resolved ? 'bg-light text-muted' : 'bg-warning bg-opacity-25'}">
+         <strong>${t.flag_resolved ? '✓ Reviewed' : '⚑ Flag note'}:</strong> ${escapeHtml(t.flag_note)}
+         ${admin && !t.flag_resolved ? `<button class="btn btn-outline-success btn-sm ms-2 py-0 px-1" onclick="resolveFlag('${t.id}')">✓ Resolve</button>` : ''}
+       </div>` : '';
+
+  const summaryHtml = admin
+    ? `<div class="d-flex gap-3 small mb-2 text-muted">
+         <span>Revenue: <strong class="text-dark">R${fmt(t.total)}</strong></span>
+         ${t.cogs != null ? `<span>COGS: <strong class="text-dark">R${fmt(t.cogs)}</strong></span>` : ''}
+         ${t.cogs != null ? `<span>Profit: <strong class="text-success">R${fmt(profit)}</strong></span>` : ''}
+         ${discNote}
+       </div>` : (discNote ? `<div class="small mb-2">${discNote}</div>` : '');
+
+  const lines = t.lines || [];
+  const lineRows = lines.map((ln, i) => {
+    let disc = '';
+    if (ln.discount) {
+      const parts = [];
+      if (ln.discount.special)  parts.push(`Special: ${ln.discount.special}`);
+      if (ln.discount.item) { const d = ln.discount.item; parts.push(d.type==='pct' ? `${d.value}% off` : `R${fmt(d.value)} off`); }
+      if (ln.discount.cart) { const d = ln.discount.cart; parts.push(d.type==='pct' ? `${d.value}% cart` : `R${fmt(d.value)} cart`); }
+      if (parts.length) disc = `<span class="text-success" style="font-size:11px">${parts.join(' + ')}</span>`;
     }
+    return `
+      <div class="tx-line-row" data-line-idx="${i}">
+        <div><input type="checkbox" class="form-check-input tx-line-chk" data-idx="${i}"></div>
+        <div class="small fw-semibold" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(ln.name)}">${escapeHtml(ln.name)}</div>
+        <div class="small text-center">${fmtQty(ln.qty)}</div>
+        <div class="small text-muted">R${fmt(ln.unit_price)}</div>
+        <div class="small fw-semibold">R${fmt(ln.subtotal)}</div>
+        <div>${disc}</div>
+      </div>`;
+  }).join('');
 
-    body.appendChild(ul);
+  body.innerHTML = `
+    <div class="tx-body-inner p-2">
+      ${summaryHtml}
+      ${flagNote}
+      <div class="tx-lines-wrap">
+        <div class="tx-line-hdr">
+          <div></div><div>Product</div><div class="text-center">Qty</div>
+          <div>Unit Price</div><div>Total</div><div>Discount</div>
+        </div>
+        ${lineRows}
+      </div>
+      <div class="tx-item-sel-bar d-none">
+        <span class="tx-item-count small fw-semibold">0 items selected</span>
+        <button class="btn btn-warning btn-sm" data-item-action="flag">🚩 Flag Items</button>
+        <button class="btn btn-outline-secondary btn-sm" data-item-action="return">↩ Return Items</button>
+        <button class="btn btn-link btn-sm tx-clear-sel p-0">✕ Clear</button>
+      </div>
+    </div>
+  `;
 
-    // Show flag note if flagged
-    if (t.flagged && t.flag_note) {
-      const flagDiv = document.createElement('div');
-      flagDiv.className = `mt-1 small px-2 py-1 rounded ${t.flag_resolved ? 'bg-light text-muted' : 'bg-warning bg-opacity-25'}`;
-      flagDiv.innerHTML = `<strong>${t.flag_resolved ? '✓ Reviewed' : '⚑ Note'}:</strong> ${t.flag_note}`;
-      body.appendChild(flagDiv);
-    }
+  const selBar    = body.querySelector('.tx-item-sel-bar');
+  const countSpan = body.querySelector('.tx-item-count');
 
-    card.appendChild(body);
-    host.appendChild(card);
+  function _updateItemSel() {
+    const n = body.querySelectorAll('.tx-line-chk:checked').length;
+    if (n > 0) { selBar.classList.remove('d-none'); countSpan.textContent = `${n} item${n!==1?'s':''} selected`; }
+    else        { selBar.classList.add('d-none'); }
+  }
+
+  body.querySelectorAll('.tx-line-chk').forEach(chk => chk.addEventListener('change', _updateItemSel));
+  body.querySelector('.tx-clear-sel')?.addEventListener('click', () => {
+    body.querySelectorAll('.tx-line-chk').forEach(c => c.checked = false);
+    _updateItemSel();
+  });
+  body.querySelector('[data-item-action="flag"]')?.addEventListener('click', () => {
+    const sel = [...body.querySelectorAll('.tx-line-chk:checked')].map(c => t.lines[parseInt(c.dataset.idx)]).filter(Boolean);
+    openFlagModal(t, sel);
+  });
+  body.querySelector('[data-item-action="return"]')?.addEventListener('click', () => {
+    const sel = [...body.querySelectorAll('.tx-line-chk:checked')].map(c => t.lines[parseInt(c.dataset.idx)]).filter(Boolean);
+    openReturnModal(t, sel);
   });
 }
 
@@ -4918,25 +5023,29 @@ async function previewReceipt(saleId) {
 // ── Return Items (ISSUE-32) ──────────────────────────────────────────────────
 let _returnTx = null;
 
-function openReturnModal(t) {
+function openReturnModal(t, selectedLines) {
   _returnTx = t;
   document.getElementById('return-modal-title').textContent = `#${String(t.id).slice(0,8)}`;
   document.getElementById('return-modal-meta').textContent =
     `${new Date(t.date_time).toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
   document.getElementById('return-reason').value = '';
 
+  // If specific lines were selected (from item selection toolbar), show only those;
+  // otherwise show all lines (legacy behaviour: return button on the whole transaction).
+  const linesToShow = (selectedLines?.length) ? selectedLines : t.lines;
+
   const tbody = document.getElementById('return-body');
   tbody.innerHTML = '';
-  t.lines.forEach((ln, idx) => {
+  linesToShow.forEach((ln, idx) => {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td>${ln.name}</td>
+      <td>${escapeHtml(ln.name)}</td>
       <td class="text-muted">${fmtQty(ln.qty)}</td>
       <td><input type="number" class="form-control form-control-sm return-qty-input"
            data-idx="${idx}" data-pid="${ln.product_id}"
            data-max="${ln.qty}" data-price="${ln.unit_price}"
-           min="0" max="${ln.qty}" step="0.001" value="0"></td>
-      <td class="return-refund-cell small">R0.00</td>
+           min="0" max="${ln.qty}" step="0.001" value="${fmtQty(ln.qty)}"></td>
+      <td class="return-refund-cell small">R${fmt(ln.qty * ln.unit_price)}</td>
     `;
     tbody.appendChild(tr);
   });
@@ -5050,17 +5159,32 @@ document.getElementById('btn-close-till-confirm')?.addEventListener('click', asy
 // ═══════════════════════════════════════════════════════
 // FLAG TRANSACTION
 // ═══════════════════════════════════════════════════════
-function openFlagModal(t) {
+function openFlagModal(t, selectedLines) {
   document.getElementById('flag-sale-id').value = t.id;
-  document.getElementById('flag-note').value    = t.flag_note || '';
+  let note = t.flag_note || '';
+  if (selectedLines?.length) {
+    const names = selectedLines.map(l => l.name).join(', ');
+    note = note || `Items: ${names}`;
+  }
+  document.getElementById('flag-note').value = note;
+  // Default to 'other' reason
+  const otherRb = document.getElementById('flag-reason-other');
+  if (otherRb) {
+    document.querySelectorAll('[name="flag-reason"]').forEach(r => r.checked = false);
+    otherRb.checked = true;
+    if (note.toLowerCase().startsWith('pricing')) { const rb = document.getElementById('flag-reason-pricing_issue'); if (rb) { otherRb.checked = false; rb.checked = true; } }
+    if (note.toLowerCase().startsWith('fraud'))   { const rb = document.getElementById('flag-reason-fraud');         if (rb) { otherRb.checked = false; rb.checked = true; } }
+  }
   bootstrap.Modal.getOrCreateInstance(document.getElementById('flagModal')).show();
   setTimeout(() => document.getElementById('flag-note').focus(), 300);
 }
 
 document.getElementById('btn-flag-submit')?.addEventListener('click', async () => {
   const saleId = document.getElementById('flag-sale-id').value;
-  const note   = document.getElementById('flag-note').value.trim();
-  if (!note) return toast('Please describe what needs review', 'warning');
+  const reason = document.querySelector('[name="flag-reason"]:checked')?.value || '';
+  const notes  = document.getElementById('flag-note').value.trim();
+  const note   = [reason && reason !== 'other' ? reason.replace(/_/g, ' ') : '', notes].filter(Boolean).join(' — ') || notes || reason;
+  if (!note) return toast('Please select a reason or add a note', 'warning');
   try {
     await api(`/api/transactions/${saleId}/flag`, {
       method: 'POST',
@@ -5154,8 +5278,22 @@ function getSelectedRoles() {
 
 async function loadUsers() {
   if (!STATE.user?.roles?.includes('admin')) return;
-  try { STATE.users = await api('/api/users') || []; renderUsersList(); }
-  catch (e) { console.error('loadUsers', e); }
+  try {
+    STATE.users = await api('/api/users') || [];
+    renderUsersList();
+    // Populate the tx advanced-filter user select
+    const sel = document.getElementById('tx-adv-user');
+    if (sel) {
+      const current = sel.value;
+      sel.innerHTML = '<option value="">All employees</option>';
+      STATE.users.filter(u => u.active).forEach(u => {
+        const o = document.createElement('option');
+        o.value = u.username; o.textContent = u.username;
+        sel.appendChild(o);
+      });
+      if (current) sel.value = current;
+    }
+  } catch (e) { console.error('loadUsers', e); }
 }
 
 document.getElementById('users-filter')?.addEventListener('input', renderUsersList);
