@@ -1246,6 +1246,41 @@
         </div>
       </div>
 
+      <!-- ── Till Sessions / Z-Reports ── -->
+      <div class="mt-3 border-top pt-3" id="stats-section-till">
+        <h6 class="mb-2"><i class="bi bi-cash-stack me-1"></i>Till Sessions (Z-Reports)</h6>
+        <!-- Summary cards -->
+        <div class="row g-2 mb-2" id="till-summary-cards" style="display:none">
+          <div class="col-6 col-md-3">
+            <div class="card h-100"><div class="card-body py-2">
+              <div class="text-muted small">Till Closes</div>
+              <h4 class="mb-0" id="till-stat-count">-</h4>
+            </div></div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="card h-100"><div class="card-body py-2">
+              <div class="text-muted small">Cash Counted</div>
+              <h4 class="mb-0" id="till-stat-cash">-</h4>
+            </div></div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="card h-100"><div class="card-body py-2">
+              <div class="text-muted small">Net Over/Under</div>
+              <h4 class="mb-0" id="till-stat-net-ou">-</h4>
+            </div></div>
+          </div>
+          <div class="col-6 col-md-3">
+            <div class="card h-100"><div class="card-body py-2">
+              <div class="text-muted small">Avg Over/Under</div>
+              <h4 class="mb-0" id="till-stat-avg-ou">-</h4>
+            </div></div>
+          </div>
+        </div>
+        <div id="till-sessions-table">
+          <div class="text-muted small">Load stats to see Z-report data.</div>
+        </div>
+      </div>
+
       <!-- ── Export ── -->
       <div class="mt-3 border-top pt-3">
         <h6 class="mb-1">Export <span class="text-muted fw-normal small" id="export-filter-label"></span></h6>
@@ -1270,6 +1305,10 @@
           <button id="btn-export-staff" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-people me-1"></i>Staff Stats
             <span class="d-block" style="font-size:10px;color:#6c757d">Revenue, sessions, performance</span>
+          </button>
+          <button id="btn-export-till-sessions" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-cash-stack me-1"></i>Z-Reports
+            <span class="d-block" style="font-size:10px;color:#6c757d">Till closes &amp; cash counts</span>
           </button>
           <a href="/admin/export/products" target="_blank" class="btn btn-outline-secondary btn-sm">
             <i class="bi bi-box-seam me-1"></i>Product Catalogue

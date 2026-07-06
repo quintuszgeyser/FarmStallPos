@@ -12,7 +12,7 @@ from helpers import require_role, get_setting, _parse_dt
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment,
-    Sale, KitchenOrder, User, UserSession, Supplier, Customer,
+    Sale, KitchenOrder, User, UserSession, Supplier, Customer, TillSession,
 )
 
 bp = Blueprint('stats', __name__)
@@ -314,6 +314,33 @@ def api_stats():
     revenue_per_customer = round(total_sales_value / distinct_customers, 2) if distinct_customers else None
     void_receipt_rate    = round(voided_receipts_ct / all_receipts_ct * 100, 1) if all_receipts_ct else 0
 
+    # ── Till sessions (Z-reports) in the selected range ──
+    ts_rows   = TillSession.query.filter(
+        TillSession.closed_at >= start_dt,
+        TillSession.closed_at <= end_dt,
+    ).order_by(TillSession.closed_at.desc()).all()
+    ts_user_ids = {r.closed_by for r in ts_rows if r.closed_by}
+    ts_users    = {u.id: u.username for u in User.query.filter(User.id.in_(ts_user_ids)).all()} if ts_user_ids else {}
+    till_sessions_list = [{
+        'id':             r.id,
+        'opened_at':      r.opened_at.isoformat(),
+        'closed_at':      r.closed_at.isoformat(),
+        'closed_by':      ts_users.get(r.closed_by, ''),
+        'opening_float':  float(r.opening_float),
+        'counted_cash':   float(r.counted_cash),
+        'pos_cash_sales': float(r.pos_cash_sales),
+        'pos_card_sales': float(r.pos_card_sales),
+        'pos_total_sales':float(r.pos_total_sales),
+        'expected_cash':  float(r.expected_cash),
+        'over_under':     float(r.over_under),
+        'void_total':     float(r.void_total),
+        'notes':          r.notes or '',
+    } for r in ts_rows]
+    ts_count    = len(till_sessions_list)
+    ts_net_ou   = round(sum(r['over_under']  for r in till_sessions_list), 2)
+    ts_avg_ou   = round(ts_net_ou / ts_count, 2) if ts_count else 0
+    ts_cash_tot = round(sum(r['counted_cash'] for r in till_sessions_list), 2)
+
     return jsonify({
         'filtered_product_id': product_id_filter, 'filtered_product_name': filtered_product_name,
         'filtered_user_id': user_id_filter, 'filtered_user_name': filtered_user_name,
@@ -338,6 +365,12 @@ def api_stats():
         'repeat_customer_rate':  repeat_customer_rate,
         'revenue_per_customer':  revenue_per_customer,
         'void_receipt_rate':     void_receipt_rate,
+        # ── Till sessions / Z-reports ──
+        'till_sessions':         till_sessions_list,
+        'till_sessions_count':   ts_count,
+        'till_net_over_under':   ts_net_ou,
+        'till_avg_over_under':   ts_avg_ou,
+        'till_cash_counted':     ts_cash_tot,
     })
 
 
@@ -685,6 +718,39 @@ def export_staff_csv():
         fu = db.session.get(User, uid_filter)
         if fu: emp_slug = f"_{fu.username.replace(' ','_')}"
     return send_file(buf, mimetype='text/csv', as_attachment=True, download_name=f"staff_stats{emp_slug}_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv")
+
+
+@bp.route('/admin/export/till-sessions')
+def export_till_sessions_csv():
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
+    end_dt   = _parse_dt(request.args.get('end'), is_end=True) or datetime(*date.today().timetuple()[:3], 23, 59, 59)
+    rows = TillSession.query.filter(
+        TillSession.closed_at >= start_dt,
+        TillSession.closed_at <= end_dt,
+    ).order_by(TillSession.closed_at.asc()).all()
+    uids  = {r.closed_by for r in rows if r.closed_by}
+    users = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
+    sio = StringIO()
+    sio.write('closed_at,opened_at,closed_by,opening_float,cash_sales,card_sales,total_sales,expected_cash,counted_cash,over_under,void_total,notes\n')
+    for r in rows:
+        sio.write(
+            f"{r.closed_at.isoformat()},"
+            f"{r.opened_at.isoformat()},"
+            f"{users.get(r.closed_by,'').replace(',',';')},"
+            f"{float(r.opening_float):.2f},"
+            f"{float(r.pos_cash_sales):.2f},"
+            f"{float(r.pos_card_sales):.2f},"
+            f"{float(r.pos_total_sales):.2f},"
+            f"{float(r.expected_cash):.2f},"
+            f"{float(r.counted_cash):.2f},"
+            f"{float(r.over_under):.2f},"
+            f"{float(r.void_total):.2f},"
+            f"{(r.notes or '').replace(',',';')}\n"
+        )
+    buf = BytesIO(sio.getvalue().encode('utf-8')); buf.seek(0)
+    return send_file(buf, mimetype='text/csv', as_attachment=True,
+                     download_name=f"z_reports_{start_dt.date().isoformat()}_to_{end_dt.date().isoformat()}.csv")
 
 
 # ── New drilldown: Channels ──────────────────────────────────────────────────

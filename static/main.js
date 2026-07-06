@@ -5608,6 +5608,23 @@ async function openDrilldown(title, type, value, opts = {}) {
   }
 }
 
+async function openTillDrilldown(title, openedIso, closedIso) {
+  document.getElementById('drilldown-title').textContent = title;
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-center text-muted p-3">Loading…</div>';
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
+  try {
+    const params = new URLSearchParams({ start: openedIso.slice(0, 10), end: closedIso.slice(0, 10) });
+    const data = await api(`/api/stats/drilldown?${params}`);
+    if (!data.transactions?.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-3 text-center">No transactions found for this till session.</div>';
+      return;
+    }
+    document.getElementById('drilldown-body').innerHTML = _renderDrilldownTransactions(data);
+  } catch(e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger p-2">${e.message}</div>`;
+  }
+}
+
 async function openSupplierDrilldown(supplierName) {
   document.getElementById('drilldown-title').textContent = `Stock purchases - ${supplierName}`;
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted p-2">Loading…</div>';
@@ -6233,6 +6250,72 @@ async function loadStats() {
         });
       }
     }
+
+    // ── Till Sessions (Z-Reports) ──
+    const tillWrap    = document.getElementById('till-sessions-table');
+    const tillCards   = document.getElementById('till-summary-cards');
+    const sessions    = j.till_sessions || [];
+    if (tillCards) {
+      if (sessions.length) {
+        tillCards.style.display = '';
+        const ouColor = n => n > 0 ? 'text-success' : n < 0 ? 'text-danger' : '';
+        const fmtOU   = n => `${n >= 0 ? '+' : ''}R${fmt(Math.abs(n))}`;
+        document.getElementById('till-stat-count')?.setAttribute('class', 'mb-0');
+        document.getElementById('till-stat-count').textContent  = sessions.length;
+        document.getElementById('till-stat-cash').textContent   = `R${fmt(j.till_cash_counted)}`;
+        const netEl = document.getElementById('till-stat-net-ou');
+        if (netEl) { netEl.textContent = fmtOU(j.till_net_over_under); netEl.className = `mb-0 ${ouColor(j.till_net_over_under)}`; }
+        const avgEl = document.getElementById('till-stat-avg-ou');
+        if (avgEl) { avgEl.textContent = fmtOU(j.till_avg_over_under); avgEl.className = `mb-0 ${ouColor(j.till_avg_over_under)}`; }
+      } else {
+        tillCards.style.display = 'none';
+      }
+    }
+    if (tillWrap) {
+      if (!sessions.length) {
+        tillWrap.innerHTML = '<div class="text-muted small">No till closes in this period.</div>';
+      } else {
+        const ouClass = n => n > 0 ? 'text-success' : n < 0 ? 'text-danger fw-semibold' : '';
+        const fmtOU   = n => `${n >= 0 ? '+' : ''}R${fmt(Math.abs(n))}`;
+        const fmtDT   = iso => iso ? iso.replace('T', ' ').slice(0, 16) : '-';
+        let rows = '';
+        sessions.forEach(s => {
+          rows += `<tr style="cursor:pointer" class="till-session-row"
+                       data-opened="${s.opened_at}" data-closed="${s.closed_at}">
+            <td style="font-size:12px;white-space:nowrap">${fmtDT(s.closed_at)}</td>
+            <td>${escapeHtml(s.closed_by)}</td>
+            <td style="font-size:11px;color:#666;white-space:nowrap">${fmtDT(s.opened_at)} → ${fmtDT(s.closed_at)}</td>
+            <td class="text-end">R${fmt(s.pos_cash_sales)}</td>
+            <td class="text-end">R${fmt(s.pos_card_sales)}</td>
+            <td class="text-end fw-semibold">R${fmt(s.pos_total_sales)}</td>
+            <td class="text-end text-muted">R${fmt(s.opening_float)}</td>
+            <td class="text-end text-muted">R${fmt(s.expected_cash)}</td>
+            <td class="text-end">R${fmt(s.counted_cash)}</td>
+            <td class="text-end ${ouClass(s.over_under)}">${fmtOU(s.over_under)}</td>
+            <td class="text-muted" style="font-size:11px">${escapeHtml(s.notes)}</td>
+          </tr>`;
+        });
+        tillWrap.innerHTML = `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light"><tr>
+            <th>Closed</th><th>By</th><th>Session Period</th>
+            <th class="text-end">Cash</th><th class="text-end">Card</th><th class="text-end">Total</th>
+            <th class="text-end">Opening Float</th><th class="text-end">Expected Cash</th><th class="text-end">Counted</th>
+            <th class="text-end">Over/Under</th><th>Notes</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table></div>`;
+        tillWrap.querySelectorAll('.till-session-row').forEach(row => {
+          row.addEventListener('click', () => {
+            openTillDrilldown(
+              `Transactions: ${row.dataset.opened.replace('T',' ').slice(0,16)} → ${row.dataset.closed.replace('T',' ').slice(0,16)}`,
+              row.dataset.opened,
+              row.dataset.closed
+            );
+          });
+        });
+      }
+    }
+
   } catch (e) { console.error('loadStats', e); toast('Could not load stats', 'error'); }
 }
 
@@ -6290,6 +6373,9 @@ document.getElementById('btn-export-suppliers')?.addEventListener('click', () =>
 });
 document.getElementById('btn-export-staff')?.addEventListener('click', () => {
   window.open(`/admin/export/staff?${_exportParams()}`, '_blank', 'noopener');
+});
+document.getElementById('btn-export-till-sessions')?.addEventListener('click', () => {
+  window.open(`/admin/export/till-sessions?${_exportParams()}`, '_blank', 'noopener');
 });
 
 // ═══════════════════════════════════════════════════════
