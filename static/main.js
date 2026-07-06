@@ -553,146 +553,113 @@ function renderProductsCards() {
   wrap.innerHTML = '';
   if (items.length === 0) {
     const msg = q ? 'No products match.' : 'No products yet.';
-    wrap.innerHTML = `<div class="text-muted">${msg}</div>`;
+    wrap.innerHTML = `<div class="text-muted py-2">${msg}</div>`;
     return;
   }
+
+  // Sticky column header
+  const hdr = document.createElement('div');
+  hdr.className = 'product-col-header';
+  hdr.innerHTML = '<div>Product</div><div>PLU</div><div>Price</div><div>Stock</div><div>Actions</div>';
+  wrap.appendChild(hdr);
 
   items.forEach(p => {
     const isStockItem = p.product_type === 'stock_item';
     const isSimple    = p.product_type === 'simple';
-    const hasStock    = isStockItem || isSimple;
+    const typeLabel   = { stock_item: '📦', recipe: '🍳' }[p.product_type] || '';
 
-    // Use expandable stock-card layout for stock items; thin-card for everything else
-    const card = document.createElement('div');
-    card.className = hasStock ? 'stock-card' : 'product-thin-card';
-
-    const typeLabel   = { simple: '', stock_item: '📦', recipe: '🍳' }[p.product_type] || '';
-    const margins     = calcProductMargins(p);
-    const marginLabel = margins ? ` • COGS ${margins.costLabel} • ${margins.markup}% markup / ${margins.margin}% margin` : '';
-
-    let stockBadge = '';
-    if (isStockItem) {
-      const level   = displayQty(p.stock_level || 0, p.unit_type);
-      const lowBadge = p.low_stock ? ' <span class="badge bg-warning text-dark">⚠ LOW</span>' : '';
-      stockBadge = `<span class="badge bg-light text-dark ms-2">${level}</span>${lowBadge}`;
-    } else if (isSimple) {
-      stockBadge = `<span class="badge bg-light text-dark ms-2">Stock: ${p.stock_qty ?? 0}</span>`;
-    }
-
+    // Price
     let priceDisplay = '';
     if (p.sold_by_weight && p.price_per_unit != null) {
-      const bigUnit  = p.unit_type === 'volume' ? 'L' : 'kg';
-      const conv     = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
-      const priceBig = parseFloat(p.price_per_unit) * conv;
-      priceDisplay = `R${fmt(priceBig)}/${bigUnit}`;
+      const bigUnit = p.unit_type === 'volume' ? 'L' : 'kg';
+      const conv    = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
+      priceDisplay  = `R${fmt(parseFloat(p.price_per_unit) * conv)}/${bigUnit}`;
     } else if (p.price != null) {
-      priceDisplay = `R${fmt(p.price)}`;
+      priceDisplay  = `R${fmt(p.price)}`;
     }
 
-    const barcodeId = `bc-${p.id}`;
-    const barcodeHtml = p.barcode ? `<svg id="${barcodeId}" class="product-barcode"></svg>` : '';
-
-    if (hasStock) {
-      // ── Expandable unified card ──
-      const header = document.createElement('div');
-      header.className = 'stock-card-header';
-      header.innerHTML = `
-        <div style="min-width:0;flex:1">
-          <span class="fw-semibold">${p.name}</span>
-          <span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>
-          ${p.product_code ? `<span class="text-muted ms-1" style="font-size:11px">PLU&nbsp;${p.product_code}</span>` : ''}
-          ${stockBadge}
-          ${priceDisplay ? `<span class="text-success ms-2 fw-semibold">${priceDisplay}</span>` : ''}
-          ${marginLabel ? `<span class="text-muted ms-2" style="font-size:11px">${marginLabel}</span>` : ''}
-          ${barcodeHtml}
-        </div>
-        <div class="d-flex gap-1 align-items-center flex-wrap">
-          ${isStockItem ? `
-            <button class="btn btn-success btn-sm"         data-receive-id="${p.id}"   data-receive-name="${p.name}">Receive</button>
-            <button class="btn btn-outline-warning btn-sm" data-stocktake-id="${p.id}" data-stocktake-name="${p.name}">Stocktake</button>
-            <button class="btn btn-outline-danger btn-sm"  data-writeoff-id="${p.id}"  data-writeoff-name="${p.name}">Write Off</button>
-          ` : ''}
-          <button class="btn btn-outline-primary btn-sm"   data-edit-product>Edit</button>
-          <button class="btn btn-outline-secondary btn-sm" data-print-label="${p.id}" title="Print label">🏷</button>
-          ${p.is_archived
-            ? `<button class="btn btn-outline-success btn-sm" data-restore-product>Restore</button>`
-            : `<button class="btn btn-outline-secondary btn-sm" data-archive-product>Archive</button>`}
-          <span class="text-muted small">▾</span>
-        </div>
-      `;
-
-      const body = document.createElement('div');
-      body.className = 'stock-card-body';
-
-      if (isStockItem) {
-        const stockData = STATE._stockItems?.[p.id];
-        if (stockData) {
-          body.appendChild(_buildStockBody(stockData, p));
-        } else {
-          body.innerHTML = '<div class="small text-muted">Loading stock data…</div>';
-        }
-      }
-
-      // Toggle body open/close on header click (not on button clicks)
-      header.addEventListener('click', e => {
-        if (e.target.closest('button')) return;
-        body.classList.toggle('open');
-      });
-
-      // Wire stock action buttons
-      const stockItem = STATE._stockItems?.[p.id] || { id: p.id, name: p.name, unit_type: p.unit_type, base_unit: p.base_unit, package_size: p.package_size, package_unit: p.package_unit, sell_packages: [], batches: [], stock_level: p.stock_level || 0 };
-      header.querySelector('[data-receive-id]')?.addEventListener('click', e => { e.stopPropagation(); openReceiveStockModal(stockItem); });
-      header.querySelector('[data-stocktake-id]')?.addEventListener('click', e => { e.stopPropagation(); openStocktakeModal(stockItem); });
-      header.querySelector('[data-writeoff-id]')?.addEventListener('click', e => { e.stopPropagation(); openWriteoffModal(stockItem); });
-      header.querySelector('[data-edit-product]')?.addEventListener('click', e => { e.stopPropagation(); openProductEditor(p); });
-      header.querySelector('[data-archive-product]')?.addEventListener('click', e => { e.stopPropagation(); openArchiveModal(p); });
-      header.querySelector('[data-restore-product]')?.addEventListener('click', e => { e.stopPropagation(); openRestoreModal(p); });
-      header.querySelector(`[data-print-label="${p.id}"]`)?.addEventListener('click', e => { e.stopPropagation(); openLabelPrintModal(p); });
-
-      card.appendChild(header);
-      card.appendChild(body);
-
-    } else {
-      // ── Standard thin card for recipes, ingredients without stock ──
-      const main = document.createElement('div');
-      main.className = 'product-thin-main';
-      main.innerHTML = `
-        <div class="product-title">${p.name}
-          <span class="badge bg-light text-dark ms-1" style="font-size:10px">${typeLabel}</span>
-          ${p.product_code ? `<span class="text-muted ms-1" style="font-size:11px">PLU&nbsp;${p.product_code}</span>` : ''}
-        </div>
-        <div class="d-flex gap-3 align-items-center mt-1" style="flex-wrap:wrap">
-          ${priceDisplay ? `<span class="fw-semibold text-success">${priceDisplay}</span>` : '<span class="text-muted small">no price</span>'}
-          ${barcodeHtml}
-          ${marginLabel ? `<span class="text-muted" style="font-size:12px">${marginLabel.replace(' • ','')}</span>` : ''}
-        </div>
-      `;
-
-      const actions = document.createElement('div');
-      actions.className = 'product-actions d-flex gap-1';
-      const btnEdit = document.createElement('button');
-      btnEdit.className = 'btn btn-outline-primary btn-sm'; btnEdit.textContent = 'Edit';
-      btnEdit.onclick = () => openProductEditor(p);
-      actions.appendChild(btnEdit);
-      const btnPrint = document.createElement('button');
-      btnPrint.className = 'btn btn-outline-secondary btn-sm'; btnPrint.textContent = '🏷';
-      btnPrint.title = 'Print label'; btnPrint.onclick = () => openLabelPrintModal(p);
-      actions.appendChild(btnPrint);
-      if (p.is_archived) {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-outline-success btn-sm'; btn.textContent = 'Restore';
-        btn.onclick = () => openRestoreModal(p);
-        actions.appendChild(btn);
-      } else {
-        const btn = document.createElement('button');
-        btn.className = 'btn btn-outline-danger btn-sm'; btn.textContent = 'Archive';
-        btn.onclick = () => openArchiveModal(p);
-        actions.appendChild(btn);
-      }
-      card.appendChild(main); card.appendChild(actions);
+    // Stock
+    let stockHtml   = '<span class="text-muted">—</span>';
+    let stockMobile = '';
+    if (isStockItem) {
+      const level = displayQty(p.stock_level || 0, p.unit_type);
+      const low   = p.low_stock ? ' <span class="badge bg-warning text-dark" style="font-size:10px">LOW</span>' : '';
+      stockHtml   = level + low;
+      stockMobile = level + (p.low_stock ? ' ⚠' : '');
+    } else if (isSimple) {
+      stockHtml   = String(p.stock_qty ?? 0);
+      stockMobile = String(p.stock_qty ?? 0);
     }
 
-    wrap.appendChild(card);
+    const margins   = calcProductMargins(p);
+    const marginTip = margins ? `COGS ${margins.costLabel} · ${margins.markup}% markup / ${margins.margin}% margin` : '';
+
+    const row = document.createElement('div');
+    row.className = `product-row${p.is_archived ? ' is-archived' : ''}`;
+    row.dataset.productId = p.id;
+
+    row.innerHTML = `
+      <div class="pr-name">
+        <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+        ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
+        ${marginTip ? `<span class="text-muted ms-1" style="font-size:11px" title="${escapeHtml(marginTip)}">· ${margins.margin}%</span>` : ''}
+        <div class="pr-mobile-meta">
+          <span class="text-muted">PLU ${p.product_code || '—'}</span>
+          ${priceDisplay ? `<span class="text-success fw-semibold">${priceDisplay}</span>` : ''}
+          ${stockMobile  ? `<span>${stockMobile}</span>` : ''}
+        </div>
+      </div>
+      <div class="pr-plu">${p.product_code || '—'}</div>
+      <div class="pr-price ${priceDisplay ? 'text-success' : 'text-muted'}">${priceDisplay || '—'}</div>
+      <div class="pr-stock">${stockHtml}</div>
+      <div class="pr-actions">
+        ${isStockItem ? `
+          <button class="btn btn-success btn-sm" data-receive>Receive</button>
+          <button class="btn btn-outline-secondary btn-sm" data-stocktake>Stocktake</button>
+          <button class="btn btn-outline-danger btn-sm" data-writeoff>Write Off</button>
+        ` : ''}
+        <button class="btn btn-outline-primary btn-sm" data-edit>Edit</button>
+        <button class="btn btn-outline-secondary btn-sm" data-print title="Print label">🏷</button>
+        ${p.is_archived
+          ? `<button class="btn btn-outline-success btn-sm" data-restore>Restore</button>`
+          : `<button class="btn btn-outline-secondary btn-sm" data-archive>Archive</button>`}
+        ${isStockItem ? `<button class="pr-expand-btn" data-expand title="Show batches">▾</button>` : ''}
+      </div>
+      ${isStockItem ? `<div class="pr-body"></div>` : ''}
+    `;
+
+    // Wire events
+    row.querySelector('[data-edit]')?.addEventListener('click',    () => openProductEditor(p));
+    row.querySelector('[data-print]')?.addEventListener('click',   () => openLabelPrintModal(p));
+    row.querySelector('[data-archive]')?.addEventListener('click', () => openArchiveModal(p));
+    row.querySelector('[data-restore]')?.addEventListener('click', () => openRestoreModal(p));
+
+    if (isStockItem) {
+      const stockItem = STATE._stockItems?.[p.id] || {
+        id: p.id, name: p.name, unit_type: p.unit_type, base_unit: p.base_unit,
+        package_size: p.package_size, package_unit: p.package_unit,
+        sell_packages: [], batches: [], stock_level: p.stock_level || 0,
+      };
+      row.querySelector('[data-receive]')?.addEventListener('click',   () => openReceiveStockModal(stockItem));
+      row.querySelector('[data-stocktake]')?.addEventListener('click', () => openStocktakeModal(stockItem));
+      row.querySelector('[data-writeoff]')?.addEventListener('click',  () => openWriteoffModal(stockItem));
+
+      const body      = row.querySelector('.pr-body');
+      const expandBtn = row.querySelector('[data-expand]');
+      if (expandBtn && body) {
+        expandBtn.addEventListener('click', () => {
+          const open = body.classList.toggle('open');
+          expandBtn.textContent = open ? '▴' : '▾';
+          if (open && body.children.length === 0) {
+            const sd = STATE._stockItems?.[p.id];
+            if (sd) body.appendChild(_buildStockBody(sd, p));
+            else body.innerHTML = '<div class="text-muted small">No batch data loaded.</div>';
+          }
+        });
+      }
+    }
+
+    wrap.appendChild(row);
   });
 
   // Store items for barcode rendering - will render when tab is visible
