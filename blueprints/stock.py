@@ -130,13 +130,8 @@ def api_stock_adjust():
     now = datetime.utcnow()
     cost_written_off = Decimal('0')
     if diff < 0:
-        loss_qty = abs(diff); remaining = loss_qty
-        for b in StockBatch.query.filter_by(product_id=pid).filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc()).all():
-            take = min(Decimal(str(b.qty_remaining_base)), remaining)
-            cost_written_off += take * Decimal(str(b.cost_per_base_unit))
-            remaining -= take
-            if remaining <= 0: break
-        consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now)
+        loss_qty = abs(diff)
+        cost_written_off = consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now)
     elif diff > 0:
         latest = StockBatch.query.filter_by(product_id=pid).filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).first()
         if latest:

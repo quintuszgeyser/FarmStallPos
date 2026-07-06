@@ -92,7 +92,15 @@ def require_login():
         sess = db.session.get(UserSession, sid)
         if sess and sess.logged_out is None:
             last = sess.last_active or sess.logged_in
-            if last < datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS):
+            now  = datetime.utcnow()
+            # Hard logout after SESSION_LOGOUT_HOURS total
+            if last < now - timedelta(hours=SESSION_LOGOUT_HOURS):
+                sess.logged_out = last
+                db.session.commit()
+                session.clear()
+                return False
+            # Idle logout after SESSION_TIMEOUT_MINUTES of inactivity
+            if last < now - timedelta(minutes=SESSION_TIMEOUT_MINUTES):
                 sess.logged_out = last
                 db.session.commit()
                 session.clear()
@@ -102,7 +110,10 @@ def require_login():
 
 def require_role(*roles):
     u = current_user()
-    return bool(u and u.has_role(*roles))
+    if not u or not u.active:
+        session.clear()
+        return False
+    return bool(u.has_role(*roles))
 
 
 # ---------------------------------------------------------------------------

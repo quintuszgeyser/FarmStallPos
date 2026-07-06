@@ -397,9 +397,14 @@ def api_transaction_return(sale_id):
         orig_by_pid[r.product_id] += Decimal(str(r.qty))
 
     # Subtract quantities already returned against this sale_id (prevent double-return)
+    # Use original_sale_id column; fall back to void_reason pattern for legacy rows
     already_returned = Sale.query.filter(
-        Sale.void_reason.like(f'return:{sale_id}:%'),
+        db.or_(
+            Sale.original_sale_id == sale_id,
+            Sale.void_reason.like(f'return:{sale_id}:%'),
+        ),
         Sale.voided == False,
+        Sale.payment_method == 'return',
     ).all()
     already_by_pid = {}
     for r in already_returned:
@@ -433,6 +438,7 @@ def api_transaction_return(sale_id):
             qty=-qty,
             unit_price=unit_price,
             user_id=u.id if u else None,
+            original_sale_id=sale_id,
             void_reason=f'return:{sale_id}:{reason}',
             payment_method='return',
         ))

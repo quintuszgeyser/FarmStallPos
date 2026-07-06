@@ -746,11 +746,20 @@ def api_customers_merge():
             MAX_EMBEDDINGS = int(float(get_setting('max_face_angles', 24) or 24))
             MIN_DISTANCE   = float(get_setting('min_angle_distance', 0.25) or 0.25)
             normed = []
+            skipped_dims = set()
             for row in face_rows:
                 emb = np.frombuffer(row[1], dtype=np.float32)
                 if emb.shape == (512,):
                     n = np.linalg.norm(emb)
                     if n > 0: normed.append((emb / n, bytes(emb.tobytes()), row[2]))
+                else:
+                    skipped_dims.add(emb.shape)
+            if skipped_dims:
+                import logging
+                logging.getLogger(__name__).warning(
+                    'customer merge pid=%s: dropped %d face embedding(s) with unexpected dimensions %s',
+                    primary_id, len(skipped_dims), skipped_dims
+                )
             selected = []
             for normed_emb, raw_bytes, photo in normed:
                 if all(float(np.dot(normed_emb, s[0])) < (1.0 - MIN_DISTANCE) for s in selected):

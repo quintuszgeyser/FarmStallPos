@@ -1327,6 +1327,29 @@ def strong_migrate():
         # Stats normalisation: typical serving/portion size for weighted products
         pg_try("ALTER TABLE products ADD COLUMN stat_unit_size NUMERIC(10,4)")
 
+        # Till sessions: track cash paid out for returns
+        pg_try("ALTER TABLE till_sessions ADD COLUMN cash_refunds NUMERIC(10,2) DEFAULT 0")
+
+        # Return tracking: dedicated column instead of void_reason string pattern
+        pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_sales_original_sale_id ON sales(original_sale_id)")
+
+        # Invoice number sequence — safe under concurrent creates
+        pg_try("""
+            DO $$
+            DECLARE max_num INTEGER;
+            BEGIN
+              CREATE SEQUENCE IF NOT EXISTS invoice_number_seq START 1;
+              SELECT COALESCE(MAX(
+                CASE WHEN invoice_number ~ '^INV-[0-9]+$'
+                     THEN CAST(SPLIT_PART(invoice_number, '-', 2) AS INTEGER)
+                     ELSE 0 END), 0) INTO max_num FROM invoices;
+              IF max_num > 0 THEN
+                PERFORM setval('invoice_number_seq', max_num);
+              END IF;
+            END$$
+        """)
+
         # Bulk product edit audit table
         pg_try("""
             CREATE TABLE IF NOT EXISTS product_bulk_edit_runs (

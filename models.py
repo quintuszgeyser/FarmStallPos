@@ -333,9 +333,10 @@ class Sale(db.Model):
     discount_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     # Tender info (ISSUE-29): what the customer paid with. Nullable so historical rows
     # (pre-migration) stay valid; new sales persist the teller's cash/card choice.
-    payment_method = db.Column(db.String(16), nullable=True)   # 'cash' | 'card' | 'qr' | 'split'
-    cash_tendered  = db.Column(Numeric(10, 2), nullable=True)  # change calc / till reconciliation
-    card_amount    = db.Column(Numeric(10, 2), nullable=True)  # split payment card portion
+    payment_method    = db.Column(db.String(16), nullable=True)   # 'cash' | 'card' | 'qr' | 'split'
+    cash_tendered     = db.Column(Numeric(10, 2), nullable=True)  # change calc / till reconciliation
+    card_amount       = db.Column(Numeric(10, 2), nullable=True)  # split payment card portion
+    original_sale_id  = db.Column(db.String(36), nullable=True)   # set on return rows; points to the originating sale_id
 
 
 class AuditLog(db.Model):
@@ -480,6 +481,7 @@ class TillSession(db.Model):
     expected_cash   = db.Column(Numeric(10, 2), nullable=False)                 # opening_float + pos_cash_sales
     over_under      = db.Column(Numeric(10, 2), nullable=False)                 # counted_cash - expected_cash
     void_total      = db.Column(Numeric(10, 2), nullable=False, default=0)
+    cash_refunds    = db.Column(Numeric(10, 2), nullable=True, default=0)       # cash paid out for returns
     notes           = db.Column(db.Text, nullable=True)
 
 

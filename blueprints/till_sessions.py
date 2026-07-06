@@ -148,7 +148,7 @@ def api_till_close():
     session_row = TillSession(
         opened_at=opened_at,
         closed_at=now,
-        opened_by=None,
+        opened_by=u.id if u else None,
         closed_by=u.id if u else None,
         opening_float=opening_float,
         counted_cash=counted_cash,
@@ -158,6 +158,7 @@ def api_till_close():
         expected_cash=expected_cash,
         over_under=over_under,
         void_total=void_total,
+        cash_refunds=cash_refunds,
         notes=(data.get('notes') or '').strip() or None,
     )
     db.session.add(session_row)
@@ -191,6 +192,7 @@ def api_till_sessions_list():
         'id':             r.id,
         'opened_at':      r.opened_at.isoformat(),
         'closed_at':      r.closed_at.isoformat(),
+        'opened_by':      users.get(r.opened_by, ''),
         'closed_by':      users.get(r.closed_by, ''),
         'opening_float':  float(r.opening_float),
         'counted_cash':   float(r.counted_cash),
@@ -200,5 +202,6 @@ def api_till_sessions_list():
         'expected_cash':  float(r.expected_cash),
         'over_under':     float(r.over_under),
         'void_total':     float(r.void_total),
+        'cash_refunds':   float(r.cash_refunds or 0),
         'notes':          r.notes,
     } for r in rows])

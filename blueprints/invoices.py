@@ -54,12 +54,18 @@ def api_shipping_fees_update():
 
 
 def _next_invoice_number():
-    last = db.session.query(Invoice).order_by(Invoice.id.desc()).first()
-    if last:
-        try: num = int(last.invoice_number.split('-')[-1]) + 1
-        except Exception: num = last.id + 1
-    else:
-        num = 1
+    # Use a PostgreSQL sequence so concurrent creates never collide on the same number.
+    try:
+        num = db.session.execute(text("SELECT nextval('invoice_number_seq')")).scalar()
+    except Exception:
+        db.session.rollback()
+        # Sequence doesn't exist yet (first run before migration) — fall back to MAX+1
+        last = db.session.query(Invoice).order_by(Invoice.id.desc()).first()
+        if last:
+            try: num = int(last.invoice_number.split('-')[-1]) + 1
+            except Exception: num = last.id + 1
+        else:
+            num = 1
     return f'INV-{num:04d}'
 
 
@@ -134,6 +140,8 @@ def api_invoices_delete(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
     if not inv: return jsonify({'error': 'Not found'}), 404
+    if inv.status == 'finalised':
+        return jsonify({'error': 'Cannot delete a finalised invoice. Use Undo to reverse it first.'}), 400
     db.session.delete(inv); db.session.commit()
     return jsonify({'ok': True})
 
@@ -164,8 +172,13 @@ def api_invoices_finalise(inv_id):
     inv_payment_method = 'card' if is_online else 'invoice'
     for line in lines:
         name = (line.get('name') or '').strip(); qty_disp = Decimal(str(line.get('qty', 1))); unit_price = Decimal(str(line.get('unit_price', 0))); unit = line.get('unit', 'unit')
-        base_name = name.split('(')[0].strip() if '(' in name else name
-        p = Product.query.filter(Product.name.ilike(base_name), Product.is_archived == False).first()
+        # Prefer stored product_id; fall back to name match for legacy invoices
+        pid_stored = line.get('product_id')
+        if pid_stored:
+            p = db.session.get(Product, int(pid_stored))
+        else:
+            base_name = name.split('(')[0].strip() if '(' in name else name
+            p = Product.query.filter(Product.name.ilike(base_name), Product.is_archived == False).first()
         if p:
             if p.product_type == 'stock_item':
                 conv = _UNIT_TO_BASE.get(p.unit_type, {}).get(unit, 1) if (unit and p.unit_type in ('weight', 'volume')) else 1

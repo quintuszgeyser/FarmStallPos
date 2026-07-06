@@ -43,8 +43,7 @@ def _serialize_special(s):
         'lines': [
             {
                 'product_id':   l.product_id,
-                'product_name': (db.session.get(Product, l.product_id).name
-                                 if db.session.get(Product, l.product_id) else None),
+                'product_name': (lambda _p: _p.name if _p else None)(db.session.get(Product, l.product_id)),
                 'qty':          l.qty,
             }
             for l in lines

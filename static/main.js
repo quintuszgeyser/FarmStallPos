@@ -10794,6 +10794,7 @@ document.getElementById('btn-inv-add-product')?.addEventListener('click', () => 
 
   _invLines.push({
     name,
+    product_id:      p.id,
     qty:             qtyDisplay,
     unit:            unitVal,
     unit_price:      parseFloat(unitPrice.toFixed(4)),

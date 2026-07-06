@@ -319,12 +319,13 @@ def api_stats():
         TillSession.closed_at >= start_dt,
         TillSession.closed_at <= end_dt,
     ).order_by(TillSession.closed_at.desc()).all()
-    ts_user_ids = {r.closed_by for r in ts_rows if r.closed_by}
+    ts_user_ids = {r.closed_by for r in ts_rows if r.closed_by} | {r.opened_by for r in ts_rows if r.opened_by}
     ts_users    = {u.id: u.username for u in User.query.filter(User.id.in_(ts_user_ids)).all()} if ts_user_ids else {}
     till_sessions_list = [{
         'id':             r.id,
         'opened_at':      r.opened_at.isoformat(),
         'closed_at':      r.closed_at.isoformat(),
+        'opened_by':      ts_users.get(r.opened_by, ''),
         'closed_by':      ts_users.get(r.closed_by, ''),
         'opening_float':  float(r.opening_float),
         'counted_cash':   float(r.counted_cash),
@@ -334,6 +335,7 @@ def api_stats():
         'expected_cash':  float(r.expected_cash),
         'over_under':     float(r.over_under),
         'void_total':     float(r.void_total),
+        'cash_refunds':   float(r.cash_refunds or 0),
         'notes':          r.notes or '',
     } for r in ts_rows]
     ts_count    = len(till_sessions_list)
@@ -731,12 +733,15 @@ def export_till_sessions_csv():
     ).order_by(TillSession.closed_at.asc()).all()
     uids  = {r.closed_by for r in rows if r.closed_by}
     users = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
+    uids.update(r.opened_by for r in rows if r.opened_by)
+    users = {u.id: u.username for u in User.query.filter(User.id.in_(uids)).all()} if uids else {}
     sio = StringIO()
-    sio.write('closed_at,opened_at,closed_by,opening_float,cash_sales,card_sales,total_sales,expected_cash,counted_cash,over_under,void_total,notes\n')
+    sio.write('closed_at,opened_at,opened_by,closed_by,opening_float,cash_sales,card_sales,total_sales,expected_cash,counted_cash,cash_refunds,over_under,void_total,notes\n')
     for r in rows:
         sio.write(
             f"{r.closed_at.isoformat()},"
             f"{r.opened_at.isoformat()},"
+            f"{users.get(r.opened_by,'').replace(',',';')},"
             f"{users.get(r.closed_by,'').replace(',',';')},"
             f"{float(r.opening_float):.2f},"
             f"{float(r.pos_cash_sales):.2f},"
@@ -744,6 +749,7 @@ def export_till_sessions_csv():
             f"{float(r.pos_total_sales):.2f},"
             f"{float(r.expected_cash):.2f},"
             f"{float(r.counted_cash):.2f},"
+            f"{float(r.cash_refunds or 0):.2f},"
             f"{float(r.over_under):.2f},"
             f"{float(r.void_total):.2f},"
             f"{(r.notes or '').replace(',',';')}\n"

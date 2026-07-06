@@ -123,6 +123,10 @@ def api_users_update():
             u.role = ','.join(sorted(role_set))
     if isinstance(active, bool):
         u.active = active
+        if not active:
+            now = datetime.utcnow()
+            for s in UserSession.query.filter_by(user_id=u.id, logged_out=None).all():
+                s.logged_out = now
     if password:
         u.password_hash = generate_password_hash(password)
     db.session.commit()
@@ -136,6 +140,9 @@ def api_users_delete(username):
     u = User.query.filter_by(username=username).first()
     if not u:
         return jsonify({'error': 'User not found'}), 404
+    now = datetime.utcnow()
+    for s in UserSession.query.filter_by(user_id=u.id, logged_out=None).all():
+        s.logged_out = now
     db.session.delete(u)
     db.session.commit()
     return jsonify({'ok': True})
