@@ -467,10 +467,10 @@
     /* ── Transaction table ── */
     .tx-hdr, .tx-row {
       display: grid;
-      grid-template-columns: 100px 1fr 80px 52px 90px 80px 68px auto;
+      grid-template-columns: 100px 1fr 80px 52px 90px 80px 68px 120px;
       align-items: center;
       gap: 0 8px;
-      padding: 6px 10px;
+      padding: 7px 10px;
     }
     .tx-hdr {
       position: sticky; top: 0; background: #fff; z-index: 5;
@@ -483,39 +483,52 @@
     .tx-row.voided   { opacity: 0.55; }
     .tx-body { grid-column: 1 / -1; }
     .tx-body-inner { background: #f8f9fa; border-top: 1px solid #dee2e6; border-bottom: 2px solid #dee2e6; }
+    /* Line items in expanded row */
     .tx-line-hdr, .tx-line-row {
       display: grid;
-      grid-template-columns: 24px 1fr 60px 90px 80px 1fr;
-      gap: 0 8px; align-items: center; padding: 3px 6px; font-size: 13px;
+      grid-template-columns: 32px 1fr 60px 90px 80px 1fr;
+      gap: 0 8px; align-items: center; padding: 7px 6px; font-size: 13px;
     }
     .tx-line-hdr {
       font-size: 11px; font-weight: 600; text-transform: uppercase; color: #6c757d;
       border-bottom: 1px solid #dee2e6; margin-bottom: 2px;
     }
-    .tx-line-row:hover { background: rgba(0,0,0,0.03); }
+    .tx-line-row:hover { background: rgba(0,0,0,0.04); border-radius: 4px; }
+    .tx-line-chk { width: 20px; height: 20px; cursor: pointer; }
+    /* Item selection toolbar */
     .tx-item-sel-bar {
       display: flex; align-items: center; gap: 8px; margin-top: 8px;
-      padding: 6px 8px; background: #fff3cd; border-radius: 6px; flex-wrap: wrap;
+      padding: 8px 10px; background: #fff3cd; border-radius: 6px; flex-wrap: wrap;
     }
+    /* Advanced filter panel */
     #tx-adv-filter {
       background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px;
-      padding: 10px 14px; margin-top: 8px;
+      padding: 12px 14px; margin-top: 8px;
     }
-    .tx-actions { display: flex; gap: 4px; align-items: center; }
+    /* Action buttons — large enough for mobile tap */
+    .tx-actions { display: flex; gap: 2px; align-items: center; flex-wrap: nowrap; }
     .tx-act {
       background: none; border: none; cursor: pointer;
-      font-size: 14px; line-height: 1; color: #6c757d; padding: 2px 4px; border-radius: 3px;
+      font-size: 18px; line-height: 1; color: #6c757d;
+      padding: 8px 6px; border-radius: 4px;
+      min-width: 36px; min-height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
     }
-    .tx-act:hover { color: #212529; background: rgba(0,0,0,0.06); }
+    .tx-act:hover { color: #212529; background: rgba(0,0,0,0.07); }
     .tx-act.text-danger { color: #dc3545 !important; }
     .tx-act.text-danger:hover { color: #a71d2a !important; }
     .tx-expand-btn {
-      background: none; border: none; cursor: pointer;
-      font-size: 11px; color: #6c757d; transition: transform 0.2s; padding: 2px 4px; border-radius: 3px;
+      background: none; border: none; cursor: pointer; font-size: 13px; color: #6c757d;
+      transition: transform 0.2s; padding: 8px 6px; border-radius: 4px;
+      min-width: 30px; min-height: 36px;
+      display: inline-flex; align-items: center; justify-content: center;
     }
-    .tx-expand-btn:hover { background: rgba(0,0,0,0.06); }
-    @media (max-width: 575px) {
-      .tx-hdr, .tx-row { grid-template-columns: 90px 1fr auto; }
+    .tx-expand-btn:hover { background: rgba(0,0,0,0.07); }
+    /* Product barcode SVG */
+    .pr-barcode-svg { max-width: 100%; height: 28px; display: block; }
+    .pr-barcode     { display: flex; flex-direction: column; gap: 1px; }
+    @media (max-width: 767px) {
+      .tx-hdr, .tx-row { grid-template-columns: 90px 1fr 120px; }
       .tx-hdr > div:nth-child(2), .tx-row > div:nth-child(2),
       .tx-hdr > div:nth-child(3), .tx-row > div:nth-child(3),
       .tx-hdr > div:nth-child(4), .tx-row > div:nth-child(4),
@@ -739,22 +752,21 @@
               <input id="tx-adv-max" type="number" class="form-control form-control-sm" placeholder="Max" min="0" step="0.01">
             </div>
           </div>
-          <div class="col-sm-3">
+          <div class="col-sm-2">
             <label class="form-label small mb-1">Status</label>
             <div class="d-flex gap-2 flex-wrap">
               <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-all" value="all" checked><label class="form-check-label small" for="tx-adv-status-all">All</label></div>
-              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-flagged" value="flagged"><label class="form-check-label small" for="tx-adv-status-flagged">Flagged</label></div>
-              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-voided" value="voided"><label class="form-check-label small" for="tx-adv-status-voided">Voided</label></div>
-              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-returns" value="returns"><label class="form-check-label small" for="tx-adv-status-returns">Returns</label></div>
+              <div class="form-check form-check-inline mb-0"><input class="form-check-input" type="radio" name="tx-adv-status" id="tx-adv-status-flagged" value="flagged"><label class="form-check-label small" for="tx-adv-status-flagged">Flagged only</label></div>
             </div>
           </div>
-          <div class="col-sm-1">
-            <div class="form-check mb-0">
+          <div class="col-sm-2">
+            <label class="form-label small mb-1 d-block">Other</label>
+            <div class="form-check form-check-inline mb-0">
               <input class="form-check-input" type="checkbox" id="tx-adv-discount">
-              <label class="form-check-label small" for="tx-adv-discount">Discounted</label>
+              <label class="form-check-label small" for="tx-adv-discount">Has discount</label>
             </div>
           </div>
-          <div class="col-auto">
+          <div class="col-auto align-self-end">
             <button id="btn-tx-adv-clear" class="btn btn-outline-secondary btn-sm">✕ Clear</button>
           </div>
         </div>

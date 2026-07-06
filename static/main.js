@@ -4637,8 +4637,6 @@ function _applyTxFilter() {
   if (f.minRev != null && f.minRev !== '') list = list.filter(t => t.total >= parseFloat(f.minRev));
   if (f.maxRev != null && f.maxRev !== '') list = list.filter(t => t.total <= parseFloat(f.maxRev));
   if (f.status === 'flagged')  list = list.filter(t => t.flagged && !t.flag_resolved);
-  if (f.status === 'voided')   list = list.filter(t => t.voided);
-  if (f.status === 'returns')  list = list.filter(t => t.is_return);
   if (f.hasDiscount) list = list.filter(t => t.lines?.some(l => l.discount));
   renderTransactions(list);
 }
@@ -4757,7 +4755,7 @@ function renderTransactions(trs) {
         _renderTxBody(body, t, admin);
       }
     }
-    row.addEventListener('click', e => { if (e.target.closest('.tx-actions')) return; _toggleTxBody(); });
+    row.addEventListener('click', e => { if (e.target.closest('.tx-actions') || e.target.closest('.tx-body')) return; _toggleTxBody(); });
     row.querySelector('.tx-expand-btn')?.addEventListener('click', e => { e.stopPropagation(); _toggleTxBody(); });
 
     host.appendChild(row);
@@ -4857,9 +4855,11 @@ document.getElementById('btn-refresh-trans')?.addEventListener('click', () => {
   }
 });
 document.getElementById('btn-tx-filter')?.addEventListener('click', () => {
+  _txClearFilter();
   loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
 });
 document.getElementById('btn-tx-today')?.addEventListener('click', () => {
+  _txClearFilter();
   const t = todayISO();
   const s = document.getElementById('tx-start'); if (s) s.value = t;
   const e = document.getElementById('tx-end');   if (e) e.value = t;
@@ -4867,6 +4867,7 @@ document.getElementById('btn-tx-today')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-tx-yesterday')?.addEventListener('click', () => {
+  _txClearFilter();
   const d = new Date(); d.setDate(d.getDate() - 1);
   const y = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const s = document.getElementById('tx-start'); if (s) s.value = y;
@@ -4875,6 +4876,7 @@ document.getElementById('btn-tx-yesterday')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-tx-week')?.addEventListener('click', () => {
+  _txClearFilter();
   const now = new Date();
   const day = now.getDay() || 7;
   const mon = new Date(now); mon.setDate(now.getDate() - day + 1);
