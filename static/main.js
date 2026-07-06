@@ -4028,7 +4028,7 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     document.getElementById('split-cash-input').value = '';
     document.getElementById('split-card-input').value = '';
     document.getElementById('split-balance').textContent = '';
-    await loadTransactions();
+    await loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
     await loadProducts();
     const kitchenMsg = j.kitchen_orders > 0 ? ` - ${j.kitchen_orders} kitchen order${j.kitchen_orders > 1 ? 's' : ''} queued` : '';
     toast(`Sale complete - #${String(j.transaction_id).slice(0,8)}${kitchenMsg}`, 'success', 4000);
@@ -4599,9 +4599,13 @@ window.addEventListener('DOMContentLoaded', initSerialSupport);
 // TRANSACTIONS
 // ═══════════════════════════════════════════════════════
 function initTxDatePickers() {
-  const t = todayISO();
-  const s = document.getElementById('tx-start'); if (s && !s.value) s.value = t;
-  const e = document.getElementById('tx-end');   if (e && !e.value) e.value = t;
+  const s = document.getElementById('tx-start');
+  const e = document.getElementById('tx-end');
+  if (s && !s.value) {
+    const d = new Date(); d.setDate(d.getDate() - 6);
+    s.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  if (e && !e.value) e.value = todayISO();
 }
 
 let _txFilter = {};
@@ -4679,7 +4683,10 @@ function renderTransactions(trs) {
   if (!host) return;
 
   if (!trs.length) {
-    host.innerHTML = '<div class="text-muted small p-3">No transactions found.</div>';
+    const s = document.getElementById('tx-start')?.value;
+    const e = document.getElementById('tx-end')?.value;
+    const rangeHint = (s || e) ? ` for ${s || '?'} – ${e || '?'}` : '';
+    host.innerHTML = `<div class="text-muted small p-3">No transactions found${rangeHint}. Adjust the date range above to search further back.</div>`;
     return;
   }
 
