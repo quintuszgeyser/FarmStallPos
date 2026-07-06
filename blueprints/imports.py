@@ -153,6 +153,9 @@ def _parse_csv(file_bytes):
                 pass
         lines = lines[1:]
 
+    # Strip any remaining comment lines (e.g. template example labels like "# Example weight product:")
+    lines = [l for l in lines if not l.strip().startswith('#')]
+
     if not lines:
         return None, [], ['CSV file is empty']
 
@@ -235,22 +238,24 @@ def api_import_products():
     results = []
     total_errors = 0
 
-    # Detect duplicate product_codes within the same CSV batch before processing
+    # Detect duplicate product_codes — mark only; append in the main loop so
+    # results[i] always aligns with raw_rows[i] for the zip in _do_import_*.
     seen_codes = {}
     for idx, raw in enumerate(raw_rows, start=2):
         pc = _parse_int(raw.get('product_code'))
         if pc is not None:
             if pc in seen_codes:
-                results.append({'row': idx, 'name': raw.get('name', ''), 'action': 'error',
-                                'error': f'product_code {pc} appears twice in this file (first at row {seen_codes[pc]})',
-                                'error_code': 'DUPLICATE_IN_BATCH'})
-                total_errors += 1
                 raw['_skip'] = True
+                raw['_dup_error'] = f'product_code {pc} appears twice in this file (first at row {seen_codes[pc]})'
             else:
                 seen_codes[pc] = idx
 
     for idx, raw in enumerate(raw_rows, start=2):  # row 1 = header
         if raw.get('_skip'):
+            results.append({'row': idx, 'name': raw.get('name', ''), 'action': 'error',
+                            'error': raw.get('_dup_error', 'Duplicate product_code in batch'),
+                            'error_code': 'DUPLICATE_IN_BATCH'})
+            total_errors += 1
             continue
         name = _normalize_name(raw.get('name', ''))
         if not name:
@@ -315,7 +320,10 @@ def api_import_products():
             'summary': {'create': 0, 'update': 0, 'unchanged': 0, 'error': errors}
         }), 422
 
-    # Acquire atomic import lock
+    # Seed lock key if it doesn't exist yet (fresh DB), then acquire atomically
+    db.session.execute(db.text(
+        "INSERT INTO settings (key, value) VALUES ('import_in_progress', 'false') ON CONFLICT (key) DO NOTHING"
+    ))
     lock_result = db.session.execute(db.text(
         "UPDATE settings SET value='true' "
         "WHERE key='import_in_progress' AND value='false' RETURNING key"
@@ -456,15 +464,7 @@ def _apply_fields(product, fields, is_new, raw):
             if bc:
                 product.barcode = bc
             else:
-                generated = _gen_barcode_from_code(product.product_code)
-                conflict = Product.query.filter_by(barcode=generated).first()
-                if conflict:
-                    raise ValueError(
-                        f'Auto-generated barcode {generated} already belongs to '
-                        f'"{conflict.name}" (product_code={conflict.product_code}). '
-                        f'Add the product_code to the CSV row to match and update it instead.'
-                    )
-                product.barcode = generated
+                product.barcode = _gen_barcode_from_code(product.product_code)
     else:
         # Only update product_code if explicitly provided and different
         pc = _parse_int(raw.get('product_code'))

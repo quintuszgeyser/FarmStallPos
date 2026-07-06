@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 from helpers import (
     require_login, require_role, current_user,
-    get_stock_level, consume_fifo, _gen_barcode, _parse_dt,
+    get_stock_level, consume_fifo, _parse_dt,
 )
 from models import (
     db,
@@ -319,6 +319,7 @@ def api_purchases_post():
 # Template columns: product_code, qty, unit, unit_cost, received_date (optional)
 # Seeds stock_batches without a supplier purchase-run so new stores start with
 # correct FIFO COGS from day one.
+# NOTE: re-running the same CSV creates additional batches — it is NOT idempotent.
 
 _OPENING_STOCK_COLS = ['product_code', 'qty', 'unit', 'unit_cost', 'received_date']
 
@@ -411,7 +412,6 @@ def api_opening_stock_import():
 
         received_at = datetime.utcnow()
         if date_raw:
-            from helpers import _parse_dt
             parsed = _parse_dt(date_raw)
             if parsed:
                 received_at = parsed

@@ -5952,6 +5952,13 @@ function openOpeningStockModal() {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('openingStockModal')).show();
 }
 
+document.getElementById('os-import-file')?.addEventListener('change', () => {
+  _osPreviewData = null;
+  document.getElementById('os-import-preview').classList.add('hidden');
+  document.getElementById('btn-os-import').classList.add('hidden');
+  document.getElementById('os-import-body').innerHTML = '';
+});
+
 document.getElementById('btn-os-preview')?.addEventListener('click', async () => {
   const fileEl = document.getElementById('os-import-file');
   if (!fileEl.files[0]) return toast('Select a CSV file first', 'warning');
