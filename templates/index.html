@@ -405,8 +405,24 @@
     .bulk-section + .bulk-section { border-top: 1.5px dashed var(--lc-gold-border); }
     .bulk-section-title { font-weight: 700; font-size: 15px; margin-bottom: .5rem; }
 
+    /* ── Products toolbar ── */
+    #products-sub-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    #products-sub-tabs::-webkit-scrollbar { display: none; }
+    .products-toolbar { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; margin-bottom: .5rem; }
+    .products-toolbar-tabs { min-width: 0; overflow: hidden; }
+    .products-toolbar-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; flex-shrink: 0; }
+
     /* ── Mobile ── */
     @media (max-width: 639px) {
+      .products-toolbar { flex-direction: column; align-items: stretch; }
+      .products-toolbar-tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+      .products-toolbar-actions { flex-wrap: wrap; gap: .35rem; }
+      .products-toolbar-actions .form-control { flex: 1 1 120px; min-width: 0; width: auto !important; }
+      .products-toolbar-actions .btn-sm { font-size: 12px; padding: 4px 8px; }
+      /* Hide button text on very small screens, keep icon */
+      @media (max-width: 420px) {
+        .products-toolbar-actions .btn-label { display: none; }
+      }
       .product-col-header { display: none; }
       .product-row {
         grid-template-columns: 24px 1fr 28px;
@@ -418,7 +434,14 @@
       .pr-name { grid-column: 2; }
       .pr-more-wrap { grid-column: 3; }
       .pr-body { grid-column: 1 / -1; }
-      .pr-mobile-meta { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--dd-ink); margin-top: .15rem; }
+      .pr-mobile-meta { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--dd-ink); margin-top: .2rem; }
+      /* Adjustment history — stack controls */
+      #adj-type-filter, #adj-date-filter { width: 100% !important; }
+      .adj-filter-row { flex-direction: column !important; align-items: stretch !important; }
+      .adj-filter-row > * { width: 100% !important; }
+      /* Selection bar — wrap on mobile */
+      #products-sel-bar { flex-wrap: wrap; gap: .35rem; }
+      #products-sel-bar .sel-bar-actions { flex-wrap: wrap; gap: .35rem; }
     }
 
     /* ── Users ── */
@@ -816,32 +839,34 @@
     <div class="tab-pane fade" id="products">
 
       <!-- Sub-tabs: Active / Hidden -->
-      <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <ul class="nav nav-pills" id="products-sub-tabs">
-          <li class="nav-item">
-            <button class="nav-link active" data-products-sub="active">Single Items <span id="single-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" data-products-sub="ingredients">Ingredients <span id="ingredients-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" data-products-sub="recipes">Recipes <span id="recipes-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" data-products-sub="specials">Specials <span id="specials-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
-          </li>
-          <li class="nav-item">
-            <button class="nav-link" data-products-sub="archived">Archived <span id="archived-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
-          </li>
-        </ul>
-        <div class="d-flex gap-2 align-items-center">
-          <input id="products-filter" class="form-control form-control-sm" placeholder="Filter…" style="width:180px">
-          <button id="btn-new-product" class="btn btn-outline-primary btn-sm">+ New Product</button>
-          <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()"><i class="bi bi-upload me-1"></i>Import CSV</button>
-          <button id="btn-import-opening-stock" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openOpeningStockModal()"><i class="bi bi-upload me-1"></i>Opening Stock</button>
-          <button id="btn-bulk-edit" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openBulkEditor()"><i class="bi bi-pencil-square me-1"></i>Bulk Edit</button>
-          <button id="btn-label-templates" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openLabelDesigner()" title="Design and manage label templates"><i class="bi bi-vector-pen me-1"></i>Label Templates</button>
-          <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
+      <div class="products-toolbar">
+        <div class="products-toolbar-tabs">
+          <ul class="nav nav-pills" id="products-sub-tabs">
+            <li class="nav-item">
+              <button class="nav-link active" data-products-sub="active">Single Items <span id="single-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-products-sub="ingredients">Ingredients <span id="ingredients-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-products-sub="recipes">Recipes <span id="recipes-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-products-sub="specials">Specials <span id="specials-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-products-sub="archived">Archived <span id="archived-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+            </li>
+          </ul>
+        </div>
+        <div class="products-toolbar-actions">
+          <input id="products-filter" class="form-control form-control-sm" placeholder="Filter…" style="width:160px">
+          <button id="btn-new-product" class="btn btn-outline-primary btn-sm"><i class="bi bi-plus me-1"></i><span class="btn-label">New Product</span></button>
+          <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()"><i class="bi bi-upload me-1"></i><span class="btn-label">Import CSV</span></button>
+          <button id="btn-import-opening-stock" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openOpeningStockModal()"><i class="bi bi-upload me-1"></i><span class="btn-label">Opening Stock</span></button>
+          <button id="btn-bulk-edit" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openBulkEditor()"><i class="bi bi-pencil-square me-1"></i><span class="btn-label">Bulk Edit</span></button>
+          <button id="btn-label-templates" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openLabelDesigner()" title="Label Templates"><i class="bi bi-vector-pen me-1"></i><span class="btn-label">Label Templates</span></button>
+          <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials"><i class="bi bi-plus me-1"></i><span class="btn-label">New Special</span></button>
         </div>
       </div>
 
@@ -869,7 +894,7 @@
       <div class="mt-3 border-top pt-3">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h6 class="mb-0">Adjustment History</h6>
-          <div class="d-flex gap-2">
+          <div class="d-flex gap-2 adj-filter-row">
             <select id="adj-type-filter" class="form-select form-select-sm" style="width:130px">
               <option value="">All types</option>
               <option value="stocktake">Stocktake</option>
