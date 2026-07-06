@@ -5411,7 +5411,11 @@ function drawBarChart(canvas, labels, values, opts = {}) {
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   const W = canvas.width, H = canvas.height;
-  const padL = 60, padR = 20, padT = 30, padB = 50;
+  // Extra padding for axis labels when provided
+  const padL = opts.yLabel ? 74 : 60;
+  const padR = 20;
+  const padT = 30;
+  const padB = opts.xLabel ? 64 : 50;
   const max = Math.max(...values, 1);
   const n   = values.length || 1;
   const bw  = Math.max(4, ((W - padL - padR) / n) * 0.6);
@@ -5424,6 +5428,22 @@ function drawBarChart(canvas, labels, values, opts = {}) {
   // Axes
   ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.lineTo(W - padR, H - padB); ctx.stroke();
+
+  // Y-axis label (rotated)
+  if (opts.yLabel) {
+    ctx.save();
+    ctx.fillStyle = '#555'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.translate(13, padT + (H - padT - padB) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(opts.yLabel, 0, 0);
+    ctx.restore();
+  }
+
+  // X-axis label
+  if (opts.xLabel) {
+    ctx.fillStyle = '#555'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(opts.xLabel, padL + (W - padL - padR) / 2, H - 4);
+  }
 
   // Y gridlines + labels
   ctx.fillStyle = '#888'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
@@ -5838,6 +5858,12 @@ function _showChartTab(tab) {
   const drillableTabs = ['daily','hourly','minute','top-qty','top-rev'];
   if (hint) hint.style.display = drillableTabs.includes(tab) ? '' : 'none';
 
+  // Legend strip — cleared each time, populated per tab below
+  const _legend = document.getElementById('stats-chart-legend');
+  if (_legend) _legend.innerHTML = '';
+  const _sw = (color, label) =>
+    `<span class="d-inline-flex align-items-center gap-1"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${color};flex-shrink:0"></span><span>${label}</span></span>`;
+
   if (!_statsData) return;
   const j = _statsData;
 
@@ -5847,8 +5873,11 @@ function _showChartTab(tab) {
     const dayData = j.revenue_per_day;
     drawBarChart(c, dayData.map(d => d.date.slice(5)), dayData.map(d => d.revenue), {
       color: '#2a6f3e', color2: '#4caf7d', valuePrefix: 'R',
+      yLabel: 'Revenue (R)', xLabel: 'Date',
       onBarClick: (lbl, val, i) => openDrilldown(`Sales on ${dayData[i].date}`, 'day', dayData[i].date),
     });
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Total sales revenue for each day — click a bar to see the transactions</span>`;
+
   } else if (tab === 'hourly') {
     const c = document.getElementById('chart-hourly');
     c.style.display = '';
@@ -5856,21 +5885,26 @@ function _showChartTab(tab) {
     const hourMap = Object.fromEntries((j.revenue_per_hour || []).map(x => [x.hour, x.revenue]));
     drawBarChart(c, hours.map(h => `${h}:00`), hours.map(h => hourMap[h] || 0), {
       color: '#1976d2', valuePrefix: 'R',
+      yLabel: 'Revenue (R)', xLabel: 'Hour of day',
       onBarClick: (lbl, val, i) => { if (val > 0) openDrilldown(`Sales at ${i}:00`, 'hour', i); },
     });
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue totalled by hour across all days in the selected range — click a bar to drill down</span>`;
+
   } else if (tab === 'minute') {
     const c = document.getElementById('chart-minute');
     c.style.display = '';
     const mins = j.revenue_per_minute || [];
     drawBarChart(c, mins.map(x => x.minute), mins.map(x => x.revenue), {
       color: '#00838f', valuePrefix: 'R',
+      yLabel: 'Revenue (R)', xLabel: 'Time (hh:mm)',
       onBarClick: (lbl) => { if (lbl) openDrilldown(`Sales at ${lbl}`, 'minute', lbl); },
     });
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue by minute — shows the busiest moments across the selected period</span>`;
+
   } else if (tab === 'top-qty') {
     const c = document.getElementById('chart-top');
     c.style.display = '';
     const products = j.top_products || [];
-    // Use normalized_qty when stat_unit_size is configured, otherwise raw qty
     const qtyVals = products.map(x => x.stat_unit_size ? x.normalized_qty : x.qty_sold);
     const qtyLabels = products.map(x => {
       if (x.stat_unit_size) return `${x.normalized_qty} portions`;
@@ -5879,39 +5913,65 @@ function _showChartTab(tab) {
     });
     drawBarChart(c, products.map(x => x.name), qtyVals, {
       color: '#e65100', valueSuffix: '',
+      yLabel: 'Qty sold', xLabel: 'Product',
       tooltipFormatter: (val, i) => qtyLabels[i] || String(val),
       onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id),
     });
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Units (or estimated portions for weight/volume items) sold per product — click a bar to drill down</span>`;
+
   } else if (tab === 'top-rev') {
     const c = document.getElementById('chart-top-rev');
     c.style.display = '';
     const products = j.top_by_revenue || [];
     drawBarChart(c, products.map(x => x.name), products.map(x => x.revenue), {
       color: '#7b1fa2', valuePrefix: 'R',
+      yLabel: 'Revenue (R)', xLabel: 'Product',
       onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id),
     });
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue generated per product — click a bar to drill down into those transactions</span>`;
+
   } else if (tab === 'suppliers') {
     const c = document.getElementById('chart-suppliers');
     c.style.display = '';
     const sups = j.supplier_breakdown || [];
     drawBarChart(c, sups.map(x => x.supplier), sups.map(x => x.total_cost), {
       color: '#5d4037', valuePrefix: 'R',
+      yLabel: 'Purchase cost (R)', xLabel: 'Supplier',
       onBarClick: (lbl) => openSupplierDrilldown(lbl),
     });
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Total amount spent on stock purchases per supplier in the selected period</span>`;
 
   } else if (tab === 'channels') {
     const c = document.getElementById('chart-channels');
     c.style.display = '';
     api(`/api/stats/drilldown/channels?${_statsFilterParams()}`).then(d => {
       const daily = d.daily || [];
-      if (!daily.length) { drawBarChart(c, [], [], {title: 'No channel data'}); return; }
-      // Stacked-style: show online vs instore as two separate datasets using colour
-      // Draw online revenue, then overlay instore as a second pass using a helper
-      drawBarChart(c, daily.map(x => x.date.slice(5)),
-        daily.map(x => x.online_rev), {
-          color: '#4caf7d', color2: '#81c784', valuePrefix: 'R',
-          title: 'Online Revenue',
-        });
+      if (!daily.length) { drawBarChart(c, [], [], {}); return; }
+
+      // Aggregate totals for the legend
+      const totalOnline    = daily.reduce((s, x) => s + x.online_rev,    0);
+      const totalInstore   = daily.reduce((s, x) => s + x.instore_rev,   0);
+      const cntOnline      = daily.reduce((s, x) => s + x.online_count,  0);
+      const cntInstore     = daily.reduce((s, x) => s + x.instore_count, 0);
+
+      // Interleave bars: even index = Online (green), odd index = In-store (blue)
+      // Date label on the Online bar, empty on the In-store bar (keeps it readable)
+      const barLabels = [], barValues = [];
+      daily.forEach(x => {
+        barLabels.push(x.date.slice(5), '');
+        barValues.push(x.online_rev, x.instore_rev);
+      });
+
+      drawBarChart(c, barLabels, barValues, {
+        color: '#4caf7d', color2: '#1976d2', valuePrefix: 'R',
+        yLabel: 'Revenue (R)', xLabel: 'Date',
+      });
+
+      if (_legend) _legend.innerHTML =
+        _sw('#4caf7d', `Online: R${fmt(totalOnline)} &nbsp;(${cntOnline} order${cntOnline !== 1 ? 's' : ''})`) +
+        `<span class="text-muted mx-1">|</span>` +
+        _sw('#1976d2', `In-store: R${fmt(totalInstore)} &nbsp;(${cntInstore} transaction${cntInstore !== 1 ? 's' : ''})`) +
+        `<span class="text-muted ms-2">— each date shows two bars side by side</span>`;
     }).catch(() => {});
 
   } else if (tab === 'customers') {
@@ -5920,30 +5980,28 @@ function _showChartTab(tab) {
     api(`/api/stats/drilldown/customers?${_statsFilterParams()}`).then(d => {
       const daily = d.new_vs_returning_daily || [];
       const freq  = d.frequency_distribution || {};
-      if (!daily.length && !freq.once) { drawBarChart(c, [], [], {title: 'No customer data'}); return; }
-      // Show frequency distribution as a simple bar (3 bars)
+      if (!daily.length && !freq.once) { drawBarChart(c, [], [], {}); return; }
       const freqLabels = ['Once', '2–5×', '6+×'];
       const freqVals   = [freq.once || 0, freq.two_to_five || 0, freq.six_plus || 0];
       drawBarChart(c, freqLabels, freqVals, {
         color: '#1976d2', color2: '#42a5f5',
-        title: 'Customer Purchase Frequency',
+        yLabel: 'Unique customers', xLabel: 'Visit frequency',
       });
+      if (_legend) _legend.innerHTML = `<span class="text-muted">How many unique customers visited <b>once</b>, <b>2–5 times</b>, or <b>6+ times</b> in the selected period</span>`;
     }).catch(() => {});
 
   } else if (tab === 'dow') {
     const c = document.getElementById('chart-dow');
     c.style.display = '';
     const dayData = (_statsData && _statsData.revenue_per_day) || [];
-    if (!dayData.length) { drawBarChart(c, [], [], {title: 'No data in selected range'}); return; }
+    if (!dayData.length) { drawBarChart(c, [], [], {}); return; }
 
-    // Aggregate revenue, transaction count, and occurrences per day-of-week
     const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const rev  = [0,0,0,0,0,0,0];
     const txs  = [0,0,0,0,0,0,0];
-    const days = [0,0,0,0,0,0,0];   // how many calendar days of that weekday exist in range
+    const days = [0,0,0,0,0,0,0];
 
     dayData.forEach(d => {
-      // JS Date: 0=Sun,1=Mon…6=Sat → remap to Mon=0…Sun=6
       const jsDay = new Date(d.date + 'T00:00:00').getDay();
       const idx   = jsDay === 0 ? 6 : jsDay - 1;
       rev[idx]  += d.revenue || 0;
@@ -5951,22 +6009,24 @@ function _showChartTab(tab) {
       days[idx] += 1;
     });
 
-    // Show average revenue per day-of-week occurrence (avoids bias from having 5 Mondays vs 4 Sundays)
+    // Average per occurrence — avoids bias from unequal weekday counts
     const avgRev = rev.map((r, i) => days[i] > 0 ? Math.round(r / days[i] * 100) / 100 : 0);
     const avgTx  = txs.map((t, i) => days[i] > 0 ? Math.round(t / days[i] * 10) / 10  : 0);
-
-    // Annotate label with occurrence count so the teller understands the average basis
     const labels = DOW.map((d, i) => days[i] > 0 ? `${d} (${days[i]}×)` : d);
 
     drawBarChart(c, labels, avgRev, {
       color: '#7b1fa2', color2: '#ba68c8', valuePrefix: 'R',
-      title: `Avg Revenue per Day of Week  •  ${dayData.length} days in range`,
+      yLabel: 'Avg revenue (R)', xLabel: 'Day of week',
       onBarClick: (lbl, val, i) => {
         if (avgTx[i] === 0) return;
-        const fullDay = DOW[i];
-        toast(`${fullDay}: avg R${fmt(avgRev[i])} revenue, avg ${avgTx[i]} transactions (${days[i]} occurrence${days[i]!==1?'s':''})`, 'info', 5000);
+        toast(`${DOW[i]}: avg R${fmt(avgRev[i])} revenue, avg ${avgTx[i]} transactions (${days[i]} occurrence${days[i]!==1?'s':''})`, 'info', 5000);
       },
     });
+
+    if (_legend) _legend.innerHTML =
+      `<span class="text-muted"><b>Average</b> revenue per weekday occurrence — bars show the mean across all matching days in the range. ` +
+      `The number in brackets (e.g. <em>Mon (4×)</em>) is how many Mondays fall in the selected period. ` +
+      `Click a bar for transaction detail. Total revenue ÷ occurrences = bar height.</span>`;
   }
 }
 
