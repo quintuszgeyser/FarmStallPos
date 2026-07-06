@@ -81,7 +81,9 @@
     body { background: var(--dd-surface); color: var(--dd-text); }
 
     /* ── Nav tabs - doodle style ── */
-    .nav-tabs { border-bottom: 2px solid var(--lc-gold-border); }
+    .nav-tabs { border-bottom: 2px solid var(--lc-gold-border); overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .nav-tabs::-webkit-scrollbar { display: none; }
+    .nav-tabs .nav-item { flex-shrink: 0; }
     .nav-tabs .nav-link {
       border-radius: var(--dd-radius-sm);
       color: var(--dd-ink);
@@ -375,7 +377,7 @@
 
     /* cells */
     .pr-check   { display: flex; align-items: center; }
-    .pr-check input[type=checkbox] { width: 16px; height: 16px; cursor: pointer; accent-color: var(--lc-gold-border); }
+    .pr-check input[type=checkbox] { width: 22px; height: 22px; cursor: pointer; accent-color: var(--lc-gold-border); touch-action: manipulation; }
     .pr-name    { min-width: 0; }
     .pr-name-text { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .pr-stock   { font-size: 13px; white-space: nowrap; }
@@ -385,7 +387,7 @@
     .pr-barcode-svg { max-width: 100%; height: auto; display: block; }
     .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
     .pr-more-wrap { position: relative; display: flex; justify-content: center; }
-    .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 0 4px; line-height: 1.4; }
+    .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 8px 6px; line-height: 1; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; }
     .pr-more-btn:hover { background: var(--lc-gold-light); border-color: var(--lc-gold-border); color: var(--dd-ink); }
     .pr-more-menu { display: none; position: absolute; right: 0; top: 100%; z-index: 20; min-width: 140px;
                     background: #fff; border: 1.5px solid var(--lc-gold-border); border-radius: 6px;
@@ -494,7 +496,8 @@
       border-bottom: 1px solid #dee2e6; margin-bottom: 2px;
     }
     .tx-line-row:hover { background: rgba(0,0,0,0.04); border-radius: 4px; }
-    .tx-line-chk { width: 20px; height: 20px; cursor: pointer; }
+    .tx-line-chk { width: 26px; height: 26px; cursor: pointer; touch-action: manipulation; }
+    .tx-line-row { touch-action: manipulation; }
     /* Item selection toolbar */
     .tx-item-sel-bar {
       display: flex; align-items: center; gap: 8px; margin-top: 8px;
@@ -528,12 +531,29 @@
     .pr-barcode-svg { max-width: 100%; height: 28px; display: block; }
     .pr-barcode     { display: flex; flex-direction: column; gap: 1px; }
     @media (max-width: 767px) {
-      .tx-hdr, .tx-row { grid-template-columns: 90px 1fr 120px; }
+      /* Nav tabs — compact + scrollable */
+      .nav-tabs .nav-link { font-size: 13px; padding: 6px 10px; }
+
+      /* TX outer row — ID and Revenue share space, actions stay fixed */
+      .tx-hdr, .tx-row { grid-template-columns: 1fr 1fr 116px; }
       .tx-hdr > div:nth-child(2), .tx-row > div:nth-child(2),
       .tx-hdr > div:nth-child(3), .tx-row > div:nth-child(3),
       .tx-hdr > div:nth-child(4), .tx-row > div:nth-child(4),
       .tx-hdr > div:nth-child(6), .tx-row > div:nth-child(6),
       .tx-hdr > div:nth-child(7), .tx-row > div:nth-child(7) { display: none !important; }
+
+      /* TX expanded line items — hide Unit Price + Discount columns */
+      .tx-line-hdr, .tx-line-row { grid-template-columns: 32px 1fr 65px 80px; gap: 0 6px; }
+      .tx-line-hdr > div:nth-child(4), .tx-line-row > div:nth-child(4),
+      .tx-line-hdr > div:nth-child(6), .tx-line-row > div:nth-child(6) { display: none !important; }
+
+      /* Item selection toolbar — full-size buttons */
+      .tx-item-sel-bar .btn { font-size: 15px; padding: 8px 14px; min-height: 44px; }
+      .tx-item-sel-bar .btn-link { min-height: 44px; padding: 8px 10px; }
+
+      /* TX action buttons — ensure 44px tap targets */
+      .tx-act { min-width: 40px; min-height: 44px; font-size: 20px; padding: 6px; }
+      .tx-expand-btn { min-width: 32px; min-height: 44px; }
     }
 
     /* ── Toasts - doodle style ── */

@@ -4816,9 +4816,9 @@ function _renderTxBody(body, t, admin) {
       </div>
       <div class="tx-item-sel-bar d-none">
         <span class="tx-item-count small fw-semibold">0 items selected</span>
-        <button class="btn btn-warning btn-sm" data-item-action="flag">🚩 Flag Items</button>
-        <button class="btn btn-outline-secondary btn-sm" data-item-action="return">↩ Return Items</button>
-        <button class="btn btn-link btn-sm tx-clear-sel p-0">✕ Clear</button>
+        <button class="btn btn-warning" data-item-action="flag">🚩 Flag Items</button>
+        <button class="btn btn-outline-secondary" data-item-action="return">↩ Return Items</button>
+        <button class="btn btn-link tx-clear-sel px-2">✕ Clear</button>
       </div>
     </div>
   `;
