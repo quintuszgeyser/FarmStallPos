@@ -19,7 +19,11 @@ def _app_version():
 
 @bp.route('/')
 def index():
-    return render_template('index.html', app_env=os.getenv('APP_ENV', 'qa'))
+    app_env = os.getenv('APP_ENV', 'qa')
+    return render_template('index.html',
+                           app_env=app_env,
+                           is_qa=(app_env == 'qa'),
+                           is_appliance=(os.getenv('IS_APPLIANCE', '').lower() in ('1', 'true')))
 
 
 @bp.route('/health')
