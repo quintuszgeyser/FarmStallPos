@@ -126,20 +126,20 @@ function renderImageList() {
 
     const label = document.createElement('span');
     label.className = 'flex-grow-1 small' + (img.is_primary ? ' fw-bold' : '');
-    label.textContent = img.is_primary ? '★ Primary' : img.filename.split('_').slice(0,2).join('_');
+    label.innerHTML = img.is_primary ? '<i class="bi bi-star-fill me-1"></i>Primary' : img.filename.split('_').slice(0,2).join('_');
     row.appendChild(label);
 
     // ↑ button
     if (idx > 0) {
       const btnUp = document.createElement('button');
-      btnUp.type = 'button'; btnUp.className = 'btn btn-sm btn-outline-secondary'; btnUp.textContent = '↑';
+      btnUp.type = 'button'; btnUp.className = 'btn btn-sm btn-outline-secondary'; btnUp.innerHTML = '<i class="bi bi-arrow-up"></i>';
       btnUp.onclick = () => _moveImage(idx, -1, pid);
       row.appendChild(btnUp);
     }
     // ↓ button
     if (idx < _editingImages.length - 1) {
       const btnDown = document.createElement('button');
-      btnDown.type = 'button'; btnDown.className = 'btn btn-sm btn-outline-secondary'; btnDown.textContent = '↓';
+      btnDown.type = 'button'; btnDown.className = 'btn btn-sm btn-outline-secondary'; btnDown.innerHTML = '<i class="bi bi-arrow-down"></i>';
       btnDown.onclick = () => _moveImage(idx, 1, pid);
       row.appendChild(btnDown);
     }
@@ -147,13 +147,13 @@ function renderImageList() {
     if (!img.is_primary) {
       const btnPri = document.createElement('button');
       btnPri.type = 'button'; btnPri.className = 'btn btn-sm btn-outline-warning'; btnPri.title = 'Set as primary';
-      btnPri.textContent = '⭐';
+      btnPri.innerHTML = '<i class="bi bi-star-fill"></i>';
       btnPri.onclick = () => _setPrimary(img.id, pid);
       row.appendChild(btnPri);
     }
     // ✕ delete
     const btnDel = document.createElement('button');
-    btnDel.type = 'button'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.textContent = '✕';
+    btnDel.type = 'button'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.innerHTML = '<i class="bi bi-x-lg"></i>';
     btnDel.onclick = () => _deleteImage(img.id, pid);
     row.appendChild(btnDel);
 
@@ -185,7 +185,7 @@ function renderImageList() {
       row.appendChild(label);
 
       const btnDel = document.createElement('button');
-      btnDel.type = 'button'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.textContent = '✕';
+      btnDel.type = 'button'; btnDel.className = 'btn btn-sm btn-outline-danger'; btnDel.innerHTML = '<i class="bi bi-x-lg"></i>';
       btnDel.onclick = () => { _pendingFiles.splice(idx, 1); renderImageList(); };
       row.appendChild(btnDel);
 
@@ -394,7 +394,7 @@ async function _checkBackupHealth() {
     if (!isAdmin) { hide(b); return; }
     const h = await api('/api/health');
     if (h && h.backup_warning) {
-      b.textContent = `⚠ Backup warning: ${h.backup_warning} - tell your support contact.`;
+      b.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Backup warning: ${h.backup_warning} - tell your support contact.`;
       show(b);
     } else {
       hide(b);
@@ -597,7 +597,7 @@ function renderProductsCards() {
       const level = displayQty(p.stock_level || 0, p.unit_type);
       const low   = p.low_stock ? ' <span class="badge bg-warning text-dark" style="font-size:10px">LOW</span>' : '';
       stockHtml   = level + low;
-      stockMobile = level + (p.low_stock ? ' ⚠' : '');
+      stockMobile = level + (p.low_stock ? ' <i class="bi bi-exclamation-triangle"></i>' : '');
     } else if (isSimple) {
       stockHtml   = String(p.stock_qty ?? 0);
       stockMobile = String(p.stock_qty ?? 0);
@@ -908,9 +908,9 @@ function _buildBulkStocktake(products) {
       const base = qty * conv;
       const diff = base - (p.stock_level || 0);
       if (qty <= 0) { preEl.textContent = ''; return; }
-      if (Math.abs(diff) < 0.001) preEl.textContent = '✓ Matches system';
-      else if (diff < 0) preEl.textContent = `⚠ Will remove ${displayQty(Math.abs(diff), p.unit_type)}`;
-      else preEl.textContent = `ℹ Will add ${displayQty(diff, p.unit_type)}`;
+      if (Math.abs(diff) < 0.001) preEl.innerHTML = '<i class="bi bi-check-lg me-1"></i>Matches system';
+      else if (diff < 0) preEl.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Will remove ${displayQty(Math.abs(diff), p.unit_type)}`;
+      else preEl.innerHTML = `<i class="bi bi-info-circle me-1"></i>Will add ${displayQty(diff, p.unit_type)}`;
     };
     qtyEl.addEventListener('input', update);
     unitEl.addEventListener('change', update);
@@ -1265,7 +1265,7 @@ async function openArchiveModal(p) {
     const stockDisplay = p.product_type === 'stock_item' ? displayQty(stockLevel, p.unit_type) : `${simpleStock} units`;
     const stockAction = hasRemainingStock
       ? `<div class="alert alert-info py-2 mb-3">
-          <strong>📦 ${stockDisplay} remaining in stock.</strong> What should happen to it?
+          <strong><i class="bi bi-box-seam me-1"></i>${stockDisplay} remaining in stock.</strong> What should happen to it?
           <div class="mt-2">
             <div class="form-check">
               <input class="form-check-input" type="radio" name="archive-stock-action" id="stock-action-keep" value="keep" checked>
@@ -1287,7 +1287,7 @@ async function openArchiveModal(p) {
       let html = `<p class="mb-1">Archive <strong>${p.name}</strong>?</p>
         ${stockAction}
         <div class="alert alert-warning py-2 small mb-3">
-          ⚠ Used in ${affected.length} active recipe${affected.length>1?'s':''}. Choose what to do with each one.
+          <i class="bi bi-exclamation-triangle me-1"></i>Used in ${affected.length} active recipe${affected.length>1?'s':''}. Choose what to do with each one.
         </div>`;
 
       affected.forEach(r => {
@@ -2087,7 +2087,7 @@ function renderRecipeLines() {
       <td><input type="number" step="0.01" min="0.01" value="${line.qty_base_display || line.qty_base || ''}" class="form-control form-control-sm" data-rl-idx="${idx}" data-rl-field="qty_display" style="width:80px"></td>
       <td>${unitSelHTML}</td>
       <td class="small text-muted">${lineCost > 0 ? `R${lineCost.toFixed(4)}` : '-'}</td>
-      <td><button class="btn btn-outline-danger btn-sm" data-rl-remove="${idx}">✕</button></td>
+      <td><button class="btn btn-outline-danger btn-sm" data-rl-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -2314,7 +2314,7 @@ function renderPackagesTable() {
       <td>${unitSel}</td>
       <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.01" value="${pkg.price || ''}" class="form-control" data-pkg-idx="${idx}" data-pkg-field="price" style="width:75px"></div></td>
       <td><input type="text" value="${pkg.barcode || ''}" class="form-control form-control-sm" data-pkg-idx="${idx}" data-pkg-field="barcode" placeholder="auto" style="width:100px"></td>
-      <td><button class="btn btn-outline-danger btn-sm" data-pkg-remove="${idx}">✕</button></td>
+      <td><button class="btn btn-outline-danger btn-sm" data-pkg-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -2894,7 +2894,7 @@ function _addStocktakeRow(defaultUnit) {
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.className = 'btn btn-outline-danger btn-sm';
-  removeBtn.textContent = '✕';
+  removeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
   removeBtn.style.display = rows.children.length === 0 ? 'none' : ''; // hide on first row
   removeBtn.onclick = () => { rowEl.remove(); _updateStocktakePreview(); };
 
@@ -2947,13 +2947,13 @@ function _updateStocktakePreview() {
   show(preview);
   if (Math.abs(diff) < 0.001) {
     preview.className = 'alert alert-success py-2 small';
-    preview.textContent = '✓ Matches system - no adjustment needed';
+    preview.innerHTML = '<i class="bi bi-check-lg me-1"></i>Matches system - no adjustment needed';
   } else if (diff < 0) {
     preview.className = 'alert alert-warning py-2 small';
-    preview.textContent = `⚠ System will deduct ${displayQty(Math.abs(diff), _stocktakeItem.unit_type)} (unexplained loss)`;
+    preview.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>System will deduct ${displayQty(Math.abs(diff), _stocktakeItem.unit_type)} (unexplained loss)`;
   } else {
     preview.className = 'alert alert-info py-2 small';
-    preview.textContent = `ℹ System will add ${displayQty(diff, _stocktakeItem.unit_type)} (found more than expected)`;
+    preview.innerHTML = `<i class="bi bi-info-circle me-1"></i>System will add ${displayQty(diff, _stocktakeItem.unit_type)} (found more than expected)`;
   }
 }
 
@@ -3121,9 +3121,9 @@ function renderSuppliersList() {
     item.dataset.supplierId = s.id;
     item.style.cursor = 'pointer';
     const contactBits = [
-      s.phone   ? `📞 ${s.phone}`   : '',
-      s.email   ? `✉ ${s.email}`   : '',
-      s.website ? `🌐 ${s.website}` : '',
+      s.phone   ? `<i class="bi bi-telephone me-1"></i>${s.phone}`   : '',
+      s.email   ? `<i class="bi bi-envelope me-1"></i>${s.email}`    : '',
+      s.website ? `<i class="bi bi-globe me-1"></i>${s.website}`     : '',
     ].filter(Boolean).join('  ');
     item.innerHTML = `
       <strong>${s.name}</strong>
@@ -3176,8 +3176,8 @@ async function loadSupplierDocs(sid) {
       <div class="list-group-item d-flex align-items-center gap-2 py-1 px-2" data-doc-id="${d.id}">
         <span class="small flex-fill text-truncate" title="${escapeHtml(d.original_name)}">${escapeHtml(d.original_name)}</span>
         <span class="small text-muted">${d.uploaded_at || ''}</span>
-        <a href="/api/suppliers/${sid}/documents/${d.id}/download" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Download">⬇</a>
-        <button class="btn btn-outline-danger btn-sm py-0 px-1 btn-doc-delete" data-doc-id="${d.id}" title="Delete">✕</button>
+        <a href="/api/suppliers/${sid}/documents/${d.id}/download" class="btn btn-outline-secondary btn-sm py-0 px-1" title="Download"><i class="bi bi-download"></i></a>
+        <button class="btn btn-outline-danger btn-sm py-0 px-1 btn-doc-delete" data-doc-id="${d.id}" title="Delete"><i class="bi bi-x-lg"></i></button>
       </div>`).join('');
     host.querySelectorAll('.btn-doc-delete').forEach(btn => {
       btn.addEventListener('click', async () => {
@@ -3386,7 +3386,7 @@ function addPurchaseLine() {
     <div class="d-flex gap-2 align-items-center mb-2">
       <span class="small fw-semibold text-muted">Item</span>
       <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" data-create-product-btn>+ Create New Product</button>
-      <button class="btn btn-sm btn-outline-danger" data-remove-line>✕</button>
+      <button class="btn btn-sm btn-outline-danger" data-remove-line><i class="bi bi-x-lg"></i></button>
     </div>
     <div class="mb-2">
       <select class="form-select form-select-sm" data-product-select>
@@ -3559,7 +3559,7 @@ async function loadAdjustments() {
         <div class="text-end text-muted small flex-shrink-0">
           <div>${new Date(r.adjusted_at).toLocaleString('en-ZA')}</div>
           ${r.adjusted_by ? `<div>${r.adjusted_by}</div>` : ''}
-          ${isWriteoff ? `<button class="btn btn-outline-secondary btn-sm mt-1 py-0 px-2" data-editwo-id="${r.id}" data-editwo-product="${r.product_name}" data-editwo-qty="${Math.abs(r.qty_change_base)}" data-editwo-unit="${r.base_unit}" data-editwo-reason="${r.reason}" data-editwo-unit-type="">✏️ Edit</button>` : ''}
+          ${isWriteoff ? `<button class="btn btn-outline-secondary btn-sm mt-1 py-0 px-2" data-editwo-id="${r.id}" data-editwo-product="${r.product_name}" data-editwo-qty="${Math.abs(r.qty_change_base)}" data-editwo-unit="${r.base_unit}" data-editwo-reason="${r.reason}" data-editwo-unit-type=""><i class="bi bi-pencil me-1"></i>Edit</button>` : ''}
         </div>
       `;
       host.appendChild(row);
@@ -3628,7 +3628,7 @@ document.getElementById('editwo-qty')?.addEventListener('input', () => {
   show(preview);
   if (Math.abs(diff) < 0.001) {
     preview.className = 'alert alert-success py-2 small';
-    preview.textContent = '✓ Same quantity - no change to stock';
+    preview.innerHTML = '<i class="bi bi-check-lg me-1"></i>Same quantity - no change to stock';
   } else if (diff > 0) {
     preview.className = 'alert alert-warning py-2 small';
     const prod = _editWoAdj._prod;
@@ -3748,7 +3748,7 @@ function renderCart() {
     if (_admin) {
       const discBtn = document.createElement('button');
       discBtn.className = 'btn btn-sm ms-1 ' + (hasDiscount ? 'btn-success' : 'btn-outline-success');
-      discBtn.textContent = hasDiscount ? '%✓' : '%';
+      discBtn.innerHTML = hasDiscount ? '%<i class="bi bi-check-lg ms-1"></i>' : '%';
       discBtn.title = hasDiscount ? 'Edit item discount' : 'Add item discount';
       discBtn.onclick = () => openDiscountModal(item._key);
       btns.appendChild(discBtn);
@@ -4091,7 +4091,7 @@ function _updateSplitBalance() {
     el.textContent = `R${fmt(Math.abs(remaining))} over total`;
     el.className = 'small text-warning';
   } else {
-    el.textContent = '✓ Balanced';
+    el.innerHTML = '<i class="bi bi-check-lg me-1"></i>Balanced';
     el.className = 'small text-success';
   }
 }
@@ -4458,10 +4458,10 @@ function _setScannerDot(state, label) {
   }
   if (state) {
     if (dot) dot.style.background = '#16A34A';
-    btn.innerHTML = `<span id="scanner-status-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#16A34A"></span>${label === 'USB' ? '🔌' : '📡'} ${label}`;
+    btn.innerHTML = `<span id="scanner-status-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#16A34A"></span><i class="bi bi-${label === 'USB' ? 'usb-plug' : 'broadcast'} me-1"></i>${label}`;
     btn.classList.replace('btn-outline-primary', 'btn-primary');
   } else {
-    btn.innerHTML = `<span id="scanner-status-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#6c757d"></span>🔌 Scanner`;
+    btn.innerHTML = `<span id="scanner-status-dot" style="position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:#6c757d"></span><i class="bi bi-upc-scan me-1"></i>Scanner`;
     btn.classList.replace('btn-primary', 'btn-outline-primary');
   }
 }
@@ -4712,8 +4712,8 @@ function renderTransactions(trs) {
     row.dataset.saleId = t.id;
 
     let badges = '';
-    if (isFlagged)   badges += `<span class="badge bg-warning text-dark ms-1" style="font-size:10px">⚑</span>`;
-    if (isReviewed)  badges += `<span class="badge bg-secondary ms-1" style="font-size:10px">✓</span>`;
+    if (isFlagged)   badges += `<span class="badge bg-warning text-dark ms-1" style="font-size:10px"><i class="bi bi-flag-fill"></i></span>`;
+    if (isReviewed)  badges += `<span class="badge bg-secondary ms-1" style="font-size:10px"><i class="bi bi-check-lg"></i></span>`;
     if (isVoided)    badges += `<span class="badge bg-danger ms-1" style="font-size:10px">Voided</span>`;
     if (t.is_return) badges += `<span class="badge bg-info text-dark ms-1" style="font-size:10px">Return</span>`;
 
@@ -4770,8 +4770,8 @@ function _renderTxBody(body, t, admin) {
 
   const flagNote = t.flagged && t.flag_note
     ? `<div class="small px-2 py-1 rounded mb-2 ${t.flag_resolved ? 'bg-light text-muted' : 'bg-warning bg-opacity-25'}">
-         <strong>${t.flag_resolved ? '✓ Reviewed' : '⚑ Flag note'}:</strong> ${escapeHtml(t.flag_note)}
-         ${admin && !t.flag_resolved ? `<button class="btn btn-outline-success btn-sm ms-2 py-0 px-1" onclick="resolveFlag('${t.id}')">✓ Resolve</button>` : ''}
+         <strong>${t.flag_resolved ? '<i class="bi bi-check-lg me-1"></i>Reviewed' : '<i class="bi bi-flag me-1"></i>Flag note'}:</strong> ${escapeHtml(t.flag_note)}
+         ${admin && !t.flag_resolved ? `<button class="btn btn-outline-success btn-sm ms-2 py-0 px-1" onclick="resolveFlag('${t.id}')"><i class="bi bi-check-lg me-1"></i>Resolve</button>` : ''}
        </div>` : '';
 
   const summaryHtml = admin
@@ -4913,7 +4913,7 @@ function renderTxEditTable() {
       <td><input type="number" min="0.001" step="0.001" value="${fmtQty(ln.qty)}" class="form-control form-control-sm" data-idx="${idx}" data-field="qty"></td>
       <td><input type="number" step="0.01" min="0" value="${fmt(ln.unit_price)}" class="form-control form-control-sm" data-idx="${idx}" data-field="unit_price"></td>
       <td class="align-middle small">R${fmt(ln.qty * ln.unit_price)}</td>
-      <td><button class="btn btn-outline-danger btn-sm" data-remove="${idx}">✕</button></td>
+      <td><button class="btn btn-outline-danger btn-sm" data-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>
     `;
     tbody.appendChild(tr);
   });
@@ -5133,7 +5133,7 @@ document.getElementById('ct-counted-cash')?.addEventListener('input', () => {
   if (document.getElementById('ct-counted-cash').value === '') { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   el.className = `alert py-2 small ${diff < -0.01 ? 'alert-danger' : diff > 0.01 ? 'alert-warning' : 'alert-success'}`;
-  el.textContent = `Expected cash: R${fmt(expected)} | ${diff >= 0 ? 'Over' : 'Short'}: R${fmt(Math.abs(diff))}${Math.abs(diff) < 0.01 ? ' ✓ Balanced' : ''}`;
+  el.innerHTML = `Expected cash: R${fmt(expected)} | ${diff >= 0 ? 'Over' : 'Short'}: R${fmt(Math.abs(diff))}${Math.abs(diff) < 0.01 ? ' <i class="bi bi-check-lg ms-1"></i>Balanced' : ''}`;
 });
 
 document.getElementById('btn-close-till-confirm')?.addEventListener('click', async (ev) => {
@@ -6418,16 +6418,16 @@ function renderImportPreview(data) {
   const summaryEl = document.getElementById('import-summary');
   summaryEl.innerHTML = `
     <strong>${data.rows?.length || 0} rows parsed</strong> -
-    <span class="text-success">🟢 ${s.create} create</span>
-    <span class="text-warning ms-2">🟡 ${s.update} update</span>
-    <span class="text-secondary ms-2">⬜ ${s.unchanged} unchanged</span>
-    <span class="text-danger ms-2">🔴 ${s.error} errors</span>
-    ${s.skip ? `<span class="text-muted ms-2">⏭ ${s.skip} skip</span>` : ''}
+    <span class="text-success"><i class="bi bi-circle-fill me-1"></i>${s.create} create</span>
+    <span class="text-warning ms-2"><i class="bi bi-circle-fill me-1"></i>${s.update} update</span>
+    <span class="text-secondary ms-2"><i class="bi bi-circle me-1"></i>${s.unchanged} unchanged</span>
+    <span class="text-danger ms-2"><i class="bi bi-circle-fill me-1"></i>${s.error} errors</span>
+    ${s.skip ? `<span class="text-muted ms-2"><i class="bi bi-skip-forward me-1"></i>${s.skip} skip</span>` : ''}
   `;
 
   const dupWarn = document.getElementById('import-duplicate-warning');
   if (data.duplicate_warning) {
-    dupWarn.textContent = '⚠ ' + data.duplicate_warning;
+    dupWarn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + data.duplicate_warning;
     dupWarn.style.display = '';
   } else {
     dupWarn.style.display = 'none';
@@ -6446,7 +6446,7 @@ function renderImportPreview(data) {
       ? `<span class="text-danger">${r.error}</span>`
       : r.changes ? Object.entries(r.changes).map(([k,v]) => `<small><b>${k}:</b> ${v}</small>`).join(' &nbsp; ')
       : '';
-    const warnings = (r.warnings || []).length ? `<small class="text-warning ms-1">⚠ ${r.warnings.join(', ')}</small>` : '';
+    const warnings = (r.warnings || []).length ? `<small class="text-warning ms-1"><i class="bi bi-exclamation-triangle me-1"></i>${r.warnings.join(', ')}</small>` : '';
     return `<tr class="${actionClass}">
       <td class="text-muted small">${r.row}</td>
       <td>${r.name || ''}</td>
@@ -6576,7 +6576,7 @@ async function _updateScaleBanner() {
   try {
     const d = await api('/api/scale/status');
     document.getElementById('scale-ip-display').textContent = `${d.scale_ip}:${d.scale_port}`;
-    document.getElementById('scale-reachable-display').textContent = d.scale_reachable ? '✅ Yes' : '❌ No';
+    document.getElementById('scale-reachable-display').innerHTML = d.scale_reachable ? '<i class="bi bi-check-circle-fill text-success me-1"></i>Yes' : '<i class="bi bi-x-circle-fill text-danger me-1"></i>No';
     document.getElementById('scale-insync-count').textContent = d.products_in_sync;
     document.getElementById('scale-pending-count').textContent = d.products_pending;
     document.getElementById('scale-error-count').textContent = d.products_error;
@@ -6617,7 +6617,7 @@ async function loadScaleStatus() {
         <td>${badge}</td>
         ${isAdmin() ? `<td class="small text-muted">${p.last_synced_at ? new Date(p.last_synced_at).toLocaleString() : 'Never'}</td>
         <td class="small text-danger">${p.validation_error || p.last_sync_error || ''}</td>
-        <td><button class="btn btn-outline-secondary btn-sm" onclick="scaleProductSync(${p.id})" title="Queue for sync">↑</button></td>` : ''}
+        <td><button class="btn btn-outline-secondary btn-sm" onclick="scaleProductSync(${p.id})" title="Queue for sync"><i class="bi bi-arrow-up"></i></button></td>` : ''}
       </tr>`;
     }).join('');
   } catch (e) { toast('Scale status error: ' + e.message, 'danger'); }
@@ -6653,7 +6653,7 @@ async function loadScaleContents() {
         <td>${p.scale_tare || 0}g</td>
         <td>${p.scale_shelf_life || 0}d</td>
         <td>${statusBadge}</td>
-        <td>${p.sync_status !== 'removed' ? `<button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.product_code}, ${p.id})" title="Delete from scale">✕</button>` : ''}</td>
+        <td>${p.sync_status !== 'removed' ? `<button class="btn btn-outline-danger btn-sm" onclick="scaleDeletePlu(${p.product_code}, ${p.id})" title="Delete from scale"><i class="bi bi-x-lg"></i></button>` : ''}</td>
       </tr>`;
     }).join('') || '<tr><td colspan="8" class="text-muted text-center">No PLUs tracked - click "Read from Scale" to get live data</td></tr>';
   } catch (e) { toast('Scale contents error: ' + e.message, 'danger'); }
@@ -6931,11 +6931,11 @@ function _kitchenIngHtml(ingredients) {
         : i.qty >= 1000 && i.base_unit === 'g'
         ? `${(i.qty/1000).toFixed(2)}kg`
         : `${i.qty % 1 === 0 ? i.qty : i.qty.toFixed(1)}${i.base_unit}`;
-      if (i.removed)     return `<li style="background:#f8d7da;border-radius:4px;padding:2px 6px;font-weight:700;color:#842029;text-decoration:line-through">✕ NO ${i.name}</li>`;
+      if (i.removed)     return `<li style="background:#f8d7da;border-radius:4px;padding:2px 6px;font-weight:700;color:#842029;text-decoration:line-through"><i class="bi bi-x-lg me-1"></i>NO ${i.name}</li>`;
       if (i.extra)       return `<li style="background:#d1e7dd;border-radius:4px;padding:2px 6px;font-weight:700;color:#0a3622">+ EXTRA: ${i.name} - <strong>${qtyDisplay}</strong></li>`;
       if (i.substituted) {
         const origNote = i.original_name ? ` <span style="text-decoration:line-through;opacity:.6">${i.original_name}</span>` : '';
-        return `<li style="background:#fff3cd;border-radius:4px;padding:2px 6px;font-weight:700;color:#856404">⚑ SWAP: ${i.name}${origNote} - <strong>${qtyDisplay}</strong></li>`;
+        return `<li style="background:#fff3cd;border-radius:4px;padding:2px 6px;font-weight:700;color:#856404"><i class="bi bi-flag me-1"></i>SWAP: ${i.name}${origNote} - <strong>${qtyDisplay}</strong></li>`;
       }
       return `<li>• ${i.name} - <strong>${qtyDisplay}</strong></li>`;
     }).join('') + `</ul>`;
@@ -6948,7 +6948,7 @@ function renderKitchenQueue(orders) {
   if (orders.length === 0) {
     host.innerHTML = `
       <div class="text-center py-5 text-muted">
-        <div style="font-size:3rem">✅</div>
+        <div style="font-size:3rem"><i class="bi bi-check-circle-fill text-success"></i></div>
         <div class="mt-2 fw-bold">Queue is empty</div>
         <div class="small">No pending orders</div>
       </div>`;
@@ -6986,7 +6986,7 @@ function renderKitchenQueue(orders) {
           <span class="kitchen-qty-badge">×${o.qty % 1 === 0 ? o.qty : o.qty.toFixed(1)}</span>
         </div>
         ${_kitchenIngHtml(o.ingredients)}
-        ${o.notes ? `<div class="small text-info mt-1">📝 ${o.notes}</div>` : ''}
+        ${o.notes ? `<div class="small text-info mt-1"><i class="bi bi-sticky me-1"></i>${o.notes}</div>` : ''}
       </div>`).join('');
 
     card.innerHTML = `
@@ -7000,7 +7000,7 @@ function renderKitchenQueue(orders) {
             <div class="d-flex align-items-center gap-2 mb-2">
               <span class="badge bg-secondary">Queue #${grpIdx + 1}</span>
               <span class="badge bg-primary" title="Order ID">#${saleShort}</span>
-              ${teller ? `<span class="badge bg-light text-dark border">🧑 ${teller}</span>` : ''}
+              ${teller ? `<span class="badge bg-light text-dark border"><i class="bi bi-person me-1"></i>${teller}</span>` : ''}
             </div>
             ${itemsHtml}
           </div>
@@ -7013,8 +7013,8 @@ function renderKitchenQueue(orders) {
         </div>
       </div>
       <div class="kitchen-actions">
-        <button class="btn btn-success btn-lg-touch flex-fill" data-ko-done-sale="${saleId}">✓ Done - whole order</button>
-        <button class="btn btn-outline-danger" data-ko-cancel-sale="${saleId}">✕ Cancel</button>
+        <button class="btn btn-success btn-lg-touch flex-fill" data-ko-done-sale="${saleId}"><i class="bi bi-check-lg me-1"></i>Done - whole order</button>
+        <button class="btn btn-outline-danger" data-ko-cancel-sale="${saleId}"><i class="bi bi-x-lg me-1"></i>Cancel</button>
       </div>
     `;
 
@@ -7053,9 +7053,9 @@ function renderKitchenHistory(orders) {
     const item = document.createElement('div');
     item.className = `d-flex justify-content-between align-items-center py-2 border-bottom small ${o.status === 'cancelled' ? 'text-muted' : ''}`;
     item.innerHTML = `
-      <span>${o.status === 'cancelled' ? '✕' : '✓'} <strong>${o.product_name}</strong> ×${o.qty % 1 === 0 ? o.qty : o.qty.toFixed(1)}</span>
+      <span>${o.status === 'cancelled' ? '<i class="bi bi-x-lg me-1"></i>' : '<i class="bi bi-check-lg me-1"></i>'}<strong>${o.product_name}</strong> ×${o.qty % 1 === 0 ? o.qty : o.qty.toFixed(1)}</span>
       <span>${new Date(o.queued_at).toLocaleTimeString('en-ZA', {hour:'2-digit',minute:'2-digit'})}</span>
-      <span class="text-muted">⏱ ${wait}</span>
+      <span class="text-muted"><i class="bi bi-clock me-1"></i>${wait}</span>
     `;
     host.appendChild(item);
   });
@@ -7252,7 +7252,7 @@ function renderSpecialsList() {
       <div class="product-thin-main">
         <div class="product-title">${s.name}${activeBadge}</div>
         <div class="product-sub">R${fmt(s.special_price)} - ${lineNames || 'No products set'}</div>
-        ${scheduleText ? `<div class="small text-muted">🕐 ${scheduleText}</div>` : ''}
+        ${scheduleText ? `<div class="small text-muted"><i class="bi bi-clock me-1"></i>${scheduleText}</div>` : ''}
       </div>
       <div class="product-actions">
         <button class="btn btn-outline-primary btn-sm">Edit</button>
@@ -7345,7 +7345,7 @@ function renderScheduleRows() {
     const removeBtn = document.createElement('button');
     removeBtn.type = 'button';
     removeBtn.className = 'btn btn-outline-danger btn-sm ms-auto';
-    removeBtn.textContent = '✕';
+    removeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
     removeBtn.onclick = () => { _scheduleRows.splice(idx, 1); renderScheduleRows(); };
     div.appendChild(removeBtn);
 
@@ -7391,7 +7391,7 @@ function renderSpecialLines() {
     tr.innerHTML = `
       <td>${selHTML}</td>
       <td><input type="number" min="1" value="${line.qty || 1}" class="form-control form-control-sm" style="width:70px" data-sl-idx="${idx}" data-sl-field="qty"></td>
-      <td><button class="btn btn-outline-danger btn-sm" data-sl-remove="${idx}">✕</button></td>`;
+      <td><button class="btn btn-outline-danger btn-sm" data-sl-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>`;
     tbody.appendChild(tr);
   });
   tbody.querySelectorAll('[data-sl-idx]').forEach(el => {
@@ -7744,7 +7744,7 @@ function renderSubsTable() {
           ${unitSelHTML}
         </div>
       </td>
-      <td><button class="btn btn-outline-danger btn-sm" data-extra-remove="${idx}">✕</button></td>`;
+      <td><button class="btn btn-outline-danger btn-sm" data-extra-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>`;
     tbody.appendChild(tr);
 
     tr.querySelector(`[data-extra-field="ingredient_id"]`).addEventListener('change', e => {
@@ -8081,7 +8081,7 @@ function renderCustomersList() {
   const _attrChips = attrs => {
     if (!attrs) return '';
     const chips = [];
-    const gMap = { male: '♂', female: '♀', 'm': '♂', 'f': '♀' };
+    const gMap = { male: '<i class="bi bi-gender-male"></i>', female: '<i class="bi bi-gender-female"></i>', 'm': '<i class="bi bi-gender-male"></i>', 'f': '<i class="bi bi-gender-female"></i>' };
     if (attrs.gender)     chips.push(`<span class="badge bg-light text-dark border" title="Gender">${gMap[attrs.gender.toLowerCase()] || attrs.gender}</span>`);
     if (attrs.age_range)  chips.push(`<span class="badge bg-light text-dark border" title="Age">${attrs.age_range}</span>`);
     if (attrs.build)      chips.push(`<span class="badge bg-light text-dark border" title="Build">${attrs.build}</span>`);
@@ -8100,7 +8100,7 @@ function renderCustomersList() {
                 style="width:52px;height:52px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;"
                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
             : ''}
-          <div style="width:52px;height:52px;border-radius:50%;background:#e9ecef;display:${(c.has_face || c.has_photo) ? 'none' : 'flex'};align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;">👤</div>
+          <div style="width:52px;height:52px;border-radius:50%;background:#e9ecef;display:${(c.has_face || c.has_photo) ? 'none' : 'flex'};align-items:center;justify-content:center;font-size:1.4rem;flex-shrink:0;"><i class="bi bi-person"></i></div>
           ${c.has_body_photo
             ? `<img src="/api/customers/${c.id}/body_photo" alt="body"
                 style="width:44px;height:66px;object-fit:cover;border-radius:4px;border:2px solid #dee2e6;"
@@ -8109,16 +8109,16 @@ function renderCustomersList() {
         </div>
         <div class="flex-grow-1 min-width-0">
           <div class="fw-semibold">${c.name || '<span class="text-muted fst-italic">Unnamed</span>'}
-            ${c.is_employee ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem">👷 Employee</span>' : ''}
+            ${c.is_employee ? '<span class="badge bg-warning text-dark ms-1" style="font-size:0.65rem"><i class="bi bi-person-badge me-1"></i>Employee</span>' : ''}
             ${c.auto_enrolled && !c.is_employee ? '<span class="badge bg-info text-dark ms-1" style="font-size:0.65rem">Auto</span>' : ''}
-            ${(c.is_online_customer && c.is_pos_customer) ? '<span class="badge bg-purple text-white ms-1" style="font-size:0.65rem;background:#7c3aed">🌐+🏪 Both</span>' : (c.is_online_customer ? '<span class="badge ms-1" style="font-size:0.65rem;background:#0ea5e9;color:#fff">🌐 Online</span>' : (c.is_pos_customer ? '<span class="badge bg-success ms-1" style="font-size:0.65rem">🏪 In-store</span>' : ''))}
+            ${(c.is_online_customer && c.is_pos_customer) ? '<span class="badge bg-purple text-white ms-1" style="font-size:0.65rem;background:#7c3aed"><i class="bi bi-globe me-1"></i><i class="bi bi-shop me-1"></i>Both</span>' : (c.is_online_customer ? '<span class="badge ms-1" style="font-size:0.65rem;background:#0ea5e9;color:#fff"><i class="bi bi-globe me-1"></i>Online</span>' : (c.is_pos_customer ? '<span class="badge bg-success ms-1" style="font-size:0.65rem"><i class="bi bi-shop me-1"></i>In-store</span>' : ''))}
             ${c.customer_number ? `<span class="text-muted small ms-1">${c.customer_number}</span>` : ''}
           </div>
           ${c.phone ? `<div class="small text-muted">${c.phone}</div>` : ''}
           <div class="small mt-1 d-flex flex-wrap gap-1">
             ${c.plates.length ? c.plates.map(p => `<span class="badge bg-light text-dark border">${p}</span>`).join('') : ''}
-            ${c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face -</span>'}
-            ${c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body -</span>'}
+            ${c.has_face ? '<span class="badge bg-success">Face <i class="bi bi-check-lg"></i></span>' : '<span class="badge bg-secondary">Face -</span>'}
+            ${c.has_gait ? '<span class="badge bg-success">Body <i class="bi bi-check-lg"></i></span>' : '<span class="badge bg-secondary">Body -</span>'}
             ${_attrChips(c.physical_attributes)}
           </div>
           <div class="small mt-1 d-flex flex-wrap gap-2 text-muted">
@@ -8225,7 +8225,7 @@ async function openMergeModal() {
   // Override selector (collapsed by default)
   const overrideOpts = customers.map(c => `
     <option value="${c.id}" ${c.id === selectedPrimaryId ? 'selected' : ''}>
-      ${c.customer_number} - ${c.name || 'Unnamed'} (${c.visit_count} visits${c.has_face ? ', face ✓' : ''})
+      ${c.customer_number} - ${c.name || 'Unnamed'} (${c.visit_count} visits${c.has_face ? ', face <i class="bi bi-check-lg"></i>' : ''})
     </option>`).join('');
 
   body.innerHTML = `
@@ -8409,7 +8409,7 @@ async function openCustomerDetail(customerId) {
     ? `<img src="/api/customers/${c.id}/photo?t=${t}" alt="face"
          style="width:90px;height:90px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;"
          onerror="this.style.display='none'">`
-    : `<div style="width:90px;height:90px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:2rem;">👤</div>`;
+    : `<div style="width:90px;height:90px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;font-size:2rem;"><i class="bi bi-person"></i></div>`;
   const bodyPhotoHtml = c.has_body_photo
     ? `<div class="ms-2">
          <div class="text-muted" style="font-size:.65rem;margin-bottom:2px">Body</div>
@@ -8421,15 +8421,15 @@ async function openCustomerDetail(customerId) {
   const photoHtml = `<div class="d-flex align-items-start">${facePhotoHtml}${bodyPhotoHtml}</div>`;
 
   const originBadge = (c.is_online_customer && c.is_pos_customer)
-    ? '<span class="badge" style="background:#7c3aed;color:#fff">🌐+🏪 Online & In-store</span>'
+    ? '<span class="badge" style="background:#7c3aed;color:#fff"><i class="bi bi-globe me-1"></i><i class="bi bi-shop me-1"></i>Online & In-store</span>'
     : c.is_online_customer
-      ? '<span class="badge" style="background:#0ea5e9;color:#fff">🌐 Online customer</span>'
+      ? '<span class="badge" style="background:#0ea5e9;color:#fff"><i class="bi bi-globe me-1"></i>Online customer</span>'
       : c.is_pos_customer
-        ? '<span class="badge bg-success">🏪 In-store customer</span>'
+        ? '<span class="badge bg-success"><i class="bi bi-shop me-1"></i>In-store customer</span>'
         : '';
   const signalBadges = [
-    c.has_face ? '<span class="badge bg-success">Face ✓</span>' : '<span class="badge bg-secondary">Face -</span>',
-    c.has_gait ? '<span class="badge bg-success">Body ✓</span>' : '<span class="badge bg-secondary">Body -</span>',
+    c.has_face ? '<span class="badge bg-success">Face <i class="bi bi-check-lg"></i></span>' : '<span class="badge bg-secondary">Face -</span>',
+    c.has_gait ? '<span class="badge bg-success">Body <i class="bi bi-check-lg"></i></span>' : '<span class="badge bg-secondary">Body -</span>',
     ...(c.plates || []).map(p => `<span class="badge bg-light text-dark border">${p}</span>`),
     c.auto_enrolled ? '<span class="badge bg-info text-dark">Auto-enrolled</span>' : '',
     originBadge,
@@ -8702,7 +8702,7 @@ async function openCustomerDetail(customerId) {
           <div class="d-flex align-items-center gap-2 py-2 border-bottom">
             ${m.source_face_photo
               ? `<img src="${m.source_face_photo}" style="width:44px;height:44px;object-fit:cover;border-radius:50%;border:2px solid #dee2e6;flex-shrink:0">`
-              : `<div style="width:44px;height:44px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;flex-shrink:0">👤</div>`}
+              : `<div style="width:44px;height:44px;border-radius:50%;background:#e9ecef;display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="bi bi-person"></i></div>`}
             <div class="flex-grow-1 min-width-0">
               <div class="small fw-semibold">${m.source_name || '<span class="text-muted fst-italic">Unnamed</span>'}
                 ${m.source_customer_number ? `<span class="text-muted ms-1">${m.source_customer_number}</span>` : ''}
@@ -8822,9 +8822,9 @@ async function openCustomerEnroll(customerId) {
   (c?.plates || []).forEach(plate => addPlateBadge(plate));
 
   // Biometric status
-  document.getElementById('enroll-face-status').textContent  = c?.has_face ? 'Face: enrolled ✓' : 'Face: not enrolled';
+  document.getElementById('enroll-face-status').innerHTML  = c?.has_face ? 'Face: enrolled <i class="bi bi-check-lg"></i>' : 'Face: not enrolled';
   document.getElementById('enroll-face-status').className    = `badge ${c?.has_face ? 'bg-success' : 'bg-secondary'}`;
-  document.getElementById('enroll-gait-status').textContent  = c?.has_gait ? 'Body: enrolled ✓' : 'Body: not enrolled';
+  document.getElementById('enroll-gait-status').innerHTML  = c?.has_gait ? 'Body: enrolled <i class="bi bi-check-lg"></i>' : 'Body: not enrolled';
   document.getElementById('enroll-gait-status').className    = `badge ${c?.has_gait ? 'bg-success' : 'bg-secondary'}`;
 
   // Face photo
@@ -9080,7 +9080,7 @@ async function loadMergeSuggestions() {
           </div>
           <span class="badge bg-warning text-dark me-1">${Math.round(s.similarity * 100)}% similar</span>
           <button class="btn btn-outline-danger btn-sm" title="Not the same person - never suggest again"
-                  onclick="declineMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id}, event)">✕ Not same</button>
+                  onclick="declineMergeSuggestion(${s.customer_a.id}, ${s.customer_b.id}, event)"><i class="bi bi-x-lg me-1"></i>Not same</button>
         </div>`).join('')}`;
   } catch(e) { /* silently fail */ }
 }
@@ -9346,7 +9346,7 @@ function _renderPrinterConfigList() {
       <span style="flex:1"><strong>${escapeHtml(p.name)}</strong>
         <span class="text-muted small ms-1">${p.connection}${p.address ? ' · ' + escapeHtml(p.address) : ''}</span>
       </span>
-      <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="deletePrinter(${p.id})">✕</button>
+      <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="deletePrinter(${p.id})"><i class="bi bi-x-lg"></i></button>
     </div>
   `).join('');
 }
@@ -9459,9 +9459,9 @@ let _kioskTablets = [];
 
 function _batteryIcon(level) {
   if (level == null) return '';
-  if (level > 80) return '🔋';
-  if (level > 30) return '🔋';
-  return '🪫';
+  if (level > 60) return '<i class="bi bi-battery-full"></i>';
+  if (level > 30) return '<i class="bi bi-battery-half"></i>';
+  return '<i class="bi bi-battery"></i>';
 }
 
 function _statusBadge(available) {
@@ -9493,22 +9493,22 @@ function _renderKioskTablets(statuses) {
           </div>
           <div class="d-flex gap-1 align-items-center">
             ${_statusBadge(online)}
-            <button class="btn btn-link btn-sm text-danger p-0 ms-2" onclick="removeKioskTablet(${i})" title="Remove">✕</button>
+            <button class="btn btn-link btn-sm text-danger p-0 ms-2" onclick="removeKioskTablet(${i})" title="Remove"><i class="bi bi-x-lg"></i></button>
           </div>
         </div>
         ${(t.url || (t.apps && t.apps.length)) ? `
         <div class="d-flex flex-wrap gap-1 mb-2">
-          ${t.url ? `<button class="btn btn-outline-primary btn-sm" onclick="kioskAction('${t.ip}','url',{url:${JSON.stringify(t.url)}}).then(()=>kioskAction('${t.ip}','reload'))" title="${t.url}">🌐 Open URL</button>` : ''}
+          ${t.url ? `<button class="btn btn-outline-primary btn-sm" onclick="kioskAction('${t.ip}','url',{url:${JSON.stringify(t.url)}}).then(()=>kioskAction('${t.ip}','reload'))" title="${t.url}"><i class="bi bi-globe me-1"></i>Open URL</button>` : ''}
           ${(t.apps||[]).map(a => a.package ? `<button class="btn btn-outline-success btn-sm" onclick="kioskAction('${t.ip}','app/launch',{package:${JSON.stringify(a.package)}})">${a.label||a.package}</button>` : '').join('')}
         </div>` : ''}
         ${online ? `
         <!-- Status row -->
         <div class="d-flex flex-wrap gap-3 small text-muted mb-2">
-          ${battery ? `<span title="Battery">${_batteryIcon(battery.level)} ${battery.level}%${battery.charging ? ' ⚡' : ''} · ${battery.temperature}°C</span>` : ''}
-          ${screen  ? `<span title="Screen">🖥 ${screen.on ? 'On' : 'Off'} · ${screen.brightness}% brightness${screen.screensaverActive ? ' · screensaver' : ''}</span>` : ''}
-          ${wifi    ? `<span title="WiFi">📶 ${wifi.ssid || 'WiFi'} · ${wifi.rssi} dBm · ${wifi.ip}</span>` : ''}
-          ${mem     ? `<span title="Memory">💾 ${mem.availableMB}MB free / ${mem.totalMB}MB${mem.lowMemory ? ' ⚠ LOW' : ''}</span>` : ''}
-          ${s.audio ? `<span title="Volume">🔊 ${s.audio.volume ?? '?'}%</span>` : ''}
+          ${battery ? `<span title="Battery">${_batteryIcon(battery.level)} ${battery.level}%${battery.charging ? ' <i class="bi bi-lightning"></i>' : ''} · ${battery.temperature}°C</span>` : ''}
+          ${screen  ? `<span title="Screen"><i class="bi bi-display me-1"></i>${screen.on ? 'On' : 'Off'} · ${screen.brightness}% brightness${screen.screensaverActive ? ' · screensaver' : ''}</span>` : ''}
+          ${wifi    ? `<span title="WiFi"><i class="bi bi-wifi me-1"></i>${wifi.ssid || 'WiFi'} · ${wifi.rssi} dBm · ${wifi.ip}</span>` : ''}
+          ${mem     ? `<span title="Memory"><i class="bi bi-memory me-1"></i>${mem.availableMB}MB free / ${mem.totalMB}MB${mem.lowMemory ? ' <i class="bi bi-exclamation-triangle text-warning"></i> LOW' : ''}</span>` : ''}
+          ${s.audio ? `<span title="Volume"><i class="bi bi-volume-up me-1"></i>${s.audio.volume ?? '?'}%</span>` : ''}
         </div>
 
         <!-- Screen controls -->
@@ -9871,7 +9871,7 @@ function showCustomerBadge(name, customer_number) {
   container.innerHTML = `
     <div class="alert alert-info d-flex align-items-center gap-2 mb-0 py-2 px-3">
       <span class="fw-semibold">${displayName}</span>
-      <button class="btn btn-sm btn-outline-secondary py-0 ms-auto" onclick="clearActiveCustomer()">✕</button>
+      <button class="btn btn-sm btn-outline-secondary py-0 ms-auto" onclick="clearActiveCustomer()"><i class="bi bi-x-lg"></i></button>
     </div>
   `;
 }
@@ -9926,7 +9926,7 @@ async function refreshMonitor() {
     set('m-cpu',    d.cpu_pct + '%');
     set('m-mem',    Math.round(d.mem_mb) + ' MB');
     set('m-uptime', _fmtUptime(d.uptime_s));
-    set('m-onnx',   (d.onnx_providers||[]).find(p=>p.includes('OpenVINO')) ? '🟢 OpenVINO GPU' : '🟡 CPU');
+    const onnxEl = document.getElementById('m-onnx'); if(onnxEl) onnxEl.innerHTML = (d.onnx_providers||[]).find(p=>p.includes('OpenVINO')) ? '<i class="bi bi-circle-fill text-success me-1"></i>OpenVINO GPU' : '<i class="bi bi-circle-fill text-warning me-1"></i>CPU';
     set('m-sessions', d.sessions_total);
     set('m-anon',   d.anon_total);
     set('m-queue',  d.clip_queue_depth);
@@ -9958,8 +9958,8 @@ async function refreshMonitor() {
             </div>
             <div class="small text-muted mb-1">
               ${s.faces} faces · ${s.cameras.join('+')||'?'}
-              ${s.gait ? ' · 🚶gait' : ''}
-              ${s.clips_pending > 0 ? ` · 📎${s.clips_pending} clip${s.clips_pending>1?'s':''}` : ''}
+              ${s.gait ? ' · <i class="bi bi-person-walking"></i>gait' : ''}
+              ${s.clips_pending > 0 ? ` · <i class="bi bi-paperclip"></i>${s.clips_pending} clip${s.clips_pending>1?'s':''}` : ''}
             </div>
             <div class="small text-muted mb-1">age ${s.age_s}s · sim ${Math.round(s.best_sim*100)}%</div>
             <div style="background:#1e293b;border-radius:3px;height:6px;margin-bottom:2px;overflow:hidden">
@@ -10004,7 +10004,7 @@ async function refreshMonitor() {
           card.innerHTML = `
             ${a.photo_b64
               ? `<img src="data:image/jpeg;base64,${a.photo_b64}" style="width:60px;height:60px;object-fit:cover;border-radius:50%;margin:0 auto 4px;display:block;border:2px solid #ffc107">`
-              : `<div style="width:60px;height:60px;border-radius:50%;background:#fff3cd;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin:0 auto 4px">👤</div>`}
+              : `<div style="width:60px;height:60px;border-radius:50%;background:#fff3cd;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin:0 auto 4px"><i class="bi bi-person"></i></div>`}
             <div class="small fw-bold text-warning">${a.id}</div>
             <div class="small text-muted">${a.faces} face${a.faces !== 1 ? 's' : ''} · ${a.cameras.join(',')}</div>
             <div class="small text-muted">TTL ${ttlMin}m · seen ${Math.round(a.last_seen_s)}s ago</div>
@@ -10034,9 +10034,14 @@ const _STATE_COLORS = {
   grace: 'warning', closed: 'secondary',
 };
 const _STATE_ICONS = {
-  detected: '👁', tracking: '🔍', session_active: '🔗',
-  building: '📦', ready: '⭐', promoted: '✅',
-  grace: '⏳', closed: '🔒',
+  detected:       '<i class="bi bi-eye"></i>',
+  tracking:       '<i class="bi bi-search"></i>',
+  session_active: '<i class="bi bi-link-45deg"></i>',
+  building:       '<i class="bi bi-box-seam"></i>',
+  ready:          '<i class="bi bi-star-fill"></i>',
+  promoted:       '<i class="bi bi-check-circle-fill"></i>',
+  grace:          '<i class="bi bi-hourglass-split"></i>',
+  closed:         '<i class="bi bi-lock-fill"></i>',
 };
 
 async function refreshIdentityTracks() {
@@ -10069,8 +10074,8 @@ async function refreshIdentityTracks() {
 
     tbody.innerHTML = activeTracks.map(t => {
       const stab = t.stability || {};
-      const stabStr = stab.summary === '✅' ? '✅'
-        : `⚠️ s:${stab.session_reassignments} a:${stab.anon_reassignments} f:${stab.identity_flips}`;
+      const stabStr = stab.summary === '✅' ? '<i class="bi bi-check-circle-fill text-success"></i>'
+        : `<i class="bi bi-exclamation-triangle text-warning me-1"></i>s:${stab.session_reassignments} a:${stab.anon_reassignments} f:${stab.identity_flips}`;
       const identityStr = t.customer_id
         ? `<span class="text-success fw-bold">cid=${t.customer_id}</span>`
         : (t.anon_id
@@ -10079,7 +10084,7 @@ async function refreshIdentityTracks() {
       const promoBar = `<div style="width:50px;height:6px;background:#e9ecef;border-radius:3px;display:inline-block;vertical-align:middle">
         <div style="width:${Math.round((t.promotion_score||0)*100)}%;height:100%;background:${(t.promotion_score||0)>=0.65?'#22c55e':'#f59e0b'};border-radius:3px"></div>
       </div> ${Math.round((t.promotion_score||0)*100)}%`;
-      const locked = t.locked ? ' 🔒' : '';
+      const locked = t.locked ? ' <i class="bi bi-lock ms-1"></i>' : '';
       return `<tr>
         <td><span class="badge bg-${_STATE_COLORS[t.state]||'secondary'}">${_STATE_ICONS[t.state]||''} ${t.state}</span>${locked}</td>
         <td class="font-monospace" style="font-size:11px">${t.stable_id.slice(0,8)}</td>
@@ -10223,11 +10228,11 @@ async function monitorControl(action, payload, confirmMsg) {
   const msg = document.getElementById('monitor-ctrl-msg');
   try {
     const d = await api(`/api/recognition/control/${action}`, { method:'POST', body: JSON.stringify(payload||{}) });
-    const text = d.ok ? `✓ ${action.replace(/_/g,' ')} done` + (d.cleared !== undefined ? ` (${d.cleared} items)` : '') + (d.flushed !== undefined ? ` (${d.flushed} sessions)` : '') : `✗ ${d.error}`;
-    if(msg) { msg.textContent = text; msg.style.color = d.ok ? '#22c55e' : '#ef4444'; setTimeout(()=>{if(msg) msg.textContent='';}, 4000); }
+    const text = d.ok ? `<i class="bi bi-check-lg me-1"></i>${action.replace(/_/g,' ')} done` + (d.cleared !== undefined ? ` (${d.cleared} items)` : '') + (d.flushed !== undefined ? ` (${d.flushed} sessions)` : '') : `<i class="bi bi-x-lg me-1"></i>${d.error}`;
+    if(msg) { msg.innerHTML = text; msg.style.color = d.ok ? '#22c55e' : '#ef4444'; setTimeout(()=>{if(msg) msg.textContent='';}, 4000); }
     await refreshMonitor();
   } catch(e) {
-    if(msg) { msg.textContent = '✗ ' + e.message; msg.style.color='#ef4444'; }
+    if(msg) { msg.innerHTML = '<i class="bi bi-x-lg me-1"></i>' + e.message; msg.style.color='#ef4444'; }
   }
 }
 
@@ -10366,7 +10371,7 @@ function _invSetCustomerMode(newMode) {
   const btn     = document.getElementById('btn-inv-new-customer');
   if (newMode) {
     hide(picker); show(form);
-    btn.textContent = '← Back to customer list';
+    btn.innerHTML = '<i class="bi bi-arrow-left me-1"></i>Back to customer list';
   } else {
     show(picker); hide(form);
     btn.textContent = '+ New customer';
@@ -10430,7 +10435,7 @@ function renderInvoicesList() {
     draft:      '<span class="badge bg-secondary">Draft</span>',
     sent:       '<span class="badge bg-primary">Sent</span>',
     paid:       '<span class="badge bg-success">Paid</span>',
-    finalised:  '<span class="badge bg-dark">Finalised ✓</span>',
+    finalised:  '<span class="badge bg-dark">Finalised <i class="bi bi-check-lg ms-1"></i></span>',
   }[s] || `<span class="badge bg-secondary">${s}</span>`);
 
   if (!filtered.length) {
@@ -10448,12 +10453,12 @@ function renderInvoicesList() {
           <tr style="cursor:pointer" onclick="openInvoiceEditor(${i.id})">
             <td class="fw-semibold">${i.invoice_number}</td>
             <td class="text-muted small">${i.created_at ? new Date(i.created_at).toLocaleDateString() : ''}</td>
-            <td>${i.customer_name || '<span class="text-muted">-</span>'}${i.customer_id ? ' <span class="badge" style="font-size:0.6rem;background:#7c3aed;color:#fff" title="Linked to POS customer">🔗</span>' : ''}</td>
+            <td>${i.customer_name || '<span class="text-muted">-</span>'}${i.customer_id ? ' <span class="badge" style="font-size:0.6rem;background:#7c3aed;color:#fff" title="Linked to POS customer"><i class="bi bi-link-45deg"></i></span>' : ''}</td>
             <td class="fw-semibold">R${fmt(i.total)}</td>
             <td>${statusBadge(i.status)}</td>
             <td>
               ${i.status === 'finalised'
-                ? `<span class="badge bg-dark">Finalised ✓</span>`
+                ? `<span class="badge bg-dark">Finalised <i class="bi bi-check-lg ms-1"></i></span>`
                 : i.sale_id
                   ? `<span class="text-muted small">Stock deducted</span>`
                   : (i.status !== 'draft'
@@ -10528,7 +10533,7 @@ function _renderInvLines() {
       ${unitCell}
       <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.0001" min="0" class="form-control" value="${line.unit_price != null ? +parseFloat(line.unit_price).toFixed(4) : ''}" data-inv-price="${i}"></div></td>
       <td class="text-end align-middle fw-semibold" id="inv-line-sub-${i}">R${fmt(line.subtotal || 0)}</td>
-      <td><button class="btn btn-outline-danger btn-sm" data-inv-remove="${i}">✕</button></td>`;
+      <td><button class="btn btn-outline-danger btn-sm" data-inv-remove="${i}"><i class="bi bi-x-lg"></i></button></td>`;
     body.appendChild(tr);
 
     tr.querySelector(`[data-inv-name="${i}"]`).addEventListener('input', e => { _invLines[i].name = e.target.value; });
@@ -11068,7 +11073,7 @@ async function executeLabelPrint() {
       method: 'POST', body: JSON.stringify({ product_id: productId, template_id: tmplId, qty, printer_id: printerId }),
     });
     toast(`${qty} label${qty > 1 ? 's' : ''} sent to printer`, 'success');
-    if (statusEl) statusEl.textContent = `✓ Job #${result.job_id} — ${qty} label${qty > 1 ? 's' : ''}`;
+    if (statusEl) statusEl.innerHTML = `<i class="bi bi-check-lg me-1"></i>Job #${result.job_id} — ${qty} label${qty > 1 ? 's' : ''}`;
     bootstrap.Modal.getInstance(document.getElementById('labelPrintModal'))?.hide();
   } catch (e) {
     toast(`Print failed: ${e.message}`, 'error');
@@ -11848,7 +11853,7 @@ function bulkAddCondition() {
 
   const removeBtn = document.createElement('button');
   removeBtn.className = 'btn btn-outline-danger btn-sm';
-  removeBtn.textContent = '✕';
+  removeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
   removeBtn.addEventListener('click', () => {
     row.remove();
     _bulkUpdateNoConditionsHint();
@@ -12010,7 +12015,7 @@ function bulkAddAction() {
   caseSensCheck.innerHTML = '<div class="form-check mb-0"><input class="form-check-input" type="checkbox" id="bulk-case-'+Math.random().toString(36).slice(2)+'" /><label class="form-check-label small">Case-sensitive</label></div>';
 
   const removeBtn = document.createElement('button');
-  removeBtn.className = 'btn btn-outline-danger btn-sm'; removeBtn.textContent = '✕';
+  removeBtn.className = 'btn btn-outline-danger btn-sm'; removeBtn.innerHTML = '<i class="bi bi-x-lg"></i>';
   removeBtn.addEventListener('click', () => { row.remove(); _bulkUpdateNoActionsHint(); });
 
   function _refresh() {

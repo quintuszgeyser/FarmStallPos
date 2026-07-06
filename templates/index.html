@@ -580,7 +580,7 @@
 
 {% if is_qa %}
 <div id="qa-banner" title="QA MODE — test data only, scale sync disabled" style="background:#f0ad4e;color:#000;padding:3px 8px;font-weight:bold;font-size:11px;position:fixed;bottom:12px;right:12px;z-index:9999;border-radius:4px;border:2px solid #d9534f;letter-spacing:.5px;box-shadow:0 2px 6px rgba(0,0,0,.25);cursor:default;white-space:nowrap">
-  ⚠ QA
+  <i class="bi bi-exclamation-triangle me-1"></i>QA
 </div>
 {% endif %}
 <!-- Backup-health banner (ISSUE gap): populated by _checkBackupHealth() from /api/health. Hidden unless there's a warning. -->
@@ -653,9 +653,9 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings"><i class="bi bi-gear me-1"></i>Configuration</button></li>
-    {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>{% endif %}
-    <li class="nav-item pos-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()">&#9878; Scale</button></li>
-    {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()">🚀 Deploy</button></li>{% endif %}
+    {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor"><i class="bi bi-bar-chart-line me-1"></i>Monitor</button></li>{% endif %}
+    <li class="nav-item pos-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()"><i class="bi bi-speedometer2 me-1"></i>Scale</button></li>
+    {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()"><i class="bi bi-rocket me-1"></i>Deploy</button></li>{% endif %}
   </ul>
 
   <!-- Global barcode trap: outside tab panes so it stays focusable on any tab -->
@@ -696,23 +696,23 @@
         <!-- Payment method: recorded on the sale for till reconciliation -->
         <div class="btn-group btn-group-sm mt-2" role="group" id="pay-method-group" aria-label="Payment method">
           <input type="radio" class="btn-check" name="pay-method" id="pay-card" value="card" checked>
-          <label class="btn btn-outline-secondary" for="pay-card">💳 Card</label>
+          <label class="btn btn-outline-secondary" for="pay-card"><i class="bi bi-credit-card me-1"></i>Card</label>
           <input type="radio" class="btn-check" name="pay-method" id="pay-cash" value="cash">
-          <label class="btn btn-outline-secondary" for="pay-cash">💵 Cash</label>
+          <label class="btn btn-outline-secondary" for="pay-cash"><i class="bi bi-cash me-1"></i>Cash</label>
           <input type="radio" class="btn-check" name="pay-method" id="pay-qr" value="qr">
-          <label class="btn btn-outline-secondary" for="pay-qr">📱 QR</label>
+          <label class="btn btn-outline-secondary" for="pay-qr"><i class="bi bi-qr-code me-1"></i>QR</label>
           <input type="radio" class="btn-check" name="pay-method" id="pay-split" value="split">
-          <label class="btn btn-outline-secondary" for="pay-split">✂ Split</label>
+          <label class="btn btn-outline-secondary" for="pay-split"><i class="bi bi-scissors me-1"></i>Split</label>
         </div>
         <!-- Split payment inputs — shown only when Split is selected -->
         <div id="split-payment-row" class="mt-2 hidden" style="background:var(--bs-tertiary-bg,#f8f9fa);border:1px solid var(--bs-border-color,#dee2e6);border-radius:6px;padding:10px 12px">
           <div class="d-flex gap-3 align-items-end">
             <div style="flex:1">
-              <label class="form-label mb-1 small fw-semibold" for="split-cash-input">💵 Cash (R)</label>
+              <label class="form-label mb-1 small fw-semibold" for="split-cash-input"><i class="bi bi-cash me-1"></i>Cash (R)</label>
               <input type="number" id="split-cash-input" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
             </div>
             <div style="flex:1">
-              <label class="form-label mb-1 small fw-semibold" for="split-card-input">💳 Card (R)</label>
+              <label class="form-label mb-1 small fw-semibold" for="split-card-input"><i class="bi bi-credit-card me-1"></i>Card (R)</label>
               <input type="number" id="split-card-input" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
             </div>
           </div>
@@ -839,7 +839,7 @@
           <button id="btn-new-product" class="btn btn-outline-primary btn-sm">+ New Product</button>
           <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()"><i class="bi bi-upload me-1"></i>Import CSV</button>
           <button id="btn-import-opening-stock" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openOpeningStockModal()"><i class="bi bi-upload me-1"></i>Opening Stock</button>
-          <button id="btn-bulk-edit" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openBulkEditor()">✎ Bulk Edit</button>
+          <button id="btn-bulk-edit" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openBulkEditor()"><i class="bi bi-pencil-square me-1"></i>Bulk Edit</button>
           <button id="btn-label-templates" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openLabelDesigner()" title="Design and manage label templates"><i class="bi bi-vector-pen me-1"></i>Label Templates</button>
           <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
         </div>
@@ -1355,7 +1355,7 @@
 
             <!-- Store identity -->
             <div>
-              <div class="fw-semibold mb-2" style="border-bottom:1px solid var(--lc-gold-border);padding-bottom:4px">🏪 Store identity</div>
+              <div class="fw-semibold mb-2" style="border-bottom:1px solid var(--lc-gold-border);padding-bottom:4px"><i class="bi bi-shop me-1"></i>Store identity</div>
               <div class="d-flex flex-column gap-3">
                 <div>
                   <label class="form-label fw-semibold mb-1">Store name <span class="text-muted fw-normal small">(shown everywhere in the POS)</span></label>
@@ -1386,7 +1386,7 @@
 
             <!-- POS appearance -->
             <div>
-              <div class="fw-semibold mb-2" style="border-bottom:1px solid var(--lc-gold-border);padding-bottom:4px">🖥️ POS appearance</div>
+              <div class="fw-semibold mb-2" style="border-bottom:1px solid var(--lc-gold-border);padding-bottom:4px"><i class="bi bi-display me-1"></i>POS appearance</div>
               <div class="d-flex flex-wrap gap-3 align-items-end">
                 <div>
                   <label class="form-label fw-semibold mb-1">Colour</label>
@@ -1412,7 +1412,7 @@
 
             <!-- Website appearance -->
             <div>
-              <div class="fw-semibold mb-2" style="border-bottom:1px solid var(--lc-gold-border);padding-bottom:4px">🌐 Website appearance <span class="text-muted fw-normal small">(the public web shop)</span></div>
+              <div class="fw-semibold mb-2" style="border-bottom:1px solid var(--lc-gold-border);padding-bottom:4px"><i class="bi bi-globe me-1"></i>Website appearance <span class="text-muted fw-normal small">(the public web shop)</span></div>
               <div class="d-flex flex-wrap gap-3 align-items-end">
                 <div>
                   <label class="form-label fw-semibold mb-1">Colour</label>
@@ -1712,10 +1712,10 @@
       <!-- Customer sub-tabs -->
       <ul class="nav nav-tabs mb-3" id="customer-subtabs">
         <li class="nav-item">
-          <button class="nav-link active" data-customer-tab="instore">🏪 In-store <span class="badge bg-secondary ms-1" id="cst-count-instore"></span></button>
+          <button class="nav-link active" data-customer-tab="instore"><i class="bi bi-shop me-1"></i>In-store <span class="badge bg-secondary ms-1" id="cst-count-instore"></span></button>
         </li>
         <li class="nav-item">
-          <button class="nav-link" data-customer-tab="online">🌐 Online <span class="badge bg-secondary ms-1" id="cst-count-online"></span></button>
+          <button class="nav-link" data-customer-tab="online"><i class="bi bi-globe me-1"></i>Online <span class="badge bg-secondary ms-1" id="cst-count-online"></span></button>
         </li>
       </ul>
       <div id="merge-suggestions-panel" class="hidden mb-3"></div>
@@ -1727,7 +1727,7 @@
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
         <h5 class="mb-0">Invoices</h5>
         <div class="d-flex gap-2">
-          <button class="btn btn-outline-secondary btn-sm" id="btn-shipping-fees" data-bs-toggle="modal" data-bs-target="#shippingFeesModal">🚚 Shipping Fees</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-shipping-fees" data-bs-toggle="modal" data-bs-target="#shippingFeesModal"><i class="bi bi-truck me-1"></i>Shipping Fees</button>
           <button class="btn btn-primary btn-sm" id="btn-new-invoice">+ New Invoice</button>
         </div>
       </div>
@@ -1899,11 +1899,11 @@
     {% if is_qa %}
     <div class="tab-pane fade" id="deploy-tab">
       <div class="d-flex justify-content-between align-items-center mb-3">
-        <h5 class="mb-0">🚀 Deploy QA → PROD</h5>
+        <h5 class="mb-0"><i class="bi bi-rocket me-1"></i>Deploy QA → PROD</h5>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary btn-sm" onclick="loadDeployStatus()">↺ Refresh</button>
-          <button class="btn btn-warning btn-sm" onclick="rollbackNow()">⏪ Rollback PROD</button>
-          <button class="btn btn-danger btn-sm" onclick="deployNow()">⚡ Deploy Now</button>
+          <button class="btn btn-warning btn-sm" onclick="rollbackNow()"><i class="bi bi-skip-backward me-1"></i>Rollback PROD</button>
+          <button class="btn btn-danger btn-sm" onclick="deployNow()"><i class="bi bi-lightning me-1"></i>Deploy Now</button>
         </div>
       </div>
 
@@ -1915,7 +1915,7 @@
 
       <!-- Schedule new deploy -->
       <div class="card mb-3">
-        <div class="card-header fw-semibold">📅 Schedule a Deploy</div>
+        <div class="card-header fw-semibold"><i class="bi bi-calendar me-1"></i>Schedule a Deploy</div>
         <div class="card-body">
           <div class="row g-2 align-items-end">
             <div class="col-md-4">
@@ -1962,7 +1962,7 @@
             <input class="form-check-input" type="checkbox" id="import-allow-name-match">
             <label class="form-check-label small" for="import-allow-name-match">Update by name if no product_code</label>
           </div>
-          <a href="/api/products/import-template" download class="btn btn-outline-secondary btn-sm ms-auto">⬇ Download Template</a>
+          <a href="/api/products/import-template" download class="btn btn-outline-secondary btn-sm ms-auto"><i class="bi bi-download me-1"></i>Download Template</a>
         </div>
         <div id="import-preview-section" style="display:none">
           <div id="import-summary" class="alert alert-info mb-2"></div>
@@ -2223,7 +2223,7 @@
       <div class="modal-body">
         <p class="small text-muted">Seeds FIFO stock batches for <strong>stock_item</strong> products without a supplier purchase-run. Required columns: <code>product_code, qty, unit, unit_cost</code>. Optional: <code>received_date</code>.<br><strong>unit_cost = cost per single unit</strong> (e.g. cost per gram, not total batch cost). For a 1 kg bag that cost R50, enter qty=1000, unit=g, unit_cost=0.05.</p>
         <div class="mb-2 d-flex gap-2">
-          <a href="/api/stock/opening-import-template" class="btn btn-outline-secondary btn-sm">⬇ Download Template</a>
+          <a href="/api/stock/opening-import-template" class="btn btn-outline-secondary btn-sm"><i class="bi bi-download me-1"></i>Download Template</a>
         </div>
         <div class="mb-2">
           <input type="file" id="os-import-file" accept=".csv" class="form-control form-control-sm">
@@ -2434,7 +2434,7 @@
           <!-- Sell packages - how it's sold to customers -->
           <div class="border rounded p-2 mb-2" style="border-color:#0d6efd !important;">
             <div class="d-flex justify-content-between align-items-center mb-1">
-              <div class="fw-semibold small">🛒 Sell Packages <span class="text-muted fw-normal">- pre-packed portions you sell to customers</span></div>
+              <div class="fw-semibold small"><i class="bi bi-cart3 me-1"></i>Sell Packages <span class="text-muted fw-normal">- pre-packed portions you sell to customers</span></div>
               <button id="btn-add-package" class="btn btn-outline-primary btn-sm">+ Add</button>
             </div>
             <div class="small text-muted mb-2">Each package becomes a scannable product at the till (e.g. "Biltong 100g Bag").</div>
@@ -2463,7 +2463,7 @@
         <!-- ── Scale Settings ── -->
         <div id="section-scale" class="border rounded p-3 mb-3" style="background:#f8f9fa">
           <div class="d-flex justify-content-between align-items-center mb-2">
-            <h6 class="mb-0">⚖ Scale Settings</h6>
+            <h6 class="mb-0"><i class="bi bi-sliders me-1"></i>Scale Settings</h6>
             <div class="form-check form-switch mb-0">
               <input class="form-check-input" type="checkbox" id="p-sync-to-scale">
               <label class="form-check-label small" for="p-sync-to-scale">Sync to scale</label>
@@ -3337,13 +3337,13 @@
           <div class="fw-semibold small mb-2 text-muted text-uppercase" style="font-size:10px;letter-spacing:.5px">Add element</div>
           <div class="d-flex flex-column gap-1">
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('product_name')">Aa Name</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('price')">💰 Price</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('price')"><i class="bi bi-tag me-1"></i>Price</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('barcode')">█ Barcode</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('sku')">🔖 SKU</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_name')">🏪 Store Name</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_logo')">🖼 Logo</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('weight')">⚖ Weight</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('category')">📁 Category</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('sku')"><i class="bi bi-upc me-1"></i>SKU</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_name')"><i class="bi bi-shop me-1"></i>Store Name</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_logo')"><i class="bi bi-image me-1"></i>Logo</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('weight')"><i class="bi bi-sliders me-1"></i>Weight</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('category')"><i class="bi bi-folder me-1"></i>Category</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('custom_text')"><i class="bi bi-pencil me-1"></i>Custom Text</button>
           </div>
           <hr class="my-2">
