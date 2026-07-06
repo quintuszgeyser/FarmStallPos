@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ store_name }} POS{% if app_env == 'qa' %} [QA]{% endif %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
   <link href="/static/main.css" rel="stylesheet">
   <link rel="manifest" href="/static/manifest.json">
@@ -34,10 +35,9 @@
       --dd-font:       'Nunito', system-ui, sans-serif;
       --dd-font-mono:  'JetBrains Mono', monospace;
 
-      /* Sketch borders - slightly uneven radii for hand-drawn feel */
-      --dd-radius-sm:  4px 6px 5px 7px / 6px 4px 7px 5px;
-      --dd-radius:     8px 12px 10px 14px / 12px 8px 14px 10px;
-      --dd-radius-lg:  12px 18px 14px 20px / 18px 12px 20px 14px;
+      --dd-radius-sm:  5px;
+      --dd-radius:     8px;
+      --dd-radius-lg:  12px;
       --dd-border:     2px solid var(--lc-gold-border);
     }
     /* Runtime white-label overrides (DB-backed). Only emitted for validated non-empty
@@ -361,6 +361,7 @@
       position: sticky; top: 0; z-index: 5;
     }
     .product-row {
+      min-height: 44px;
       border: 2px solid var(--lc-gold-border);
       border-top: none;
       background: var(--dd-paper);
@@ -384,7 +385,6 @@
     .pr-price   { font-size: 13px; font-weight: 600; white-space: nowrap; }
     .pr-barcode { font-size: 12px; color: var(--dd-ink); font-variant-numeric: tabular-nums; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
     .pr-barcode-num { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 100%; }
-    .pr-barcode-svg { max-width: 100%; height: auto; display: block; }
     .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
     .pr-more-wrap { position: relative; display: flex; justify-content: center; }
     .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 8px 6px; line-height: 1; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; }
@@ -469,7 +469,7 @@
     /* ── Transaction table ── */
     .tx-hdr, .tx-row {
       display: grid;
-      grid-template-columns: 100px 1fr 80px 52px 90px 80px 68px 120px;
+      grid-template-columns: 100px 1fr 80px 52px 90px 80px 68px 156px;
       align-items: center;
       gap: 0 8px;
       padding: 7px 10px;
@@ -535,7 +535,7 @@
       .nav-tabs .nav-link { font-size: 13px; padding: 6px 10px; }
 
       /* TX outer row — ID and Revenue share space, actions stay fixed */
-      .tx-hdr, .tx-row { grid-template-columns: 1fr 1fr 116px; }
+      .tx-hdr, .tx-row { grid-template-columns: 1fr 1fr 130px; }
       .tx-hdr > div:nth-child(2), .tx-row > div:nth-child(2),
       .tx-hdr > div:nth-child(3), .tx-row > div:nth-child(3),
       .tx-hdr > div:nth-child(4), .tx-row > div:nth-child(4),
@@ -551,9 +551,10 @@
       .tx-item-sel-bar .btn { font-size: 15px; padding: 8px 14px; min-height: 44px; }
       .tx-item-sel-bar .btn-link { min-height: 44px; padding: 8px 10px; }
 
-      /* TX action buttons — ensure 44px tap targets */
-      .tx-act { min-width: 40px; min-height: 44px; font-size: 20px; padding: 6px; }
-      .tx-expand-btn { min-width: 32px; min-height: 44px; }
+      /* TX action buttons — fit 4 buttons in 130px */
+      .tx-actions { gap: 0; }
+      .tx-act { min-width: 32px; min-height: 44px; font-size: 17px; padding: 4px 2px; }
+      .tx-expand-btn { min-width: 26px; min-height: 44px; }
     }
 
     /* ── Toasts - doodle style ── */
@@ -651,7 +652,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
-    <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings">⚙ Configuration</button></li>
+    <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings"><i class="bi bi-gear me-1"></i>Configuration</button></li>
     {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor">&#128202; Monitor</button></li>{% endif %}
     <li class="nav-item pos-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()">&#9878; Scale</button></li>
     {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()">🚀 Deploy</button></li>{% endif %}
@@ -678,7 +679,7 @@
               <button id="btn-start-scan" class="btn btn-success btn-lg-touch">Scan</button>
               <button id="btn-stop-scan"  class="btn btn-outline-danger btn-lg-touch hidden">Stop</button>
 
-              <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan">↩ Undo</button>
+              <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan"><i class="bi bi-arrow-counterclockwise me-1"></i>Undo</button>
             </div>
           </div>
           <div id="product-search-results" class="list-group mt-2"></div>
@@ -745,10 +746,10 @@
           <button id="btn-tx-today" class="btn btn-outline-secondary btn-sm">Today</button>
           <button id="btn-tx-yesterday" class="btn btn-outline-secondary btn-sm">Yesterday</button>
           <button id="btn-tx-week" class="btn btn-outline-secondary btn-sm">This Week</button>
-          <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('tx-adv-filter').classList.toggle('d-none')">⚙ Filters</button>
+          <button class="btn btn-outline-secondary btn-sm" onclick="document.getElementById('tx-adv-filter').classList.toggle('d-none')"><i class="bi bi-sliders2 me-1"></i>Filters</button>
         </div>
         <div class="d-flex gap-2">
-          <button class="btn btn-outline-secondary btn-sm admin-only hidden" id="btn-close-till" onclick="openCloseTillModal()">🧾 Close Till</button>
+          <button class="btn btn-outline-secondary btn-sm admin-only hidden" id="btn-close-till" onclick="openCloseTillModal()"><i class="bi bi-journal-check me-1"></i>Close Till</button>
           <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-trans">Refresh</button>
         </div>
       </div>
@@ -787,7 +788,7 @@
             </div>
           </div>
           <div class="col-auto align-self-end">
-            <button id="btn-tx-adv-clear" class="btn btn-outline-secondary btn-sm">✕ Clear</button>
+            <button id="btn-tx-adv-clear" class="btn btn-outline-secondary btn-sm"><i class="bi bi-x-lg me-1"></i>Clear</button>
           </div>
         </div>
       </div>
@@ -836,10 +837,10 @@
         <div class="d-flex gap-2 align-items-center">
           <input id="products-filter" class="form-control form-control-sm" placeholder="Filter…" style="width:180px">
           <button id="btn-new-product" class="btn btn-outline-primary btn-sm">+ New Product</button>
-          <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()">⬆ Import CSV</button>
-          <button id="btn-import-opening-stock" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openOpeningStockModal()">⬆ Opening Stock</button>
+          <button id="btn-import-csv" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openImportModal()"><i class="bi bi-upload me-1"></i>Import CSV</button>
+          <button id="btn-import-opening-stock" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openOpeningStockModal()"><i class="bi bi-upload me-1"></i>Opening Stock</button>
           <button id="btn-bulk-edit" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openBulkEditor()">✎ Bulk Edit</button>
-          <button id="btn-label-templates" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openLabelDesigner()" title="Design and manage label templates">✏ Label Templates</button>
+          <button id="btn-label-templates" class="btn btn-outline-secondary btn-sm admin-only hidden" onclick="openLabelDesigner()" title="Design and manage label templates"><i class="bi bi-vector-pen me-1"></i>Label Templates</button>
           <button id="btn-new-special" class="btn btn-outline-success btn-sm hidden" data-products-sub-show="specials">+ New Special</button>
         </div>
       </div>
@@ -851,11 +852,11 @@
           <button class="btn btn-success btn-sm" data-bulk-action="receive">Receive</button>
           <button class="btn btn-outline-secondary btn-sm" data-bulk-action="stocktake">Stocktake</button>
           <button class="btn btn-outline-danger btn-sm" data-bulk-action="writeoff">Write Off</button>
-          <button class="btn btn-outline-secondary btn-sm" data-bulk-action="labels">🏷 Labels</button>
+          <button class="btn btn-outline-secondary btn-sm" data-bulk-action="labels"><i class="bi bi-tags me-1"></i>Labels</button>
           <button class="btn btn-outline-primary btn-sm" data-bulk-action="edit">Edit</button>
           <button class="btn btn-outline-warning btn-sm text-dark" data-bulk-action="archive">Archive</button>
         </div>
-        <button class="btn btn-link btn-sm" id="btn-clear-sel">✕ Clear</button>
+        <button class="btn btn-link btn-sm" id="btn-clear-sel"><i class="bi bi-x-lg me-1"></i>Clear</button>
       </div>
 
       <div id="products-card-list" class="mt-1"></div>
@@ -1226,27 +1227,27 @@
         <p class="text-muted small mb-2">All exports use the date range and product filter selected above.</p>
         <div class="d-flex gap-2 flex-wrap">
           <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">
-            📄 Sales Lines
+            <i class="bi bi-table me-1"></i>Sales Lines
             <span class="d-block" style="font-size:10px;color:#6c757d">Date · Product · Qty · Price · Teller</span>
           </button>
           <button id="btn-export-profit" class="btn btn-outline-success btn-sm">
-            📊 Profit & COGS
+            <i class="bi bi-bar-chart-line me-1"></i>Profit & COGS
             <span class="d-block" style="font-size:10px;color:#6c757d">Per-product revenue, cost, margin</span>
           </button>
           <button id="btn-export-writeoffs" class="btn btn-outline-danger btn-sm" id="stats-section-writeoff-export">
-            ⚠️ Write-offs
+            <i class="bi bi-exclamation-triangle me-1"></i>Write-offs
             <span class="d-block" style="font-size:10px;color:#6c757d">Stock losses in the period</span>
           </button>
           <button id="btn-export-suppliers" class="btn btn-outline-secondary btn-sm">
-            🏭 Supplier Spend
+            <i class="bi bi-truck me-1"></i>Supplier Spend
             <span class="d-block" style="font-size:10px;color:#6c757d">Purchases by supplier</span>
           </button>
           <button id="btn-export-staff" class="btn btn-outline-secondary btn-sm">
-            👤 Staff Stats
+            <i class="bi bi-people me-1"></i>Staff Stats
             <span class="d-block" style="font-size:10px;color:#6c757d">Revenue, sessions, performance</span>
           </button>
           <a href="/admin/export/products" target="_blank" class="btn btn-outline-secondary btn-sm">
-            📦 Product Catalogue
+            <i class="bi bi-box-seam me-1"></i>Product Catalogue
             <span class="d-block" style="font-size:10px;color:#6c757d">All products with prices</span>
           </a>
         </div>
@@ -1437,11 +1438,11 @@
 
         <!-- ── Printer Settings ── -->
         <div class="card mb-3 admin-only hidden">
-          <div class="card-header fw-semibold">🖨️ Printer Settings</div>
+          <div class="card-header fw-semibold"><i class="bi bi-printer me-1"></i>Printer Settings</div>
           <div class="card-body d-flex flex-wrap gap-4">
 
             <div style="min-width:260px;flex:1">
-              <div class="fw-semibold mb-2" style="border-bottom:1px solid #dee2e6;padding-bottom:4px">🖨️ Receipt Printer</div>
+              <div class="fw-semibold mb-2" style="border-bottom:1px solid #dee2e6;padding-bottom:4px"><i class="bi bi-printer me-1"></i>Receipt Printer</div>
               <div class="mb-2">
                 <label class="form-label fw-semibold small mb-1">Printer</label>
                 <select id="setting-receipt-printer" class="form-select form-select-sm">
@@ -1465,7 +1466,7 @@
             </div>
 
             <div style="min-width:260px;flex:1">
-              <div class="fw-semibold mb-2" style="border-bottom:1px solid #dee2e6;padding-bottom:4px">🏷️ Label Printers</div>
+              <div class="fw-semibold mb-2" style="border-bottom:1px solid #dee2e6;padding-bottom:4px"><i class="bi bi-tags me-1"></i>Label Printers</div>
               <div id="printer-config-list" class="mb-2">
                 <div class="text-muted small">Loading…</div>
               </div>
@@ -1705,7 +1706,7 @@
             <option value="unnamed">Unnamed only</option>
           </select>
           <button class="btn btn-outline-secondary btn-sm" id="btn-refresh-customers" title="Refresh">↻ Refresh</button>
-          <button class="btn btn-outline-danger btn-sm admin-only hidden" id="btn-cleanup-empty" title="Delete auto-enrolled customers with no face and no recent visits">🗑 Clean up empty</button>
+          <button class="btn btn-outline-danger btn-sm admin-only hidden" id="btn-cleanup-empty" title="Delete auto-enrolled customers with no face and no recent visits"><i class="bi bi-trash3 me-1"></i>Clean up empty</button>
         </div>
       </div>
       <!-- Customer sub-tabs -->
@@ -1907,7 +1908,7 @@
       </div>
 
       <div class="alert alert-warning mb-3">
-        ⚠ This deploys the current QA codebase to PROD. PROD transactions continue uninterrupted during the build. The PROD container restarts briefly (~30s downtime) at switch-over.
+        <i class="bi bi-exclamation-triangle me-1"></i>This deploys the current QA codebase to PROD. PROD transactions continue uninterrupted during the build. The PROD container restarts briefly (~30s downtime) at switch-over.
       </div>
 
       <div id="deploy-status-banner" class="alert alert-secondary mb-3">Loading...</div>
@@ -1951,7 +1952,7 @@
   <div class="modal-dialog modal-xl">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">⬆ Import Products from CSV</h5>
+        <h5 class="modal-title"><i class="bi bi-upload me-1"></i>Import Products from CSV</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -2216,7 +2217,7 @@
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">⬆ Import Opening Stock</h5>
+        <h5 class="modal-title"><i class="bi bi-upload me-1"></i>Import Opening Stock</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -2408,7 +2409,7 @@
           </div>
           <!-- Purchase package - how it arrives from the supplier -->
           <div class="border rounded p-2 mb-2 bg-light">
-            <div class="fw-semibold small mb-2">📦 Purchase Package <span class="text-muted fw-normal">- how you buy it from the supplier</span></div>
+            <div class="fw-semibold small mb-2"><i class="bi bi-box-seam me-1"></i>Purchase Package <span class="text-muted fw-normal">- how you buy it from the supplier</span></div>
             <div class="row g-2">
               <div class="col-6">
                 <label class="form-label small">Package size</label>
@@ -3180,7 +3181,7 @@
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="label-print-modal-title">🏷 Print Label</h5>
+        <h5 class="modal-title" id="label-print-modal-title"><i class="bi bi-tag me-1"></i>Print Label</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -3227,14 +3228,14 @@
             </div>
             <div class="mt-2 d-flex gap-2">
               <button type="button" class="btn btn-outline-secondary btn-sm" onclick="refreshLabelPreview()">↻ Refresh Preview</button>
-              <button type="button" class="btn btn-outline-primary btn-sm admin-only" onclick="openLabelDesigner(document.getElementById('lp-template-select')?.value)">✏ Edit Template</button>
+              <button type="button" class="btn btn-outline-primary btn-sm admin-only" onclick="openLabelDesigner(document.getElementById('lp-template-select')?.value)"><i class="bi bi-pencil me-1"></i>Edit Template</button>
             </div>
           </div>
         </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" id="lp-print-btn" onclick="executeLabelPrint()">🖨 Print Labels</button>
+        <button type="button" class="btn btn-primary" id="lp-print-btn" onclick="executeLabelPrint()"><i class="bi bi-printer me-1"></i>Print Labels</button>
       </div>
     </div>
   </div>
@@ -3245,7 +3246,7 @@
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">🏷 Bulk Print Labels</h5>
+        <h5 class="modal-title"><i class="bi bi-tags me-1"></i>Bulk Print Labels</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -3283,7 +3284,7 @@
       <div class="modal-footer">
         <span id="bulk-status" class="small text-muted me-auto"></span>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button type="button" class="btn btn-primary" onclick="executeBulkPrint()">🖨 Print Selected</button>
+        <button type="button" class="btn btn-primary" onclick="executeBulkPrint()"><i class="bi bi-printer me-1"></i>Print Selected</button>
       </div>
     </div>
   </div>
@@ -3296,7 +3297,7 @@
 
       <!-- ── Header bar ── -->
       <div class="modal-header py-2 flex-shrink-0" style="gap:8px;flex-wrap:wrap">
-        <h5 class="modal-title me-2">✏ Label Designer</h5>
+        <h5 class="modal-title me-2"><i class="bi bi-vector-pen me-1"></i>Label Designer</h5>
         <select id="ld-load-select" class="form-select form-select-sm" style="width:190px" onchange="ldLoadSelectedTemplate(this.value)" title="Switch template">
           <option value="">— load existing —</option>
         </select>
@@ -3343,7 +3344,7 @@
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('store_logo')">🖼 Logo</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('weight')">⚖ Weight</button>
             <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('category')">📁 Category</button>
-            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('custom_text')">✏ Custom Text</button>
+            <button class="btn btn-outline-secondary btn-sm text-start" onclick="ldAddElement('custom_text')"><i class="bi bi-pencil me-1"></i>Custom Text</button>
           </div>
           <hr class="my-2">
           <div class="text-muted" style="font-size:10px;line-height:1.4">

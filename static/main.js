@@ -578,7 +578,7 @@ function renderProductsCards() {
   items.forEach(p => {
     const isStockItem = p.product_type === 'stock_item';
     const isSimple    = p.product_type === 'simple';
-    const typeLabel   = { stock_item: '📦', recipe: '🍳' }[p.product_type] || '';
+    const typeLabel   = { stock_item: '<i class="bi bi-box-seam"></i>', recipe: '<i class="bi bi-layers"></i>' }[p.product_type] || '';
 
     // Price
     let priceDisplay = '';
@@ -632,16 +632,16 @@ function renderProductsCards() {
       <div class="pr-more-wrap">
         <button class="pr-more-btn" title="Actions">⋮</button>
         <div class="pr-more-menu">
-          <button data-menu="edit">✏ Edit</button>
-          <button data-menu="label">🏷 Print Label</button>
+          <button data-menu="edit"><i class="bi bi-pencil me-1"></i>Edit</button>
+          <button data-menu="label"><i class="bi bi-tag me-1"></i>Print Label</button>
           ${isStockItem ? `
-            <button data-menu="receive">📥 Receive</button>
-            <button data-menu="stocktake">📋 Stocktake</button>
-            <button data-menu="writeoff">🗑 Write Off</button>
+            <button data-menu="receive"><i class="bi bi-box-arrow-in-down me-1"></i>Receive</button>
+            <button data-menu="stocktake"><i class="bi bi-clipboard-check me-1"></i>Stocktake</button>
+            <button data-menu="writeoff"><i class="bi bi-trash3 me-1"></i>Write Off</button>
           ` : ''}
           ${p.is_archived
-            ? `<button data-menu="restore">♻ Restore</button>`
-            : `<button data-menu="archive">📦 Archive</button>`}
+            ? `<button data-menu="restore"><i class="bi bi-arrow-clockwise me-1"></i>Restore</button>`
+            : `<button data-menu="archive"><i class="bi bi-archive me-1"></i>Archive</button>`}
         </div>
       </div>
       <div class="pr-body"></div>
@@ -998,7 +998,7 @@ function _buildBulkWriteoff(products) {
 function _buildBulkLabels(products) {
   document.getElementById('bulk-action-title').textContent = `Print Labels — ${products.length} product${products.length > 1 ? 's' : ''}`;
   const btn = document.getElementById('btn-bulk-confirm');
-  btn.textContent = '🏷 Print All';
+  btn.innerHTML = '<i class="bi bi-tags me-1"></i>Print All';
   btn.className   = 'btn btn-primary';
 
   document.getElementById('bulk-action-body').innerHTML = `
@@ -2661,7 +2661,7 @@ function _buildStockBody(item, prod) {
             data-edit-batch-total="${totalCost}"
             data-edit-batch-qty-base="${b.qty_purchased_base}"
             data-edit-batch-qty-remaining="${b.qty_remaining_base}"
-            data-edit-batch-unit="${item.unit_type}">✏️</button>
+            data-edit-batch-unit="${item.unit_type}"><i class="bi bi-pencil"></i></button>
         </td>`;
       tbody.appendChild(tr);
     });
@@ -3543,7 +3543,7 @@ async function loadAdjustments() {
       const isWriteoff = r.adjustment_type === 'writeoff';
       const sign       = r.qty_change_base >= 0 ? '+' : '';
       const colour     = isWriteoff ? 'text-danger' : (r.qty_change_base < 0 ? 'text-warning' : 'text-success');
-      const typeLabel  = isWriteoff ? '🗑 Write-off' : '📋 Stocktake';
+      const typeLabel  = isWriteoff ? '<i class="bi bi-trash3 me-1"></i>Write-off' : '<i class="bi bi-clipboard-check me-1"></i>Stocktake';
       const costStr    = isWriteoff && r.cost_written_off != null ? `R${fmt(r.cost_written_off)} written off` : '';
 
       const row = document.createElement('div');
@@ -4717,9 +4717,9 @@ function renderTransactions(trs) {
     if (isVoided)    badges += `<span class="badge bg-danger ms-1" style="font-size:10px">Voided</span>`;
     if (t.is_return) badges += `<span class="badge bg-info text-dark ms-1" style="font-size:10px">Return</span>`;
 
-    const receiptBtn = `<button class="tx-act" data-act="receipt" title="View receipt">🧾</button>`;
-    const editBtn    = admin ? `<button class="tx-act" data-act="edit" title="Edit transaction">✏</button>` : '';
-    const voidBtn    = admin && !isVoided ? `<button class="tx-act text-danger" data-act="void" title="Void transaction">⛔</button>` : '';
+    const receiptBtn = `<button class="tx-act" data-act="receipt" title="View receipt"><i class="bi bi-receipt"></i></button>`;
+    const editBtn    = admin ? `<button class="tx-act" data-act="edit" title="Edit transaction"><i class="bi bi-pencil"></i></button>` : '';
+    const voidBtn    = admin && !isVoided ? `<button class="tx-act text-danger" data-act="void" title="Void transaction"><i class="bi bi-x-circle"></i></button>` : '';
     const expandBtn  = `<button class="tx-expand-btn" title="Expand">▼</button>`;
 
     row.innerHTML = `
@@ -4816,9 +4816,9 @@ function _renderTxBody(body, t, admin) {
       </div>
       <div class="tx-item-sel-bar d-none">
         <span class="tx-item-count small fw-semibold">0 items selected</span>
-        <button class="btn btn-warning" data-item-action="flag">🚩 Flag Items</button>
-        <button class="btn btn-outline-secondary" data-item-action="return">↩ Return Items</button>
-        <button class="btn btn-link tx-clear-sel px-2">✕ Clear</button>
+        <button class="btn btn-warning" data-item-action="flag"><i class="bi bi-flag me-1"></i>Flag Items</button>
+        <button class="btn btn-outline-secondary" data-item-action="return"><i class="bi bi-arrow-return-left me-1"></i>Return Items</button>
+        <button class="btn btn-link tx-clear-sel px-2"><i class="bi bi-x-lg me-1"></i>Clear</button>
       </div>
     </div>
   `;
@@ -12170,7 +12170,7 @@ async function bulkLoadHistory() {
         <td class="small">${escapeHtml(r.created_by)}</td>
         <td class="small">${escapeHtml(r.description || actions)}</td>
         <td class="text-center">${r.product_count}</td>
-        <td>${rolled}${!r.rolled_back_at ? `<button class="btn btn-outline-warning btn-sm" onclick="bulkRollback(${r.id})">↩ Rollback</button>` : ''}</td>
+        <td>${rolled}${!r.rolled_back_at ? `<button class="btn btn-outline-warning btn-sm" onclick="bulkRollback(${r.id})"><i class="bi bi-arrow-counterclockwise me-1"></i>Rollback</button>` : ''}</td>
       </tr>`;
     }).join('');
   } catch(e) {
