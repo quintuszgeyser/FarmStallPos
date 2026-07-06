@@ -4824,7 +4824,7 @@ function _renderTxBody(body, t, admin) {
       <div class="tx-item-sel-bar d-none">
         <span class="tx-item-count small fw-semibold">0 items selected</span>
         <button class="btn btn-warning" data-item-action="flag"><i class="bi bi-flag me-1"></i>Flag Items</button>
-        <button class="btn btn-outline-secondary" data-item-action="return"><i class="bi bi-arrow-return-left me-1"></i>Return Items</button>
+        ${isAdmin() ? `<button class="btn btn-outline-secondary" data-item-action="return"><i class="bi bi-arrow-return-left me-1"></i>Return Items</button>` : ''}
         <button class="btn btn-link tx-clear-sel px-2"><i class="bi bi-x-lg me-1"></i>Clear</button>
       </div>
     </div>

@@ -375,7 +375,7 @@ def api_transaction_return(sale_id):
     row (return_of=<sale_id>) so the original remains intact for SARS audit.
     Restores stock to FIFO batches via reverse_fifo on the new return_id.
     """
-    if not require_role('admin', 'teller'):
+    if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     u    = current_user()
     data = request.json or {}
@@ -390,10 +390,6 @@ def api_transaction_return(sale_id):
     orig_rows = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
     if not orig_rows:
         return jsonify({'error': 'Transaction not found or already voided'}), 404
-
-    # Tellers may only return their own sales
-    if u and u.role == 'teller' and any(r.user_id != u.id for r in orig_rows):
-        return jsonify({'error': 'Tellers can only return their own transactions'}), 403
 
     orig_by_pid = {}
     for r in orig_rows:
