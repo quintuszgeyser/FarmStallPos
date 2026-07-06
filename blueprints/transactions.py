@@ -1,7 +1,7 @@
 import uuid
 import json as _json
 from decimal import Decimal
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from collections import defaultdict
 
 from flask import Blueprint, jsonify, request
@@ -69,7 +69,7 @@ def api_transactions_get():
             start_dt = _parse_dt(start_param) or datetime(today.year, today.month, today.day)
             end_dt   = _parse_dt(end_param, is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
         else:
-            start_dt = datetime(today.year, today.month, today.day)
+            start_dt = datetime(today.year, today.month, today.day) - timedelta(days=6)
             end_dt   = datetime(today.year, today.month, today.day, 23, 59, 59)
         q = q.filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt)
 
