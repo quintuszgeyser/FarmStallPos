@@ -1591,7 +1591,6 @@ function openProductEditor(p) {
   document.getElementById('p-plu-conflict')?.classList.add('hidden');
   const _st = document.getElementById('p-scale-tare'); if (_st) _st.value = p?.scale_tare || '';
   const _ssl = document.getElementById('p-scale-shelf-life'); if (_ssl) _ssl.value = p?.scale_shelf_life || '';
-  const _sus = document.getElementById('p-stat-unit-size'); if (_sus) _sus.value = p?.stat_unit_size ?? '';
   const _sm1 = document.getElementById('p-scale-msg1'); if (_sm1) _sm1.value = p?.scale_msg1 || '';
   const _sm2 = document.getElementById('p-scale-msg2'); if (_sm2) _sm2.value = p?.scale_msg2 || '';
   if (document.getElementById('p-scale-open-price')) document.getElementById('p-scale-open-price').checked = !!p?.scale_open_price;
@@ -2548,8 +2547,6 @@ function buildProductPayload() {
     scale_msg2:        scaleMsg2Raw || null,
     scale_open_price:  document.getElementById('p-scale-open-price')?.checked || false,
     scale_prohibit:    document.getElementById('p-scale-prohibit')?.checked || false,
-    // Stats normalisation
-    stat_unit_size: (() => { const v = document.getElementById('p-stat-unit-size')?.value; return v ? parseFloat(v) : null; })(),
   };
 }
 

@@ -3,6 +3,7 @@ from collections import defaultdict
 from datetime import datetime, date, timedelta
 from decimal import Decimal
 from io import StringIO, BytesIO
+from statistics import median
 
 from flask import Blueprint, jsonify, request, send_file
 from sqlalchemy import func
@@ -132,31 +133,43 @@ def api_stats():
     avg_completed_wait = round(sum(completed_waits) / len(completed_waits)) if completed_waits else None
 
     top_qty_map = defaultdict(float); top_revenue_map = defaultdict(float)
+    # For weight/volume products: track sum and count per transaction line to compute avg portion
+    _pid_line_qty = defaultdict(list)
     for r in rows:
-        top_qty_map[r.product_id] += float(r.qty); top_revenue_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price)
+        top_qty_map[r.product_id] += float(r.qty)
+        top_revenue_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price)
+        _pid_line_qty[r.product_id].append(float(r.qty))
     all_pids = set(top_qty_map.keys()) | set(top_revenue_map.keys())
     _prod_rows = Product.query.filter(Product.id.in_(all_pids)).with_entities(
-        Product.id, Product.name, Product.stat_unit_size, Product.sold_by_weight, Product.unit_type
+        Product.id, Product.name, Product.sold_by_weight, Product.unit_type
     ).all() if all_pids else []
     name_map      = {r.id: r.name for r in _prod_rows}
-    stat_unit_map = {r.id: float(r.stat_unit_size) for r in _prod_rows if r.stat_unit_size and r.stat_unit_size > 0}
+    weighted_pids = {r.id for r in _prod_rows if r.sold_by_weight}
     base_unit_map = {r.id: ('g' if r.unit_type == 'weight' else 'ml') for r in _prod_rows if r.sold_by_weight}
+    # Median qty per sale line = typical portion actually bought (median ignores bulk outliers)
+    avg_portion_map = {
+        pid: median(lines)
+        for pid, lines in _pid_line_qty.items()
+        if pid in weighted_pids and lines
+    }
 
     def _norm(pid, qty):
-        s = stat_unit_map.get(pid)
-        return qty / s if s else qty
+        avg = avg_portion_map.get(pid)
+        return qty / avg if avg else qty
 
     top_by_qty = [{
         'product_id': pid, 'name': name_map.get(pid, str(pid)),
         'qty_sold': qty, 'normalized_qty': round(_norm(pid, qty), 2),
-        'stat_unit_size': stat_unit_map.get(pid), 'base_unit': base_unit_map.get(pid),
+        'stat_unit_size': round(avg_portion_map[pid], 1) if pid in avg_portion_map else None,
+        'base_unit': base_unit_map.get(pid),
         'revenue': round(top_revenue_map.get(pid, 0), 2),
     } for pid, qty in sorted(top_qty_map.items(), key=lambda x: _norm(x[0], x[1]), reverse=True)[:10]]
     top_by_revenue = [{
         'product_id': pid, 'name': name_map.get(pid, str(pid)),
         'revenue': round(rev, 2), 'qty_sold': round(top_qty_map.get(pid, 0), 2),
         'normalized_qty': round(_norm(pid, top_qty_map.get(pid, 0)), 2),
-        'stat_unit_size': stat_unit_map.get(pid), 'base_unit': base_unit_map.get(pid),
+        'stat_unit_size': round(avg_portion_map[pid], 1) if pid in avg_portion_map else None,
+        'base_unit': base_unit_map.get(pid),
     } for pid, rev in sorted(top_revenue_map.items(), key=lambda x: x[1], reverse=True)[:10]]
 
     revenue_per_hour = defaultdict(float)
