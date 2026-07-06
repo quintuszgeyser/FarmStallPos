@@ -10468,8 +10468,7 @@ async function openLabelPrintModal(product) {
   _populatePrinterSelect(document.getElementById('lp-printer-select'));
   // Auto-preview on template change
   document.getElementById('lp-template-select').onchange = refreshLabelPreview;
-  const modal = new bootstrap.Modal(document.getElementById('labelPrintModal'));
-  modal.show();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('labelPrintModal')).show();
   if (LABELS.templates.length) refreshLabelPreview();
 }
 
@@ -10541,7 +10540,7 @@ async function openBulkLabelModal() {
   document.getElementById('bulk-status').textContent = '';
   document.getElementById('bulk-filter').value = '';
   renderBulkProductList(STATE.products.filter(p => !p.is_archived));
-  new bootstrap.Modal(document.getElementById('bulkLabelModal')).show();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkLabelModal')).show();
 }
 
 function renderBulkProductList(products) {
@@ -10716,6 +10715,10 @@ async function openLabelDesigner(existingTemplateId) {
       if (LD.selectedIdx != null) { ldRemoveElement(LD.selectedIdx); e.preventDefault(); }
     }
   };
+
+  // If the print modal is currently open (user clicked Edit Template from within it),
+  // hide it first — Bootstrap 5 can't manage two simultaneous modal backdrops cleanly.
+  bootstrap.Modal.getInstance(document.getElementById('labelPrintModal'))?.hide();
 
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('labelDesignerModal'));
   modal.show();
