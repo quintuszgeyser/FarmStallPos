@@ -520,7 +520,7 @@ def export_products_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     default_markup = float(get_setting('markup_percent', 40) or 40)
     fifo_costs = {}
-    for batch in StockBatch.query.filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.product_id, StockBatch.purchased_at.asc(), StockBatch.id.asc()).all():
+    for batch in StockBatch.query.filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.product_id, StockBatch.sort_order.asc().nulls_last(), StockBatch.purchased_at.asc(), StockBatch.id.asc()).all():
         if batch.product_id not in fifo_costs: fifo_costs[batch.product_id] = float(batch.cost_per_base_unit)
     def recipe_cost(product_id, _depth=0):
         if _depth > 10: return 0.0

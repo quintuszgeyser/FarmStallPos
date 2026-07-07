@@ -198,7 +198,8 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0):
                .filter_by(product_id=ingredient_id)
                .filter(StockBatch.qty_remaining_base > 0)
                .with_for_update()
-               .order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc()))
+               .order_by(StockBatch.sort_order.asc().nulls_last(),
+                         StockBatch.purchased_at.asc(), StockBatch.id.asc()))
 
     batches = batch_q.filter(StockBatch.purchased_at <= now).all()
     if not batches:
@@ -248,7 +249,8 @@ def get_fifo_cost_per_unit(product_id):
     batch = (StockBatch.query
              .filter_by(product_id=product_id)
              .filter(StockBatch.qty_remaining_base > 0)
-             .order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc())
+             .order_by(StockBatch.sort_order.asc().nulls_last(),
+                       StockBatch.purchased_at.asc(), StockBatch.id.asc())
              .first())
     return float(batch.cost_per_base_unit) if batch else 0.0
 

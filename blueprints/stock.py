@@ -34,7 +34,7 @@ def api_stock_ingredients():
     products = Product.query.filter(Product.product_type == 'stock_item').order_by(Product.name.asc()).all()
     result = []
     for p in products:
-        batches     = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.purchased_at.desc()).all()
+        batches     = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.sort_order.asc().nulls_last(), StockBatch.purchased_at.asc(), StockBatch.id.asc()).all()
         stock_level = sum(float(b.qty_remaining_base) for b in batches)
         result.append({
             'id': p.id, 'name': p.name, 'unit_type': p.unit_type, 'base_unit': p.base_unit,
@@ -53,6 +53,7 @@ def api_stock_ingredients():
                 'purchased_at': b.purchased_at.isoformat(),
                 'supplier_id': b.supplier_id,
                 'supplier_name': db.session.get(Supplier, b.supplier_id).name if b.supplier_id else None,
+                'sort_order': b.sort_order,
             } for b in batches],
             'sell_packages': [{
                 'id': pkg.id, 'name': pkg.name,
@@ -63,6 +64,68 @@ def api_stock_ingredients():
             } for pkg in Product.query.filter_by(parent_stock_item_id=p.id).all()],
         })
     return jsonify(result)
+
+
+@bp.route('/api/stock/batches/<int:batch_id>/reorder', methods=['POST'])
+def api_stock_batch_reorder(batch_id):
+    """Move a batch to a specific position or reset to FIFO (sort_order=NULL)."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data   = request.json or {}
+    action = data.get('action')  # 'move_up' | 'move_down' | 'use_next' | 'reset_fifo'
+
+    batch = db.session.get(StockBatch, batch_id)
+    if not batch:
+        return jsonify({'error': 'Batch not found'}), 404
+
+    if action == 'reset_fifo':
+        batch.sort_order = None
+        db.session.commit()
+        return jsonify({'ok': True, 'sort_order': None})
+
+    # Fetch all active batches for this product in current display order
+    siblings = (StockBatch.query
+                .filter_by(product_id=batch.product_id)
+                .filter(StockBatch.qty_remaining_base > 0)
+                .order_by(StockBatch.sort_order.asc().nulls_last(),
+                          StockBatch.purchased_at.desc())
+                .all())
+
+    if action == 'use_next':
+        # Assign sort_order=1 to this batch; push all others to 2..N
+        for i, b in enumerate(siblings):
+            b.sort_order = 2 + i if b.id != batch_id else 1
+        db.session.commit()
+        return jsonify({'ok': True, 'sort_order': 1})
+
+    if action in ('move_up', 'move_down'):
+        ids = [b.id for b in siblings]
+        if batch_id not in ids:
+            return jsonify({'error': 'Batch not in active list'}), 400
+        idx = ids.index(batch_id)
+        if action == 'move_up' and idx > 0:
+            ids[idx], ids[idx - 1] = ids[idx - 1], ids[idx]
+        elif action == 'move_down' and idx < len(ids) - 1:
+            ids[idx], ids[idx + 1] = ids[idx + 1], ids[idx]
+        # Re-assign positions; if a batch lands back at its FIFO position keep NULL
+        sib_map = {b.id: b for b in siblings}
+        for pos, bid in enumerate(ids):
+            sib_map[bid].sort_order = pos + 1
+        db.session.commit()
+        new_order = next(b.sort_order for b in siblings if b.id == batch_id)
+        return jsonify({'ok': True, 'sort_order': new_order})
+
+    return jsonify({'error': 'Unknown action'}), 400
+
+
+@bp.route('/api/stock/products/<int:pid>/reset_batch_order', methods=['POST'])
+def api_stock_reset_batch_order(pid):
+    """Reset all batches for a product back to FIFO (clear all sort_order)."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    StockBatch.query.filter_by(product_id=pid).update({'sort_order': None})
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @bp.route('/api/stock/receive', methods=['POST'])
@@ -238,10 +301,11 @@ def api_stock_adjustment_edit(adj_id):
         adj.cost_written_off = Decimal(str(adj.cost_written_off or 0)) + Decimal(str(extra_cost))
     elif diff < 0:
         restore_qty = abs(diff)
-        # Restore to oldest batch (FIFO ascending) — the batch that consume_fifo took from.
+        # Restore to top-of-order batch (respects custom sort_order) — the batch consume_fifo would take from.
         batch = StockBatch.query.filter_by(product_id=p.id).filter(
             StockBatch.qty_remaining_base > 0
-        ).order_by(StockBatch.purchased_at.asc(), StockBatch.id.asc()).first()
+        ).order_by(StockBatch.sort_order.asc().nulls_last(),
+                   StockBatch.purchased_at.asc(), StockBatch.id.asc()).first()
         if not batch:
             # All batches exhausted — fall back to most-recent to avoid losing the qty
             batch = StockBatch.query.filter_by(product_id=p.id).order_by(StockBatch.purchased_at.desc()).first()

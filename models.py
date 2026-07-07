@@ -257,6 +257,7 @@ class StockBatch(db.Model):
     purchased_at        = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     supplier_id         = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
     user_id             = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    sort_order          = db.Column(db.Integer, nullable=True)
 
 
 class StockConsumption(db.Model):

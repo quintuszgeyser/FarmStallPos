@@ -227,7 +227,7 @@ def _consume_fifo(db, ingredient_id: int, qty_needed: Decimal,
         WHERE product_id = :pid
           AND qty_remaining_base > 0
           AND purchased_at <= :now
-        ORDER BY purchased_at ASC, id ASC
+        ORDER BY sort_order ASC NULLS LAST, purchased_at ASC, id ASC
         FOR UPDATE
     """), {"pid": ingredient_id, "now": now}).fetchall()
 
@@ -237,7 +237,7 @@ def _consume_fifo(db, ingredient_id: int, qty_needed: Decimal,
             SELECT id, qty_remaining_base, cost_per_base_unit
             FROM stock_batches
             WHERE product_id = :pid AND qty_remaining_base > 0
-            ORDER BY purchased_at ASC, id ASC
+            ORDER BY sort_order ASC NULLS LAST, purchased_at ASC, id ASC
             FOR UPDATE
         """), {"pid": ingredient_id}).fetchall()
 

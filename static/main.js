@@ -2604,9 +2604,22 @@ function _buildStockBody(item, prod) {
     const table = document.createElement('table');
     table.className = 'table table-sm table-hover mb-2';
     table.style.fontSize = '12px';
+    const hasCustomOrder = item.batches.some(b => b.sort_order != null);
+    const productId = item.id;
+
+    // Header: show reset button if any batch has a custom order
+    const tableHeader = document.createElement('div');
+    tableHeader.className = 'd-flex align-items-center justify-content-between mb-1';
+    tableHeader.innerHTML = `
+      <span class="small fw-bold text-muted">Stock batches${hasCustomOrder ? ' <span class="badge bg-warning text-dark ms-1" style="font-size:10px"><i class="bi bi-arrow-down-up"></i> Custom order</span>' : ''}</span>
+      ${hasCustomOrder ? `<button class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:11px" data-reset-batch-order="${productId}"><i class="bi bi-clock-history"></i> Reset to FIFO</button>` : ''}
+    `;
+    wrap.appendChild(tableHeader);
+
     table.innerHTML = `
       <thead class="table-light">
         <tr>
+          <th style="width:28px"></th>
           <th>Date</th>
           <th>Supplier</th>
           <th class="text-end">Bought</th>
@@ -2620,7 +2633,7 @@ function _buildStockBody(item, prod) {
       <tbody></tbody>`;
     const tbody = table.querySelector('tbody');
 
-    [...item.batches].reverse().forEach(b => {
+    item.batches.forEach((b, idx) => {
       const remaining  = displayQty(b.qty_remaining_base, item.unit_type);
       const purchased  = displayQty(b.qty_purchased_base, item.unit_type);
       const date       = new Date(b.purchased_at).toLocaleDateString('en-ZA');
@@ -2641,24 +2654,41 @@ function _buildStockBody(item, prod) {
         }
       }
 
+      const isFirst  = idx === 0;
+      const isLast   = idx === item.batches.length - 1;
+      const rowStyle = b.sort_order != null ? ' style="background:rgba(255,193,7,0.08)"' : '';
+
       const tr = document.createElement('tr');
+      tr.setAttribute('data-batch-row-id', b.id);
       tr.innerHTML = `
-        <td>${date}</td>
-        <td>${b.supplier_name ? `<span class="badge bg-info text-dark">${supplier}</span>` : `<span class="text-muted">${supplier}</span>`}</td>
-        <td class="text-end">${purchased}</td>
-        <td class="text-end"><strong>${remaining}</strong></td>
-        <td class="text-end text-muted">R${fmt(stockValue)}</td>
-        <td class="text-end text-muted">${cogsStr}</td>
-        <td class="text-end text-success">${saleStr}</td>
-        <td class="text-end">
-          <button class="btn btn-outline-secondary btn-sm py-0 px-1"
-            data-edit-batch-id="${b.id}"
-            data-edit-batch-date="${b.purchased_at.slice(0,10)}"
-            data-edit-batch-supplier="${b.supplier_id || ''}"
-            data-edit-batch-total="${totalCost}"
-            data-edit-batch-qty-base="${b.qty_purchased_base}"
-            data-edit-batch-qty-remaining="${b.qty_remaining_base}"
-            data-edit-batch-unit="${item.unit_type}"><i class="bi bi-pencil"></i></button>
+        <td class="pe-0">
+          <div class="d-flex flex-column gap-0" style="line-height:1">
+            <button class="btn btn-link btn-sm p-0 lh-1 text-muted" title="Move up" style="font-size:13px"
+              data-reorder-batch="${b.id}" data-reorder-action="move_up" ${isFirst ? 'disabled' : ''}><i class="bi bi-chevron-up"></i></button>
+            <button class="btn btn-link btn-sm p-0 lh-1 text-muted" title="Move down" style="font-size:13px"
+              data-reorder-batch="${b.id}" data-reorder-action="move_down" ${isLast ? 'disabled' : ''}><i class="bi bi-chevron-down"></i></button>
+          </div>
+        </td>
+        <td${rowStyle}>${date}${b.sort_order != null && isFirst ? ' <i class="bi bi-arrow-up-circle-fill text-warning" title="Used next"></i>' : ''}</td>
+        <td${rowStyle}>${b.supplier_name ? `<span class="badge bg-info text-dark">${supplier}</span>` : `<span class="text-muted">${supplier}</span>`}</td>
+        <td class="text-end"${rowStyle}>${purchased}</td>
+        <td class="text-end"${rowStyle}><strong>${remaining}</strong></td>
+        <td class="text-end text-muted"${rowStyle}>R${fmt(stockValue)}</td>
+        <td class="text-end text-muted"${rowStyle}>${cogsStr}</td>
+        <td class="text-end text-success"${rowStyle}>${saleStr}</td>
+        <td class="text-end"${rowStyle}>
+          <div class="d-flex gap-1 justify-content-end">
+            ${!isFirst ? `<button class="btn btn-outline-warning btn-sm py-0 px-1" title="Use this batch next"
+              data-reorder-batch="${b.id}" data-reorder-action="use_next"><i class="bi bi-arrow-bar-up"></i></button>` : ''}
+            <button class="btn btn-outline-secondary btn-sm py-0 px-1"
+              data-edit-batch-id="${b.id}"
+              data-edit-batch-date="${b.purchased_at.slice(0,10)}"
+              data-edit-batch-supplier="${b.supplier_id || ''}"
+              data-edit-batch-total="${totalCost}"
+              data-edit-batch-qty-base="${b.qty_purchased_base}"
+              data-edit-batch-qty-remaining="${b.qty_remaining_base}"
+              data-edit-batch-unit="${item.unit_type}"><i class="bi bi-pencil"></i></button>
+          </div>
         </td>`;
       tbody.appendChild(tr);
     });
@@ -2682,6 +2712,33 @@ function _buildStockBody(item, prod) {
 function renderStockList(items) {
   // kept for backward compat - no longer used for display, data goes via STATE._stockItems
 }
+
+// ── Batch reorder (delegated off products-card-list) ──
+document.getElementById('products-card-list')?.addEventListener('click', async (e) => {
+  // Move-up / move-down / use-next buttons
+  const reorderBtn = e.target.closest('[data-reorder-batch]');
+  if (reorderBtn) {
+    e.stopPropagation();
+    const batchId = reorderBtn.dataset.reorderBatch;
+    const action  = reorderBtn.dataset.reorderAction;
+    try {
+      await api(`/api/stock/batches/${batchId}/reorder`, { method: 'POST', body: JSON.stringify({ action }) });
+      await loadIngredients();
+    } catch (err) { toast(err.message || 'Reorder failed', 'danger'); }
+    return;
+  }
+  // Reset to FIFO button
+  const resetBtn = e.target.closest('[data-reset-batch-order]');
+  if (resetBtn) {
+    e.stopPropagation();
+    const pid = resetBtn.dataset.resetBatchOrder;
+    try {
+      await api(`/api/stock/products/${pid}/reset_batch_order`, { method: 'POST' });
+      await loadIngredients();
+    } catch (err) { toast(err.message || 'Reset failed', 'danger'); }
+    return;
+  }
+});
 
 // ── Edit Batch (delegated off products-card-list since batch rows are dynamic) ──
 document.getElementById('products-card-list')?.addEventListener('click', (e) => {
