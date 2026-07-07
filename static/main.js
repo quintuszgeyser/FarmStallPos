@@ -5922,9 +5922,11 @@ async function openCustomerListDrilldown(type) {
 
 function switchChartTab(tab) { _showChartTab(tab); }
 
+let _topProductsGroupBy = 'product';
+
 function _showChartTab(tab) {
   _statsChartTab = tab;
-  ['daily','hourly','minute','top','top-rev','suppliers','channels','customers','dow'].forEach(id => {
+  ['daily','hourly','minute','top','top-rev','top-profit','suppliers','channels','customers','dow'].forEach(id => {
     const c = document.getElementById(`chart-${id}`);
     if (c) c.style.display = 'none';
   });
@@ -5934,8 +5936,10 @@ function _showChartTab(tab) {
       : 'btn btn-sm btn-outline-secondary';
   });
   const hint = document.getElementById('chart-click-hint');
-  const drillableTabs = ['daily','hourly','minute','top-qty','top-rev'];
+  const drillableTabs = ['daily','hourly','minute','top-qty','top-rev','top-profit'];
   if (hint) hint.style.display = drillableTabs.includes(tab) ? '' : 'none';
+  const groupByBar = document.getElementById('top-products-groupby');
+  if (groupByBar) groupByBar.classList.toggle('d-none', !['top-rev','top-profit'].includes(tab));
 
   // Legend strip — cleared each time, populated per tab below
   const _legend = document.getElementById('stats-chart-legend');
@@ -6002,12 +6006,42 @@ function _showChartTab(tab) {
     const c = document.getElementById('chart-top-rev');
     c.style.display = '';
     const products = j.top_by_revenue || [];
-    drawBarChart(c, products.map(x => x.name), products.map(x => x.revenue), {
-      color: '#7b1fa2', valuePrefix: 'R',
-      yLabel: 'Revenue (R)', xLabel: 'Product',
-      onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id),
-    });
-    if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue generated per product — click a bar to drill down into those transactions</span>`;
+    if (_topProductsGroupBy === 'category') {
+      const catMap = {};
+      products.forEach(p => { const k = p.category_name || 'Uncategorised'; catMap[k] = (catMap[k] || 0) + p.revenue; });
+      const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+      drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), {
+        color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Category',
+      });
+      if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue grouped by product category</span>`;
+    } else {
+      drawBarChart(c, products.map(x => x.name), products.map(x => x.revenue), {
+        color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Product',
+        onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id),
+      });
+      if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue generated per product — click a bar to drill down into those transactions</span>`;
+    }
+
+  } else if (tab === 'top-profit') {
+    const c = document.getElementById('chart-top-profit');
+    c.style.display = '';
+    const products = j.top_by_profit || [];
+    if (_topProductsGroupBy === 'category') {
+      const catMap = {};
+      products.forEach(p => { const k = p.category_name || 'Uncategorised'; catMap[k] = (catMap[k] || 0) + p.profit; });
+      const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+      drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), {
+        color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Category',
+      });
+      if (_legend) _legend.innerHTML = `<span class="text-muted">Gross profit grouped by product category</span>`;
+    } else {
+      drawBarChart(c, products.map(x => x.name), products.map(x => x.profit), {
+        color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Product',
+        onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id),
+        tooltipFormatter: (val, i) => `R${fmt(val)} profit (${products[i]?.margin ?? '—'}% margin)`,
+      });
+      if (_legend) _legend.innerHTML = `<span class="text-muted">Gross profit per product (revenue minus COGS) — only products with tracked stock costs appear</span>`;
+    }
 
   } else if (tab === 'suppliers') {
     const c = document.getElementById('chart-suppliers');
@@ -6460,6 +6494,18 @@ async function loadStats() {
 
 document.querySelectorAll('[data-chart-tab]').forEach(btn => {
   btn.addEventListener('click', () => _showChartTab(btn.dataset.chartTab));
+});
+document.getElementById('top-products-groupby')?.addEventListener('click', e => {
+  const btn = e.target.closest('[data-groupby]');
+  if (!btn) return;
+  _topProductsGroupBy = btn.dataset.groupby;
+  document.querySelectorAll('[data-groupby]').forEach(b => {
+    b.className = b.dataset.groupby === _topProductsGroupBy
+      ? 'btn btn-xs btn-primary'
+      : 'btn btn-xs btn-outline-secondary';
+    b.style.cssText = 'font-size:11px;padding:2px 7px';
+  });
+  _showChartTab(_statsChartTab);
 });
 document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
 document.getElementById('stats-product-filter')?.addEventListener('change', loadStats);

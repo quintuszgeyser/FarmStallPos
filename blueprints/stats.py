@@ -12,7 +12,7 @@ from helpers import require_role, get_setting, _parse_dt
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment,
-    Sale, KitchenOrder, User, UserSession, Supplier, Customer, TillSession,
+    Sale, KitchenOrder, User, UserSession, Supplier, Customer, TillSession, Category,
 )
 
 bp = Blueprint('stats', __name__)
@@ -141,7 +141,7 @@ def api_stats():
         _pid_line_qty[r.product_id].append(float(r.qty))
     all_pids = set(top_qty_map.keys()) | set(top_revenue_map.keys())
     _prod_rows = Product.query.filter(Product.id.in_(all_pids)).with_entities(
-        Product.id, Product.name, Product.sold_by_weight, Product.unit_type
+        Product.id, Product.name, Product.sold_by_weight, Product.unit_type, Product.category_id
     ).all() if all_pids else []
     name_map      = {r.id: r.name for r in _prod_rows}
     weighted_pids = {r.id for r in _prod_rows if r.sold_by_weight}
@@ -152,25 +152,53 @@ def api_stats():
         for pid, lines in _pid_line_qty.items()
         if pid in weighted_pids and lines
     }
+    # Category names per product
+    _cat_ids = {r.category_id for r in _prod_rows if r.category_id}
+    _cat_names = {c.id: c.name for c in Category.query.filter(Category.id.in_(_cat_ids)).all()} if _cat_ids else {}
+    _pid_cat_id = {r.id: r.category_id for r in _prod_rows}
+    category_name_map = {pid: _cat_names.get(_pid_cat_id.get(pid), 'Uncategorised') for pid in all_pids}
+    # Per-product COGS: match ingredient_id directly (stock_items); single-product sales get recipe attribution
+    _sale_products = defaultdict(set)
+    for r in rows:
+        _sale_products[r.sale_id].add(r.product_id)
+    top_cogs_map = defaultdict(float)
+    for c in consumptions:
+        pids_in_sale = _sale_products.get(c.sale_id, set())
+        if c.ingredient_id in pids_in_sale:
+            top_cogs_map[c.ingredient_id] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
+        elif len(pids_in_sale) == 1:
+            top_cogs_map[next(iter(pids_in_sale))] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
 
     def _norm(pid, qty):
         avg = avg_portion_map.get(pid)
         return qty / avg if avg else qty
 
-    top_by_qty = [{
-        'product_id': pid, 'name': name_map.get(pid, str(pid)),
-        'qty_sold': qty, 'normalized_qty': round(_norm(pid, qty), 2),
-        'stat_unit_size': round(avg_portion_map[pid], 1) if pid in avg_portion_map else None,
-        'base_unit': base_unit_map.get(pid),
-        'revenue': round(top_revenue_map.get(pid, 0), 2),
-    } for pid, qty in sorted(top_qty_map.items(), key=lambda x: _norm(x[0], x[1]), reverse=True)[:10]]
-    top_by_revenue = [{
-        'product_id': pid, 'name': name_map.get(pid, str(pid)),
-        'revenue': round(rev, 2), 'qty_sold': round(top_qty_map.get(pid, 0), 2),
-        'normalized_qty': round(_norm(pid, top_qty_map.get(pid, 0)), 2),
-        'stat_unit_size': round(avg_portion_map[pid], 1) if pid in avg_portion_map else None,
-        'base_unit': base_unit_map.get(pid),
-    } for pid, rev in sorted(top_revenue_map.items(), key=lambda x: x[1], reverse=True)[:10]]
+    def _top_entry(pid, rev, qty):
+        cogs   = top_cogs_map.get(pid, 0.0)
+        profit = rev - cogs
+        return {
+            'product_id': pid, 'name': name_map.get(pid, str(pid)),
+            'category_name': category_name_map.get(pid, 'Uncategorised'),
+            'revenue': round(rev, 2), 'qty_sold': round(qty, 2),
+            'normalized_qty': round(_norm(pid, qty), 2),
+            'stat_unit_size': round(avg_portion_map[pid], 1) if pid in avg_portion_map else None,
+            'base_unit': base_unit_map.get(pid),
+            'cogs': round(cogs, 2), 'profit': round(profit, 2),
+            'margin': round(profit / rev * 100, 1) if rev > 0 else None,
+        }
+    top_by_qty = [
+        {**_top_entry(pid, top_revenue_map.get(pid, 0), qty), 'qty_sold': qty, 'normalized_qty': round(_norm(pid, qty), 2)}
+        for pid, qty in sorted(top_qty_map.items(), key=lambda x: _norm(x[0], x[1]), reverse=True)[:10]
+    ]
+    top_by_revenue = [
+        _top_entry(pid, rev, top_qty_map.get(pid, 0))
+        for pid, rev in sorted(top_revenue_map.items(), key=lambda x: x[1], reverse=True)[:10]
+    ]
+    top_by_profit = [
+        _top_entry(pid, top_revenue_map.get(pid, 0), top_qty_map.get(pid, 0))
+        for pid, _ in sorted(top_cogs_map.items(), key=lambda x: top_revenue_map.get(x[0], 0) - x[1], reverse=True)[:10]
+        if top_revenue_map.get(pid, 0) > 0
+    ]
 
     revenue_per_hour = defaultdict(float)
     for r in rows: revenue_per_hour[r.date_time.hour] += float(Decimal(str(r.qty)) * r.unit_price)
@@ -353,7 +381,8 @@ def api_stats():
         'total_writeoff_cost': round(total_writeoff_cost, 2), 'writeoff_count': total_writeoff_count,
         'kitchen_orders_today': len(kitchen_completed_list), 'avg_wait_seconds': max_wait_seconds,
         'avg_completed_wait': avg_completed_wait, 'top_products': top_by_qty,
-        'top_by_revenue': top_by_revenue, 'revenue_per_hour': hourly, 'revenue_per_day': daily,
+        'top_by_revenue': top_by_revenue, 'top_by_profit': top_by_profit,
+        'revenue_per_hour': hourly, 'revenue_per_day': daily,
         'best_day': best_day, 'worst_day': worst_day, 'supplier_breakdown': supplier_breakdown,
         'revenue_per_minute': minutely, 'employee_stats': employee_stats,
         # ── New metrics ──

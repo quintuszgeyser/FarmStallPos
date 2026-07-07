@@ -1254,6 +1254,12 @@
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="minute">By Minute</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="top-qty">Top Products (Qty)</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="top-rev">Top Products (Revenue)</button>
+        <button class="btn btn-sm btn-outline-secondary" data-chart-tab="top-profit">Top Products (Profit)</button>
+        <div id="top-products-groupby" class="d-none d-flex align-items-center gap-1 ms-1">
+          <span class="text-muted small">Group:</span>
+          <button class="btn btn-xs btn-primary"            data-groupby="product" style="font-size:11px;padding:2px 7px">Product</button>
+          <button class="btn btn-xs btn-outline-secondary"  data-groupby="category" style="font-size:11px;padding:2px 7px">Category</button>
+        </div>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="suppliers">Supplier Spend</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="channels">Channels</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="customers">Customers</button>
@@ -1265,7 +1271,8 @@
         <canvas id="chart-hourly"    style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-minute"    style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-top"       style="display:none; width:100%; height:100%"></canvas>
-        <canvas id="chart-top-rev"   style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-top-rev"    style="display:none; width:100%; height:100%"></canvas>
+        <canvas id="chart-top-profit" style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-suppliers" style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-channels"  style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-customers" style="display:none; width:100%; height:100%"></canvas>
