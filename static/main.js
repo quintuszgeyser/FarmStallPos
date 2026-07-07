@@ -616,15 +616,17 @@ function renderProductsCards() {
         <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
         ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
         <div class="pr-mobile-meta">
-          <div class="pr-mm-left">
-            ${stockMobile ? `<span class="pr-mm-stock">${stockMobile}</span>` : ''}
-            ${p.barcode   ? `<span class="pr-mm-barcode">${escapeHtml(p.barcode)}</span>` : ''}
+          <div class="pr-mm-top">
+            <div class="pr-mm-left">
+              ${stockMobile ? `<span class="pr-mm-stock">${stockMobile}</span>` : ''}
+            </div>
+            <div class="pr-mm-right">
+              ${priceDisplay ? `<span class="pr-mm-price text-success fw-semibold">${priceDisplay}</span>` : ''}
+              ${margins ? `<span class="pr-mm-cogs">${escapeHtml(margins.costLabel)}</span>` : ''}
+              ${margins ? `<span class="pr-mm-margin">${margins.margin}%</span>` : ''}
+            </div>
           </div>
-          <div class="pr-mm-right">
-            ${priceDisplay ? `<span class="pr-mm-price text-success fw-semibold">${priceDisplay}</span>` : ''}
-            ${margins ? `<span class="pr-mm-cogs">${escapeHtml(margins.costLabel)}</span>` : ''}
-            ${margins ? `<span class="pr-mm-margin">${margins.margin}%</span>` : ''}
-          </div>
+          ${p.barcode ? `<span class="pr-mm-barcode">${escapeHtml(p.barcode)}</span>` : ''}
         </div>
       </div>
       <div class="pr-stock">${stockHtml}</div>
@@ -4845,13 +4847,12 @@ function _renderTxBody(body, t, admin) {
          ${admin && !t.flag_resolved ? `<button class="btn btn-outline-success btn-sm ms-2 py-0 px-1" onclick="resolveFlag('${t.id}')"><i class="bi bi-check-lg me-1"></i>Resolve</button>` : ''}
        </div>` : '';
 
-  const summaryHtml = admin
-    ? `<div class="d-flex gap-3 small mb-2 text-muted">
-         <span>Revenue: <strong class="text-dark">R${fmt(t.total)}</strong></span>
-         ${t.cogs != null ? `<span>COGS: <strong class="text-dark">R${fmt(t.cogs)}</strong></span>` : ''}
-         ${t.cogs != null ? `<span>Profit: <strong class="text-success">R${fmt(profit)}</strong></span>` : ''}
-         ${discNote}
-       </div>` : (discNote ? `<div class="small mb-2">${discNote}</div>` : '');
+  const profitHtml = (admin && t.cogs != null)
+    ? `<span>Profit: <strong class="text-success">R${fmt(profit)}</strong></span>`
+    : '';
+  const summaryHtml = (profitHtml || discNote)
+    ? `<div class="d-flex gap-3 small mb-2 text-muted">${profitHtml}${discNote}</div>`
+    : '';
 
   const lines = t.lines || [];
   const lineRows = lines.map((ln, i) => {
@@ -4863,6 +4864,8 @@ function _renderTxBody(body, t, admin) {
       if (ln.discount.cart) { const d = ln.discount.cart; parts.push(d.type==='pct' ? `${d.value}% cart` : `R${fmt(d.value)} cart`); }
       if (parts.length) disc = `<span class="text-success" style="font-size:11px">${parts.join(' + ')}</span>`;
     }
+    const cogsCell   = admin && ln.cogs   != null ? `<div class="small text-muted">R${fmt(ln.cogs)}</div>`   : `<div class="${admin ? 'small text-muted' : 'd-none'}">—</div>`;
+    const marginCell = admin && ln.margin != null ? `<div class="small ${ln.margin >= 50 ? 'text-success' : ln.margin < 20 ? 'text-danger' : 'text-muted'}">${ln.margin}%</div>` : `<div class="${admin ? 'small text-muted' : 'd-none'}">—</div>`;
     return `
       <div class="tx-line-row" data-line-idx="${i}">
         <div><input type="checkbox" class="form-check-input tx-line-chk" data-idx="${i}"></div>
@@ -4870,6 +4873,8 @@ function _renderTxBody(body, t, admin) {
         <div class="small text-center">${fmtQty(ln.qty)}</div>
         <div class="small text-muted">R${fmt(ln.unit_price)}</div>
         <div class="small fw-semibold">R${fmt(ln.subtotal)}</div>
+        ${cogsCell}
+        ${marginCell}
         <div>${disc}</div>
       </div>`;
   }).join('');
@@ -4881,7 +4886,10 @@ function _renderTxBody(body, t, admin) {
       <div class="tx-lines-wrap">
         <div class="tx-line-hdr">
           <div></div><div>Product</div><div class="text-center">Qty</div>
-          <div>Unit Price</div><div>Total</div><div>Discount</div>
+          <div>Unit Price</div><div>Total</div>
+          <div class="${admin ? '' : 'd-none'}">COGS</div>
+          <div class="${admin ? '' : 'd-none'}">Margin</div>
+          <div>Discount</div>
         </div>
         ${lineRows}
       </div>

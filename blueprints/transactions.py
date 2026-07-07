@@ -93,15 +93,55 @@ def api_transactions_get():
             except Exception: pass
 
     sale_ids     = list(grouped.keys())
-    cogs_by_sale = defaultdict(Decimal)
+    is_admin_req = (u.role == 'admin')
+
+    # Track per-ingredient COGS in a single pass (used for sale total and per-line attribution)
+    cogs_by_sale       = defaultdict(Decimal)
+    cogs_by_ingredient = defaultdict(lambda: defaultdict(Decimal))  # sale_id -> ingredient_id -> cost
     if sale_ids:
         for c in StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all():
-            cogs_by_sale[c.sale_id] += Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
+            cost = Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
+            cogs_by_sale[c.sale_id] += cost
+            cogs_by_ingredient[c.sale_id][c.ingredient_id] += cost
+
+    # For admin: fetch product types + recipe lines to compute per-line COGS
+    product_types_map       = {}
+    recipe_lines_by_product = defaultdict(list)  # recipe_product_id -> [(ingredient_id, qty_base)]
+    if is_admin_req and rows:
+        all_prod_ids = {r.product_id for r in rows}
+        for pt in Product.query.filter(Product.id.in_(all_prod_ids)).with_entities(Product.id, Product.product_type).all():
+            product_types_map[pt.id] = pt.product_type
+        recipe_pids = {pid for pid, ptype in product_types_map.items() if ptype == 'recipe'}
+        if recipe_pids:
+            for rl in RecipeLine.query.filter(RecipeLine.product_id.in_(recipe_pids)).with_entities(RecipeLine.product_id, RecipeLine.ingredient_id, RecipeLine.qty_base).all():
+                recipe_lines_by_product[rl.product_id].append((rl.ingredient_id, float(rl.qty_base)))
 
     result = []
     for sid in sorted(grouped.keys(), key=lambda k: max(x.id for x in grouped[k]), reverse=True):
         items, total = [], Decimal('0')
         sale_disc    = discounts_by_sale.get(sid, {})
+
+        # Pre-compute per-recipe-product COGS attribution for this sale (proportional by expected qty)
+        recipe_cogs_per_pid: dict = {}
+        if is_admin_req:
+            # Qty sold per product in this sale
+            qty_by_pid: dict = defaultdict(Decimal)
+            for ln in grouped[sid]:
+                qty_by_pid[ln.product_id] += Decimal(str(ln.qty))
+            # For each ingredient consumed, find which recipe products in this sale use it and split proportionally
+            ingredient_attributions: dict = defaultdict(list)  # ingredient_id -> [(recipe_pid, expected_qty)]
+            for pid in qty_by_pid:
+                if product_types_map.get(pid) == 'recipe':
+                    for ing_id, ing_qty_per in recipe_lines_by_product.get(pid, []):
+                        ingredient_attributions[ing_id].append((pid, float(qty_by_pid[pid]) * ing_qty_per))
+            recipe_cogs_acc: dict = defaultdict(Decimal)
+            for ing_id, attributions in ingredient_attributions.items():
+                total_cost = cogs_by_ingredient[sid].get(ing_id, Decimal('0'))
+                total_exp  = sum(exp for _, exp in attributions)
+                for recipe_pid, exp in attributions:
+                    recipe_cogs_acc[recipe_pid] += (total_cost * Decimal(str(exp)) / Decimal(str(total_exp))) if total_exp > 0 else (total_cost / len(attributions))
+            recipe_cogs_per_pid = dict(recipe_cogs_acc)
+
         for ln in grouped[sid]:
             subtotal = Decimal(str(ln.qty)) * ln.unit_price
             total   += subtotal
@@ -109,7 +149,21 @@ def api_transactions_get():
             if ln.discount_json:
                 try: line['discount'] = _json.loads(ln.discount_json)
                 except Exception: pass
+            if is_admin_req:
+                ptype = product_types_map.get(ln.product_id, 'simple')
+                if ptype == 'stock_item':
+                    line_cogs = cogs_by_ingredient[sid].get(ln.product_id, Decimal('0'))
+                elif ptype == 'recipe':
+                    line_cogs = recipe_cogs_per_pid.get(ln.product_id, Decimal('0'))
+                else:
+                    line_cogs = Decimal('0')
+                line_cogs_f = float(round(line_cogs, 4))
+                if line_cogs_f > 0:
+                    sub_f = float(subtotal)
+                    line['cogs']   = line_cogs_f
+                    line['margin'] = round((sub_f - line_cogs_f) / sub_f * 100, 1) if sub_f > 0 else None
             items.append(line)
+
         cogs    = float(round(cogs_by_sale.get(sid, Decimal('0')), 4))
         total_f = float(round(total, 2))
         margin  = round((total_f - cogs) / total_f * 100, 1) if total_f > 0 and cogs > 0 else None

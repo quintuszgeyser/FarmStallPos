@@ -433,22 +433,22 @@
       .pr-check { display: flex; align-items: center; justify-content: center; padding-top: 2px; }
       .pr-check input[type=checkbox] { width: 20px; height: 20px; }
       .pr-name { grid-column: 2; min-width: 0; }
-      .pr-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; }
-      /* Two-column meta: stock+barcode left | price+COGS+margin right */
+      .pr-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 700; }
+      /* Mobile meta: stock+price top row | barcode on its own row below */
       .pr-mobile-meta {
-        display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 0 .5rem;
-        align-items: start;
-        margin-top: 5px;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin-top: 6px;
       }
-      .pr-mm-left, .pr-mm-right { display: flex; flex-direction: column; gap: 2px; }
+      .pr-mm-top { display: flex; justify-content: space-between; align-items: flex-start; gap: .5rem; }
+      .pr-mm-left, .pr-mm-right { display: flex; flex-direction: column; gap: 3px; }
       .pr-mm-right { align-items: flex-end; text-align: right; }
-      .pr-mm-stock  { font-size: 12px; color: var(--dd-ink); }
-      .pr-mm-barcode { font-size: 11px; color: #888; font-family: monospace; letter-spacing: .02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 14ch; }
-      .pr-mm-price  { font-size: 14px; }
-      .pr-mm-cogs   { font-size: 11px; color: var(--dd-ink); opacity: .7; }
-      .pr-mm-margin { font-size: 11px; color: var(--dd-ink); opacity: .7; }
+      .pr-mm-stock  { font-size: 13px; color: var(--dd-ink); }
+      .pr-mm-barcode { font-size: 13px; color: #888; font-family: monospace; letter-spacing: .04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .pr-mm-price  { font-size: 16px; font-weight: 700; }
+      .pr-mm-cogs   { font-size: 12px; color: var(--dd-ink); opacity: .7; }
+      .pr-mm-margin { font-size: 12px; color: var(--dd-ink); opacity: .7; }
       /* ⋮ button: top-aligned with small top padding */
       .pr-more-wrap { grid-column: 3; display: flex; align-items: flex-start; justify-content: center; padding-top: 2px; }
       .pr-more-btn { min-width: 44px; min-height: 44px; font-size: 28px; padding: 0; }
@@ -529,7 +529,7 @@
     /* Line items in expanded row */
     .tx-line-hdr, .tx-line-row {
       display: grid;
-      grid-template-columns: 32px 1fr 60px 90px 80px 1fr;
+      grid-template-columns: 32px 1fr 60px 90px 80px 75px 65px 1fr;
       gap: 0 8px; align-items: center; padding: 7px 6px; font-size: 13px;
     }
     .tx-line-hdr {
@@ -597,10 +597,12 @@
       .tx-id { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
       .tx-rev { white-space: nowrap; }
 
-      /* TX expanded line items */
-      .tx-line-hdr, .tx-line-row { grid-template-columns: 28px minmax(0,1fr) 58px 72px; gap: 0 4px; padding: 5px 4px; }
+      /* TX expanded line items: show checkbox | product | qty | total on mobile */
+      .tx-line-hdr, .tx-line-row { grid-template-columns: 28px minmax(0,1fr) 52px 68px; gap: 0 4px; padding: 5px 4px; }
       .tx-line-hdr > div:nth-child(4), .tx-line-row > div:nth-child(4),
-      .tx-line-hdr > div:nth-child(6), .tx-line-row > div:nth-child(6) { display: none !important; }
+      .tx-line-hdr > div:nth-child(6), .tx-line-row > div:nth-child(6),
+      .tx-line-hdr > div:nth-child(7), .tx-line-row > div:nth-child(7),
+      .tx-line-hdr > div:nth-child(8), .tx-line-row > div:nth-child(8) { display: none !important; }
 
       /* Item selection toolbar */
       .tx-item-sel-bar .btn { font-size: 15px; padding: 8px 14px; min-height: 44px; }
