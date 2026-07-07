@@ -88,7 +88,7 @@ def api_stock_batch_reorder(batch_id):
                 .filter_by(product_id=batch.product_id)
                 .filter(StockBatch.qty_remaining_base > 0)
                 .order_by(StockBatch.sort_order.asc().nulls_last(),
-                          StockBatch.purchased_at.desc())
+                          StockBatch.purchased_at.asc(), StockBatch.id.asc())
                 .all())
 
     if action == 'use_next':

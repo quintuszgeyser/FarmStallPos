@@ -2721,9 +2721,11 @@ document.getElementById('products-card-list')?.addEventListener('click', async (
     e.stopPropagation();
     const batchId = reorderBtn.dataset.reorderBatch;
     const action  = reorderBtn.dataset.reorderAction;
+    const pid     = reorderBtn.closest('.product-row')?.dataset.productId;
     try {
       await api(`/api/stock/batches/${batchId}/reorder`, { method: 'POST', body: JSON.stringify({ action }) });
       await loadIngredients();
+      if (pid) document.querySelector(`.product-row[data-product-id="${pid}"]`)?.click();
     } catch (err) { toast(err.message || 'Reorder failed', 'danger'); }
     return;
   }
@@ -2735,6 +2737,7 @@ document.getElementById('products-card-list')?.addEventListener('click', async (
     try {
       await api(`/api/stock/products/${pid}/reset_batch_order`, { method: 'POST' });
       await loadIngredients();
+      document.querySelector(`.product-row[data-product-id="${pid}"]`)?.click();
     } catch (err) { toast(err.message || 'Reset failed', 'danger'); }
     return;
   }
