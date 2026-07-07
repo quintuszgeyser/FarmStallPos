@@ -345,9 +345,9 @@
     .product-col-header,
     .product-row {
       display: grid;
-      grid-template-columns: 24px 1fr 90px 90px 130px 90px 68px 68px 28px;
-      column-gap: .6rem;
-      padding: .45rem .6rem;
+      grid-template-columns: 24px minmax(0,1fr) 90px 90px 130px 90px 68px 68px 28px;
+      column-gap: clamp(.3rem, .8vw, .6rem);
+      padding: clamp(5px, 1vw, 8px) clamp(6px, 1.2vw, 10px);
       align-items: center;
     }
     .product-col-header {
@@ -421,13 +421,16 @@
       }
       .product-col-header { display: none; }
       .product-row {
-        grid-template-columns: 24px 1fr 28px;
+        grid-template-columns: 24px minmax(0,1fr) 28px;
         border-top: 2px solid var(--lc-gold-border) !important;
         border-radius: var(--dd-radius) !important;
-        margin-bottom: .45rem;
+        margin-bottom: .35rem;
+        padding: 5px 8px;
+        min-height: 38px;
       }
       .pr-stock, .pr-price, .pr-barcode, .pr-cogs, .pr-markup, .pr-margin { display: none; }
-      .pr-name { grid-column: 2; }
+      .pr-name { grid-column: 2; min-width: 0; }
+      .pr-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .pr-more-wrap { grid-column: 3; }
       .pr-body { grid-column: 1 / -1; }
       .pr-mobile-meta { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--dd-ink); margin-top: .2rem; }
@@ -438,6 +441,13 @@
       /* Selection bar — wrap on mobile */
       #products-sel-bar { flex-wrap: wrap; gap: .35rem; }
       #products-sel-bar .sel-bar-actions { flex-wrap: wrap; gap: .35rem; }
+    }
+
+    /* ── Products — tablet (640-900px): hide COGS/markup/margin, keep barcode ── */
+    @media (min-width: 640px) and (max-width: 900px) {
+      .product-col-header,
+      .product-row { grid-template-columns: 24px minmax(0,1fr) 80px 80px 110px 28px; }
+      .pr-cogs, .pr-markup, .pr-margin { display: none; }
     }
 
     /* ── Users ── */
@@ -488,10 +498,10 @@
     /* ── Transaction table ── */
     .tx-hdr, .tx-row {
       display: grid;
-      grid-template-columns: 100px 1fr 80px 52px 90px 80px 68px 156px;
+      grid-template-columns: 100px minmax(0,1fr) 80px 52px 90px 80px 68px 156px;
       align-items: center;
-      gap: 0 8px;
-      padding: 7px 10px;
+      gap: 0 clamp(4px, .8vw, 8px);
+      padding: clamp(5px, 1vw, 7px) clamp(6px, 1.2vw, 10px);
     }
     .tx-hdr {
       position: sticky; top: 0; background: #fff; z-index: 5;
@@ -549,31 +559,45 @@
     /* Product barcode SVG */
     .pr-barcode-svg { max-width: 100%; height: 28px; display: block; }
     .pr-barcode     { display: flex; flex-direction: column; gap: 1px; }
+    /* TX tablet (768–1100px): drop User + Items columns */
+    @media (min-width: 768px) and (max-width: 1100px) {
+      .tx-hdr, .tx-row { grid-template-columns: 90px minmax(0,1fr) 80px 68px 68px auto; }
+      .tx-hdr > div:nth-child(3), .tx-row > div:nth-child(3),
+      .tx-hdr > div:nth-child(4), .tx-row > div:nth-child(4) { display: none !important; }
+    }
+
     @media (max-width: 767px) {
-      /* Nav tabs — compact + scrollable */
+      /* Nav tabs — compact */
       .nav-tabs .nav-link { font-size: 13px; padding: 6px 10px; }
 
-      /* TX outer row — ID and Revenue share space, actions stay fixed */
-      .tx-hdr, .tx-row { grid-template-columns: 1fr 1fr 130px; }
+      /* TX outer row: # | Revenue | Actions — all stay aligned via shared template */
+      .tx-hdr, .tx-row {
+        grid-template-columns: minmax(0,1fr) 68px auto;
+        padding: 5px 8px;
+        gap: 0 6px;
+      }
       .tx-hdr > div:nth-child(2), .tx-row > div:nth-child(2),
       .tx-hdr > div:nth-child(3), .tx-row > div:nth-child(3),
       .tx-hdr > div:nth-child(4), .tx-row > div:nth-child(4),
       .tx-hdr > div:nth-child(6), .tx-row > div:nth-child(6),
       .tx-hdr > div:nth-child(7), .tx-row > div:nth-child(7) { display: none !important; }
+      /* Prevent ID cell content from blowing out the 1fr column */
+      .tx-id { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+      .tx-rev { white-space: nowrap; }
 
-      /* TX expanded line items — hide Unit Price + Discount columns */
-      .tx-line-hdr, .tx-line-row { grid-template-columns: 32px 1fr 65px 80px; gap: 0 6px; }
+      /* TX expanded line items */
+      .tx-line-hdr, .tx-line-row { grid-template-columns: 28px minmax(0,1fr) 58px 72px; gap: 0 4px; padding: 5px 4px; }
       .tx-line-hdr > div:nth-child(4), .tx-line-row > div:nth-child(4),
       .tx-line-hdr > div:nth-child(6), .tx-line-row > div:nth-child(6) { display: none !important; }
 
-      /* Item selection toolbar — full-size buttons */
+      /* Item selection toolbar */
       .tx-item-sel-bar .btn { font-size: 15px; padding: 8px 14px; min-height: 44px; }
       .tx-item-sel-bar .btn-link { min-height: 44px; padding: 8px 10px; }
 
-      /* TX action buttons — fit 4 buttons in 130px */
-      .tx-actions { gap: 0; }
-      .tx-act { min-width: 32px; min-height: 44px; font-size: 17px; padding: 4px 2px; }
-      .tx-expand-btn { min-width: 26px; min-height: 44px; }
+      /* Action buttons — tighter touch targets */
+      .tx-actions { gap: 0; flex-wrap: nowrap; }
+      .tx-act { min-width: 30px; min-height: 44px; font-size: 16px; padding: 4px 2px; }
+      .tx-expand-btn { min-width: 24px; min-height: 44px; }
     }
 
     /* ── Toasts - doodle style ── */
