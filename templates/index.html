@@ -345,7 +345,7 @@
     .product-col-header,
     .product-row {
       display: grid;
-      grid-template-columns: 24px minmax(0,1fr) 90px 90px 130px 90px 68px 68px 28px;
+      grid-template-columns: 24px minmax(0,1fr) 90px 90px 160px 90px 68px 68px 28px;
       column-gap: clamp(.3rem, .8vw, .6rem);
       padding: clamp(5px, 1vw, 8px) clamp(6px, 1.2vw, 10px);
       align-items: center;
@@ -382,8 +382,8 @@
     .pr-name-text { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .pr-stock   { font-size: 13px; white-space: nowrap; }
     .pr-price   { font-size: 13px; font-weight: 600; white-space: nowrap; }
-    .pr-barcode { font-size: 12px; color: var(--dd-ink); font-variant-numeric: tabular-nums; overflow: hidden; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; }
-    .pr-barcode-num { white-space: nowrap; text-overflow: ellipsis; overflow: hidden; max-width: 100%; }
+    .pr-barcode { overflow: hidden; display: flex; align-items: center; }
+    .pr-barcode-num { display: none; }
     .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
     .pr-more-wrap { position: relative; display: flex; justify-content: center; }
     .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 8px 6px; line-height: 1; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; }
@@ -569,8 +569,7 @@
     }
     .tx-expand-btn:hover { background: rgba(0,0,0,0.07); }
     /* Product barcode SVG */
-    .pr-barcode-svg { max-width: 100%; height: 28px; display: block; }
-    .pr-barcode     { display: flex; flex-direction: column; gap: 1px; }
+    .pr-barcode-svg { width: 100%; height: 32px; display: block; }
     /* TX tablet (768–1100px): drop User + Items columns */
     @media (min-width: 768px) and (max-width: 1100px) {
       .tx-hdr, .tx-row { grid-template-columns: 90px minmax(0,1fr) 80px 68px 68px auto; }

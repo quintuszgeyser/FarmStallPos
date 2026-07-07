@@ -1506,8 +1506,8 @@ function _renderBarcodes(items) {
     try {
       JsBarcode(el, p.barcode, {
         format,
-        width:        1.2,
-        height:       28,
+        width:        1.5,
+        height:       32,
         displayValue: false,
         margin:       2,
         lineColor:    '#222',
