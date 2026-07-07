@@ -4864,8 +4864,10 @@ function _renderTxBody(body, t, admin) {
       if (ln.discount.cart) { const d = ln.discount.cart; parts.push(d.type==='pct' ? `${d.value}% cart` : `R${fmt(d.value)} cart`); }
       if (parts.length) disc = `<span class="text-success" style="font-size:11px">${parts.join(' + ')}</span>`;
     }
-    const cogsCell   = admin && ln.cogs   != null ? `<div class="small text-muted">R${fmt(ln.cogs)}</div>`   : `<div class="${admin ? 'small text-muted' : 'd-none'}">—</div>`;
-    const marginCell = admin && ln.margin != null ? `<div class="small ${ln.margin >= 50 ? 'text-success' : ln.margin < 20 ? 'text-danger' : 'text-muted'}">${ln.margin}%</div>` : `<div class="${admin ? 'small text-muted' : 'd-none'}">—</div>`;
+    const lineProfitF = (admin && ln.cogs != null) ? ln.subtotal - ln.cogs : null;
+    const cogsCell    = admin && ln.cogs   != null ? `<div class="small text-muted">R${fmt(ln.cogs)}</div>`   : `<div class="${admin ? 'small text-muted' : 'd-none'}">—</div>`;
+    const profitCell  = admin && lineProfitF != null ? `<div class="small text-success fw-semibold">R${fmt(lineProfitF)}</div>` : `<div class="${admin ? 'small text-muted' : 'd-none'}">—</div>`;
+    const marginCell  = admin && ln.margin != null ? `<div class="small ${ln.margin >= 50 ? 'text-success' : ln.margin < 20 ? 'text-danger' : 'text-muted'}">${ln.margin}%</div>` : `<div class="${admin ? 'small text-muted' : 'd-none'}">—</div>`;
     return `
       <div class="tx-line-row" data-line-idx="${i}">
         <div><input type="checkbox" class="form-check-input tx-line-chk" data-idx="${i}"></div>
@@ -4874,6 +4876,7 @@ function _renderTxBody(body, t, admin) {
         <div class="small text-muted">R${fmt(ln.unit_price)}</div>
         <div class="small fw-semibold">R${fmt(ln.subtotal)}</div>
         ${cogsCell}
+        ${profitCell}
         ${marginCell}
         <div>${disc}</div>
       </div>`;
@@ -4888,6 +4891,7 @@ function _renderTxBody(body, t, admin) {
           <div></div><div>Product</div><div class="text-center">Qty</div>
           <div>Unit Price</div><div>Total</div>
           <div class="${admin ? '' : 'd-none'}">COGS</div>
+          <div class="${admin ? '' : 'd-none'}">Profit</div>
           <div class="${admin ? '' : 'd-none'}">Margin</div>
           <div>Discount</div>
         </div>
