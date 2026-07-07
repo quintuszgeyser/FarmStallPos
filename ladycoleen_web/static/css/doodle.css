@@ -46,7 +46,7 @@ body {
 .lc-btn-primary {
   background: var(--lc-gold);
   border: 2px solid var(--lc-gold-hover);
-  color: #fff !important;
+  color: #fff;
   font-weight: 700;
   border-radius: 6px 10px 8px 10px / 10px 6px 10px 8px;
   box-shadow: 2px 2px 0 var(--lc-gold-hover);
