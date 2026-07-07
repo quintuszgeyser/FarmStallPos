@@ -616,8 +616,15 @@ function renderProductsCards() {
         <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
         ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
         <div class="pr-mobile-meta">
-          ${priceDisplay ? `<span class="text-success fw-semibold">${priceDisplay}</span>` : ''}
-          ${stockMobile  ? `<span>${stockMobile}</span>` : ''}
+          <div class="pr-mm-left">
+            ${stockMobile ? `<span class="pr-mm-stock">${stockMobile}</span>` : ''}
+            ${p.barcode   ? `<span class="pr-mm-barcode">${escapeHtml(p.barcode)}</span>` : ''}
+          </div>
+          <div class="pr-mm-right">
+            ${priceDisplay ? `<span class="pr-mm-price text-success fw-semibold">${priceDisplay}</span>` : ''}
+            ${margins ? `<span class="pr-mm-cogs">${escapeHtml(margins.costLabel)}</span>` : ''}
+            ${margins ? `<span class="pr-mm-margin">${margins.margin}%</span>` : ''}
+          </div>
         </div>
       </div>
       <div class="pr-stock">${stockHtml}</div>
