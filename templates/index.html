@@ -410,44 +410,42 @@
     .products-toolbar-tabs { min-width: 0; }
     .products-toolbar-actions { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
 
-    /* ── Mobile ── */
-    @media (max-width: 639px) {
+    /* ── Products card layout — phones + tablets up to 900px ── */
+    @media (max-width: 900px) {
       .products-toolbar-actions { flex-wrap: wrap; gap: .35rem; }
       .products-toolbar-actions .form-control { flex: 1 1 120px; min-width: 0; width: auto !important; }
       .products-toolbar-actions .btn-sm { font-size: 12px; padding: 4px 8px; }
-      /* Hide button text on very small screens, keep icon */
       @media (max-width: 420px) {
         .products-toolbar-actions .btn-label { display: none; }
       }
+      /* Card row: checkbox | name+meta | action button */
       .product-col-header { display: none; }
       .product-row {
-        grid-template-columns: 24px minmax(0,1fr) 28px;
+        grid-template-columns: 32px minmax(0,1fr) 44px;
         border-top: 2px solid var(--lc-gold-border) !important;
         border-radius: var(--dd-radius) !important;
         margin-bottom: .35rem;
-        padding: 5px 8px;
-        min-height: 38px;
+        padding: 8px 10px;
+        min-height: 52px;
       }
       .pr-stock, .pr-price, .pr-barcode, .pr-cogs, .pr-markup, .pr-margin { display: none; }
+      .pr-check { display: flex; align-items: center; justify-content: center; }
+      .pr-check input[type=checkbox] { width: 20px; height: 20px; }
       .pr-name { grid-column: 2; min-width: 0; }
-      .pr-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .pr-more-wrap { grid-column: 3; }
+      .pr-name-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+      /* Fill the card: show price + stock inline below the name */
+      .pr-mobile-meta { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; font-size: 13px; color: var(--dd-ink); margin-top: 3px; }
+      /* Bigger tap target for the ⋮ button */
+      .pr-more-wrap { grid-column: 3; display: flex; align-items: center; justify-content: center; }
+      .pr-more-btn { min-width: 44px; min-height: 44px; font-size: 20px; padding: 0; }
       .pr-body { grid-column: 1 / -1; }
-      .pr-mobile-meta { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; font-size: 12px; color: var(--dd-ink); margin-top: .2rem; }
       /* Adjustment history — stack controls */
       #adj-type-filter, #adj-date-filter { width: 100% !important; }
       .adj-filter-row { flex-direction: column !important; align-items: stretch !important; }
       .adj-filter-row > * { width: 100% !important; }
-      /* Selection bar — wrap on mobile */
+      /* Selection bar — wrap */
       #products-sel-bar { flex-wrap: wrap; gap: .35rem; }
       #products-sel-bar .sel-bar-actions { flex-wrap: wrap; gap: .35rem; }
-    }
-
-    /* ── Products — tablet (640-900px): hide COGS/markup/margin, keep barcode ── */
-    @media (min-width: 640px) and (max-width: 900px) {
-      .product-col-header,
-      .product-row { grid-template-columns: 24px minmax(0,1fr) 80px 80px 110px 28px; }
-      .pr-cogs, .pr-markup, .pr-margin { display: none; }
     }
 
     /* ── Users ── */
