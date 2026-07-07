@@ -218,7 +218,7 @@ def api_transactions_post():
         pid        = int(item['product_id'])
         qty        = Decimal(str(item.get('qty', 1)))
         subs_raw   = item.get('subs', {})
-        # Always use the server-side price — never trust the client-supplied value.
+        # Use the server-side price as the source of truth.
         _prod_price = Product.query.with_entities(
             Product.price, Product.price_per_unit, Product.sold_by_weight
         ).filter_by(id=pid).first()
@@ -229,6 +229,16 @@ def api_transactions_post():
             unit_price = Decimal(str(_prod_price.price_per_unit))
         else:
             unit_price = Decimal(str(_prod_price.price or 0))
+        # Admin-authorized discounts: trust the client's discounted unit_price.
+        # Capped at the server price so it can only go down, never up.
+        has_disc = item.get('item_discount') or item.get('special_name') or cart_discount
+        if u and u.role == 'admin' and has_disc and item.get('unit_price') is not None:
+            try:
+                client_price = Decimal(str(item['unit_price']))
+                if Decimal('0') <= client_price <= unit_price:
+                    unit_price = client_price
+            except Exception:
+                pass
         subs       = {int(k): int(v) for k, v in subs_raw.items()} if subs_raw else {}
         extras     = item.get('extras', [])
         item_discount = item.get('item_discount')
