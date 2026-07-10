@@ -258,6 +258,7 @@ class StockBatch(db.Model):
     supplier_id         = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
     user_id             = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     sort_order          = db.Column(db.Integer, nullable=True)
+    import_run_id       = db.Column(db.String(36), nullable=True)  # UUID grouping batches from one CSV import
 
 
 class StockConsumption(db.Model):

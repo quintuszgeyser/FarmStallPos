@@ -1702,6 +1702,8 @@ function openProductEditor(p) {
   updatePkgSizeBaseDisplay();
   renderRecipeLines();
   renderPackagesTable();
+  if (p?.product_type === 'simple' && p?.id) loadPurchaseHistory(p.id);
+  else { const h = document.getElementById('purchase-history-list'); if (h) h.innerHTML = ''; }
   const isEdit = !!p?.id;
   document.getElementById('btn-add-product')   ?.classList.toggle('hidden', isEdit);
   document.getElementById('btn-update-product') ?.classList.toggle('hidden', !isEdit);
@@ -2560,6 +2562,32 @@ function buildProductPayload() {
 }
 
 // ── Legacy purchase (simple products) ──
+async function loadPurchaseHistory(pid) {
+  const host = document.getElementById('purchase-history-list');
+  if (!host) return;
+  try {
+    const rows = await api(`/api/purchases?product_id=${pid}`);
+    if (!rows.length) { host.innerHTML = '<div class="text-muted small">No purchase history.</div>'; return; }
+    host.innerHTML = `
+      <div class="small fw-bold text-muted mb-1">Purchase history</div>
+      <table class="table table-sm" style="font-size:12px">
+        <thead class="table-light"><tr><th>Date</th><th class="text-end">Qty</th><th class="text-end">Price/unit</th><th></th></tr></thead>
+        <tbody>${rows.map(r => `
+          <tr>
+            <td>${new Date(r.date_time).toLocaleDateString('en-ZA')}</td>
+            <td class="text-end">${r.qty_added}</td>
+            <td class="text-end">R${fmt(r.purchase_price)}</td>
+            <td class="text-end"><button class="btn btn-outline-danger btn-sm py-0 px-1"
+              data-delete-purchase-id="${r.id}"
+              data-delete-purchase-qty="${r.qty_added}"
+              data-delete-purchase-pid="${pid}"
+              title="Delete this purchase"><i class="bi bi-trash"></i></button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) { host.innerHTML = ''; }
+}
+
 document.getElementById('btn-add-purchase')?.addEventListener('click', async () => {
   const pid   = parseInt(document.getElementById('p-id').value || '0', 10);
   const qty   = parseInt(document.getElementById('pur-qty').value || '0', 10);
@@ -2567,8 +2595,26 @@ document.getElementById('btn-add-purchase')?.addEventListener('click', async () 
   try {
     await api('/api/purchases', { method: 'POST', body: JSON.stringify({ product_id: pid, qty_added: qty, purchase_price: price }) });
     await loadProducts();
+    await loadPurchaseHistory(pid);
     toast('Purchase recorded, stock updated');
   } catch (e) { toast(e.message, 'error'); }
+});
+
+document.getElementById('productEditorModal')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-delete-purchase-id]');
+  if (!btn) return;
+  const purId = btn.dataset.deletePurchaseId;
+  const qty   = btn.dataset.deletePurchaseQty;
+  const pid   = btn.dataset.deletePurchasePid;
+  if (!confirm(`Delete purchase of ${qty} units? This will subtract ${qty} from stock.`)) return;
+  try {
+    const res = await api(`/api/purchases/${purId}`, { method: 'DELETE' });
+    const stockEl = document.getElementById('p-stock');
+    if (stockEl && res.new_stock_qty != null) stockEl.value = res.new_stock_qty;
+    await loadProducts();
+    await loadPurchaseHistory(parseInt(pid));
+    toast('Purchase deleted, stock updated', 'success', 2500);
+  } catch (err) { toast(err.message || 'Delete failed', 'danger'); }
 });
 
 document.getElementById('btn-suggest-price')?.addEventListener('click', async () => {
@@ -2697,6 +2743,10 @@ function _buildStockBody(item, prod) {
               data-edit-batch-qty-base="${b.qty_purchased_base}"
               data-edit-batch-qty-remaining="${b.qty_remaining_base}"
               data-edit-batch-unit="${item.unit_type}"><i class="bi bi-pencil"></i></button>
+            ${Math.abs(b.qty_remaining_base - b.qty_purchased_base) < 0.0001 ? `<button class="btn btn-outline-danger btn-sm py-0 px-1" title="Delete batch"
+              data-delete-batch-id="${b.id}"
+              data-delete-batch-date="${new Date(b.purchased_at).toLocaleDateString('en-ZA')}"
+              data-delete-batch-product="${item.name}"><i class="bi bi-trash"></i></button>` : ''}
           </div>
         </td>`;
       tbody.appendChild(tr);
@@ -2821,6 +2871,24 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
     toast('Batch updated', 'success', 2000);
     await loadIngredients();
   } catch (e) { toast(e.message, 'error'); }
+});
+
+// ── Delete Batch ──
+document.getElementById('products-card-list')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-delete-batch-id]');
+  if (!btn) return;
+  e.stopPropagation();
+  const batchId = btn.dataset.deleteBatchId;
+  const date    = btn.dataset.deleteBatchDate;
+  const product = btn.dataset.deleteBatchProduct;
+  if (!confirm(`Delete stock batch for "${product}" received on ${date}?\n\nThis cannot be undone.`)) return;
+  try {
+    await api(`/api/stock/batches/${batchId}`, { method: 'DELETE' });
+    toast('Batch deleted', 'success', 2000);
+    const pid = btn.closest('.product-row')?.dataset.productId;
+    await loadIngredients();
+    if (pid) document.querySelector(`.product-row[data-product-id="${pid}"]`)?.click();
+  } catch (err) { toast(err.message || 'Delete failed', 'danger'); }
 });
 
 // ── Receive Stock Modal ──
@@ -3626,6 +3694,13 @@ async function loadAdjustments() {
           <div>${new Date(r.adjusted_at).toLocaleString('en-ZA')}</div>
           ${r.adjusted_by ? `<div>${r.adjusted_by}</div>` : ''}
           ${isWriteoff ? `<button class="btn btn-outline-secondary btn-sm mt-1 py-0 px-2" data-editwo-id="${r.id}" data-editwo-product="${r.product_name}" data-editwo-qty="${Math.abs(r.qty_change_base)}" data-editwo-unit="${r.base_unit}" data-editwo-reason="${r.reason}" data-editwo-unit-type=""><i class="bi bi-pencil me-1"></i>Edit</button>` : ''}
+          <button class="btn btn-outline-danger btn-sm mt-1 py-0 px-2"
+            data-delete-adj-id="${r.id}"
+            data-delete-adj-product="${r.product_name}"
+            data-delete-adj-type="${r.adjustment_type}"
+            data-delete-adj-qty="${Math.abs(r.qty_change_base)}"
+            data-delete-adj-unit="${r.base_unit}"
+            data-delete-adj-sign="${r.qty_change_base >= 0 ? '+' : '-'}"><i class="bi bi-trash"></i></button>
         </div>
       `;
       host.appendChild(row);
@@ -3724,6 +3799,26 @@ document.getElementById('btn-editwo-confirm')?.addEventListener('click', async (
     await loadAdjustments();
     await loadIngredients();
   } catch (e) { toast(e.message, 'error'); }
+});
+
+// ── Delete Adjustment ──
+document.getElementById('adjustments-list')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-delete-adj-id]');
+  if (!btn) return;
+  const adjId   = btn.dataset.deleteAdjId;
+  const product = btn.dataset.deleteAdjProduct;
+  const type    = btn.dataset.deleteAdjType;
+  const qty     = btn.dataset.deleteAdjQty;
+  const unit    = btn.dataset.deleteAdjUnit;
+  const sign    = btn.dataset.deleteAdjSign;
+  const action  = sign === '+' ? 'consume back via FIFO' : 'restore to stock';
+  if (!confirm(`Delete this ${type} for "${product}" (${sign}${qty}${unit})?\n\nThis will ${action}. Cannot be undone.`)) return;
+  try {
+    await api(`/api/stock/adjustments/${adjId}`, { method: 'DELETE' });
+    toast('Adjustment deleted and stock reversed', 'success', 2500);
+    await loadAdjustments();
+    await loadIngredients();
+  } catch (err) { toast(err.message || 'Delete failed', 'danger'); }
 });
 
 // ═══════════════════════════════════════════════════════
@@ -6833,9 +6928,35 @@ document.getElementById('btn-os-import')?.addEventListener('click', async () => 
     const resp = await fetch('/api/stock/opening-import?mode=import', { method: 'POST', body: formData });
     const data = await resp.json();
     if (!resp.ok) { toast(data.error || 'Import failed', 'danger'); return; }
-    toast(`Opening stock imported: ${data.rows_imported} batch(es) created`, 'success', 5000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('openingStockModal')).hide();
     await loadIngredients();
+    const runId = data.run_id;
+    if (runId) {
+      const toastEl = document.createElement('div');
+      toastEl.className = 'toast align-items-center text-bg-success border-0 show position-fixed bottom-0 end-0 m-3';
+      toastEl.style.zIndex = '9999';
+      toastEl.innerHTML = `
+        <div class="d-flex">
+          <div class="toast-body">Opening stock imported: ${data.rows_imported} batch(es) created.
+            <button class="btn btn-sm btn-outline-light ms-2" data-undo-import>Undo</button>
+          </div>
+          <button type="button" class="btn-close btn-close-white me-2 m-auto" data-dismiss-toast></button>
+        </div>`;
+      document.body.appendChild(toastEl);
+      toastEl.querySelector('[data-dismiss-toast]').addEventListener('click', () => toastEl.remove());
+      toastEl.querySelector('[data-undo-import]').addEventListener('click', async () => {
+        if (!confirm(`Undo this import? All ${data.rows_imported} unconsumed batch(es) will be deleted.`)) return;
+        try {
+          const r = await api(`/api/stock/opening-import/${runId}`, { method: 'DELETE' });
+          toast(`Undone: ${r.deleted} batch(es) deleted${r.skipped_consumed ? `, ${r.skipped_consumed} skipped (already used)` : ''}`, 'success', 4000);
+          await loadIngredients();
+        } catch (err) { toast(err.message || 'Undo failed', 'danger'); }
+        toastEl.remove();
+      });
+      setTimeout(() => toastEl.remove(), 15000);
+    } else {
+      toast(`Opening stock imported: ${data.rows_imported} batch(es) created`, 'success', 5000);
+    }
   } catch (e) { toast('Import error: ' + e.message, 'danger'); }
 });
 

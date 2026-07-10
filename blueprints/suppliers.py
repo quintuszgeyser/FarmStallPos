@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request, current_app, send_from_directory,
 from sqlalchemy import func
 
 from helpers import require_login, require_role, current_user, _gen_barcode
-from models import db, Supplier, StockBatch, Product, SupplierDocument
+from models import db, Supplier, StockBatch, Purchase, Product, SupplierDocument
 
 bp = Blueprint('suppliers', __name__)
 
@@ -204,6 +204,8 @@ def api_suppliers_purchase_run(sid):
             batches_created += 1
         elif p.product_type == 'simple':
             p.stock_qty = (p.stock_qty or 0) + int(qty)
+            db.session.add(Purchase(product_id=pid, qty_added=int(qty), purchase_price=total_price,
+                                    user_id=u.id if u else None))
             batches_created += 1
 
     db.session.commit()

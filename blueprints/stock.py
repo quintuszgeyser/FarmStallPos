@@ -13,7 +13,7 @@ from helpers import (
 )
 from models import (
     db,
-    Product, RecipeLine, StockBatch, StockAdjustment, Purchase, Supplier, User,
+    Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, Purchase, Supplier, User,
 )
 
 bp = Blueprint('stock', __name__)
@@ -207,6 +207,23 @@ def api_stock_adjust():
     return jsonify({'ok': True, 'system_before': float(system_base), 'actual': float(actual_base), 'difference': float(diff), 'base_unit': p.base_unit})
 
 
+@bp.route('/api/stock/batches/<int:batch_id>', methods=['DELETE'])
+def api_stock_batch_delete(batch_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    batch = db.session.get(StockBatch, batch_id)
+    if not batch:
+        return jsonify({'error': 'Batch not found'}), 404
+    consumed = StockConsumption.query.filter_by(batch_id=batch_id).first()
+    if consumed:
+        return jsonify({'error': 'Cannot delete — stock from this batch has already been used in sales'}), 400
+    if Decimal(str(batch.qty_remaining_base)) != Decimal(str(batch.qty_purchased_base)):
+        return jsonify({'error': 'Cannot delete — some stock from this batch has already been consumed'}), 400
+    db.session.delete(batch)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/stock/batches/<int:batch_id>', methods=['PATCH'])
 def api_stock_batch_edit(batch_id):
     if not require_role('admin'):
@@ -317,6 +334,45 @@ def api_stock_adjustment_edit(adj_id):
     return jsonify({'ok': True, 'new_qty_base': float(new_qty_base), 'cost_written_off': float(adj.cost_written_off or 0)})
 
 
+@bp.route('/api/stock/adjustments/<int:adj_id>', methods=['DELETE'])
+def api_stock_adjustment_delete(adj_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    adj = db.session.get(StockAdjustment, adj_id)
+    if not adj:
+        return jsonify({'error': 'Adjustment not found'}), 404
+    p = db.session.get(Product, adj.product_id)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+    diff = Decimal(str(adj.qty_change_base))
+    now  = datetime.utcnow()
+    if diff < 0:
+        # Stock was consumed — restore it to the first available batch
+        restore_qty = abs(diff)
+        batch = (StockBatch.query.filter_by(product_id=p.id)
+                 .filter(StockBatch.qty_remaining_base > 0)
+                 .order_by(StockBatch.sort_order.asc().nulls_last(),
+                           StockBatch.purchased_at.asc(), StockBatch.id.asc())
+                 .first())
+        if not batch:
+            batch = StockBatch.query.filter_by(product_id=p.id).order_by(StockBatch.purchased_at.desc()).first()
+        if batch:
+            batch.qty_remaining_base = Decimal(str(batch.qty_remaining_base)) + restore_qty
+        else:
+            db.session.add(StockBatch(product_id=p.id, qty_purchased_base=restore_qty,
+                                      qty_remaining_base=restore_qty, cost_per_base_unit=Decimal('0'),
+                                      purchased_at=now))
+    elif diff > 0:
+        # Stock was added — consume it back via FIFO
+        current_stock = Decimal(str(get_stock_level(p.id)))
+        if diff > current_stock:
+            return jsonify({'error': f'Cannot reverse — only {float(current_stock)}{p.base_unit} in stock but adjustment added {float(diff)}{p.base_unit}. Some has already been sold.'}), 400
+        consume_fifo(p.id, diff, f'adj-del-{uuid.uuid4()}', now)
+    db.session.delete(adj)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/stock/adjustments', methods=['GET'])
 def api_stock_adjustments():
     if not require_role('admin'):
@@ -348,8 +404,34 @@ def api_stock_adjustments():
 def api_purchases_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    rows = Purchase.query.order_by(Purchase.date_time.desc()).all()
+    pid = request.args.get('product_id')
+    q = Purchase.query
+    if pid:
+        try: q = q.filter_by(product_id=int(pid))
+        except ValueError: pass
+    rows = q.order_by(Purchase.date_time.desc()).all()
     return jsonify([{'id': r.id, 'product_id': r.product_id, 'product_name': (db.session.get(Product, r.product_id) or Product(name=None)).name, 'qty_added': r.qty_added, 'purchase_price': float(r.purchase_price), 'date_time': r.date_time.isoformat()} for r in rows])
+
+
+@bp.route('/api/purchases/<int:purchase_id>', methods=['DELETE'])
+def api_purchases_delete(purchase_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    row = db.session.get(Purchase, purchase_id)
+    if not row:
+        return jsonify({'error': 'Purchase not found'}), 404
+    p = db.session.get(Product, row.product_id, with_for_update=True)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+    if p.product_type != 'simple':
+        return jsonify({'error': 'Only simple product purchases can be deleted here'}), 400
+    new_qty = (p.stock_qty or 0) - row.qty_added
+    if new_qty < 0:
+        return jsonify({'error': f'Cannot delete — stock would go negative. Some units may have already been sold.'}), 400
+    p.stock_qty = new_qty
+    db.session.delete(row)
+    db.session.commit()
+    return jsonify({'ok': True, 'new_stock_qty': new_qty})
 
 
 @bp.route('/api/purchases', methods=['POST'])
@@ -512,6 +594,7 @@ def api_opening_stock_import():
             'errors': errors,
         }), 400
 
+    run_id = str(uuid.uuid4())
     for b in batches_to_add:
         db.session.add(StockBatch(
             product_id=b['product_id'],
@@ -520,6 +603,7 @@ def api_opening_stock_import():
             cost_per_base_unit=Decimal(str(b['cost_per_base_unit'])),
             purchased_at=b['received_at'],
             user_id=b['user_id'],
+            import_run_id=run_id,
         ))
     db.session.commit()
 
@@ -527,5 +611,27 @@ def api_opening_stock_import():
         'mode': 'import',
         'rows_imported': len(batches_to_add),
         'rows_error': 0,
+        'run_id': run_id,
         'rows': results,
     })
+
+
+@bp.route('/api/stock/opening-import/<run_id>', methods=['DELETE'])
+def api_opening_stock_undo(run_id):
+    """Delete all unconsumed batches from a single opening-stock import run."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    batches = StockBatch.query.filter_by(import_run_id=run_id).all()
+    if not batches:
+        return jsonify({'error': 'Import run not found or already undone'}), 404
+    skipped = 0
+    deleted = 0
+    for b in batches:
+        consumed = StockConsumption.query.filter_by(batch_id=b.id).first()
+        if consumed or Decimal(str(b.qty_remaining_base)) != Decimal(str(b.qty_purchased_base)):
+            skipped += 1
+        else:
+            db.session.delete(b)
+            deleted += 1
+    db.session.commit()
+    return jsonify({'ok': True, 'deleted': deleted, 'skipped_consumed': skipped})
