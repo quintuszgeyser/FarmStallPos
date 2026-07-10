@@ -166,6 +166,10 @@ fi
 
 # Harden sshd: enable pubkey auth, disable password auth (safe only after key installed)
 SSHD_CFG=/etc/ssh/sshd_config
+if [ ! -f "$SSHD_CFG" ]; then
+  c_bold "  openssh-server not found — installing..."
+  apt-get install -y -qq openssh-server
+fi
 if [ -s /root/.ssh/authorized_keys ]; then
   sed -i 's/^#*PubkeyAuthentication.*/PubkeyAuthentication yes/'   "$SSHD_CFG"
   sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' "$SSHD_CFG"
