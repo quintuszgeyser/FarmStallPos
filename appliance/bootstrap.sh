@@ -30,7 +30,7 @@ FARMPOS_HOME="${FARMPOS_HOME:-/opt/farmpos}"
 SECRETS_DIR="$FARMPOS_HOME/secrets"
 APPLIANCE_DIR="$FARMPOS_HOME/appliance"
 REPO="quintuszgeyser/FarmStallPos"
-RAW="https://raw.githubusercontent.com/${REPO}/main/farm_pos_web/appliance"
+RAW="https://raw.githubusercontent.com/${REPO}/main/appliance"
 
 # ── Read secrets from environment (never from args) ───────────────────────────
 STORE_YML_B64="${FARMPOS_STORE_YML:-}"
