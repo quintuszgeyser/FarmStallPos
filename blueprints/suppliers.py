@@ -204,8 +204,9 @@ def api_suppliers_purchase_run(sid):
             batches_created += 1
         elif p.product_type == 'simple':
             p.stock_qty = (p.stock_qty or 0) + int(qty)
-            db.session.add(Purchase(product_id=pid, qty_added=int(qty), purchase_price=total_price,
-                                    user_id=u.id if u else None))
+            price_per_unit = total_price / int(qty) if int(qty) > 0 else total_price
+            db.session.add(Purchase(product_id=pid, qty_added=int(qty), purchase_price=price_per_unit,
+                                    date_time=purchase_date, user_id=u.id if u else None))
             batches_created += 1
 
     db.session.commit()
