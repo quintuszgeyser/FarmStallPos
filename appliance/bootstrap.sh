@@ -76,7 +76,18 @@ apt-get update -qq
 
 if ! command -v docker >/dev/null 2>&1; then
   c_bold "  Installing Docker..."
-  curl -fsSL https://get.docker.com | sh
+  if curl -fsSL https://get.docker.com | sh; then
+    c_green "  Docker installed via official script"
+  else
+    c_bold "  Official script failed — falling back to docker.io (Ubuntu repos)..."
+    apt-get install -y -qq docker.io docker-compose-v2
+    # docker-compose-v2 ships the compose binary at /usr/libexec/docker/cli-plugins/
+    # but may not link it — ensure 'docker compose' works
+    if ! docker compose version >/dev/null 2>&1; then
+      mkdir -p /usr/local/lib/docker/cli-plugins
+      ln -sf "$(command -v docker-compose 2>/dev/null || true)" /usr/local/lib/docker/cli-plugins/docker-compose 2>/dev/null || true
+    fi
+  fi
 else
   echo "  Docker: $(docker --version)"
 fi
