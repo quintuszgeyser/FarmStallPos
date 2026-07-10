@@ -88,7 +88,7 @@ else
   die "Docker installation failed — cannot continue."
 fi
 
-apt-get install -y -qq git gettext-base python3-yaml age openssl curl rclone screen
+apt-get install -y -qq git gettext-base python3-yaml age openssl curl rclone screen openssh-server
 
 # age 1.2.0+ removed age-keygen as a standalone binary; shim it so register-store.sh
 # finds it regardless of which package version is installed
