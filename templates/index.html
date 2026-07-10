@@ -2998,8 +2998,12 @@
           </select>
         </div>
         <div class="mb-2">
-          <label class="form-label small">Qty purchased <span class="text-muted" id="edit-batch-unit-label"></span></label>
-          <input id="edit-batch-qty-purchased" type="number" step="any" min="0.001" class="form-control" placeholder="0">
+          <label class="form-label small">Qty purchased</label>
+          <div class="input-group">
+            <input id="edit-batch-qty-purchased" type="number" step="any" min="0.001" class="form-control" placeholder="0">
+            <select id="edit-batch-unit" class="form-select" style="max-width:90px"></select>
+          </div>
+          <div id="edit-batch-qty-base-display" class="small text-muted mt-1"></div>
         </div>
         <div class="mb-2">
           <label class="form-label small">Total amount paid (R)</label>

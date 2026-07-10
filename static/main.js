@@ -2742,7 +2742,10 @@ function _buildStockBody(item, prod) {
               data-edit-batch-total="${totalCost}"
               data-edit-batch-qty-base="${b.qty_purchased_base}"
               data-edit-batch-qty-remaining="${b.qty_remaining_base}"
-              data-edit-batch-unit="${item.unit_type}"><i class="bi bi-pencil"></i></button>
+              data-edit-batch-unit="${item.unit_type}"
+              data-edit-batch-base-unit="${item.base_unit || 'g'}"
+              data-edit-batch-package-size="${item.package_size || ''}"
+              data-edit-batch-package-unit="${item.package_unit || ''}"><i class="bi bi-pencil"></i></button>
             ${Math.abs(b.qty_remaining_base - b.qty_purchased_base) < 0.0001 ? `<button class="btn btn-outline-danger btn-sm py-0 px-1" title="Delete batch"
               data-delete-batch-id="${b.id}"
               data-delete-batch-date="${new Date(b.purchased_at).toLocaleDateString('en-ZA')}"
@@ -2803,6 +2806,20 @@ document.getElementById('products-card-list')?.addEventListener('click', async (
 });
 
 // ── Edit Batch (delegated off products-card-list since batch rows are dynamic) ──
+function _updateEditBatchPreview() {
+  const qtyEl    = document.getElementById('edit-batch-qty-purchased');
+  const unitSel  = document.getElementById('edit-batch-unit');
+  const baseDisp = document.getElementById('edit-batch-qty-base-display');
+  if (!qtyEl || !unitSel || !baseDisp) return;
+  const qty  = parseFloat(qtyEl.value) || 0;
+  const conv = parseFloat(unitSel.options[unitSel.selectedIndex]?.dataset?.conv || '1');
+  const unitType = unitSel.dataset.unitType || 'unit';
+  baseDisp.textContent = qty > 0 ? `= ${displayQty(qty * conv, unitType)}` : '';
+}
+
+document.getElementById('edit-batch-qty-purchased')?.addEventListener('input', _updateEditBatchPreview);
+document.getElementById('edit-batch-unit')?.addEventListener('change', _updateEditBatchPreview);
+
 document.getElementById('products-card-list')?.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-edit-batch-id]');
   if (!btn) return;
@@ -2814,29 +2831,42 @@ document.getElementById('products-card-list')?.addEventListener('click', (e) => 
   const qtyBase      = parseFloat(btn.dataset.editBatchQtyBase || '0');
   const qtyRemaining = parseFloat(btn.dataset.editBatchQtyRemaining || '0');
   const unitType     = btn.dataset.editBatchUnit || 'unit';
+  const baseUnit     = btn.dataset.editBatchBaseUnit || 'g';
+  const packageSize  = btn.dataset.editBatchPackageSize || '';
+  const packageUnit  = btn.dataset.editBatchPackageUnit || '';
 
-  // Convert base qty to display unit for the input
-  const unitConversions = { weight: 1000, volume: 1000, unit: 1 };
-  const divisor = unitConversions[unitType] || 1;
-  const displayUnit = unitType === 'weight' ? 'kg' : unitType === 'volume' ? 'L' : 'unit';
-  const qtyDisplay = divisor > 1 ? qtyBase / divisor : qtyBase;
+  // Build unit dropdown (same options as receive modal)
+  const unitSel = document.getElementById('edit-batch-unit');
+  unitSel.innerHTML = '';
+  unitSel.dataset.unitType = unitType;
+  const opts = buildUnitOptions(unitType, packageSize ? parseFloat(packageSize) : null, packageUnit || null);
+  opts.forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o.value; opt.textContent = o.label; opt.dataset.conv = o.conv;
+    unitSel.appendChild(opt);
+  });
 
-  document.getElementById('edit-batch-id').value             = batchId;
-  document.getElementById('edit-batch-date').value           = date;
-  document.getElementById('edit-batch-total-price').value    = total;
-  document.getElementById('edit-batch-qty-purchased').value  = qtyDisplay;
-  document.getElementById('edit-batch-unit-label').textContent = `(${displayUnit})`;
-  // Store for save handler
-  document.getElementById('edit-batch-qty-purchased').dataset.unitDivisor   = divisor;
-  document.getElementById('edit-batch-qty-purchased').dataset.qtyRemaining  = qtyRemaining;
+  // Pre-select the "big" unit (kg/L) and show qty in that unit
+  const bigUnit = unitType === 'weight' ? 'kg' : unitType === 'volume' ? 'L' : baseUnit;
+  const bigOpt  = [...unitSel.options].find(o => o.value === bigUnit);
+  if (bigOpt) { bigOpt.selected = true; }
+  const conv       = parseFloat(unitSel.options[unitSel.selectedIndex]?.dataset?.conv || '1');
+  const qtyDisplay = conv > 1 ? +(qtyBase / conv).toFixed(6) : qtyBase;
 
-  const sel = document.getElementById('edit-batch-supplier');
-  sel.innerHTML = '<option value="">- No supplier -</option>';
+  document.getElementById('edit-batch-id').value            = batchId;
+  document.getElementById('edit-batch-date').value          = date;
+  document.getElementById('edit-batch-total-price').value   = total;
+  document.getElementById('edit-batch-qty-purchased').value = qtyDisplay;
+  document.getElementById('edit-batch-qty-purchased').dataset.qtyRemaining = qtyRemaining;
+  document.getElementById('edit-batch-qty-base-display').textContent = '';
+
+  const supSel = document.getElementById('edit-batch-supplier');
+  supSel.innerHTML = '<option value="">- No supplier -</option>';
   (_suppliers || []).forEach(s => {
     const opt = document.createElement('option');
     opt.value = s.id; opt.textContent = s.name;
     if (String(s.id) === String(supplierId)) opt.selected = true;
-    sel.appendChild(opt);
+    supSel.appendChild(opt);
   });
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('editBatchModal')).show();
@@ -2848,14 +2878,16 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
   const date         = document.getElementById('edit-batch-date').value;
   const totalPrice   = parseFloat(document.getElementById('edit-batch-total-price').value || '0');
   const qtyInput     = document.getElementById('edit-batch-qty-purchased');
+  const unitSel      = document.getElementById('edit-batch-unit');
   const qtyDisplay   = parseFloat(qtyInput.value || '0');
-  const divisor      = parseFloat(qtyInput.dataset.unitDivisor || '1');
-  const qtyBase      = qtyDisplay * divisor;
+  const conv         = parseFloat(unitSel.options[unitSel.selectedIndex]?.dataset?.conv || '1');
+  const qtyBase      = qtyDisplay * conv;
   const qtyRemaining = parseFloat(qtyInput.dataset.qtyRemaining || '0');
+  const unitType     = unitSel.dataset.unitType || 'unit';
 
   if (!totalPrice || totalPrice <= 0) return toast('Enter a valid total price', 'warning');
   if (!qtyDisplay || qtyDisplay <= 0) return toast('Enter a valid quantity', 'warning');
-  if (qtyBase < qtyRemaining) return toast(`Cannot reduce qty below what's already been consumed (${displayQty(qtyRemaining, qtyInput.dataset.unitDivisor > 1 ? (divisor === 1000 ? 'weight' : 'volume') : 'unit')} remaining)`, 'warning');
+  if (qtyBase < qtyRemaining) return toast(`Cannot reduce below already-consumed qty (${displayQty(qtyRemaining, unitType)} used)`, 'warning');
 
   try {
     await api(`/api/stock/batches/${batchId}`, {
