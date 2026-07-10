@@ -76,20 +76,16 @@ apt-get update -qq
 
 if ! command -v docker >/dev/null 2>&1; then
   c_bold "  Installing Docker..."
-  if curl -fsSL https://get.docker.com | sh; then
-    c_green "  Docker installed via official script"
-  else
+  curl -fsSL https://get.docker.com | sh || true
+  if ! command -v docker >/dev/null 2>&1; then
     c_bold "  Official script failed — falling back to docker.io (Ubuntu repos)..."
-    apt-get install -y -qq docker.io docker-compose-v2
-    # docker-compose-v2 ships the compose binary at /usr/libexec/docker/cli-plugins/
-    # but may not link it — ensure 'docker compose' works
-    if ! docker compose version >/dev/null 2>&1; then
-      mkdir -p /usr/local/lib/docker/cli-plugins
-      ln -sf "$(command -v docker-compose 2>/dev/null || true)" /usr/local/lib/docker/cli-plugins/docker-compose 2>/dev/null || true
-    fi
+    apt-get install -y -qq docker.io docker-compose-v2 || apt-get install -y -qq docker.io
   fi
+fi
+if command -v docker >/dev/null 2>&1; then
+  c_green "  Docker: $(docker --version)"
 else
-  echo "  Docker: $(docker --version)"
+  die "Docker installation failed — cannot continue."
 fi
 
 apt-get install -y -qq git gettext-base python3-yaml age openssl curl rclone screen
