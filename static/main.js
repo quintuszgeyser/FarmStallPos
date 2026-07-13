@@ -532,7 +532,11 @@ function _productSortKey(p, col) {
     case 'stock':   return typeof p.stock_level === 'number' ? p.stock_level : (p.stock_qty || 0);
     case 'price':   return parseFloat(p.price || p.price_per_unit || 0);
     case 'barcode': return (p.barcode || '').toLowerCase();
-    case 'flags':   return [p.is_produced, p.is_prepared, p.sync_to_scale, p.is_for_sale, p.is_available_online].filter(Boolean).length;
+    case 'flags': {
+      const fl = [p.is_produced, p.is_prepared, p.sync_to_scale, p.is_for_sale, p.is_available_online];
+      const bitmask = fl.reduce((acc, f, i) => acc + (f ? (1 << (4 - i)) : 0), 0);
+      return fl.filter(Boolean).length * 32 + bitmask; // same combo → same key, count drives ordering
+    }
     case 'cogs': case 'markup': case 'margin': {
       const m = calcProductMargins(p);
       if (!m) return -Infinity;
