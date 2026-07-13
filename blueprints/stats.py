@@ -169,6 +169,34 @@ def api_stats():
         elif len(pids_in_sale) == 1:
             top_cogs_map[next(iter(pids_in_sale))] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
 
+    # COGS for batch-produced recipes: ingredients consumed at produce time, not sale time.
+    # Use all-time produce StockAdjustment records to compute weighted-average cost-per-unit,
+    # then multiply by qty sold in this period.
+    sold_pids = set(top_revenue_map.keys())
+    if sold_pids:
+        produced_recipes = {
+            p.id for p in Product.query.filter(
+                Product.id.in_(list(sold_pids)),
+                Product.product_type == 'recipe',
+                Product.is_produced == True
+            ).all()
+        }
+        if produced_recipes:
+            produce_adjs = StockAdjustment.query.filter(
+                StockAdjustment.product_id.in_(list(produced_recipes)),
+                StockAdjustment.adjustment_type == 'produce'
+            ).all()
+            _produce_totals = defaultdict(lambda: {'cost': Decimal('0'), 'units': 0})
+            for adj in produce_adjs:
+                _produce_totals[adj.product_id]['cost'] += Decimal(str(adj.cost_written_off or 0))
+                _produce_totals[adj.product_id]['units'] += int(adj.qty_change_base or 0)
+            for pid in produced_recipes:
+                d = _produce_totals.get(pid)
+                if d and d['units'] > 0:
+                    avg_cost_per_unit = d['cost'] / d['units']
+                    qty_sold = Decimal(str(top_qty_map.get(pid, 0)))
+                    top_cogs_map[pid] = float(avg_cost_per_unit * qty_sold)
+
     def _norm(pid, qty):
         avg = avg_portion_map.get(pid)
         return qty / avg if avg else qty

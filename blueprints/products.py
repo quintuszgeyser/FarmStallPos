@@ -430,12 +430,23 @@ def api_product_produce(pid):
 
     produce_uuid = str(uuid.uuid4())
     now = datetime.utcnow()
+    u = current_user()
+    total_ingredient_cost = Decimal('0')
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
-        consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches, produce_uuid, now)
+        total_ingredient_cost += consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches, produce_uuid, now)
     units_added = int((Decimal(str(p.yields_units)) * batches).to_integral_value())
-    p.stock_qty = (p.stock_qty or 0) + units_added
+    old_stock = p.stock_qty or 0
+    p.stock_qty = old_stock + units_added
+    # Record produce run so stats can attribute ingredient COGS to this product
+    db.session.add(StockAdjustment(
+        product_id=pid, adjustment_type='produce',
+        qty_change_base=units_added, system_qty_before=old_stock,
+        cost_written_off=total_ingredient_cost,
+        reason=f'Produce {batches} batch(es)',
+        adjusted_at=now, user_id=u.id if u else None
+    ))
     db.session.commit()
-    return jsonify({'ok': True, 'units_added': units_added, 'new_stock': p.stock_qty})
+    return jsonify({'ok': True, 'units_added': units_added, 'new_stock': p.stock_qty, 'cost': float(total_ingredient_cost)})
 
 
 @bp.route('/api/products/<int:pid>/image', methods=['POST'])
