@@ -505,7 +505,7 @@ function renderTellerGrid(q = '') {
       : (p.price != null ? `R${fmt(p.price)}` : '');
     tile.innerHTML = `
       ${p.image_url
-        ? `<div class="tpt-img-wrap"><img class="tpt-img" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt=""></div>`
+        ? `<img class="tpt-img" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt="">`
         : `<div class="tpt-ph"><i class="bi bi-box-seam"></i></div>`}
       <div class="tpt-info">
         <span class="tpt-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
