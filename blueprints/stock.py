@@ -274,8 +274,25 @@ def api_stock_writeoff():
     if not reason: return jsonify({'error': 'reason required'}), 400
     if qty <= 0:   return jsonify({'error': 'qty must be positive'}), 400
     p = db.session.get(Product, pid, with_for_update=True)
-    if not p or p.product_type != 'stock_item':
-        return jsonify({'error': 'Product not found or not a stock_item'}), 404
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+
+    # Batch-produced recipe: stock lives in stock_qty (integer finished-goods units)
+    if p.product_type == 'recipe' and p.is_produced:
+        qty_int = int(round(qty))
+        if qty_int <= 0:
+            return jsonify({'error': 'qty must be positive'}), 400
+        current = p.stock_qty or 0
+        if qty_int > current:
+            return jsonify({'error': f'Cannot write off {qty_int} — only {current} in stock'}), 400
+        u = current_user(); now = datetime.utcnow()
+        p.stock_qty = current - qty_int
+        db.session.add(StockAdjustment(product_id=pid, adjustment_type='writeoff', qty_change_base=-qty_int, system_qty_before=current, cost_written_off=None, reason=reason, adjusted_at=now, user_id=u.id if u else None))
+        db.session.commit()
+        return jsonify({'ok': True, 'qty_written_off': qty_int, 'base_unit': 'units', 'cost_written_off': 0})
+
+    if p.product_type != 'stock_item':
+        return jsonify({'error': 'Product is not a stock item or batch-produced recipe'}), 400
     conversion     = _unit_conversion(p, unit)
     qty_base       = Decimal(str(qty * conversion))
     system_before  = Decimal(str(get_stock_level(pid)))

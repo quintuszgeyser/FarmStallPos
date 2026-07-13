@@ -677,6 +677,7 @@ function renderProductsCards() {
           ` : ''}
           ${p.product_type === 'recipe' && p.is_produced ? `
             <button data-menu="produce"><i class="bi bi-fire me-1 text-warning"></i>Produce batch</button>
+            <button data-menu="writeoff-produced"><i class="bi bi-trash3 me-1"></i>Write Off</button>
           ` : ''}
           ${p.is_archived
             ? `<button data-menu="restore"><i class="bi bi-arrow-clockwise me-1"></i>Restore</button>`
@@ -721,7 +722,8 @@ function renderProductsCards() {
     moreMenu.querySelector('[data-menu="label"]')?.addEventListener('click',    e => { e.stopPropagation(); moreMenu.classList.remove('open'); openLabelPrintModal(p); });
     moreMenu.querySelector('[data-menu="archive"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openArchiveModal(p); });
     moreMenu.querySelector('[data-menu="restore"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openRestoreModal(p); });
-    moreMenu.querySelector('[data-menu="produce"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openProduceModal(p); });
+    moreMenu.querySelector('[data-menu="produce"]')?.addEventListener('click',         e => { e.stopPropagation(); moreMenu.classList.remove('open'); openProduceModal(p); });
+    moreMenu.querySelector('[data-menu="writeoff-produced"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openWriteoffModal(p); });
     if (isStockItem && stockItem) {
       moreMenu.querySelector('[data-menu="receive"]')?.addEventListener('click',   e => { e.stopPropagation(); moreMenu.classList.remove('open'); openReceiveStockModal(stockItem); });
       moreMenu.querySelector('[data-menu="stocktake"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openStocktakeModal(stockItem); });
@@ -3318,21 +3320,30 @@ let _writeoffItem = null;
 
 function openWriteoffModal(item) {
   _writeoffItem = item;
-  document.getElementById('writeoff-product-id').value   = item.id;
+  document.getElementById('writeoff-product-id').value        = item.id;
   document.getElementById('writeoff-product-name').textContent = item.name;
-  document.getElementById('writeoff-qty').value          = '';
-  document.getElementById('writeoff-reason').value       = '';
+  document.getElementById('writeoff-qty').value               = '';
+  document.getElementById('writeoff-reason').value            = '';
   hide(document.getElementById('writeoff-cost-preview'));
-  document.getElementById('writeoff-available').textContent = displayQty(item.stock_level || 0, item.unit_type);
 
-  // Unit dropdown
-  const unitSel = document.getElementById('writeoff-unit');
+  const isProduced = item.product_type === 'recipe' && item.is_produced;
+  const unitSel    = document.getElementById('writeoff-unit');
   unitSel.innerHTML = '';
-  buildUnitOptions(item.unit_type, item.package_size, item.package_unit).forEach(o => {
+
+  if (isProduced) {
+    const stock = item.stock_level ?? item.stock_qty ?? 0;
+    document.getElementById('writeoff-available').textContent = `${stock} units`;
     const opt = document.createElement('option');
-    opt.value = o.value; opt.textContent = o.label; opt.dataset.conv = o.conv;
+    opt.value = 'units'; opt.textContent = 'units'; opt.dataset.conv = 1;
     unitSel.appendChild(opt);
-  });
+  } else {
+    document.getElementById('writeoff-available').textContent = displayQty(item.stock_level || 0, item.unit_type);
+    buildUnitOptions(item.unit_type, item.package_size, item.package_unit).forEach(o => {
+      const opt = document.createElement('option');
+      opt.value = o.value; opt.textContent = o.label; opt.dataset.conv = o.conv;
+      unitSel.appendChild(opt);
+    });
+  }
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('writeoffModal')).show();
   setTimeout(() => document.getElementById('writeoff-qty').focus(), 300);
@@ -3379,10 +3390,11 @@ document.getElementById('btn-writeoff-confirm')?.addEventListener('click', async
       method: 'POST',
       body: JSON.stringify({ product_id: pid, qty, unit, reason })
     });
-    toast(
-      `Written off: ${displayQty(j.qty_written_off, _writeoffItem?.unit_type)} - Cost: R${j.cost_written_off.toFixed(4)}`,
-      'warning', 5000
-    );
+    const isProduced = _writeoffItem?.product_type === 'recipe' && _writeoffItem?.is_produced;
+    const msg = isProduced
+      ? `Written off: ${j.qty_written_off} units`
+      : `Written off: ${displayQty(j.qty_written_off, _writeoffItem?.unit_type)} - Cost: R${j.cost_written_off.toFixed(4)}`;
+    toast(msg, 'warning', 5000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('writeoffModal')).hide();
     await loadIngredients();
     await loadProducts();
