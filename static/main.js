@@ -3399,6 +3399,7 @@ function openWriteoffModal(item) {
 
 function updateWriteoffPreview() {
   if (!_writeoffItem) return;
+  if (_writeoffItem.product_type === 'recipe' && _writeoffItem.is_produced) return;
   const qty     = parseFloat(document.getElementById('writeoff-qty').value) || 0;
   const unitSel = document.getElementById('writeoff-unit');
   const conv    = parseFloat(unitSel.options[unitSel.selectedIndex]?.dataset?.conv || 1);
