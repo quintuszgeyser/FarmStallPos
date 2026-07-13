@@ -27,6 +27,18 @@ The venv `python.exe` stub is broken - use `C:\Python314\python.exe` directly:
 C:\Python314\python.exe -m pip install <package> --trusted-host pypi.org --trusted-host files.pythonhosted.org
 ```
 
+## Debugging & Deployment
+
+Before diagnosing any deploy or version issue as a browser cache problem, first verify the actual backend code and confirm the container was promoted correctly. Only conclude "stale cache" after confirming the served build matches the deployed commit (e.g. `docker exec farmpos-app grep -c "expected_string" /app/blueprints/products.py`). Skipping this step has repeatedly caused real backend bugs to be misattributed to caching, wasting multiple fix rounds.
+
+## Editing Discipline
+
+When asked to change only a subset of items (e.g. remove specific columns, fix a specific field), change **only** what was explicitly requested. Confirm scope before deleting or modifying adjacent items. Do not clean up, rename, or restructure things that were not part of the request.
+
+## Documentation / Obsidian
+
+After any code change, document the session outcome accurately in the Obsidian vault (`00-Home/Dashboard.md`, `05-Projects/Known Issues.md`). Re-verify claims before writing — do not record things that were planned but not completed, or states that were never true (e.g. "peel sensor disabled" when it was only noted as a workaround, or a deploy flow that doesn't match reality). Inaccurate vault notes cause confusion in future sessions.
+
 ## Deployment (Ubuntu Server via Docker)
 
 The production system runs on an Ubuntu 24.04 server (`farmpc` in `~/.ssh/config`) via Docker Compose at `~/farmpos-docker/`. SSH requires a jump host - see `~/.ssh/config`.
@@ -58,6 +70,14 @@ ssh farmpc 'cd ~/farmpos-docker && bash deploy.sh recognition'
 # Check container health
 ssh farmpc 'docker compose -f ~/farmpos-docker/docker-compose.yml ps'
 ```
+
+**Monorepo rule:** Both POS and web shop live in the same repo and **deploy together** as one unit. Never treat them as separate deploys. Always confirm you are editing the correct monorepo copy — not a stale standalone repo clone with a dead remote.
+
+**Post-deploy verification:** After any `deploy.sh` run, check for container name conflicts and confirm both containers are healthy before declaring success:
+```bash
+ssh farmpc 'docker compose -f ~/farmpos-docker/docker-compose.yml ps'
+```
+A container that exits silently is a failed deploy, not a success.
 
 **Critical deploy rules:**
 - ⚠️ **NEVER** use `deploy.sh web` / `deploy.sh pos` / `deploy.sh qa-pos` for a release —
