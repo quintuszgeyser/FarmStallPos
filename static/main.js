@@ -504,7 +504,7 @@ function renderTellerGrid(q = '') {
       : (p.price != null ? `R${fmt(p.price)}` : '');
     tile.innerHTML = `
       ${p.image_url
-        ? `<img class="tpt-img" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt="">`
+        ? `<div class="tpt-img-wrap"><img class="tpt-img" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt=""></div>`
         : `<div class="tpt-ph"><i class="bi bi-box-seam"></i></div>`}
       <div class="tpt-info">
         <span class="tpt-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
@@ -3875,52 +3875,52 @@ function renderCart() {
 
   Object.values(STATE.cart).forEach(item => {
     const row = document.createElement('div');
-    row.className = 'list-group-item d-flex justify-content-between align-items-center';
+    row.className = 'list-group-item px-2 py-2';
 
-    const basePrice    = item.is_weight ? parseFloat(item._display_total || 0) : parseFloat(item.unit_price);
+    const basePrice       = item.is_weight ? parseFloat(item._display_total || 0) : parseFloat(item.unit_price);
     const discountedPrice = applyItemDiscount(basePrice, item._discount);
-    const hasDiscount  = item._discount && discountedPrice < basePrice;
-
-    // Label - show strikethrough original if discounted
-    const label = item.is_weight ? `${item.name}` : `${item.name} × ${fmtQty(item.qty)}`;
-    const left  = document.createElement('span');
-    left.style.cssText = 'display:flex;align-items:center;gap:10px';
-
-    // Product image thumbnail (if the product has one)
+    const hasDiscount     = item._discount && discountedPrice < basePrice;
     const prod = STATE.products.find(pr => pr.id === item.product_id);
+
+    // Top row: thumbnail + label + price
+    const topRow = document.createElement('div');
+    topRow.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px';
+
     if (prod?.image_url) {
       const img = document.createElement('img');
       img.src = imgVariant(prod.image_url, 'thumb');
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      img.width = 44; img.height = 44;
-      img.style.cssText = 'width:44px;height:44px;object-fit:cover;border-radius:4px;flex-shrink:0';
-      left.appendChild(img);
+      img.loading = 'lazy'; img.decoding = 'async';
+      img.style.cssText = 'width:36px;height:36px;object-fit:cover;border-radius:4px;flex-shrink:0';
+      topRow.appendChild(img);
     }
 
+    const label = item.is_weight ? item.name : `${item.name} × ${fmtQty(item.qty)}`;
     const labelSpan = document.createElement('span');
+    labelSpan.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.9rem';
     labelSpan.innerHTML = label + (hasDiscount
       ? ` <span class="text-muted text-decoration-line-through small">R${fmt(basePrice)}</span>`
       : '');
-    left.appendChild(labelSpan);
+    topRow.appendChild(labelSpan);
 
-    const mid = document.createElement('span');
-    mid.className = hasDiscount ? 'text-success fw-semibold' : '';
-    mid.textContent = `R${fmt(discountedPrice)}`;
+    const priceSpan = document.createElement('span');
+    priceSpan.style.cssText = 'white-space:nowrap;font-weight:600;font-size:.9rem';
+    priceSpan.className = hasDiscount ? 'text-success' : '';
+    priceSpan.textContent = `R${fmt(discountedPrice)}`;
     if (hasDiscount) {
-      const pct = item._discount.type === 'pct'
+      priceSpan.title = item._discount.type === 'pct'
         ? `${item._discount.value}% off`
         : `R${fmt(item._discount.value)} off`;
-      mid.title = pct;
     }
+    topRow.appendChild(priceSpan);
 
+    // Bottom row: action buttons
     const btns = document.createElement('div');
+    btns.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px';
 
     if (!item.is_weight) {
-      const p = prod;
       const pricePerUnit = (item.subs || item.extras?.length)
         ? item.unit_price
-        : parseFloat(p?.price || 0);
+        : parseFloat(prod?.price || 0);
 
       const plus = document.createElement('button'); plus.textContent = '+'; plus.className = 'btn btn-sm btn-outline-primary';
       plus.onclick = () => {
@@ -3930,7 +3930,7 @@ function renderCart() {
         STATE.scanHistory.push(item.product_id);
         reapplySpecials();
       };
-      const minus = document.createElement('button'); minus.textContent = '−'; minus.className = 'btn btn-sm btn-outline-secondary ms-1';
+      const minus = document.createElement('button'); minus.textContent = '−'; minus.className = 'btn btn-sm btn-outline-secondary';
       minus.onclick = () => {
         item.qty = Math.max(1, item.qty - 1);
         if (!(item.subs || item.extras?.length)) item.unit_price = pricePerUnit * item.qty;
@@ -3939,30 +3939,29 @@ function renderCart() {
       };
       btns.appendChild(plus); btns.appendChild(minus);
 
-      if (p?.product_type === 'recipe') {
+      if (prod?.product_type === 'recipe') {
         const cust = document.createElement('button');
         cust.textContent = 'Customise';
-        cust.className = 'btn btn-sm btn-outline-info ms-1';
-        cust.onclick = () => openSubsModal(p, item._key);
+        cust.className = 'btn btn-sm btn-outline-info';
+        cust.onclick = () => openSubsModal(prod, item._key);
         btns.appendChild(cust);
       }
     }
 
-    // Per-item discount button - admin only
     if (_admin) {
       const discBtn = document.createElement('button');
-      discBtn.className = 'btn btn-sm ms-1 ' + (hasDiscount ? 'btn-success' : 'btn-outline-success');
+      discBtn.className = 'btn btn-sm ' + (hasDiscount ? 'btn-success' : 'btn-outline-success');
       discBtn.innerHTML = hasDiscount ? '%<i class="bi bi-check-lg ms-1"></i>' : '%';
       discBtn.title = hasDiscount ? 'Edit item discount' : 'Add item discount';
       discBtn.onclick = () => openDiscountModal(item._key);
       btns.appendChild(discBtn);
     }
 
-    const del = document.createElement('button'); del.textContent = 'Remove'; del.className = 'btn btn-sm btn-outline-danger ms-1';
+    const del = document.createElement('button'); del.textContent = 'Remove'; del.className = 'btn btn-sm btn-outline-danger';
     del.onclick = () => { delete STATE.cart[item._key]; renderCart(); };
     btns.appendChild(del);
 
-    row.appendChild(left); row.appendChild(mid); row.appendChild(btns);
+    row.appendChild(topRow); row.appendChild(btns);
     host.appendChild(row);
     total += discountedPrice;
   });
