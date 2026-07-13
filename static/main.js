@@ -4208,9 +4208,12 @@ function addToCart(p) {
 function addToCartQty(p, qty) {
   if (!qty || qty <= 0) return;
   const key = String(p.id);
+  const existing = STATE.cart[key];
+  const newQty = existing ? existing.qty + qty : qty;
   STATE.cart[key] = {
+    ...(existing || {}),
     _key: key, product_id: p.id, name: p.name,
-    unit_price: parseFloat(p.price || 0), qty, is_weight: false,
+    unit_price: parseFloat(p.price || 0) * newQty, qty: newQty, is_weight: false,
   };
   toast(`${p.name} ×${qty}`, 'success', 1500);
   STATE.scanHistory.push(p.id);
