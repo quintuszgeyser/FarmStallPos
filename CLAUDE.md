@@ -272,6 +272,22 @@ customers         - id, name, ..., face embeddings, plate list
 customer_visits   - id, customer_id, ..., detection method, timestamp
 ```
 
+## Session Prompt Templates
+
+Copy-paste these at the start of a task to set the right working mode.
+
+**Diagnosing a bug (root-cause first):**
+> Before changing any code, list the top 3 likely root causes for this bug and tell me exactly what evidence (logs, packet capture, DB query) would confirm each. Don't edit until we've confirmed one.
+
+**Large multi-file task (stay under output limits):**
+> This is a large task. Work through it one file at a time, pausing after each so we stay under output limits, and don't paste full files back unless I ask.
+
+**Verifying a deploy landed correctly:**
+> Give me a clear status: what is confirmed working on the deployed QA/PROD environment vs. what is only committed but unverified. List exact steps to verify the unconfirmed items.
+
+**Hardware / supplier recommendations (SA-specific):**
+> Recommend only options available in South Africa with reasonable local shipping and under my budget of [X]. Confirm availability before listing anything.
+
 ## API Quick Reference
 
 ```
