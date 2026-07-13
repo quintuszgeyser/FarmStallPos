@@ -5790,16 +5790,29 @@ let _chartClickHandlers = {};
 function drawBarChart(canvas, labels, values, opts = {}) {
   if (!canvas) return;
   const parent = canvas.parentElement;
-  canvas.width  = parent?.clientWidth  || 800;
-  canvas.height = parent?.clientHeight || 320;
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const W = canvas.width, H = canvas.height;
-  // Extra padding for axis labels when provided
+
+  // Compute bottom padding from actual label lengths so nothing gets clipped
+  const maxLabelLen = labels.length ? Math.max(...labels.map(l => String(l || '').length)) : 0;
+  const shouldRotate = labels.length > 6 || maxLabelLen > 6;
+  const rotatedPx = shouldRotate ? Math.ceil(maxLabelLen * 5.5 * Math.sin(Math.PI / 4)) + 8 : 0;
   const padL = opts.yLabel ? 74 : 60;
   const padR = 20;
   const padT = 30;
-  const padB = opts.xLabel ? 64 : 50;
+  const padB = opts.xLabel
+    ? Math.max(64, rotatedPx + 20)
+    : Math.max(50, rotatedPx + 12);
+
+  // Grow canvas (and parent) tall enough to show all labels
+  const minH = padT + 160 + padB;
+  canvas.width  = parent?.clientWidth  || 800;
+  canvas.height = Math.max(parent?.clientHeight || 320, minH);
+  if (parent && canvas.height > (parent.clientHeight || 0)) {
+    parent.style.minHeight = canvas.height + 'px';
+  }
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const W = canvas.width, H = canvas.height;
   const max = Math.max(...values, 1);
   const n   = values.length || 1;
   const bw  = Math.max(4, ((W - padL - padR) / n) * 0.6);
@@ -5856,9 +5869,9 @@ function drawBarChart(canvas, labels, values, opts = {}) {
     }
 
     ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
-    const lbl = (labels[i] || '').slice(-10);
+    const lbl = String(labels[i] || '');
     ctx.save(); ctx.translate(x + bw / 2, H - padB + 6);
-    if (n > 8) { ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; }
+    if (shouldRotate) { ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; }
     ctx.fillText(lbl, 0, 0);
     ctx.restore();
   });
