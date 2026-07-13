@@ -81,8 +81,8 @@ def _validate_row(row, idx):
     if not name:
         errors.append(('name is required', 'MISSING_FIELD'))
 
-    if ptype not in ('simple', 'stock_item', 'recipe'):
-        errors.append((f"product_type '{ptype}' invalid (simple/stock_item/recipe)", 'INVALID_TYPE'))
+    if ptype not in ('stock_item', 'recipe'):
+        errors.append((f"product_type '{ptype}' invalid (stock_item/recipe)", 'INVALID_TYPE'))
 
     sold_by_weight = ptype == 'stock_item' and utype in ('weight', 'volume')
 
@@ -190,7 +190,7 @@ def api_import_template():
         '# Example weight product (biltong):',
         'Springbok Biltong,stock_item,weight,,0.68,1,,,true,50,true,10,14,Keep refrigerated,,Springbok biltong from the farm,40',
         '# Example fixed price product:',
-        'Biltong Sampler,simple,count,89.99,,20000,,,true,,false,,,,,,Gift pack of assorted biltong,35',
+        'Biltong Sampler,stock_item,count,89.99,,20000,,,true,,false,,,,,,Gift pack of assorted biltong,35',
         '# Example volume product (milk):',
         'Fresh Milk,stock_item,volume,,0.03,30000,,,true,1000,true,0,3,,,,Fresh farm milk,40',
     ]
@@ -423,10 +423,6 @@ def _build_product_fields(raw, sold_by_weight, utype, ptype, existing=None):
     else:
         fields['price'] = _parse_decimal(raw.get('price'))
         fields['price_per_unit'] = None
-
-    if ptype == 'simple':
-        sq = _parse_int(raw.get('stock_qty'))
-        fields['stock_qty'] = sq if sq is not None else 0
 
     lt = _parse_decimal(raw.get('low_stock_threshold'))
     fields['low_stock_threshold'] = lt

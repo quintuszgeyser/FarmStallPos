@@ -160,10 +160,10 @@ def api_suppliers_purchase_run(sid):
             next_id      = (db.session.query(func.max(Product.id)).scalar() or 0) + 1
             barcode      = _gen_barcode(next_id)
             price        = new_prod.get('price')
-            product_type = new_prod.get('product_type', 'simple')
+            product_type = 'stock_item'
             base_unit    = new_prod.get('base_unit') or None
             unit_type    = new_prod.get('unit_type') or None
-            if product_type not in ('simple', 'stock_item'):
+            if product_type not in ('stock_item',):
                 return jsonify({'error': 'Invalid product_type'}), 400
             try:
                 price = float(price) if price is not None else None
@@ -201,12 +201,6 @@ def api_suppliers_purchase_run(sid):
                 user_id=u.id if u else None,
                 purchased_at=purchase_date,
             ))
-            batches_created += 1
-        elif p.product_type == 'simple':
-            p.stock_qty = (p.stock_qty or 0) + int(qty)
-            price_per_unit = total_price / int(qty) if int(qty) > 0 else total_price
-            db.session.add(Purchase(product_id=pid, qty_added=int(qty), purchase_price=price_per_unit,
-                                    date_time=purchase_date, user_id=u.id if u else None))
             batches_created += 1
 
     db.session.commit()

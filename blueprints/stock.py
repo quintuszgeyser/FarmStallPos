@@ -420,18 +420,9 @@ def api_purchases_delete(purchase_id):
     row = db.session.get(Purchase, purchase_id)
     if not row:
         return jsonify({'error': 'Purchase not found'}), 404
-    p = db.session.get(Product, row.product_id, with_for_update=True)
-    if not p:
-        return jsonify({'error': 'Product not found'}), 404
-    if p.product_type != 'simple':
-        return jsonify({'error': 'Only simple product purchases can be deleted here'}), 400
-    new_qty = (p.stock_qty or 0) - row.qty_added
-    if new_qty < 0:
-        return jsonify({'error': f'Cannot delete — stock would go negative. Some units may have already been sold.'}), 400
-    p.stock_qty = new_qty
     db.session.delete(row)
     db.session.commit()
-    return jsonify({'ok': True, 'new_stock_qty': new_qty})
+    return jsonify({'ok': True})
 
 
 @bp.route('/api/purchases', methods=['POST'])

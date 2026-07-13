@@ -229,7 +229,7 @@ def strong_migrate():
             # ---- products new columns ----
             existing_prod = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(products)").fetchall()]
             for col, defn in [
-                ('product_type',         "TEXT NOT NULL DEFAULT 'simple'"),
+                ('product_type',         "TEXT NOT NULL DEFAULT 'stock_item'"),
                 ('unit_type',            'TEXT'),
                 ('base_unit',            'TEXT'),
                 ('sold_by_weight',       'INTEGER NOT NULL DEFAULT 0'),
@@ -629,7 +629,7 @@ def strong_migrate():
 
             # products new columns
             for col, defn in [
-                ('product_type',         "VARCHAR(20) NOT NULL DEFAULT 'simple'"),
+                ('product_type',         "VARCHAR(20) NOT NULL DEFAULT 'stock_item'"),
                 ('unit_type',            'VARCHAR(10)'),
                 ('base_unit',            'VARCHAR(10)'),
                 ('sold_by_weight',       'BOOLEAN NOT NULL DEFAULT FALSE'),
@@ -757,6 +757,24 @@ def strong_migrate():
             )""")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_product ON stock_batches (product_id)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_remaining ON stock_batches (product_id, qty_remaining_base)")
+
+            # ---- Migrate 'simple' → 'stock_item' (idempotent) ----
+            conn.exec_driver_sql("""
+                UPDATE products
+                SET product_type = 'stock_item',
+                    unit_type    = COALESCE(unit_type,  'count'),
+                    base_unit    = COALESCE(base_unit,  'unit')
+                WHERE product_type = 'simple'
+            """)
+            # Create an opening stock batch for converted products that had stock_qty > 0
+            conn.exec_driver_sql("""
+                INSERT INTO stock_batches (product_id, qty_purchased_base, qty_remaining_base, cost_per_base_unit, purchased_at)
+                SELECT id, stock_qty, stock_qty, 0, NOW()
+                FROM products
+                WHERE stock_qty > 0
+                  AND product_type = 'stock_item'
+                  AND id NOT IN (SELECT DISTINCT product_id FROM stock_batches)
+            """)
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS stock_consumption (
@@ -1271,7 +1289,7 @@ def strong_migrate():
                     code = next_volume; next_volume += 1
                 elif sbw:
                     code = next_weight; next_weight += 1
-                elif ptype in ('simple', 'stock_item'):
+                elif ptype == 'stock_item':
                     code = next_fixed; next_fixed += 1
                 else:
                     code = next_other; next_other += 1

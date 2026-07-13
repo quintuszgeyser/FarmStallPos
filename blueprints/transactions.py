@@ -150,7 +150,7 @@ def api_transactions_get():
                 try: line['discount'] = _json.loads(ln.discount_json)
                 except Exception: pass
             if is_admin_req:
-                ptype = product_types_map.get(ln.product_id, 'simple')
+                ptype = product_types_map.get(ln.product_id, 'stock_item')
                 if ptype == 'stock_item':
                     line_cogs = cogs_by_ingredient[sid].get(ln.product_id, Decimal('0'))
                 elif ptype == 'recipe':
@@ -257,9 +257,7 @@ def api_transactions_post():
         db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None), card_amount=(card_amount if _first_line else None)))
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
-        if p.product_type == 'simple':
-            p.stock_qty = max(0, (p.stock_qty or 0) - int(qty.to_integral_value()))
-        elif p.product_type == 'stock_item':
+        if p.product_type == 'stock_item':
             consume_fifo(pid, qty, sale_uuid, now)
         elif p.product_type == 'recipe':
             for rl in RecipeLine.query.filter_by(product_id=pid).all():
@@ -510,8 +508,6 @@ def api_transaction_return(sale_id):
         p = db.session.get(Product, pid, with_for_update=True)
         if not p:
             pass
-        elif p.product_type == 'simple':
-            p.stock_qty = (p.stock_qty or 0) + int(qty)
         elif p.product_type == 'stock_item':
             # Restore stock_item: look up FIFO cost from original sale consumptions
             consumptions = StockConsumption.query.filter_by(
@@ -572,7 +568,6 @@ def api_transaction_void(sale_id):
     for row in rows:
         row.voided = True; row.voided_by = u.id if u else None; row.voided_at = now; row.void_reason = reason
         p = db.session.get(Product, row.product_id, with_for_update=True)
-        if p and p.product_type == 'simple': p.stock_qty = (p.stock_qty or 0) + int(row.qty)
     reverse_fifo(sale_id)
     db.session.commit()
     return jsonify({'ok': True})
@@ -596,7 +591,6 @@ def api_transaction_edit(sale_id):
     _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note='superseded by edit')
     for row in rows:
         p = db.session.get(Product, row.product_id, with_for_update=True)
-        if p and p.product_type == 'simple': p.stock_qty = (p.stock_qty or 0) + int(row.qty)
         row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = datetime.utcnow()
         row.void_reason = 'superseded by edit'
     reverse_fifo(sale_id)
@@ -623,8 +617,7 @@ def api_transaction_edit(sale_id):
                             card_amount=(orig_card_amount if _first else None)))
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
-        if p.product_type == 'simple': p.stock_qty = max(0, (p.stock_qty or 0) - int(qty))
-        elif p.product_type == 'stock_item': consume_fifo(pid, qty, sale_id, now)
+        if p.product_type == 'stock_item': consume_fifo(pid, qty, sale_id, now)
         elif p.product_type == 'recipe':
             # Use substitution map from the edited lines (GAP-NEW-05: was using RecipeLine defaults)
             for rl in RecipeLine.query.filter_by(product_id=pid).all():

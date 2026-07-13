@@ -585,7 +585,6 @@ function renderProductsCards() {
 
   items.forEach(p => {
     const isStockItem = p.product_type === 'stock_item';
-    const isSimple    = p.product_type === 'simple';
     const typeLabel   = { stock_item: '<i class="bi bi-box-seam"></i>', recipe: '<i class="bi bi-layers"></i>' }[p.product_type] || '';
 
     // Price
@@ -606,9 +605,6 @@ function renderProductsCards() {
       const low   = p.low_stock ? ' <span class="badge bg-warning text-dark" style="font-size:10px">LOW</span>' : '';
       stockHtml   = level + low;
       stockMobile = level + (p.low_stock ? ' <i class="bi bi-exclamation-triangle"></i>' : '');
-    } else if (isSimple) {
-      stockHtml   = String(p.stock_qty ?? 0);
-      stockMobile = String(p.stock_qty ?? 0);
     }
 
     const margins = calcProductMargins(p);
@@ -1280,9 +1276,8 @@ async function openArchiveModal(p) {
     // Stock decision for products with remaining stock (stock_item or simple with stock_qty > 0)
     // Use live stock_level from the preview response - always authoritative
     const stockLevel  = data.stock_level || 0;
-    const simpleStock = p.product_type === 'simple' ? (p.stock_qty || 0) : 0;
-    const hasRemainingStock = (p.product_type === 'stock_item' && stockLevel > 0) || (p.product_type === 'simple' && simpleStock > 0);
-    const stockDisplay = p.product_type === 'stock_item' ? displayQty(stockLevel, p.unit_type) : `${simpleStock} units`;
+    const hasRemainingStock = p.product_type === 'stock_item' && stockLevel > 0;
+    const stockDisplay = displayQty(stockLevel, p.unit_type);
     const stockAction = hasRemainingStock
       ? `<div class="alert alert-info py-2 mb-3">
           <strong><i class="bi bi-box-seam me-1"></i>${stockDisplay} remaining in stock.</strong> What should happen to it?
@@ -1713,8 +1708,7 @@ function openProductEditor(p) {
   updatePkgSizeBaseDisplay();
   renderRecipeLines();
   renderPackagesTable();
-  if (p?.product_type === 'simple' && p?.id) loadPurchaseHistory(p.id);
-  else { const h = document.getElementById('purchase-history-list'); if (h) h.innerHTML = ''; }
+  { const h = document.getElementById('purchase-history-list'); if (h) h.innerHTML = ''; }
   const isEdit = !!p?.id;
   document.getElementById('btn-add-product')   ?.classList.toggle('hidden', isEdit);
   document.getElementById('btn-update-product') ?.classList.toggle('hidden', !isEdit);
@@ -1818,7 +1812,6 @@ function updatePkgSizeBaseDisplay() {
 function updateProductTypeSections(type) {
   const isStockItem = type === 'stock_item';
   const isRecipe    = type === 'recipe';
-  const isSimple    = type === 'simple';
 
   const el = id => document.getElementById(id);
 
@@ -1827,8 +1820,8 @@ function updateProductTypeSections(type) {
 
   isStockItem ? show(el('section-stock-item')) : hide(el('section-stock-item'));
   isRecipe    ? show(el('section-recipe'))     : hide(el('section-recipe'));
-  isSimple    ? show(el('row-stock-qty'))      : hide(el('row-stock-qty'));
-  isSimple    ? show(el('section-purchase'))   : hide(el('section-purchase'));
+  hide(el('row-stock-qty'));
+  hide(el('section-purchase'));
   isStockItem ? show(el('is-for-sale-row'))    : hide(el('is-for-sale-row'));
 
   const isForSale = el('p-is-for-sale')?.checked;
@@ -2024,11 +2017,6 @@ function calcProductMargins(p) {
     }
   } else if (p.product_type === 'recipe') {
     cost  = getIngredientCost(p.id, 1);
-    price = parseFloat(p.price);
-  } else if (p.product_type === 'simple') {
-    // Resale goods - cost is the weighted-average purchase cost from the API
-    if (p.unit_cost == null) return null;
-    cost  = parseFloat(p.unit_cost);
     price = parseFloat(p.price);
   } else {
     return null;
@@ -2528,10 +2516,8 @@ function buildProductPayload() {
   return {
     name, barcode,
     price:       finalPrice,
-    // Only send stock_qty for simple products - other types track stock differently
-    ...(type === 'simple' ? { stock_qty } : {}),
     product_type: type,
-    unit_type:    type !== 'simple' ? unitType : null,
+    unit_type:    unitType,
     is_for_sale:         isForSale,
     is_available_online: isAvailableOnline,
     sold_by_weight: soldByWeight,
@@ -3592,12 +3578,11 @@ function addPurchaseLine() {
     weight: [['g','g'],['kg','kg']],
     volume: [['ml','ml'],['L','L']],
     count:  [['unit','unit']],
-    simple: [['unit','unit']],
   };
 
   function updateUnitsForProduct(pid) {
     const p = STATE.products.find(pr => pr.id === parseInt(pid));
-    const type = p ? (p.product_type === 'simple' ? 'simple' : p.unit_type || 'count') : null;
+    const type = p ? (p.unit_type || 'count') : null;
     const opts = UNIT_OPTIONS[type] || [['unit','unit'],['g','g'],['kg','kg'],['ml','ml'],['L','L']];
     unitSel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
   }

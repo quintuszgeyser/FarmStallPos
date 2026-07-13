@@ -127,11 +127,11 @@ def api_products_post():
         return jsonify({'error': 'Forbidden'}), 403
     data         = request.json or {}
     name         = data.get('name', '').strip()
-    product_type = data.get('product_type', 'simple')
+    product_type = data.get('product_type', 'stock_item')
     barcode      = (data.get('barcode') or '').strip() or None
     if not name:
         return jsonify({'error': 'name required'}), 400
-    if product_type not in ('simple', 'stock_item', 'recipe'):
+    if product_type not in ('stock_item', 'recipe'):
         return jsonify({'error': 'Invalid product_type'}), 400
     if barcode and Product.query.filter_by(barcode=barcode).first():
         return jsonify({'error': 'Barcode exists'}), 409
@@ -569,8 +569,6 @@ def api_product_archive(pid):
         else:
             recipe.is_archived = True; recipe.archived_reason = 'cascade'
     p.is_archived = True; p.archived_reason = data.get('reason') or None
-    if data.get('stock_action') == 'writeoff' and p.product_type == 'simple':
-        p.stock_qty = 0
     if data.get('stock_action') == 'writeoff' and p.product_type == 'stock_item':
         stock_level = sum(
             Decimal(str(b.qty_remaining_base))
@@ -638,7 +636,7 @@ def api_product_archive_preview(pid):
                 'current_unit_type': p.unit_type or 'weight',
                 'replacements': [{'id': c.id, 'name': c.name, 'unit_type': c.unit_type, 'base_unit': c.base_unit, 'package_size': float(c.package_size) if c.package_size else None, 'package_unit': c.package_unit} for c in candidates],
             })
-    stock_level = get_stock_level(pid) if p.product_type == 'stock_item' else float(p.stock_qty or 0) if p.product_type == 'simple' else 0
+    stock_level = get_stock_level(pid) if p.product_type == 'stock_item' else 0
     return jsonify({'affected_recipes': affected, 'stock_level': stock_level})
 
 
@@ -736,13 +734,7 @@ def api_fifo_price(pid):
                 detail.append({'label': ing.name, 'qty_per_sale': float(scaled), 'base_unit': ing.base_unit, 'avg_cost_per_unit': float(avg_per_unit), 'line_cost': float(line_cost)})
         return total, detail
 
-    if p.product_type == 'simple':
-        rows = Purchase.query.filter_by(product_id=pid).all()
-        total_qty = sum(Decimal(str(r.qty_added)) for r in rows)
-        if total_qty > 0:
-            avg_cost = sum(Decimal(str(r.qty_added)) * Decimal(str(r.purchase_price)) for r in rows) / total_qty
-            lines_detail.append({'label': p.name, 'avg_cost_per_unit': float(avg_cost), 'total_qty': float(total_qty)})
-    elif p.product_type == 'stock_item':
+    if p.product_type == 'stock_item':
         avg_per_unit, total_qty = _batch_wavg(pid)
         avg_cost = avg_per_unit
         lines_detail.append({'label': p.name, 'avg_cost_per_unit': float(avg_per_unit), 'base_unit': p.base_unit, 'total_qty': float(total_qty)})
