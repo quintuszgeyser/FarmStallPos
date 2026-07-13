@@ -10312,13 +10312,16 @@ document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs
 function _sizeTellerScreen() {
   const el = document.getElementById('teller-screen');
   if (!el) return;
-  const top = el.getBoundingClientRect().top + window.scrollY;
+  const top = el.getBoundingClientRect().top;
+  // Skip if element is not yet laid out (hidden tab on first load)
+  if (top === 0 && el.offsetHeight === 0) return;
   const h = window.innerHeight - top - 8;
   if (h > 100) el.style.height = h + 'px';
 }
 window.addEventListener('resize', _sizeTellerScreen);
+window.addEventListener('load', _sizeTellerScreen); // fires after full layout
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', _sizeTellerScreen);
-_sizeTellerScreen();
+requestAnimationFrame(() => requestAnimationFrame(_sizeTellerScreen)); // two-frame defer for paint
 
 // (System Updates removed - deployment is via Docker rebuild, not Windows updater)
 

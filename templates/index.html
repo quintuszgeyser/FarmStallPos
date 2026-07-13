@@ -311,7 +311,8 @@
       flex-direction: row;
       gap: 10px;
       overflow: hidden;
-      /* height set dynamically by _sizeTellerScreen() in JS */
+      min-height: 400px; /* fallback before JS fires */
+      /* height set dynamically by _sizeTellerScreen() */
     }
     /* LEFT — product browser */
     #teller-left {
@@ -320,6 +321,7 @@
       flex-direction: column;
       overflow: hidden;
       min-width: 0;
+      min-height: 0;
     }
     .teller-toolbar {
       display: flex;
@@ -327,6 +329,7 @@
       gap: .25rem;
       flex: 1;
       overflow: hidden;
+      min-height: 0;
     }
     .teller-toolbar .row.g-2 { --bs-gutter-y: .25rem; --bs-gutter-x: .25rem; flex-shrink: 0; }
     .teller-toolbar .form-control { height: 44px; font-size: 16px; }
@@ -335,7 +338,9 @@
       grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
       gap: 6px;
       flex: 1;
+      min-height: 0;
       overflow-y: auto;
+      overscroll-behavior: contain;
       padding: 2px 0;
       align-content: start;
     }
@@ -346,6 +351,7 @@
       flex-direction: column;
       overflow: hidden;
       min-width: 0;
+      min-height: 0;
       border-left: 2px solid var(--lc-gold-border);
       padding-left: 10px;
     }
@@ -353,10 +359,11 @@
       flex: 1;
       overflow-y: auto;
       min-height: 0;
+      overscroll-behavior: contain;
     }
     #cart { margin-bottom: .25rem; }
     #cart .list-group-item { padding: .4rem .5rem; font-size: 15px; }
-    /* Frozen footer */
+    /* Frozen footer — flex-shrink keeps it always visible */
     #teller-footer {
       flex-shrink: 0;
       border-top: 2px solid var(--lc-gold-border);
@@ -377,14 +384,11 @@
       white-space: nowrap;
     }
     #cart-total { color: #198754; }
-    /* Mobile: stack vertically */
+    /* Mobile: stack vertically — same flex discipline, just column direction */
     @media (max-width: 767px) {
-      #teller-screen { flex-direction: column; height: auto; overflow: visible; }
-      #teller-left { flex: none; width: 100%; }
-      #teller-right { flex: none; width: 100%; border-left: none; padding-left: 0; border-top: 2px solid var(--lc-gold-border); padding-top: 8px; }
-      #teller-right-scroll { max-height: 40vh; overflow-y: auto; }
-      #teller-product-grid { max-height: 260px; flex: none; }
-      #teller-footer { position: sticky; bottom: 0; background: var(--dd-paper, #fff); z-index: 10; padding-bottom: 6px; }
+      #teller-screen { flex-direction: column; }
+      #teller-left { flex: 0 0 42%; width: 100%; min-height: 0; }
+      #teller-right { flex: 1; width: 100%; min-height: 0; border-left: none; padding-left: 0; border-top: 2px solid var(--lc-gold-border); padding-top: 8px; }
     }
     .tpt { border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff; user-select: none; transition: box-shadow .1s; touch-action: manipulation; }
     .tpt:hover, .tpt:active { box-shadow: 0 0 0 2px var(--lc-gold-border, #c9a84c); }
