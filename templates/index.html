@@ -305,22 +305,86 @@
     body { margin: 0; overflow-y: auto; overflow-x: hidden; background: var(--dd-surface); }
     .hidden { display: none !important; }
 
-    /* ── Teller screen layout ── */
+    /* ── Teller screen layout — split left/right ── */
     #teller-screen {
+      display: flex;
+      flex-direction: row;
+      gap: 10px;
+      height: calc(100vh - 64px);
+      overflow: hidden;
+    }
+    /* LEFT — product browser */
+    #teller-left {
+      flex: 0 0 56%;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+    }
+    .teller-toolbar {
       display: flex;
       flex-direction: column;
       gap: .25rem;
+      flex: 1;
+      overflow: hidden;
     }
-    .teller-toolbar .row.g-2 { --bs-gutter-y: .25rem; --bs-gutter-x: .25rem; }
-    #cart { margin-bottom: .25rem; overflow-y: auto; max-height: calc(100vh - 370px); }
+    .teller-toolbar .row.g-2 { --bs-gutter-y: .25rem; --bs-gutter-x: .25rem; flex-shrink: 0; }
     .teller-toolbar .form-control { height: 44px; font-size: 16px; }
     #teller-product-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
       gap: 6px;
-      max-height: 260px;
+      flex: 1;
       overflow-y: auto;
       padding: 2px 0;
+      align-content: start;
+    }
+    /* RIGHT — cart + frozen footer */
+    #teller-right {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      min-width: 0;
+      border-left: 2px solid var(--lc-gold-border);
+      padding-left: 10px;
+    }
+    #teller-right-scroll {
+      flex: 1;
+      overflow-y: auto;
+      min-height: 0;
+    }
+    #cart { margin-bottom: .25rem; }
+    #cart .list-group-item { padding: .4rem .5rem; font-size: 15px; }
+    /* Frozen footer */
+    #teller-footer {
+      flex-shrink: 0;
+      border-top: 2px solid var(--lc-gold-border);
+      padding-top: 8px;
+      background: var(--dd-paper, #fff);
+    }
+    #teller-total-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 8px;
+      gap: 8px;
+    }
+    #teller-total-row strong {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: var(--dd-ink);
+      white-space: nowrap;
+    }
+    #cart-total { color: #198754; }
+    /* Mobile: stack vertically */
+    @media (max-width: 767px) {
+      #teller-screen { flex-direction: column; height: auto; overflow: visible; }
+      #teller-left { flex: none; width: 100%; }
+      #teller-right { flex: none; width: 100%; border-left: none; padding-left: 0; border-top: 2px solid var(--lc-gold-border); padding-top: 8px; }
+      #teller-right-scroll { max-height: 40vh; overflow-y: auto; }
+      #teller-product-grid { max-height: 260px; flex: none; }
+      #teller-footer { position: sticky; bottom: 0; background: var(--dd-paper, #fff); z-index: 10; padding-bottom: 6px; }
     }
     .tpt { border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff; user-select: none; transition: box-shadow .1s; touch-action: manipulation; }
     .tpt:hover, .tpt:active { box-shadow: 0 0 0 2px var(--lc-gold-border, #c9a84c); }
@@ -739,65 +803,79 @@
     <!-- ═══════════════ TELLER ═══════════════ -->
     <div class="tab-pane fade show active" id="teller">
       <div id="teller-screen" class="container-fluid p-0">
-        <div class="teller-toolbar">
-          <div class="row g-2">
-            <div class="col-7">
-              <input id="search" class="form-control" placeholder="Search products…">
+
+        <!-- ── LEFT: product browser ── -->
+        <div id="teller-left">
+          <div class="teller-toolbar">
+            <div class="row g-2">
+              <div class="col-7">
+                <input id="search" class="form-control" placeholder="Search products…">
+              </div>
+              <div class="col-5 d-flex gap-1 flex-wrap">
+                <button id="btn-start-scan" class="btn btn-success btn-lg-touch">Scan</button>
+                <button id="btn-stop-scan"  class="btn btn-outline-danger btn-lg-touch hidden">Stop</button>
+                <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan"><i class="bi bi-arrow-counterclockwise me-1"></i>Undo</button>
+              </div>
             </div>
-            <div class="col-5 d-flex gap-1 flex-wrap">
-              <button id="btn-start-scan" class="btn btn-success btn-lg-touch">Scan</button>
-              <button id="btn-stop-scan"  class="btn btn-outline-danger btn-lg-touch hidden">Stop</button>
-              <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan"><i class="bi bi-arrow-counterclockwise me-1"></i>Undo</button>
-            </div>
-          </div>
-          <div id="teller-product-grid" class="mt-2"></div>
-        </div>
-        <!-- Customer Badge (auto-populated when detected at till) -->
-        <div id="customer-badge-container" class="mb-2"></div>
-        <div id="scan-panel">
-          <div class="position-relative">
-            <video id="video" playsinline muted></video>
-            <div id="scanner-flash"></div>
+            <div id="teller-product-grid"></div>
           </div>
         </div>
-        <div><div id="cart" class="list-group"></div></div>
-        <!-- Payment method: recorded on the sale for till reconciliation -->
-        <div class="btn-group btn-group-sm mt-2" role="group" id="pay-method-group" aria-label="Payment method">
-          <input type="radio" class="btn-check" name="pay-method" id="pay-card" value="card" checked>
-          <label class="btn btn-outline-secondary" for="pay-card"><i class="bi bi-credit-card me-1"></i>Card</label>
-          <input type="radio" class="btn-check" name="pay-method" id="pay-cash" value="cash">
-          <label class="btn btn-outline-secondary" for="pay-cash"><i class="bi bi-cash me-1"></i>Cash</label>
-          <input type="radio" class="btn-check" name="pay-method" id="pay-qr" value="qr">
-          <label class="btn btn-outline-secondary" for="pay-qr"><i class="bi bi-qr-code me-1"></i>QR</label>
-          <input type="radio" class="btn-check" name="pay-method" id="pay-split" value="split">
-          <label class="btn btn-outline-secondary" for="pay-split"><i class="bi bi-scissors me-1"></i>Split</label>
-        </div>
-        <!-- Split payment inputs — shown only when Split is selected -->
-        <div id="split-payment-row" class="mt-2 hidden" style="background:var(--bs-tertiary-bg,#f8f9fa);border:1px solid var(--bs-border-color,#dee2e6);border-radius:6px;padding:10px 12px">
-          <div class="d-flex gap-3 align-items-end">
-            <div style="flex:1">
-              <label class="form-label mb-1 small fw-semibold" for="split-cash-input"><i class="bi bi-cash me-1"></i>Cash (R)</label>
-              <input type="number" id="split-cash-input" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
+
+        <!-- ── RIGHT: cart + frozen footer ── -->
+        <div id="teller-right">
+
+          <!-- Scrollable area: customer badge + scan panel + cart -->
+          <div id="teller-right-scroll">
+            <div id="customer-badge-container" class="mb-2"></div>
+            <div id="scan-panel">
+              <div class="position-relative">
+                <video id="video" playsinline muted></video>
+                <div id="scanner-flash"></div>
+              </div>
             </div>
-            <div style="flex:1">
-              <label class="form-label mb-1 small fw-semibold" for="split-card-input"><i class="bi bi-credit-card me-1"></i>Card (R)</label>
-              <input type="number" id="split-card-input" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
+            <div id="cart" class="list-group"></div>
+          </div>
+
+          <!-- Frozen footer: payment method + total + checkout -->
+          <div id="teller-footer">
+            <div class="btn-group btn-group-sm w-100" role="group" id="pay-method-group" aria-label="Payment method">
+              <input type="radio" class="btn-check" name="pay-method" id="pay-card" value="card" checked>
+              <label class="btn btn-outline-secondary" for="pay-card"><i class="bi bi-credit-card me-1"></i>Card</label>
+              <input type="radio" class="btn-check" name="pay-method" id="pay-cash" value="cash">
+              <label class="btn btn-outline-secondary" for="pay-cash"><i class="bi bi-cash me-1"></i>Cash</label>
+              <input type="radio" class="btn-check" name="pay-method" id="pay-qr" value="qr">
+              <label class="btn btn-outline-secondary" for="pay-qr"><i class="bi bi-qr-code me-1"></i>QR</label>
+              <input type="radio" class="btn-check" name="pay-method" id="pay-split" value="split">
+              <label class="btn btn-outline-secondary" for="pay-split"><i class="bi bi-scissors me-1"></i>Split</label>
+            </div>
+            <div id="split-payment-row" class="mt-2 hidden" style="background:var(--bs-tertiary-bg,#f8f9fa);border:1px solid var(--bs-border-color,#dee2e6);border-radius:6px;padding:10px 12px">
+              <div class="d-flex gap-3 align-items-end">
+                <div style="flex:1">
+                  <label class="form-label mb-1 small fw-semibold" for="split-cash-input"><i class="bi bi-cash me-1"></i>Cash (R)</label>
+                  <input type="number" id="split-cash-input" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
+                </div>
+                <div style="flex:1">
+                  <label class="form-label mb-1 small fw-semibold" for="split-card-input"><i class="bi bi-credit-card me-1"></i>Card (R)</label>
+                  <input type="number" id="split-card-input" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01">
+                </div>
+              </div>
+              <div class="mt-2 d-flex justify-content-between align-items-center">
+                <span id="split-balance" class="small text-muted"></span>
+                <button type="button" id="split-reset-btn" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.75rem">Reset</button>
+              </div>
+            </div>
+            <div id="teller-total-row">
+              <div>
+                <strong>R<span id="cart-total">0.00</span></strong>
+                <span id="cart-discount-label" class="text-success small ms-2 hidden"></span>
+              </div>
+              <div class="d-flex gap-2">
+                <button id="btn-cart-discount" class="btn btn-outline-success btn-lg-touch admin-only hidden">% Discount</button>
+                <button id="btn-checkout" class="btn btn-primary btn-lg-touch">Checkout</button>
+              </div>
             </div>
           </div>
-          <div class="mt-2 d-flex justify-content-between align-items-center">
-            <span id="split-balance" class="small text-muted"></span>
-            <button type="button" id="split-reset-btn" class="btn btn-outline-secondary btn-sm py-0 px-2" style="font-size:0.75rem">Reset</button>
-          </div>
-        </div>
-        <div class="d-flex justify-content-between align-items-center mt-1">
-          <div>
-            <strong>Total: R<span id="cart-total">0.00</span></strong>
-            <span id="cart-discount-label" class="text-success small ms-2 hidden"></span>
-          </div>
-          <div class="d-flex gap-2">
-            <button id="btn-cart-discount" class="btn btn-outline-success btn-lg-touch admin-only hidden">% Discount</button>
-            <button id="btn-checkout" class="btn btn-primary btn-lg-touch">Checkout</button>
-          </div>
+
         </div>
       </div>
     </div>
