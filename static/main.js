@@ -582,7 +582,7 @@ function renderProductsCards() {
   hdr.innerHTML = `
     <div><input type="checkbox" id="pr-select-all" title="Select all"></div>
     <div>Product</div><div>Stock</div><div>Price</div><div>Barcode</div>
-    <div>COGS</div><div>Markup</div><div>Margin</div><div></div>
+    <div>COGS</div><div>Markup</div><div>Margin</div><div>Flags</div><div></div>
   `;
   hdr.querySelector('#pr-select-all').addEventListener('change', e => {
     const checked = e.target.checked;
@@ -658,6 +658,11 @@ function renderProductsCards() {
       <div class="pr-cogs">${margins ? escapeHtml(margins.costLabel) : '<span class="text-muted">—</span>'}</div>
       <div class="pr-markup">${margins ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-margin">${margins ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
+      <div class="pr-flags">
+        ${p.is_produced  ? `<i class="bi bi-fire pf-icon text-warning" title="Batch produced"></i>` : ''}
+        ${p.is_prepared  ? `<i class="bi bi-clock pf-icon text-danger"  title="Made to order (kitchen)"></i>` : ''}
+        ${p.sold_by_weight ? `<i class="bi bi-speedometer2 pf-icon text-info" title="Weighed at sale"></i>` : ''}
+      </div>
       <div class="pr-more-wrap">
         <button class="pr-more-btn" title="Actions">⋮</button>
         <div class="pr-more-menu">

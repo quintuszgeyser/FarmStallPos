@@ -427,11 +427,11 @@
     .sel-bar-actions .btn { height: 30px; font-size: 12px; padding: .1rem .45rem; }
     #btn-clear-sel { margin-left: auto; color: #888; font-size: 12px; }
 
-    /* Column widths: ☐ | Name | Stock | Price | Barcode | COGS | Markup | Margin | ⋮ */
+    /* Column widths: ☐ | Name | Stock | Price | Barcode | COGS | Markup | Margin | Flags | ⋮ */
     .product-col-header,
     .product-row {
       display: grid;
-      grid-template-columns: 24px minmax(0,1fr) 90px 90px 160px 90px 68px 68px 28px;
+      grid-template-columns: 24px minmax(0,1fr) 90px 90px 160px 90px 68px 68px 60px 28px;
       column-gap: clamp(.3rem, .8vw, .6rem);
       padding: clamp(5px, 1vw, 8px) clamp(6px, 1.2vw, 10px);
       align-items: center;
@@ -473,6 +473,8 @@
     .pr-barcode { overflow: hidden; display: flex; align-items: center; }
     .pr-barcode-num { display: none; }
     .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
+    .pr-flags { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
+    .pr-flags .pf-icon { font-size: 14px; line-height: 1; cursor: default; }
     .pr-more-wrap { position: relative; display: flex; justify-content: center; }
     .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 8px 6px; line-height: 1; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; }
     .pr-more-btn:hover { background: var(--lc-gold-light); border-color: var(--lc-gold-border); color: var(--dd-ink); }
@@ -517,7 +519,7 @@
         padding: 10px 8px 10px 10px;
         min-height: 52px;
       }
-      .pr-stock, .pr-price, .pr-barcode, .pr-cogs, .pr-markup, .pr-margin { display: none; }
+      .pr-stock, .pr-price, .pr-barcode, .pr-cogs, .pr-markup, .pr-margin, .pr-flags { display: none; }
       .pr-check { display: flex; align-items: center; justify-content: center; padding-top: 2px; }
       .pr-check input[type=checkbox] { width: 20px; height: 20px; }
       .pr-name { grid-column: 2; min-width: 0; }
