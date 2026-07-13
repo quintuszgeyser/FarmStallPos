@@ -69,6 +69,10 @@ class Product(db.Model):
     # Stats normalisation — grams/ml products set this to a "typical portion" so rankings
     # compare fairly against unit products (e.g. 250g = 1 portion of honey)
     stat_unit_size       = db.Column(Numeric(10, 4), nullable=True)
+    # Batch-produce workflow: recipe products that are prepared in advance (cakes, jams, etc.)
+    # When is_produced=True, the teller sells from stock_qty instead of consuming ingredients at sale time.
+    is_produced          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    yields_units         = db.Column(Numeric(10, 2), nullable=False, default=1, server_default='1')
 
 
 class Category(db.Model):

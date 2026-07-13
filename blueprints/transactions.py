@@ -260,13 +260,18 @@ def api_transactions_post():
         if p.product_type == 'stock_item':
             consume_fifo(pid, qty, sale_uuid, now)
         elif p.product_type == 'recipe':
-            for rl in RecipeLine.query.filter_by(product_id=pid).all():
-                actual_id = subs.get(rl.ingredient_id, rl.ingredient_id)
-                if actual_id == -1: continue
-                consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_uuid, now)
-            for ex in extras:
-                ex_id = int(ex.get('ingredient_id', 0)); ex_qty = Decimal(str(ex.get('qty_base', 0)))
-                if ex_id and ex_qty > 0: consume_fifo(ex_id, ex_qty * qty, sale_uuid, now)
+            if p.is_produced:
+                # Sell from pre-produced finished stock
+                p.stock_qty = max(0, (p.stock_qty or 0) - int(qty.to_integral_value()))
+            else:
+                # Made-to-order: consume ingredients at point of sale
+                for rl in RecipeLine.query.filter_by(product_id=pid).all():
+                    actual_id = subs.get(rl.ingredient_id, rl.ingredient_id)
+                    if actual_id == -1: continue
+                    consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_uuid, now)
+                for ex in extras:
+                    ex_id = int(ex.get('ingredient_id', 0)); ex_qty = Decimal(str(ex.get('qty_base', 0)))
+                    if ex_id and ex_qty > 0: consume_fifo(ex_id, ex_qty * qty, sale_uuid, now)
 
     max_sort = db.session.query(func.max(KitchenOrder.sort_order)).filter_by(status='pending').scalar() or 0
 
@@ -530,11 +535,11 @@ def api_transaction_return(sale_id):
                 purchased_at=now,
                 user_id=u.id if u else None,
             ))
+        elif p.product_type == 'recipe' and p.is_produced:
+            # Produced recipe: sold from stock_qty, so restore it on return
+            p.stock_qty = (p.stock_qty or 0) + int(qty.to_integral_value())
         elif p.product_type == 'recipe':
-            # Restore recipe: reverse each ingredient's FIFO consumption proportionally.
-            # Recipes don't appear in stock_consumption themselves — their ingredients do.
-            # Use the same logic as void: call reverse_fifo on the original sale_id
-            # but only for the fraction of qty being returned vs original qty sold.
+            # Made-to-order recipe: restore each ingredient's FIFO consumption proportionally.
             return_ratio = qty / orig_qty if orig_qty > 0 else Decimal('1')
             for rl in RecipeLine.query.filter_by(product_id=pid).all():
                 ing_consumptions = StockConsumption.query.filter_by(
@@ -568,6 +573,8 @@ def api_transaction_void(sale_id):
     for row in rows:
         row.voided = True; row.voided_by = u.id if u else None; row.voided_at = now; row.void_reason = reason
         p = db.session.get(Product, row.product_id, with_for_update=True)
+        if p and p.product_type == 'recipe' and p.is_produced:
+            p.stock_qty = (p.stock_qty or 0) + int(Decimal(str(row.qty)).to_integral_value())
     reverse_fifo(sale_id)
     db.session.commit()
     return jsonify({'ok': True})
@@ -593,6 +600,9 @@ def api_transaction_edit(sale_id):
         p = db.session.get(Product, row.product_id, with_for_update=True)
         row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = datetime.utcnow()
         row.void_reason = 'superseded by edit'
+        # Restore stock_qty for produced recipes (reverse_fifo won't touch them)
+        if p and p.product_type == 'recipe' and p.is_produced:
+            p.stock_qty = (p.stock_qty or 0) + int(Decimal(str(row.qty)).to_integral_value())
     reverse_fifo(sale_id)
     for idx, item in enumerate(lines):
         pid       = int(item['product_id'])
@@ -619,10 +629,13 @@ def api_transaction_edit(sale_id):
         if not p: continue
         if p.product_type == 'stock_item': consume_fifo(pid, qty, sale_id, now)
         elif p.product_type == 'recipe':
-            # Use substitution map from the edited lines (GAP-NEW-05: was using RecipeLine defaults)
-            for rl in RecipeLine.query.filter_by(product_id=pid).all():
-                actual_id = subs_edit.get(rl.ingredient_id, rl.ingredient_id)
-                if actual_id == -1: continue
-                consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_id, now)
+            if p.is_produced:
+                p.stock_qty = max(0, (p.stock_qty or 0) - int(qty.to_integral_value()))
+            else:
+                # Use substitution map from the edited lines (GAP-NEW-05: was using RecipeLine defaults)
+                for rl in RecipeLine.query.filter_by(product_id=pid).all():
+                    actual_id = subs_edit.get(rl.ingredient_id, rl.ingredient_id)
+                    if actual_id == -1: continue
+                    consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_id, now)
     db.session.commit()
     return jsonify({'ok': True})

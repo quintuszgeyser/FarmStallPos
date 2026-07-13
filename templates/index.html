@@ -2672,6 +2672,23 @@
             <tbody id="recipe-lines-body"></tbody>
           </table>
           <div id="recipe-cost-total" class="text-muted small"></div>
+          <!-- Batch-produce options -->
+          <div class="mt-3 border rounded p-2" style="background:#f8f9fa">
+            <div class="form-check mb-1">
+              <input class="form-check-input" type="checkbox" id="p-is-produced">
+              <label class="form-check-label fw-semibold" for="p-is-produced">
+                <i class="bi bi-fire me-1 text-warning"></i>Batch-produced item
+              </label>
+            </div>
+            <div class="form-text mb-2">Baked, brewed, or prepared in advance. Stock is added when you produce a batch; teller sells from finished stock.</div>
+            <div id="row-yields-units" class="hidden">
+              <label class="form-label small mb-1">Units produced per batch</label>
+              <div class="d-flex align-items-center gap-2">
+                <input id="p-yields-units" type="number" min="1" step="1" class="form-control form-control-sm" style="max-width:120px" placeholder="e.g. 8">
+                <span class="text-muted small">finished units (slices, jars, pots…)</span>
+              </div>
+            </div>
+          </div>
         </div>
 
 
@@ -3068,6 +3085,30 @@
       <div class="modal-footer py-2">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-success btn-sm" id="btn-restore-confirm">Restore</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="produceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title"><i class="bi bi-fire me-1 text-warning"></i>Produce: <span id="produce-modal-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Number of batches to produce</label>
+          <input id="produce-batches-input" type="number" min="1" step="1" value="1" class="form-control" style="max-width:140px">
+        </div>
+        <div id="produce-modal-preview" class="small text-muted"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning btn-sm" id="btn-produce-confirm">
+          <i class="bi bi-fire me-1"></i>Produce
+        </button>
       </div>
     </div>
   </div>

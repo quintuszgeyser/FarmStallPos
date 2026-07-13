@@ -606,6 +606,10 @@ function renderProductsCards() {
       const low   = p.low_stock ? ' <span class="badge bg-warning text-dark" style="font-size:10px">LOW</span>' : '';
       stockHtml   = level + low;
       stockMobile = level + (p.low_stock ? ' <i class="bi bi-exclamation-triangle"></i>' : '');
+    } else if (p.product_type === 'recipe' && p.is_produced) {
+      const n = p.stock_level ?? p.stock_qty ?? 0;
+      stockHtml   = `${n} in stock`;
+      stockMobile = `${n} in stock`;
     }
 
     const margins = calcProductMargins(p);
@@ -656,6 +660,9 @@ function renderProductsCards() {
             <button data-menu="stocktake"><i class="bi bi-clipboard-check me-1"></i>Stocktake</button>
             <button data-menu="writeoff"><i class="bi bi-trash3 me-1"></i>Write Off</button>
           ` : ''}
+          ${p.product_type === 'recipe' && p.is_produced ? `
+            <button data-menu="produce"><i class="bi bi-fire me-1 text-warning"></i>Produce batch</button>
+          ` : ''}
           ${p.is_archived
             ? `<button data-menu="restore"><i class="bi bi-arrow-clockwise me-1"></i>Restore</button>`
             : `<button data-menu="archive"><i class="bi bi-archive me-1"></i>Archive</button>`}
@@ -699,6 +706,7 @@ function renderProductsCards() {
     moreMenu.querySelector('[data-menu="label"]')?.addEventListener('click',    e => { e.stopPropagation(); moreMenu.classList.remove('open'); openLabelPrintModal(p); });
     moreMenu.querySelector('[data-menu="archive"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openArchiveModal(p); });
     moreMenu.querySelector('[data-menu="restore"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openRestoreModal(p); });
+    moreMenu.querySelector('[data-menu="produce"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openProduceModal(p); });
     if (isStockItem && stockItem) {
       moreMenu.querySelector('[data-menu="receive"]')?.addEventListener('click',   e => { e.stopPropagation(); moreMenu.classList.remove('open'); openReceiveStockModal(stockItem); });
       moreMenu.querySelector('[data-menu="stocktake"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openStocktakeModal(stockItem); });
@@ -1498,6 +1506,52 @@ document.getElementById('products-filter')?.addEventListener('input', () => {
   }, 50);
 });
 
+// ── Batch-produce modal ────────────────────────────────────────────────────────
+let _produceProduct = null;
+
+function openProduceModal(p) {
+  _produceProduct = p;
+  document.getElementById('produce-modal-name').textContent = p.name;
+  document.getElementById('produce-batches-input').value = '1';
+  _updateProducePreview();
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).show();
+}
+
+function _updateProducePreview() {
+  const p = _produceProduct; if (!p) return;
+  const batches = parseInt(document.getElementById('produce-batches-input')?.value || '1', 10) || 1;
+  const units   = Math.round((p.yields_units || 1) * batches);
+  const lines   = (p.recipe_lines || []).map(l =>
+    `<li>${escapeHtml(l.ingredient_name || String(l.ingredient_id))}: ${displayQty(l.qty_base * batches, l.unit_type)}</li>`
+  ).join('');
+  document.getElementById('produce-modal-preview').innerHTML = `
+    <div class="mb-1"><strong>${units}</strong> unit${units !== 1 ? 's' : ''} will be added to stock.</div>
+    ${lines ? `<div class="mt-1">Ingredients consumed:</div><ul class="mb-0 ps-3">${lines}</ul>` : ''}
+  `;
+}
+
+document.getElementById('produce-batches-input')?.addEventListener('input', _updateProducePreview);
+
+document.getElementById('btn-produce-confirm')?.addEventListener('click', async () => {
+  if (!_produceProduct) return;
+  const batches = parseInt(document.getElementById('produce-batches-input').value || '1', 10) || 1;
+  const btn = document.getElementById('btn-produce-confirm');
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/products/${_produceProduct.id}/produce`, {
+      method: 'POST',
+      body: JSON.stringify({ batches }),
+    });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).hide();
+    toast(`Produced ${r.units_added} unit${r.units_added !== 1 ? 's' : ''} — stock now ${r.new_stock}`, 'success', 3000);
+    await loadProducts();
+  } catch(e) {
+    toast(e.message, 'danger');
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 function _renderBarcodes(items) {
   if (!window.JsBarcode) return;   // library not available
 
@@ -1622,6 +1676,10 @@ function openProductEditor(p) {
   document.getElementById('p-low-stock').value = p?.low_stock_threshold ?? '';
   document.getElementById('p-is-for-sale').checked          = p?.is_for_sale !== false;
   document.getElementById('p-is-prepared').checked          = !!p?.is_prepared;
+  const _isProducedEl = document.getElementById('p-is-produced');
+  if (_isProducedEl) _isProducedEl.checked = !!p?.is_produced;
+  const _yieldsEl = document.getElementById('p-yields-units');
+  if (_yieldsEl) _yieldsEl.value = p?.yields_units ?? 1;
   const _onlineEl = document.getElementById('p-is-available-online');
   if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
 
@@ -1689,6 +1747,10 @@ function openProductEditor(p) {
   hide(document.getElementById('calc-result'));
   initCalcMarkup(p);
   updateProductTypeSections(p?.product_type ?? 'stock_item');
+  // Sync yields-units visibility after type sections are built
+  const _ypEl = document.getElementById('p-is-produced');
+  const _yuEl = document.getElementById('row-yields-units');
+  if (_ypEl && _yuEl) { _ypEl.checked ? show(_yuEl) : hide(_yuEl); }
 
   // Restore price display unit after sections are built
   const savedPriceUnit = document.getElementById('p-price')?.dataset?.displayUnit;
@@ -1821,6 +1883,7 @@ function updateProductTypeSections(type) {
 
   isStockItem ? show(el('section-stock-item')) : hide(el('section-stock-item'));
   isRecipe    ? show(el('section-recipe'))     : hide(el('section-recipe'));
+  if (!isRecipe) hide(el('row-yields-units'));
   hide(el('row-stock-qty'));
   hide(el('section-purchase'));
   isStockItem ? show(el('is-for-sale-row'))    : hide(el('is-for-sale-row'));
@@ -2191,6 +2254,11 @@ document.getElementById('btn-add-recipe-line')?.addEventListener('click', () => 
   renderRecipeLines();
 });
 
+document.getElementById('p-is-produced')?.addEventListener('change', () => {
+  const on = document.getElementById('p-is-produced').checked;
+  on ? show(document.getElementById('row-yields-units')) : hide(document.getElementById('row-yields-units'));
+});
+
 // Pre-fill calc markup from settings when modal opens
 function initCalcMarkup(product) {
   const calcMarkup = document.getElementById('calc-markup');
@@ -2556,6 +2624,11 @@ function buildProductPayload() {
     scale_msg2:        scaleMsg2Raw || null,
     scale_open_price:  document.getElementById('p-scale-open-price')?.checked || false,
     scale_prohibit:    document.getElementById('p-scale-prohibit')?.checked || false,
+    // Batch-produce (recipe only)
+    ...(type === 'recipe' ? {
+      is_produced:  document.getElementById('p-is-produced')?.checked || false,
+      yields_units: parseInt(document.getElementById('p-yields-units')?.value || '1', 10) || 1,
+    } : {}),
   };
 }
 

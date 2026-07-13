@@ -205,6 +205,12 @@ def api_products_post():
 
     category_id = _resolve_category_id(data)
 
+    is_produced  = bool(data.get('is_produced', False)) if product_type == 'recipe' else False
+    try:
+        yields_units = Decimal(str(data.get('yields_units', 1) or 1)) if product_type == 'recipe' else Decimal('1')
+    except Exception:
+        yields_units = Decimal('1')
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -221,6 +227,7 @@ def api_products_post():
         scale_pack_qty=scale_pack_qty, scale_open_price=scale_open_price,
         scale_msg1=scale_msg1, scale_msg2=scale_msg2, scale_prohibit=scale_prohibit,
         stat_unit_size=stat_unit_size,
+        is_produced=is_produced, yields_units=yields_units,
     )
     db.session.add(p)
     db.session.flush()
@@ -380,11 +387,46 @@ def api_products_update():
             if ing_id and qty_base > 0:
                 db.session.add(RecipeLine(product_id=p.id, ingredient_id=ing_id, qty_base=qty_base))
 
+    if p.product_type == 'recipe':
+        if 'is_produced' in data:
+            p.is_produced = bool(data['is_produced'])
+        if 'yields_units' in data:
+            try:
+                p.yields_units = Decimal(str(data['yields_units'] or 1))
+            except Exception:
+                pass
+
     if 'sell_packages' in data:
         sync_sell_packages(p.id, data['sell_packages'])
 
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@bp.route('/api/products/<int:pid>/produce', methods=['POST'])
+def api_product_produce(pid):
+    """Consume raw ingredients for N batches and add finished units to stock."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = db.session.get(Product, pid, with_for_update=True)
+    if not p or p.product_type != 'recipe' or not p.is_produced:
+        return jsonify({'error': 'Not a batch-produced recipe'}), 400
+    data = request.json or {}
+    try:
+        batches = Decimal(str(data.get('batches', 1) or 1))
+    except Exception:
+        return jsonify({'error': 'Invalid batches value'}), 400
+    if batches <= 0:
+        return jsonify({'error': 'batches must be > 0'}), 400
+
+    produce_uuid = str(uuid.uuid4())
+    now = datetime.utcnow()
+    for rl in RecipeLine.query.filter_by(product_id=pid).all():
+        consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches, produce_uuid, now)
+    units_added = int((Decimal(str(p.yields_units)) * batches).to_integral_value())
+    p.stock_qty = (p.stock_qty or 0) + units_added
+    db.session.commit()
+    return jsonify({'ok': True, 'units_added': units_added, 'new_stock': p.stock_qty})
 
 
 @bp.route('/api/products/<int:pid>/image', methods=['POST'])

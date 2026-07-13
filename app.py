@@ -1515,6 +1515,10 @@ def strong_migrate():
             WHERE NOT EXISTS (SELECT 1 FROM label_templates WHERE name = 'Price Tag')
         """)
 
+        # Batch-produce workflow columns
+        pg_try("ALTER TABLE products ADD COLUMN is_produced BOOLEAN NOT NULL DEFAULT FALSE")
+        pg_try("ALTER TABLE products ADD COLUMN yields_units NUMERIC(10,2) NOT NULL DEFAULT 1")
+
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
         if sales_count == 0:
