@@ -10310,6 +10310,17 @@ document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('hidden.bs.tab', stopCustomerPolling);
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', () => setTimeout(_focusTrap, 200));
 
+function _sizeTellerScreen() {
+  const el = document.getElementById('teller-screen');
+  if (!el) return;
+  const top = el.getBoundingClientRect().top + window.scrollY;
+  const h = window.innerHeight - top - 8;
+  if (h > 100) el.style.height = h + 'px';
+}
+window.addEventListener('resize', _sizeTellerScreen);
+document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', _sizeTellerScreen);
+_sizeTellerScreen();
+
 // (System Updates removed - deployment is via Docker rebuild, not Windows updater)
 
 // ═══════════════════════════════════════════════════════
