@@ -312,10 +312,23 @@
       gap: .25rem;
     }
     .teller-toolbar .row.g-2 { --bs-gutter-y: .25rem; --bs-gutter-x: .25rem; }
-    #product-search-results { margin-top: .25rem !important; }
-    #cart { margin-bottom: .25rem; overflow-y: auto; max-height: calc(100vh - 340px); }
-    .teller-toolbar .form-select,
+    #cart { margin-bottom: .25rem; overflow-y: auto; max-height: calc(100vh - 370px); }
     .teller-toolbar .form-control { height: 44px; font-size: 16px; }
+    #teller-product-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+      gap: 6px;
+      max-height: 260px;
+      overflow-y: auto;
+      padding: 2px 0;
+    }
+    .tpt { border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff; user-select: none; transition: box-shadow .1s; touch-action: manipulation; }
+    .tpt:hover, .tpt:active { box-shadow: 0 0 0 2px var(--lc-gold-border, #c9a84c); }
+    .tpt-img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .tpt-ph { width: 100%; aspect-ratio: 1; display: flex; align-items: center; justify-content: center; background: #f1f3f5; color: #adb5bd; font-size: 26px; }
+    .tpt-info { padding: 3px 5px 5px; text-align: center; }
+    .tpt-name { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+    .tpt-price { font-size: 11px; color: #198754; }
     #scan-panel { display: none; }
     #video { width: 100%; height: 160px; object-fit: cover; border: 2px solid var(--lc-gold-border); border-radius: var(--dd-radius); }
     #scanner-flash { position: absolute; inset: 0; border: 3px solid transparent; border-radius: var(--dd-radius); pointer-events: none; }
@@ -378,7 +391,9 @@
     /* cells */
     .pr-check   { display: flex; align-items: center; }
     .pr-check input[type=checkbox] { width: 22px; height: 22px; cursor: pointer; accent-color: var(--lc-gold-border); touch-action: manipulation; }
-    .pr-name    { min-width: 0; }
+    .pr-name    { min-width: 0; display: flex; align-items: center; gap: 8px; }
+    .pr-name-block { min-width: 0; flex: 1; }
+    .pr-thumb { width: 36px; height: 36px; object-fit: cover; border-radius: 4px; flex-shrink: 0; }
     .pr-name-text { font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .pr-stock   { font-size: 13px; white-space: nowrap; }
     .pr-price   { font-size: 13px; font-weight: 600; white-space: nowrap; }
@@ -726,20 +741,16 @@
       <div id="teller-screen" class="container-fluid p-0">
         <div class="teller-toolbar">
           <div class="row g-2">
-            <div class="col-12">
-              <select id="product-select" class="form-select"><option value="">Select product…</option></select>
-            </div>
             <div class="col-7">
-              <input id="search" class="form-control" placeholder="Search name, ID or barcode">
+              <input id="search" class="form-control" placeholder="Search products…">
             </div>
             <div class="col-5 d-flex gap-1 flex-wrap">
               <button id="btn-start-scan" class="btn btn-success btn-lg-touch">Scan</button>
               <button id="btn-stop-scan"  class="btn btn-outline-danger btn-lg-touch hidden">Stop</button>
-
               <button id="btn-undo-last" class="btn btn-outline-warning btn-lg-touch" title="Undo last scan"><i class="bi bi-arrow-counterclockwise me-1"></i>Undo</button>
             </div>
           </div>
-          <div id="product-search-results" class="list-group mt-2"></div>
+          <div id="teller-product-grid" class="mt-2"></div>
         </div>
         <!-- Customer Badge (auto-populated when detected at till) -->
         <div id="customer-badge-container" class="mb-2"></div>
@@ -1054,6 +1065,20 @@
                 <div id="supplier-products-list" class="card-body p-2">
                   <span class="text-muted small">Loading...</span>
                 </div>
+              </div>
+            </div>
+
+            <!-- Documents -->
+            <div class="card mb-3">
+              <div class="card-header py-2 d-flex align-items-center gap-2">
+                <span class="small fw-bold">Documents</span>
+                <label class="btn btn-outline-secondary btn-sm ms-auto mb-0" style="cursor:pointer" title="Upload document">
+                  <i class="bi bi-upload"></i> Upload
+                  <input type="file" id="supplier-doc-upload-input" class="d-none" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt">
+                </label>
+              </div>
+              <div id="supplier-docs-list" class="list-group list-group-flush">
+                <div class="list-group-item text-muted small">No documents yet.</div>
               </div>
             </div>
 

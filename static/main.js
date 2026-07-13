@@ -465,7 +465,7 @@ async function loadProducts() {
     STATE.products = await api('/api/products?full=1');
     await loadCategories();
     renderProductsCards();
-    renderProductDropdown();
+    renderTellerGrid();
   } catch (e) { console.error('loadProducts', e); }
 }
 
@@ -479,32 +479,40 @@ async function loadCategories() {
   } catch (e) { console.error('loadCategories', e); STATE.categories = []; }
 }
 
-function renderProductDropdown() {
-  const sel = document.getElementById('product-select');
-  if (!sel) return;
-  const prev = sel.value;
-  sel.innerHTML = '<option value="">Select product…</option>';
-  STATE.products
-    .filter(p => p.is_for_sale !== false)
-    .forEach(p => {
-      const opt  = document.createElement('option');
-      opt.value  = String(p.id);
-      const label = p.sold_by_weight
-        ? `${p.name} - PLU ${p.product_code ?? '-'} (by ${p.base_unit || 'weight'})`
-        : `${p.name} - R${fmt(p.price || 0)}`;
-      opt.textContent = label;
-      sel.appendChild(opt);
-    });
-  if (prev) sel.value = prev;
-  if (!sel._boundChange) {
-    sel.addEventListener('change', () => {
-      const pid  = parseInt(sel.value || '0', 10);
-      const prod = STATE.products.find(x => x.id === pid);
-      if (prod) addToCart(prod);
-      sel.value = '';
-    });
-    sel._boundChange = true;
+function renderTellerGrid(q = '') {
+  const host = document.getElementById('teller-product-grid');
+  if (!host) return;
+  const lq = q.trim().toLowerCase();
+  const items = STATE.products.filter(p =>
+    p.is_for_sale !== false && !p.is_archived && (
+      !lq ||
+      p.name.toLowerCase().includes(lq) ||
+      String(p.id) === lq ||
+      (p.barcode && p.barcode.toLowerCase().includes(lq))
+    )
+  );
+  host.innerHTML = '';
+  if (!items.length) {
+    host.innerHTML = '<div class="text-muted small py-1">No products match.</div>';
+    return;
   }
+  items.forEach(p => {
+    const tile = document.createElement('div');
+    tile.className = 'tpt';
+    const priceStr = p.sold_by_weight
+      ? (p.price_per_unit != null ? `R${fmt(parseFloat(p.price_per_unit) * 1000)}/kg` : 'by weight')
+      : (p.price != null ? `R${fmt(p.price)}` : '');
+    tile.innerHTML = `
+      ${p.image_url
+        ? `<img class="tpt-img" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt="">`
+        : `<div class="tpt-ph"><i class="bi bi-box-seam"></i></div>`}
+      <div class="tpt-info">
+        <span class="tpt-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+        ${priceStr ? `<div class="tpt-price">${priceStr}</div>` : ''}
+      </div>`;
+    tile.addEventListener('click', () => addToCart(p));
+    host.appendChild(tile);
+  });
 }
 
 function renderProductsCards() {
@@ -613,20 +621,23 @@ function renderProductsCards() {
     row.innerHTML = `
       <div class="pr-check"><input type="checkbox" class="pr-row-check" ${isSelected ? 'checked' : ''}></div>
       <div class="pr-name">
-        <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
-        ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
-        <div class="pr-mobile-meta">
-          <div class="pr-mm-top">
-            <div class="pr-mm-left">
-              ${stockMobile ? `<span class="pr-mm-stock">${stockMobile}</span>` : ''}
+        ${p.image_url ? `<img class="pr-thumb" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt="">` : ''}
+        <div class="pr-name-block">
+          <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+          ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
+          <div class="pr-mobile-meta">
+            <div class="pr-mm-top">
+              <div class="pr-mm-left">
+                ${stockMobile ? `<span class="pr-mm-stock">${stockMobile}</span>` : ''}
+              </div>
+              <div class="pr-mm-right">
+                ${priceDisplay ? `<span class="pr-mm-price text-success fw-semibold">${priceDisplay}</span>` : ''}
+                ${margins ? `<span class="pr-mm-cogs">${escapeHtml(margins.costLabel)}</span>` : ''}
+                ${margins ? `<span class="pr-mm-margin">${margins.margin}%</span>` : ''}
+              </div>
             </div>
-            <div class="pr-mm-right">
-              ${priceDisplay ? `<span class="pr-mm-price text-success fw-semibold">${priceDisplay}</span>` : ''}
-              ${margins ? `<span class="pr-mm-cogs">${escapeHtml(margins.costLabel)}</span>` : ''}
-              ${margins ? `<span class="pr-mm-margin">${margins.margin}%</span>` : ''}
-            </div>
+            ${p.barcode ? `<span class="pr-mm-barcode">${escapeHtml(p.barcode)}</span>` : ''}
           </div>
-          ${p.barcode ? `<span class="pr-mm-barcode">${escapeHtml(p.barcode)}</span>` : ''}
         </div>
       </div>
       <div class="pr-stock">${stockHtml}</div>
@@ -4008,6 +4019,8 @@ function addToCart(p) {
   STATE.scanHistory.push(p.id);
   renderCart();
   detectAndOfferSpecials();
+  const srch = document.getElementById('search');
+  if (srch && srch.value) { srch.value = ''; renderTellerGrid(); }
 }
 
 // ── Undo last scan ──
@@ -4405,39 +4418,7 @@ document.getElementById('btn-weight-add')?.addEventListener('click', () => {
 // TELLER SEARCH
 // ═══════════════════════════════════════════════════════
 document.getElementById('search')?.addEventListener('input', function() {
-  const q    = this.value.trim().toLowerCase();
-  const host = document.getElementById('product-search-results'); if (!host) return;
-  host.innerHTML = '';
-  if (!q) return;
-  STATE.products.filter(p =>
-    p.is_for_sale !== false && !p.is_archived && (
-      p.name.toLowerCase().includes(q) || String(p.id) === q || (p.barcode === q)
-    )
-  ).forEach(p => {
-    const a = document.createElement('a'); a.className = 'list-group-item list-group-item-action';
-    const stockInfo = p.product_type === 'stock_item'
-      ? ` (${displayQty(p.stock_level || 0, p.unit_type)})`
-      : p.product_type === 'simple' ? ` (stock ${p.stock_qty})` : '';
-    a.style.cssText = 'display:flex;align-items:center;gap:10px';
-    if (p.image_url) {
-      const img = document.createElement('img');
-      img.src = imgVariant(p.image_url, 'thumb');
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      img.width = 40; img.height = 40;
-      img.style.cssText = 'width:40px;height:40px;object-fit:cover;border-radius:4px;flex-shrink:0';
-      a.appendChild(img);
-    }
-    const span = document.createElement('span');
-    span.textContent = `#${p.id} ${p.name}${p.price != null ? ` - R${fmt(p.price)}` : ''}${stockInfo}`;
-    a.appendChild(span);
-    a.onclick = () => {
-      addToCart(p);
-      this.value = '';
-      host.innerHTML = '';
-    };
-    host.appendChild(a);
-  });
+  renderTellerGrid(this.value);
 });
 
 // ═══════════════════════════════════════════════════════
