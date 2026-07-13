@@ -195,9 +195,9 @@ def api_stats():
         for pid, rev in sorted(top_revenue_map.items(), key=lambda x: x[1], reverse=True)[:10]
     ]
     top_by_profit = [
-        _top_entry(pid, top_revenue_map.get(pid, 0), top_qty_map.get(pid, 0))
-        for pid, _ in sorted(top_cogs_map.items(), key=lambda x: top_revenue_map.get(x[0], 0) - x[1], reverse=True)[:10]
-        if top_revenue_map.get(pid, 0) > 0
+        _top_entry(pid, rev, top_qty_map.get(pid, 0))
+        for pid, rev in sorted(top_revenue_map.items(), key=lambda x: x[1] - top_cogs_map.get(x[0], 0.0), reverse=True)[:10]
+        if rev > 0
     ]
 
     revenue_per_hour = defaultdict(float)
