@@ -352,6 +352,7 @@ function updateVisibility() {
   const roleLabels = roles.map(r => `<span class="badge ${r==='admin'?'bg-danger':r==='developer'?'bg-info text-dark':'bg-secondary'} ms-1">${r}</span>`).join('');
   if (au) au.innerHTML = `${STATE.user.username} ${roleLabels}`;
   show(tabs); show(contents);
+  requestAnimationFrame(() => requestAnimationFrame(_sizeTellerScreen)); // tabs now visible
   // pos-only: Teller/Transactions/Kitchen - hidden for pure developer (no admin/teller)
   const showPos = !isDev || isAdmin || isTeller;
   document.querySelectorAll('.pos-only').forEach(el =>
