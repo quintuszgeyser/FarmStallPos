@@ -475,6 +475,10 @@
     .pr-cogs, .pr-markup, .pr-margin { font-size: 13px; white-space: nowrap; }
     .pr-flags { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
     .pr-flags .pf-icon { font-size: 14px; line-height: 1; cursor: default; }
+    .pr-sort-hdr { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 3px; white-space: nowrap; }
+    .pr-sort-hdr:hover { color: var(--lc-gold-dark, #b8860b); }
+    .pr-sort-hdr .psh-ic { font-size: 9px; opacity: 0.3; }
+    .pr-sort-hdr.psh-active .psh-ic { opacity: 1; color: var(--lc-gold-dark, #b8860b); }
     .pr-more-wrap { position: relative; display: flex; justify-content: center; }
     .pr-more-btn  { background: none; border: 1px solid transparent; border-radius: 4px; cursor: pointer; font-size: 16px; color: #888; padding: 8px 6px; line-height: 1; min-width: 36px; min-height: 36px; display: inline-flex; align-items: center; justify-content: center; touch-action: manipulation; }
     .pr-more-btn:hover { background: var(--lc-gold-light); border-color: var(--lc-gold-border); color: var(--dd-ink); }

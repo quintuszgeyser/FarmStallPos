@@ -524,6 +524,26 @@ function renderTellerGrid(q = '') {
   });
 }
 
+let _productSort = { col: null, dir: 1 };
+
+function _productSortKey(p, col) {
+  switch (col) {
+    case 'name':    return p.name.toLowerCase();
+    case 'stock':   return typeof p.stock_level === 'number' ? p.stock_level : (p.stock_qty || 0);
+    case 'price':   return parseFloat(p.price || p.price_per_unit || 0);
+    case 'barcode': return (p.barcode || '').toLowerCase();
+    case 'flags':   return [p.is_produced, p.is_prepared, p.sync_to_scale, p.is_for_sale, p.is_available_online].filter(Boolean).length;
+    case 'cogs': case 'markup': case 'margin': {
+      const m = calcProductMargins(p);
+      if (!m) return -Infinity;
+      if (col === 'cogs')   return parseFloat(m.costLabel.replace(/[^0-9.]/g, '')) || 0;
+      if (col === 'markup') return parseFloat(m.markup) || 0;
+      return parseFloat(m.margin) || 0;
+    }
+    default: return 0;
+  }
+}
+
 function renderProductsCards() {
   const wrap = document.getElementById('products-card-list');
   if (!wrap) return;
@@ -553,6 +573,16 @@ function renderProductsCards() {
     return p.is_archived !== true && p.is_for_sale !== false && p.product_type !== 'recipe';
   });
 
+  // Apply column sort
+  if (_productSort.col) {
+    items.sort((a, b) => {
+      const ka = _productSortKey(a, _productSort.col);
+      const kb = _productSortKey(b, _productSort.col);
+      const cmp = typeof ka === 'string' ? ka.localeCompare(kb) : (ka === kb ? 0 : ka < kb ? -1 : 1);
+      return cmp * _productSort.dir;
+    });
+  }
+
   renderCategoryFilterPills();
 
   // Update count badges
@@ -576,18 +606,32 @@ function renderProductsCards() {
     return;
   }
 
-  // Select-all checkbox in header
+  // Select-all checkbox + sortable column headers
+  const _sc = _productSort.col, _sd = _productSort.dir;
+  const _sh = (col, label) => {
+    const active = _sc === col;
+    const icon   = active ? (_sd === 1 ? 'bi-caret-up-fill' : 'bi-caret-down-fill') : 'bi-caret-up-fill';
+    return `<div class="pr-sort-hdr${active ? ' psh-active' : ''}" data-sort="${col}">${label}<i class="bi ${icon} psh-ic"></i></div>`;
+  };
   const hdr = document.createElement('div');
   hdr.className = 'product-col-header';
   hdr.innerHTML = `
     <div><input type="checkbox" id="pr-select-all" title="Select all"></div>
-    <div>Product</div><div>Stock</div><div>Price</div><div>Barcode</div>
-    <div>COGS</div><div>Markup</div><div>Margin</div><div>Flags</div><div></div>
+    ${_sh('name','Product')}${_sh('stock','Stock')}${_sh('price','Price')}${_sh('barcode','Barcode')}
+    ${_sh('cogs','COGS')}${_sh('markup','Markup')}${_sh('margin','Margin')}${_sh('flags','Flags')}<div></div>
   `;
   hdr.querySelector('#pr-select-all').addEventListener('change', e => {
     const checked = e.target.checked;
     wrap.querySelectorAll('.pr-row-check').forEach(cb => {
       if (cb.checked !== checked) cb.click();
+    });
+  });
+  hdr.querySelectorAll('.pr-sort-hdr').forEach(el => {
+    el.addEventListener('click', () => {
+      const col = el.dataset.sort;
+      if (_productSort.col === col) { _productSort.dir *= -1; }
+      else { _productSort.col = col; _productSort.dir = 1; }
+      renderProductsCards();
     });
   });
   wrap.appendChild(hdr);
