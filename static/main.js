@@ -659,9 +659,10 @@ function renderProductsCards() {
       <div class="pr-markup">${margins ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-margin">${margins ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-flags">
-        ${p.is_produced  ? `<i class="bi bi-fire pf-icon text-warning" title="Batch produced"></i>` : ''}
-        ${p.is_prepared  ? `<i class="bi bi-clock pf-icon text-danger"  title="Made to order (kitchen)"></i>` : ''}
-        ${p.sold_by_weight ? `<i class="bi bi-speedometer2 pf-icon text-info" title="Weighed at sale"></i>` : ''}
+        ${p.is_produced        ? `<i class="bi bi-fire pf-icon text-warning"  title="Batch produced"></i>`          : ''}
+        ${p.is_prepared        ? `<i class="bi bi-clock pf-icon text-danger"   title="Made to order (kitchen)"></i>` : ''}
+        ${p.sold_by_weight     ? `<i class="bi bi-speedometer2 pf-icon text-info" title="Weighed at sale"></i>`      : ''}
+        ${p.is_available_online ? `<i class="bi bi-globe pf-icon text-success" title="Available online"></i>`        : ''}
       </div>
       <div class="pr-more-wrap">
         <button class="pr-more-btn" title="Actions">⋮</button>
