@@ -503,6 +503,8 @@ function renderTellerGrid(q = '') {
     const priceStr = p.sold_by_weight
       ? (p.price_per_unit != null ? `R${fmt(parseFloat(p.price_per_unit) * 1000)}/kg` : 'by weight')
       : (p.price != null ? `R${fmt(p.price)}` : '');
+    const isProducedRecipe = p.product_type === 'recipe' && p.is_produced;
+    const stockLeft = isProducedRecipe ? (p.stock_level ?? p.stock_qty ?? 0) : 0;
     tile.innerHTML = `
       ${p.image_url
         ? `<img class="tpt-img" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt="">`
@@ -510,7 +512,13 @@ function renderTellerGrid(q = '') {
       <div class="tpt-info">
         <span class="tpt-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
         ${priceStr ? `<div class="tpt-price">${priceStr}</div>` : ''}
-      </div>`;
+        ${isProducedRecipe ? `<div class="tpt-stock">${stockLeft} left</div>` : ''}
+      </div>
+      ${isProducedRecipe && stockLeft > 1 ? `<button class="tpt-sell-all">Sell all (${stockLeft})</button>` : ''}`;
+    tile.querySelector('.tpt-sell-all')?.addEventListener('click', e => {
+      e.stopPropagation();
+      addToCartQty(p, stockLeft);
+    });
     tile.addEventListener('click', () => addToCart(p));
     host.appendChild(tile);
   });
@@ -757,12 +765,15 @@ function _updateSelectionBar() {
   cntEl.textContent = `${count} product${count > 1 ? 's' : ''} selected`;
 
   // Only show stock-specific actions when at least one stock_item is selected
-  const selectedProds  = (STATE.products || []).filter(p => STATE._selectedProductIds.has(p.id));
-  const anyStockItems  = selectedProds.some(p => p.product_type === 'stock_item');
+  const selectedProds     = (STATE.products || []).filter(p => STATE._selectedProductIds.has(p.id));
+  const anyStockItems     = selectedProds.some(p => p.product_type === 'stock_item');
+  const anyProducedRecipes = selectedProds.some(p => p.product_type === 'recipe' && p.is_produced);
   ['receive', 'stocktake', 'writeoff'].forEach(a => {
     const btn = bar.querySelector(`[data-bulk-action="${a}"]`);
     if (btn) btn.style.display = anyStockItems ? '' : 'none';
   });
+  const produceBtn = bar.querySelector('[data-bulk-action="produce"]');
+  if (produceBtn) produceBtn.style.display = anyProducedRecipes ? '' : 'none';
 }
 
 // Wire selection bar (main.js loads at end of body, DOM is ready)
@@ -787,6 +798,14 @@ function _buildUnitOptionsHtml(unitType, packageSize, packageUnit) {
 function _openBulkAction(action) {
   const products = (STATE.products || []).filter(p => STATE._selectedProductIds.has(p.id));
   if (!products.length) return toast('No products selected', 'warning');
+
+  if (action === 'produce') {
+    const producible = products.filter(p => p.product_type === 'recipe' && p.is_produced);
+    if (!producible.length) return toast('No batch-produced recipes selected', 'warning');
+    if (producible.length === 1) { openProduceModal(producible[0]); return; }
+    openMultiProduceModal(producible);
+    return;
+  }
 
   if (action === 'edit') {
     if (products.length === 1) { openProductEditor(products[0]); return; }
@@ -1550,6 +1569,43 @@ document.getElementById('btn-produce-confirm')?.addEventListener('click', async 
   } finally {
     btn.disabled = false;
   }
+});
+
+// ── Multi-produce modal (bulk selection) ──────────────────────────────────────
+function openMultiProduceModal(producible) {
+  const body = document.getElementById('multi-produce-body');
+  body.innerHTML = producible.map(p => `
+    <div class="d-flex align-items-center gap-2 mb-2">
+      <div class="flex-fill fw-semibold small">${escapeHtml(p.name)}</div>
+      <div class="text-muted small" style="white-space:nowrap">${p.stock_level ?? p.stock_qty ?? 0} in stock</div>
+      <input type="number" min="1" step="1" value="1"
+        class="form-control form-control-sm multi-produce-batches"
+        style="max-width:72px" data-pid="${p.id}" placeholder="batches">
+    </div>
+  `).join('');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('multiProduceModal')).show();
+}
+
+document.getElementById('btn-multi-produce-confirm')?.addEventListener('click', async () => {
+  const inputs = document.querySelectorAll('.multi-produce-batches');
+  const items  = [...inputs].map(inp => ({ pid: parseInt(inp.dataset.pid), batches: parseInt(inp.value || '1') || 1 }));
+  const btn    = document.getElementById('btn-multi-produce-confirm');
+  btn.disabled = true;
+  let totalUnits = 0, errors = [];
+  for (const { pid, batches } of items) {
+    try {
+      const r = await api(`/api/products/${pid}/produce`, { method: 'POST', body: JSON.stringify({ batches }) });
+      totalUnits += r.units_added;
+    } catch(e) {
+      const p = STATE.products.find(x => x.id === pid);
+      errors.push(`${p?.name || pid}: ${e.message}`);
+    }
+  }
+  btn.disabled = false;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('multiProduceModal')).hide();
+  if (errors.length) toast(`Errors: ${errors.join('; ')}`, 'danger', 5000);
+  else toast(`Produced ${totalUnits} total unit${totalUnits !== 1 ? 's' : ''}`, 'success', 3000);
+  await loadProducts();
 });
 
 function _renderBarcodes(items) {
@@ -4074,6 +4130,21 @@ function addToCart(p) {
     };
     toast(`Added: ${p.name}`, 'success', 1200);
   }
+  STATE.scanHistory.push(p.id);
+  renderCart();
+  detectAndOfferSpecials();
+  const srch = document.getElementById('search');
+  if (srch && srch.value) { srch.value = ''; renderTellerGrid(); }
+}
+
+function addToCartQty(p, qty) {
+  if (!qty || qty <= 0) return;
+  const key = String(p.id);
+  STATE.cart[key] = {
+    _key: key, product_id: p.id, name: p.name,
+    unit_price: parseFloat(p.price || 0), qty, is_weight: false,
+  };
+  toast(`${p.name} ×${qty}`, 'success', 1500);
   STATE.scanHistory.push(p.id);
   renderCart();
   detectAndOfferSpecials();

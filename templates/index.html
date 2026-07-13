@@ -399,6 +399,9 @@
     .tpt-info { padding: 3px 5px 5px; text-align: center; }
     .tpt-name { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .tpt-price { font-size: 11px; color: #198754; }
+    .tpt-stock { font-size: 10px; color: #6c757d; }
+    .tpt-sell-all { display: block; width: 100%; padding: 3px 4px; font-size: 10px; font-weight: 600; background: #fff3cd; color: #664d03; border: none; border-top: 1px solid #ffe082; cursor: pointer; text-align: center; }
+    .tpt-sell-all:hover, .tpt-sell-all:active { background: #ffc107; color: #000; }
     #scan-panel { display: none; }
     #video { width: 100%; height: 160px; object-fit: cover; border: 2px solid var(--lc-gold-border); border-radius: var(--dd-radius); }
     #scanner-flash { position: absolute; inset: 0; border: 3px solid transparent; border-radius: var(--dd-radius); pointer-events: none; }
@@ -1006,6 +1009,7 @@
           <button class="btn btn-success btn-sm" data-bulk-action="receive">Receive</button>
           <button class="btn btn-outline-secondary btn-sm" data-bulk-action="stocktake">Stocktake</button>
           <button class="btn btn-outline-danger btn-sm" data-bulk-action="writeoff">Write Off</button>
+          <button class="btn btn-warning btn-sm" data-bulk-action="produce" style="display:none"><i class="bi bi-fire me-1"></i>Produce</button>
           <button class="btn btn-outline-secondary btn-sm" data-bulk-action="labels"><i class="bi bi-tags me-1"></i>Labels</button>
           <button class="btn btn-outline-primary btn-sm" data-bulk-action="edit">Edit</button>
           <button class="btn btn-outline-warning btn-sm text-dark" data-bulk-action="archive">Archive</button>
@@ -3085,6 +3089,24 @@
       <div class="modal-footer py-2">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-success btn-sm" id="btn-restore-confirm">Restore</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="multiProduceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title"><i class="bi bi-fire me-1 text-warning"></i>Produce Batches</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="multi-produce-body"></div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning btn-sm" id="btn-multi-produce-confirm">
+          <i class="bi bi-fire me-1"></i>Produce All
+        </button>
       </div>
     </div>
   </div>
