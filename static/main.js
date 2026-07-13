@@ -661,7 +661,7 @@ function renderProductsCards() {
       <div class="pr-flags">
         ${p.is_produced        ? `<i class="bi bi-fire pf-icon text-warning"      title="Batch produced"></i>`          : ''}
         ${p.is_prepared        ? `<i class="bi bi-clock pf-icon text-danger"       title="Made to order (kitchen)"></i>` : ''}
-        ${p.sold_by_weight     ? `<i class="bi bi-speedometer2 pf-icon text-info"  title="Weighed at sale"></i>`         : ''}
+        ${p.sync_to_scale      ? `<i class="bi bi-speedometer2 pf-icon text-info"  title="Synced to scale"></i>`         : ''}
         ${p.is_for_sale        ? `<i class="bi bi-shop pf-icon text-primary"       title="Available at till"></i>`       : ''}
         ${p.is_available_online ? `<i class="bi bi-globe pf-icon text-success"     title="Available online"></i>`        : ''}
       </div>

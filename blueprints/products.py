@@ -354,7 +354,16 @@ def api_products_update():
 
     # Scale fields
     if 'sync_to_scale' in data:
-        p.sync_to_scale = bool(data['sync_to_scale'])
+        new_sync = bool(data['sync_to_scale'])
+        if new_sync != p.sync_to_scale:
+            if new_sync:
+                # Re-enabling sync: clear stored barcode — scale generates it dynamically
+                p.barcode = None
+            else:
+                # Disabling sync: assign deterministic barcode from product_code if none set
+                if not p.barcode:
+                    p.barcode = _gen_barcode_from_code(p.product_code)
+        p.sync_to_scale = new_sync
     if 'scale_open_price' in data:
         p.scale_open_price = bool(data['scale_open_price'])
     if 'scale_prohibit' in data:
