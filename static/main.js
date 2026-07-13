@@ -514,7 +514,7 @@ function renderTellerGrid(q = '') {
         ${priceStr ? `<div class="tpt-price">${priceStr}</div>` : ''}
         ${isProducedRecipe ? `<div class="tpt-stock">${stockLeft} left</div>` : ''}
       </div>
-      ${isProducedRecipe ? `<button class="tpt-sell-all">Full (${p.yields_units})</button>` : ''}`;
+      ${isProducedRecipe && (p.yields_units || 1) > 1 ? `<button class="tpt-sell-all">Full (${p.yields_units})</button>` : ''}`;
     tile.querySelector('.tpt-sell-all')?.addEventListener('click', e => {
       e.stopPropagation();
       addToCartQty(p, p.yields_units || 1);
