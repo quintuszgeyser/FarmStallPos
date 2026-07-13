@@ -8,7 +8,7 @@ from statistics import median
 from flask import Blueprint, jsonify, request, send_file
 from sqlalchemy import func
 
-from helpers import require_role, get_setting, _parse_dt
+from helpers import require_role, get_setting, _parse_dt, get_fifo_cost_per_unit
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment,
@@ -170,17 +170,16 @@ def api_stats():
             top_cogs_map[next(iter(pids_in_sale))] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
 
     # COGS for batch-produced recipes: ingredients consumed at produce time, not sale time.
-    # Use all-time produce StockAdjustment records to compute weighted-average cost-per-unit,
-    # then multiply by qty sold in this period.
+    # Primary: weighted-average cost from StockAdjustment produce records.
+    # Fallback: current FIFO ingredient cost (for batches produced before cost tracking was added).
     sold_pids = set(top_revenue_map.keys())
     if sold_pids:
-        produced_recipes = {
-            p.id for p in Product.query.filter(
-                Product.id.in_(list(sold_pids)),
-                Product.product_type == 'recipe',
-                Product.is_produced == True
-            ).all()
-        }
+        produced_recipe_objs = Product.query.filter(
+            Product.id.in_(list(sold_pids)),
+            Product.product_type == 'recipe',
+            Product.is_produced == True
+        ).all()
+        produced_recipes = {p.id for p in produced_recipe_objs}
         if produced_recipes:
             produce_adjs = StockAdjustment.query.filter(
                 StockAdjustment.product_id.in_(list(produced_recipes)),
@@ -190,12 +189,31 @@ def api_stats():
             for adj in produce_adjs:
                 _produce_totals[adj.product_id]['cost'] += Decimal(str(adj.cost_written_off or 0))
                 _produce_totals[adj.product_id]['units'] += int(adj.qty_change_base or 0)
+
+            def _recipe_fifo_cost(pid, _depth=0):
+                """Recursive FIFO ingredient cost per finished unit."""
+                if _depth > 10: return Decimal('0')
+                total = Decimal('0')
+                for rl in RecipeLine.query.filter_by(product_id=pid).all():
+                    ing = db.session.get(Product, rl.ingredient_id)
+                    if not ing: continue
+                    if ing.product_type == 'recipe':
+                        total += _recipe_fifo_cost(ing.id, _depth + 1) * Decimal(str(rl.qty_base))
+                    else:
+                        total += Decimal(str(get_fifo_cost_per_unit(rl.ingredient_id))) * Decimal(str(rl.qty_base))
+                return total
+
             for pid in produced_recipes:
+                qty_sold = Decimal(str(top_qty_map.get(pid, 0)))
+                if qty_sold <= 0: continue
                 d = _produce_totals.get(pid)
                 if d and d['units'] > 0:
+                    # Use actual produce cost records (most accurate)
                     avg_cost_per_unit = d['cost'] / d['units']
-                    qty_sold = Decimal(str(top_qty_map.get(pid, 0)))
-                    top_cogs_map[pid] = float(avg_cost_per_unit * qty_sold)
+                else:
+                    # Fallback: current FIFO recipe cost
+                    avg_cost_per_unit = _recipe_fifo_cost(pid)
+                top_cogs_map[pid] = float(avg_cost_per_unit * qty_sold)
 
     def _norm(pid, qty):
         avg = avg_portion_map.get(pid)
