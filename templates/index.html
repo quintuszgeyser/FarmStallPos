@@ -400,6 +400,7 @@
     .tpt-name { font-size: 11px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
     .tpt-price { font-size: 11px; color: #198754; }
     .tpt-stock { font-size: 10px; color: #6c757d; }
+    .tpt-plu   { font-size: 10px; color: #0d6efd; font-variant-numeric: tabular-nums; }
     .tpt-sell-all { display: block; width: 100%; padding: 3px 4px; font-size: 10px; font-weight: 600; background: #fff3cd; color: #664d03; border: none; border-top: 1px solid #ffe082; cursor: pointer; text-align: center; }
     .tpt-sell-all:hover, .tpt-sell-all:active { background: #ffc107; color: #000; }
     #scan-panel { display: none; }
@@ -805,7 +806,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
     <li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings"><i class="bi bi-gear me-1"></i>Configuration</button></li>
     {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor"><i class="bi bi-bar-chart-line me-1"></i>Monitor</button></li>{% endif %}
-    <li class="nav-item pos-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()"><i class="bi bi-speedometer2 me-1"></i>Scale</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()"><i class="bi bi-speedometer2 me-1"></i>Scale</button></li>
     {% if is_qa %}<li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#deploy-tab" onclick="loadDeployStatus()"><i class="bi bi-rocket me-1"></i>Deploy</button></li>{% endif %}
   </ul>
 

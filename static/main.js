@@ -513,6 +513,7 @@ function renderTellerGrid(q = '') {
         <span class="tpt-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
         ${priceStr ? `<div class="tpt-price">${priceStr}</div>` : ''}
         ${isProducedRecipe ? `<div class="tpt-stock">${stockLeft} left</div>` : ''}
+        ${p.sync_to_scale && p.product_code ? `<div class="tpt-plu">PLU ${p.product_code}</div>` : ''}
       </div>
       ${isProducedRecipe && (p.yields_units || 1) > 1 ? `<button class="tpt-sell-all">Full (${p.yields_units})</button>` : ''}`;
     tile.querySelector('.tpt-sell-all')?.addEventListener('click', e => {
