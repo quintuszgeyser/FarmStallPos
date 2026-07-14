@@ -448,6 +448,7 @@ def api_product_produce(pid):
         cost_per_base_unit=cost_per_unit,
         purchased_at=now,
         user_id=u.id if u else None,
+        produce_ref=produce_uuid,
     ))
     db.session.commit()
     new_stock = get_stock_level(pid)

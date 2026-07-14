@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 from helpers import (
     require_login, require_role, current_user,
-    get_stock_level, consume_fifo, _parse_dt,
+    get_stock_level, consume_fifo, reverse_fifo, _parse_dt,
 )
 from models import (
     db,
@@ -224,9 +224,11 @@ def api_stock_batch_delete(batch_id):
         return jsonify({'error': 'Cannot delete — stock from this batch has already been used in sales'}), 400
     if Decimal(str(batch.qty_remaining_base)) != Decimal(str(batch.qty_purchased_base)):
         return jsonify({'error': 'Cannot delete — some stock from this batch has already been consumed'}), 400
+    if batch.produce_ref:
+        reverse_fifo(batch.produce_ref)
     db.session.delete(batch)
     db.session.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'ingredients_restored': bool(batch.produce_ref)})
 
 
 @bp.route('/api/stock/batches/<int:batch_id>', methods=['PATCH'])

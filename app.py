@@ -356,6 +356,8 @@ def strong_migrate():
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN sort_order INTEGER")
             if 'import_run_id' not in existing_sb:
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN import_run_id VARCHAR(36)")
+            if 'produce_ref' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN produce_ref VARCHAR(36)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_product ON stock_batches (product_id)")
 
             conn.exec_driver_sql("""
@@ -719,6 +721,7 @@ def strong_migrate():
             pg_try("ALTER TABLE stock_batches ADD CONSTRAINT fk_batches_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id)")
             pg_try("ALTER TABLE stock_batches ADD COLUMN sort_order INTEGER")
             pg_try("ALTER TABLE stock_batches ADD COLUMN import_run_id VARCHAR(36)")
+            pg_try("ALTER TABLE stock_batches ADD COLUMN produce_ref VARCHAR(36)")
             # Split contact into phone/email/website
             pg_try("ALTER TABLE suppliers ADD COLUMN phone   VARCHAR(50)")
             pg_try("ALTER TABLE suppliers ADD COLUMN email   VARCHAR(120)")
