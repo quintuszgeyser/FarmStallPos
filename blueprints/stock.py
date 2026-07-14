@@ -188,7 +188,7 @@ def api_stock_adjust():
     if not reason:
         return jsonify({'error': 'reason required'}), 400
     p = db.session.get(Product, pid, with_for_update=True)
-    if not p or p.product_type != 'stock_item':
+    if not p or (p.product_type != 'stock_item' and not (p.product_type == 'recipe' and p.is_produced)):
         return jsonify({'error': 'Product not found or not a stock_item'}), 404
     conversion  = _unit_conversion(p, unit)
     actual_base = Decimal(str(actual_qty * conversion))

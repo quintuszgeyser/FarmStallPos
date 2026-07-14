@@ -2599,6 +2599,7 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
     const result = await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
     if (result?.id) await _uploadProductImagesIfSelected(result.id);
     await loadProducts();
+    loadIngredients();
     toast('Product added');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
     // If opened from a purchase run line, auto-select the new product in that line
@@ -2631,6 +2632,7 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
     await api('/api/products/update', { method: 'POST', body: JSON.stringify(payload) });
     await _uploadProductImagesIfSelected(id);
     await loadProducts();
+    loadIngredients();
     let msg = 'Product updated.';
     if (wasForSale && !nowForSale)  msg = `"${payload.name}" moved to the Ingredients tab.`;
     if (!wasForSale && nowForSale)  msg = `"${payload.name}" moved back to For Sale.`;
@@ -2647,6 +2649,7 @@ document.getElementById('btn-delete-product')?.addEventListener('click', async (
   try {
     await api(`/api/products/${encodeURIComponent(name)}`, { method: 'DELETE' });
     await loadProducts();
+    loadIngredients();
     toast('Product deleted');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
   } catch (e) {
@@ -2656,6 +2659,7 @@ document.getElementById('btn-delete-product')?.addEventListener('click', async (
         try {
           await api('/api/products/update', { method: 'POST', body: JSON.stringify({ id, is_for_sale: false }) });
           await loadProducts();
+          loadIngredients();
           toast(`"${name}" hidden`, 'warning', 2500);
           bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
         } catch (e2) { toast(e2.message, 'error'); }
@@ -3228,6 +3232,13 @@ let _stocktakeItem = null;
 function _buildStocktakeUnitSelect(unitType, packageSize, packageUnit, selectedUnit) {
   const sel = document.createElement('select');
   sel.className = 'form-select form-select-sm stocktake-row-unit';
+  if (_stocktakeItem?.product_type === 'recipe' && _stocktakeItem?.is_produced && _stocktakeItem?.stock_unit) {
+    const lbl = _stocktakeItem.stock_unit;
+    const opt = document.createElement('option');
+    opt.value = 'unit'; opt.textContent = lbl; opt.dataset.conv = 1; opt.selected = true;
+    sel.appendChild(opt);
+    return sel;
+  }
   buildUnitOptions(unitType, packageSize, packageUnit).forEach(o => {
     const opt = document.createElement('option');
     opt.value = o.value; opt.textContent = o.label; opt.dataset.conv = o.conv;
@@ -3298,11 +3309,20 @@ function _updateStocktakePreview() {
   const preview = document.getElementById('stocktake-diff-preview');
   const totEl   = document.getElementById('stocktake-total-preview');
 
+  const _isProducedRecipe = _stocktakeItem.product_type === 'recipe' && _stocktakeItem.is_produced && !!_stocktakeItem.stock_unit;
+  const _fmtStocktakeQty = (n) => {
+    if (_isProducedRecipe) {
+      const lbl = _stocktakeItem.stock_unit;
+      return `${n} ${lbl}${n !== 1 ? 's' : ''}`;
+    }
+    return displayQty(n, _stocktakeItem.unit_type);
+  };
+
   // Show running total when multiple rows
   const rowCount = document.querySelectorAll('.stocktake-row').length;
   if (rowCount > 1 && actual > 0) {
     show(totEl);
-    totEl.textContent = `Total counted: ${displayQty(actual, _stocktakeItem.unit_type)}`;
+    totEl.textContent = `Total counted: ${_fmtStocktakeQty(actual)}`;
   } else {
     hide(totEl);
   }
@@ -3315,10 +3335,10 @@ function _updateStocktakePreview() {
     preview.innerHTML = '<i class="bi bi-check-lg me-1"></i>Matches system - no adjustment needed';
   } else if (diff < 0) {
     preview.className = 'alert alert-warning py-2 small';
-    preview.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>System will deduct ${displayQty(Math.abs(diff), _stocktakeItem.unit_type)} (unexplained loss)`;
+    preview.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>System will deduct ${_fmtStocktakeQty(Math.abs(diff))} (unexplained loss)`;
   } else {
     preview.className = 'alert alert-info py-2 small';
-    preview.innerHTML = `<i class="bi bi-info-circle me-1"></i>System will add ${displayQty(diff, _stocktakeItem.unit_type)} (found more than expected)`;
+    preview.innerHTML = `<i class="bi bi-info-circle me-1"></i>System will add ${_fmtStocktakeQty(diff)} (found more than expected)`;
   }
 }
 
@@ -3330,21 +3350,27 @@ function openStocktakeModal(item) {
   hide(document.getElementById('stocktake-diff-preview'));
   hide(document.getElementById('stocktake-total-preview'));
 
-  document.getElementById('stocktake-system-qty').textContent = displayQty(item.stock_level || 0, item.unit_type);
+  const _isProduced = item.product_type === 'recipe' && item.is_produced && !!item.stock_unit;
+  if (_isProduced) {
+    const n = item.stock_level || 0;
+    const lbl = item.stock_unit;
+    document.getElementById('stocktake-system-qty').textContent = `${n} ${lbl}${n !== 1 ? 's' : ''}`;
+  } else {
+    document.getElementById('stocktake-system-qty').textContent = displayQty(item.stock_level || 0, item.unit_type);
+  }
 
   // Reset rows - start with one blank row using base unit
   document.getElementById('stocktake-rows').innerHTML = '';
-  _addStocktakeRow(UNITS[item.unit_type]?.base || 'unit');
+  _addStocktakeRow(_isProduced ? 'unit' : (UNITS[item.unit_type]?.base || 'unit'));
 
   bootstrap.Modal.getOrCreateInstance(document.getElementById('stocktakeModal')).show();
 }
 
 document.getElementById('btn-stocktake-add-row')?.addEventListener('click', () => {
   if (!_stocktakeItem) return;
-  // Default new rows to package unit if available, else base unit
-  const defaultUnit = _stocktakeItem.package_unit
-    ? _stocktakeItem.package_unit
-    : (UNITS[_stocktakeItem.unit_type]?.base || 'unit');
+  const isProduced = _stocktakeItem.product_type === 'recipe' && _stocktakeItem.is_produced && !!_stocktakeItem.stock_unit;
+  const defaultUnit = isProduced ? 'unit'
+    : (_stocktakeItem.package_unit || UNITS[_stocktakeItem.unit_type]?.base || 'unit');
   _addStocktakeRow(defaultUnit);
 });
 
@@ -3357,13 +3383,18 @@ document.getElementById('btn-stocktake-confirm')?.addEventListener('click', asyn
   if (!reason)    return toast('Please enter a reason or note', 'warning');
 
   // Send total in base units directly
-  const baseUnit = _stocktakeItem?.base_unit || UNITS[_stocktakeItem?.unit_type]?.base || 'unit';
+  const _isProducedConfirm = _stocktakeItem?.product_type === 'recipe' && _stocktakeItem?.is_produced && !!_stocktakeItem?.stock_unit;
+  const baseUnit = _isProducedConfirm ? 'unit' : (_stocktakeItem?.base_unit || UNITS[_stocktakeItem?.unit_type]?.base || 'unit');
   try {
     const j = await api('/api/stock/adjust', {
       method: 'POST',
       body: JSON.stringify({ product_id: pid, actual_qty: total, unit: baseUnit, reason })
     });
-    const diffDisplay = displayQty(Math.abs(j.difference), _stocktakeItem?.unit_type);
+    const _diffN = Math.abs(j.difference);
+    const _lbl = _stocktakeItem?.stock_unit || 'unit';
+    const diffDisplay = _isProducedConfirm
+      ? `${_diffN} ${_lbl}${_diffN !== 1 ? 's' : ''}`
+      : displayQty(_diffN, _stocktakeItem?.unit_type);
     const msg = j.difference === 0
       ? 'No change - stock levels match'
       : j.difference < 0
@@ -3389,15 +3420,16 @@ function openWriteoffModal(item) {
   document.getElementById('writeoff-reason').value            = '';
   hide(document.getElementById('writeoff-cost-preview'));
 
-  const isProduced = item.product_type === 'recipe' && item.is_produced;
+  const isProduced = item.product_type === 'recipe' && item.is_produced && !!item.stock_unit;
   const unitSel    = document.getElementById('writeoff-unit');
   unitSel.innerHTML = '';
 
   if (isProduced) {
     const stock = item.stock_level ?? item.stock_qty ?? 0;
-    document.getElementById('writeoff-available').textContent = `${stock} units`;
+    const lbl = item.stock_unit;
+    document.getElementById('writeoff-available').textContent = `${stock} ${lbl}${stock !== 1 ? 's' : ''}`;
     const opt = document.createElement('option');
-    opt.value = 'units'; opt.textContent = 'units'; opt.dataset.conv = 1;
+    opt.value = 'unit'; opt.textContent = lbl; opt.dataset.conv = 1;
     unitSel.appendChild(opt);
   } else {
     document.getElementById('writeoff-available').textContent = displayQty(item.stock_level || 0, item.unit_type);
@@ -3454,9 +3486,10 @@ document.getElementById('btn-writeoff-confirm')?.addEventListener('click', async
       method: 'POST',
       body: JSON.stringify({ product_id: pid, qty, unit, reason })
     });
-    const isProduced = _writeoffItem?.product_type === 'recipe' && _writeoffItem?.is_produced;
+    const isProduced = _writeoffItem?.product_type === 'recipe' && _writeoffItem?.is_produced && !!_writeoffItem?.stock_unit;
+    const _woLbl = _writeoffItem?.stock_unit || 'unit';
     const msg = isProduced
-      ? `Written off: ${j.qty_written_off} units`
+      ? `Written off: ${j.qty_written_off} ${_woLbl}${j.qty_written_off !== 1 ? 's' : ''}`
       : `Written off: ${displayQty(j.qty_written_off, _writeoffItem?.unit_type)} - Cost: R${j.cost_written_off.toFixed(4)}`;
     toast(msg, 'warning', 5000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('writeoffModal')).hide();
