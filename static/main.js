@@ -352,7 +352,7 @@ function updateVisibility() {
   const roleLabels = roles.map(r => `<span class="badge ${r==='admin'?'bg-danger':r==='developer'?'bg-info text-dark':'bg-secondary'} ms-1">${r}</span>`).join('');
   if (au) au.innerHTML = `${STATE.user.username} ${roleLabels}`;
   show(tabs); show(contents);
-  requestAnimationFrame(() => requestAnimationFrame(_sizeTellerScreen)); // tabs now visible
+  _initTellerSize(); // tabs now visible — retry sequence handles font/layout settling
   // pos-only: Teller/Transactions/Kitchen - hidden for pure developer (no admin/teller)
   const showPos = !isDev || isAdmin || isTeller;
   document.querySelectorAll('.pos-only').forEach(el =>
@@ -10542,15 +10542,30 @@ function _sizeTellerScreen() {
   const el = document.getElementById('teller-screen');
   if (!el) return;
   const top = el.getBoundingClientRect().top;
-  // Skip if element is not yet laid out (hidden tab on first load)
-  if (top === 0 && el.offsetHeight === 0) return;
+  if (top === 0 && el.offsetHeight === 0) return; // element not yet in layout
   const h = window.innerHeight - top - 8;
   if (h > 100) el.style.height = h + 'px';
 }
+
+// Fires sizing on initial load with multiple retries to catch font/layout settling.
+// Laptops with different DPI or slow font loads can have the navbar shift height
+// after the first rAF fires, leaving the teller screen too tall until next resize.
+function _initTellerSize() {
+  requestAnimationFrame(() => requestAnimationFrame(_sizeTellerScreen));   // immediate
+  setTimeout(_sizeTellerScreen, 100);   // after fonts likely loaded
+  setTimeout(_sizeTellerScreen, 500);   // catch any remaining late paints
+  document.fonts?.ready?.then(_sizeTellerScreen);  // definitive: fires when all fonts are loaded
+}
+
 window.addEventListener('resize', _sizeTellerScreen);
-window.addEventListener('load', _sizeTellerScreen); // fires after full layout
+window.addEventListener('load', _sizeTellerScreen);
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', _sizeTellerScreen);
-requestAnimationFrame(() => requestAnimationFrame(_sizeTellerScreen)); // two-frame defer for paint
+
+// Watch navbar height with ResizeObserver — re-sizes teller if toolbar reflows
+const _navEl = document.querySelector('.navbar') || document.querySelector('nav');
+if (_navEl && typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(_sizeTellerScreen).observe(_navEl);
+}
 
 // (System Updates removed - deployment is via Docker rebuild, not Windows updater)
 
