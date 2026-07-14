@@ -42,7 +42,7 @@ def api_stock_ingredients():
         batches     = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.sort_order.asc().nulls_last(), StockBatch.purchased_at.asc(), StockBatch.id.asc()).all()
         stock_level = sum(float(b.qty_remaining_base) for b in batches)
         result.append({
-            'id': p.id, 'name': p.name, 'unit_type': p.unit_type, 'base_unit': p.base_unit,
+            'id': p.id, 'name': p.name, 'unit_type': p.unit_type, 'base_unit': p.base_unit, 'stock_unit': p.stock_unit,
             'package_size': float(p.package_size) if p.package_size else None,
             'package_size_unit': p.package_size_unit, 'package_unit': p.package_unit,
             'stock_level': stock_level,

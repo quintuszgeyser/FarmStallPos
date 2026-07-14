@@ -642,7 +642,7 @@ function renderProductsCards() {
   wrap.appendChild(hdr);
 
   items.forEach(p => {
-    const isStockItem = p.product_type === 'stock_item';
+    const isStockItem = p.product_type === 'stock_item' || (p.product_type === 'recipe' && p.is_produced);
     const typeLabel   = { stock_item: '<i class="bi bi-box-seam"></i>', recipe: '<i class="bi bi-layers"></i>' }[p.product_type] || '';
 
     // Price
@@ -659,14 +659,17 @@ function renderProductsCards() {
     let stockHtml   = '<span class="text-muted">—</span>';
     let stockMobile = '';
     if (isStockItem) {
-      const level = displayQty(p.stock_level || 0, p.unit_type);
+      let level;
+      if (p.product_type === 'recipe' && p.is_produced) {
+        const n = p.stock_level ?? 0;
+        const lbl = p.stock_unit || 'unit';
+        level = `${n} ${n === 1 ? lbl : lbl + 's'}`;
+      } else {
+        level = displayQty(p.stock_level || 0, p.unit_type);
+      }
       const low   = p.low_stock ? ' <span class="badge bg-warning text-dark" style="font-size:10px">LOW</span>' : '';
       stockHtml   = level + low;
       stockMobile = level + (p.low_stock ? ' <i class="bi bi-exclamation-triangle"></i>' : '');
-    } else if (p.product_type === 'recipe' && p.is_produced) {
-      const n = p.stock_level ?? p.stock_qty ?? 0;
-      stockHtml   = `${n} in stock`;
-      stockMobile = `${n} in stock`;
     }
 
     const margins = calcProductMargins(p);
@@ -2884,8 +2887,9 @@ function _buildStockBody(item, prod) {
     const tbody = table.querySelector('tbody');
 
     item.batches.forEach((b, idx) => {
-      const remaining  = displayQty(b.qty_remaining_base, item.unit_type);
-      const purchased  = displayQty(b.qty_purchased_base, item.unit_type);
+      const _qtyLabel = (n) => item.stock_unit ? `${n} ${item.stock_unit}${n !== 1 ? 's' : ''}` : displayQty(n, item.unit_type);
+      const remaining  = _qtyLabel(b.qty_remaining_base);
+      const purchased  = _qtyLabel(b.qty_purchased_base);
       const date       = new Date(b.purchased_at).toLocaleDateString('en-ZA');
       const supplier   = b.supplier_name || '-';
       const stockValue = (b.cost_per_base_unit * b.qty_remaining_base);
