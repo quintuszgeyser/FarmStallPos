@@ -1998,8 +1998,9 @@ function updateProductTypeSections(type) {
 
   const el = id => document.getElementById(id);
 
-  // Show unit-type selector early (before price) only for stock items
-  isStockItem ? show(el('section-unit-type-early')) : hide(el('section-unit-type-early'));
+  // Show unit-type selector for stock items and produced recipes
+  const _isProducedCheck = isRecipe && !!document.getElementById('p-is-produced')?.checked;
+  (isStockItem || _isProducedCheck) ? show(el('section-unit-type-early')) : hide(el('section-unit-type-early'));
 
   isStockItem ? show(el('section-stock-item')) : hide(el('section-stock-item'));
   isRecipe    ? show(el('section-recipe'))     : hide(el('section-recipe'));
@@ -2383,6 +2384,7 @@ document.getElementById('btn-add-recipe-line')?.addEventListener('click', () => 
 document.getElementById('p-is-produced')?.addEventListener('change', () => {
   const on = document.getElementById('p-is-produced').checked;
   on ? show(document.getElementById('row-batch-size')) : hide(document.getElementById('row-batch-size'));
+  on ? show(document.getElementById('section-unit-type-early')) : hide(document.getElementById('section-unit-type-early'));
 });
 
 // Pre-fill calc markup from settings when modal opens
