@@ -2009,7 +2009,7 @@ function updateProductTypeSections(type) {
   if (!isRecipe) hide(el('row-batch-size'));
   hide(el('row-stock-qty'));
   hide(el('section-purchase'));
-  isStockItem ? show(el('is-for-sale-row'))    : hide(el('is-for-sale-row'));
+  show(el('is-for-sale-row'));
 
   const isForSale = el('p-is-for-sale')?.checked;
   const unitType  = el('p-unit-type')?.value || 'weight';
