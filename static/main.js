@@ -1626,6 +1626,7 @@ document.getElementById('btn-produce-confirm')?.addEventListener('click', async 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).hide();
     toast(`Produced ${r.units_added} unit${r.units_added !== 1 ? 's' : ''} — stock now ${r.new_stock}`, 'success', 3000);
     await loadProducts();
+    loadIngredients();
   } catch(e) {
     toast(e.message, 'danger');
   } finally {
@@ -1668,6 +1669,7 @@ document.getElementById('btn-multi-produce-confirm')?.addEventListener('click', 
   if (errors.length) toast(`Errors: ${errors.join('; ')}`, 'danger', 5000);
   else toast(`Produced ${totalUnits} total unit${totalUnits !== 1 ? 's' : ''}`, 'success', 3000);
   await loadProducts();
+  loadIngredients();
 });
 
 function _renderBarcodes(items) {
