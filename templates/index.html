@@ -2538,6 +2538,10 @@
           <div class="col-12"><input id="p-name" class="form-control" placeholder="Product Name" required></div>
           <input type="hidden" id="p-id">
         </div>
+        <div class="mb-2 position-relative">
+          <input id="p-category" class="form-control" placeholder="Category (e.g. Baked Goods, Dairy)" autocomplete="off">
+          <div id="p-category-suggestions" class="list-group position-absolute w-100" style="z-index:1060;top:100%;display:none"></div>
+        </div>
         <div class="mb-2" id="row-barcode">
           <input id="p-barcode" class="form-control" placeholder="Barcode (auto-generated if blank)">
         </div>
