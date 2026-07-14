@@ -207,9 +207,10 @@ def api_products_post():
 
     is_produced  = bool(data.get('is_produced', False)) if product_type == 'recipe' else False
     try:
-        yields_units = Decimal(str(data.get('yields_units', 1) or 1)) if product_type == 'recipe' else Decimal('1')
+        batch_size = Decimal(str(data.get('batch_size', 1) or 1)) if product_type == 'recipe' else Decimal('1')
     except Exception:
-        yields_units = Decimal('1')
+        batch_size = Decimal('1')
+    stock_unit = (str(data.get('stock_unit') or '').strip() or None) if product_type == 'recipe' else None
 
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
@@ -227,7 +228,7 @@ def api_products_post():
         scale_pack_qty=scale_pack_qty, scale_open_price=scale_open_price,
         scale_msg1=scale_msg1, scale_msg2=scale_msg2, scale_prohibit=scale_prohibit,
         stat_unit_size=stat_unit_size,
-        is_produced=is_produced, yields_units=yields_units,
+        is_produced=is_produced, batch_size=batch_size, stock_unit=stock_unit,
     )
     db.session.add(p)
     db.session.flush()
@@ -399,11 +400,13 @@ def api_products_update():
     if p.product_type == 'recipe':
         if 'is_produced' in data:
             p.is_produced = bool(data['is_produced'])
-        if 'yields_units' in data:
+        if 'batch_size' in data:
             try:
-                p.yields_units = Decimal(str(data['yields_units'] or 1))
+                p.batch_size = Decimal(str(data['batch_size'] or 1))
             except Exception:
                 pass
+        if 'stock_unit' in data:
+            p.stock_unit = (str(data['stock_unit'] or '').strip() or None)
 
     if 'sell_packages' in data:
         sync_sell_packages(p.id, data['sell_packages'])
@@ -414,7 +417,7 @@ def api_products_update():
 
 @bp.route('/api/products/<int:pid>/produce', methods=['POST'])
 def api_product_produce(pid):
-    """Consume raw ingredients for N batches and add finished units to stock."""
+    """Consume raw ingredients for N batches and create a StockBatch of finished units."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     p = db.session.get(Product, pid, with_for_update=True)
@@ -434,19 +437,21 @@ def api_product_produce(pid):
     total_ingredient_cost = Decimal('0')
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
         total_ingredient_cost += consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches, produce_uuid, now)
-    units_added = int((Decimal(str(p.yields_units)) * batches).to_integral_value())
-    old_stock = p.stock_qty or 0
-    p.stock_qty = old_stock + units_added
-    # Record produce run so stats can attribute ingredient COGS to this product
-    db.session.add(StockAdjustment(
-        product_id=pid, adjustment_type='produce',
-        qty_change_base=units_added, system_qty_before=old_stock,
-        cost_written_off=total_ingredient_cost,
-        reason=f'Produce {batches} batch(es)',
-        adjusted_at=now, user_id=u.id if u else None
+
+    units_added = int((Decimal(str(p.batch_size)) * batches).to_integral_value())
+    cost_per_unit = total_ingredient_cost / units_added if units_added > 0 else Decimal('0')
+
+    db.session.add(StockBatch(
+        product_id=pid,
+        qty_purchased_base=units_added,
+        qty_remaining_base=units_added,
+        cost_per_base_unit=cost_per_unit,
+        purchased_at=now,
+        user_id=u.id if u else None,
     ))
     db.session.commit()
-    return jsonify({'ok': True, 'units_added': units_added, 'new_stock': p.stock_qty, 'cost': float(total_ingredient_cost)})
+    new_stock = get_stock_level(pid)
+    return jsonify({'ok': True, 'units_added': units_added, 'new_stock': new_stock, 'cost': float(total_ingredient_cost)})
 
 
 @bp.route('/api/products/<int:pid>/image', methods=['POST'])
@@ -740,7 +745,8 @@ def api_recipe_cost(pid):
             ing = db.session.get(Product, ln.ingredient_id)
             scaled = float(ln.qty_base) * multiplier
             if ing and ing.product_type == 'recipe':
-                sub_cost, sub_lines = _cost_recursive(ing.id, scaled, _depth + 1)
+                per_unit = float(ing.batch_size or 1) if ing.is_produced else 1.0
+                sub_cost, sub_lines = _cost_recursive(ing.id, scaled / per_unit, _depth + 1)
                 total += sub_cost
                 lines_out.append({'ingredient_id': ing.id, 'ingredient_name': ing.name, 'base_unit': None, 'qty_base': scaled, 'cost_per_unit': 0, 'line_cost': round(sub_cost, 4), 'is_sub_recipe': True, 'sub_lines': sub_lines})
             else:

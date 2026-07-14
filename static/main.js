@@ -515,10 +515,10 @@ function renderTellerGrid(q = '') {
         ${isProducedRecipe ? `<div class="tpt-stock">${stockLeft} left</div>` : ''}
         ${p.sync_to_scale && p.product_code ? `<div class="tpt-plu">PLU ${p.product_code}</div>` : ''}
       </div>
-      ${isProducedRecipe && (p.yields_units || 1) > 1 ? `<button class="tpt-sell-all">Full (${p.yields_units})</button>` : ''}`;
+      ${isProducedRecipe && (p.batch_size || 1) > 1 ? `<button class="tpt-sell-all">Full (${p.batch_size}${p.stock_unit ? ' ' + p.stock_unit + 's' : ''})</button>` : ''}`;
     tile.querySelector('.tpt-sell-all')?.addEventListener('click', e => {
       e.stopPropagation();
-      addToCartQty(p, p.yields_units || 1);
+      addToCartQty(p, p.batch_size || 1);
     });
     tile.addEventListener('click', () => addToCart(p));
     host.appendChild(tile);
@@ -1597,12 +1597,13 @@ function openProduceModal(p) {
 function _updateProducePreview() {
   const p = _produceProduct; if (!p) return;
   const batches = parseInt(document.getElementById('produce-batches-input')?.value || '1', 10) || 1;
-  const units   = Math.round((p.yields_units || 1) * batches);
+  const units     = Math.round((p.batch_size || 1) * batches);
+  const unitLabel = p.stock_unit || 'unit';
   const lines   = (p.recipe_lines || []).map(l =>
     `<li>${escapeHtml(l.ingredient_name || String(l.ingredient_id))}: ${displayQty(l.qty_base * batches, l.unit_type)}</li>`
   ).join('');
   document.getElementById('produce-modal-preview').innerHTML = `
-    <div class="mb-1"><strong>${units}</strong> unit${units !== 1 ? 's' : ''} will be added to stock.</div>
+    <div class="mb-1"><strong>${units}</strong> ${escapeHtml(unitLabel)}${units !== 1 ? 's' : ''} will be added to stock.</div>
     ${lines ? `<div class="mt-1">Ingredients consumed:</div><ul class="mb-0 ps-3">${lines}</ul>` : ''}
   `;
 }
@@ -1792,8 +1793,10 @@ function openProductEditor(p) {
   document.getElementById('p-is-prepared').checked          = !!p?.is_prepared;
   const _isProducedEl = document.getElementById('p-is-produced');
   if (_isProducedEl) _isProducedEl.checked = !!p?.is_produced;
-  const _yieldsEl = document.getElementById('p-yields-units');
-  if (_yieldsEl) _yieldsEl.value = p?.yields_units ?? 1;
+  const _batchSizeEl = document.getElementById('p-batch-size');
+  if (_batchSizeEl) _batchSizeEl.value = p?.batch_size ?? 1;
+  const _stockUnitEl = document.getElementById('p-stock-unit');
+  if (_stockUnitEl) _stockUnitEl.value = p?.stock_unit ?? '';
   const _onlineEl = document.getElementById('p-is-available-online');
   if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
 
@@ -1861,9 +1864,9 @@ function openProductEditor(p) {
   hide(document.getElementById('calc-result'));
   initCalcMarkup(p);
   updateProductTypeSections(p?.product_type ?? 'stock_item');
-  // Sync yields-units visibility after type sections are built
+  // Sync batch-size visibility after type sections are built
   const _ypEl = document.getElementById('p-is-produced');
-  const _yuEl = document.getElementById('row-yields-units');
+  const _yuEl = document.getElementById('row-batch-size');
   if (_ypEl && _yuEl) { _ypEl.checked ? show(_yuEl) : hide(_yuEl); }
 
   // Restore price display unit after sections are built
@@ -1997,7 +2000,7 @@ function updateProductTypeSections(type) {
 
   isStockItem ? show(el('section-stock-item')) : hide(el('section-stock-item'));
   isRecipe    ? show(el('section-recipe'))     : hide(el('section-recipe'));
-  if (!isRecipe) hide(el('row-yields-units'));
+  if (!isRecipe) hide(el('row-batch-size'));
   hide(el('row-stock-qty'));
   hide(el('section-purchase'));
   isStockItem ? show(el('is-for-sale-row'))    : hide(el('is-for-sale-row'));
@@ -2164,10 +2167,10 @@ function getIngredientCost(productId, qty, _depth = 0) {
     return parseFloat(qty) * (STATE._stockCostMap?.[productId] || 0);
   }
   if (p.product_type === 'recipe') {
-    // Sum cost of each recipe line × qty (qty = number of portions for a recipe ingredient)
+    const perUnit = p.is_produced ? (p.batch_size || 1) : 1;
     const lines = p.recipe_lines || [];
     return lines.reduce((sum, rl) => {
-      return sum + getIngredientCost(rl.ingredient_id, rl.qty_base * qty, _depth + 1);
+      return sum + getIngredientCost(rl.ingredient_id, rl.qty_base * qty / perUnit, _depth + 1);
     }, 0);
   }
   return 0;
@@ -2263,11 +2266,17 @@ function renderRecipeLines() {
     }
     ingSelHTML += '</select>';
 
-    // Unit selector for this ingredient (hidden for recipe ingredients - qty means "portions")
+    // Unit selector: disabled for recipe ingredients (show stock_unit label instead)
     const isRecipeIngredient = ingr?.product_type === 'recipe';
-    let unitSelHTML = `<select class="form-select form-select-sm" data-rl-idx="${idx}" data-rl-field="unit" style="width:auto" ${isRecipeIngredient ? 'disabled' : ''}>`;
-    unitOpts.forEach(u => { unitSelHTML += `<option value="${u}" ${u === (line.unit || baseUnit) ? 'selected' : ''}>${u}</option>`; });
-    unitSelHTML += '</select>';
+    let unitSelHTML;
+    if (isRecipeIngredient) {
+      const label = ingr?.stock_unit || ingr?.base_unit || 'unit';
+      unitSelHTML = `<span class="form-control form-control-sm text-muted" style="width:auto;background:#f8f9fa">${escapeHtml(label)}</span>`;
+    } else {
+      unitSelHTML = `<select class="form-select form-select-sm" data-rl-idx="${idx}" data-rl-field="unit" style="width:auto">`;
+      unitOpts.forEach(u => { unitSelHTML += `<option value="${u}" ${u === (line.unit || baseUnit) ? 'selected' : ''}>${u}</option>`; });
+      unitSelHTML += '</select>';
+    }
 
     tr.innerHTML = `
       <td>${ingSelHTML}</td>
@@ -2370,7 +2379,7 @@ document.getElementById('btn-add-recipe-line')?.addEventListener('click', () => 
 
 document.getElementById('p-is-produced')?.addEventListener('change', () => {
   const on = document.getElementById('p-is-produced').checked;
-  on ? show(document.getElementById('row-yields-units')) : hide(document.getElementById('row-yields-units'));
+  on ? show(document.getElementById('row-batch-size')) : hide(document.getElementById('row-batch-size'));
 });
 
 // Pre-fill calc markup from settings when modal opens
@@ -2741,7 +2750,8 @@ function buildProductPayload() {
     // Batch-produce (recipe only)
     ...(type === 'recipe' ? {
       is_produced:  document.getElementById('p-is-produced')?.checked || false,
-      yields_units: parseInt(document.getElementById('p-yields-units')?.value || '1', 10) || 1,
+      batch_size:  parseInt(document.getElementById('p-batch-size')?.value || '1', 10) || 1,
+      stock_unit:  document.getElementById('p-stock-unit')?.value.trim() || null,
     } : {}),
   };
 }

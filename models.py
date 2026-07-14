@@ -70,9 +70,10 @@ class Product(db.Model):
     # compare fairly against unit products (e.g. 250g = 1 portion of honey)
     stat_unit_size       = db.Column(Numeric(10, 4), nullable=True)
     # Batch-produce workflow: recipe products that are prepared in advance (cakes, jams, etc.)
-    # When is_produced=True, the teller sells from stock_qty instead of consuming ingredients at sale time.
+    # Produce run consumes ingredients and creates a StockBatch (same engine as stock_item).
     is_produced          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
-    yields_units         = db.Column(Numeric(10, 2), nullable=False, default=1, server_default='1')
+    batch_size           = db.Column(Numeric(10, 2), nullable=False, default=1, server_default='1')
+    stock_unit           = db.Column(db.String(30), nullable=True)
 
 
 class Category(db.Model):

@@ -474,7 +474,8 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'scale_last_sync_error':   p.scale_last_sync_error,
         'stat_unit_size':          float(p.stat_unit_size) if p.stat_unit_size is not None else None,
         'is_produced':             p.is_produced,
-        'yields_units':            float(p.yields_units) if p.yields_units is not None else 1.0,
+        'batch_size':              float(p.batch_size) if p.batch_size is not None else 1.0,
+        'stock_unit':              p.stock_unit,
         'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
             'filename':      img.filename,
@@ -489,7 +490,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
             d['stock_level'] < float(p.low_stock_threshold)
         )
     if p.product_type == 'recipe' and p.is_produced:
-        d['stock_level'] = p.stock_qty  # finished-goods units in stock
+        d['stock_level'] = get_stock_level(p.id)
     if p.product_type == 'simple':
         # Weighted-average purchase cost per unit - lets the product page show
         # margin/markup for resale goods (no stock batches, costed from purchases).

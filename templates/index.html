@@ -2692,11 +2692,18 @@
               </label>
             </div>
             <div class="form-text mb-2">Baked, brewed, or prepared in advance. Stock is added when you produce a batch; teller sells from finished stock.</div>
-            <div id="row-yields-units" class="hidden">
-              <label class="form-label small mb-1">Units produced per batch</label>
-              <div class="d-flex align-items-center gap-2">
-                <input id="p-yields-units" type="number" min="1" step="1" class="form-control form-control-sm" style="max-width:120px" placeholder="e.g. 8">
-                <span class="text-muted small">finished units (slices, jars, pots…)</span>
+            <div id="row-batch-size" class="hidden">
+              <div class="mb-2">
+                <label class="form-label small mb-1">Batch size (units produced per batch)</label>
+                <div class="d-flex align-items-center gap-2">
+                  <input id="p-batch-size" type="number" min="1" step="1" class="form-control form-control-sm" style="max-width:120px" placeholder="e.g. 10">
+                  <span class="text-muted small" id="batch-size-unit-hint">finished units</span>
+                </div>
+              </div>
+              <div>
+                <label class="form-label small mb-1">Stock unit name <span class="text-muted">(optional)</span></label>
+                <input id="p-stock-unit" type="text" class="form-control form-control-sm" style="max-width:160px" placeholder="e.g. Slice, Portion, Jar">
+                <div class="form-text">What to call one finished unit. Leave blank for "unit".</div>
               </div>
             </div>
           </div>

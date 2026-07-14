@@ -1518,6 +1518,21 @@ def strong_migrate():
         # Batch-produce workflow columns
         pg_try("ALTER TABLE products ADD COLUMN is_produced BOOLEAN NOT NULL DEFAULT FALSE")
         pg_try("ALTER TABLE products ADD COLUMN yields_units NUMERIC(10,2) NOT NULL DEFAULT 1")
+        pg_try("ALTER TABLE products ADD COLUMN batch_size NUMERIC(10,2) NOT NULL DEFAULT 1")
+        pg_try("ALTER TABLE products ADD COLUMN stock_unit VARCHAR(30)")
+        # Migrate yields_units → batch_size (idempotent: only sets where batch_size still has default 1 and yields_units differs)
+        pg_try("UPDATE products SET batch_size = yields_units WHERE is_produced = TRUE AND batch_size = 1 AND yields_units != 1")
+        # Migrate existing produced recipe stock_qty to StockBatch (run once, idempotent via NOT EXISTS)
+        pg_try("""
+            INSERT INTO stock_batches (product_id, qty_purchased_base, qty_remaining_base, cost_per_base_unit, purchased_at)
+            SELECT p.id, p.stock_qty, p.stock_qty, 0, NOW()
+            FROM products p
+            WHERE p.is_produced = TRUE
+              AND p.stock_qty > 0
+              AND NOT EXISTS (
+                  SELECT 1 FROM stock_batches sb WHERE sb.product_id = p.id
+              )
+        """)
 
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
