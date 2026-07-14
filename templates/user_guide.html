@@ -158,6 +158,9 @@
     <a href="#admin-stock">Receiving Stock</a>
     <a href="#admin-stocktake">Stocktake</a>
     <a href="#admin-writeoff">Write-Off</a>
+    <a href="#admin-batch-produce">Batch-Produced Recipes</a>
+    <a href="#admin-categories">Categories</a>
+    <a href="#admin-csv-import">CSV Import</a>
     <a href="#admin-specials">Specials</a>
 
     <div class="section-label">Admin - Operations</div>
@@ -171,6 +174,9 @@
     <a href="#admin-customers">Customers</a>
     <a href="#admin-settings">Settings</a>
     <a href="#updates">System Updates</a>
+
+    <div class="section-label">Scale</div>
+    <a href="#admin-scale">Scale (BC-4000)</a>
 
     <div class="section-label">Developer</div>
     <a href="#dev-recognition">Recognition Settings</a>
@@ -189,7 +195,7 @@
 
   <div style="margin-bottom:40px;">
     <h1 style="font-size:32px;color:var(--green);font-weight:800;">Farm Stall POS - User Guide</h1>
-    <p style="color:var(--muted);margin-top:6px;">Version 2.0 &nbsp;·&nbsp; App: <code>http://10.0.0.101:5000</code> (admin / admin123)</p>
+    <p style="color:var(--muted);margin-top:6px;">Version 2.1 &nbsp;·&nbsp; App: <code>http://10.0.0.101:5000</code> (admin / admin123)</p>
     <p>Sections are marked: <span class="badge badge-teller">Teller</span> <span class="badge badge-admin">Admin</span> <span class="badge badge-dev">Developer</span> <span class="badge badge-both">All roles</span></p>
   </div>
 
@@ -465,7 +471,7 @@
     <tr><th>Sub-tab</th><th>Shows</th></tr>
     <tr><td>Single Items</td><td>Stock items and simple products that are for sale at the till</td></tr>
     <tr><td>Ingredients</td><td>Stock items not sold directly - internal use only (flour, milk base, packaging)</td></tr>
-    <tr><td>Recipes</td><td>Composite products (cappuccino, toasted sandwich) for sale at the till</td></tr>
+    <tr><td>Recipes</td><td>Composite products for sale at the till, plus batch-produced items (baked goods, jams, preserves) that are produced in advance and tracked as FIFO stock</td></tr>
     <tr><td>Specials</td><td>Combo deal specials (e.g., 2× coffee for R35)</td></tr>
     <tr><td>Archived</td><td>Discontinued products (with optional remaining stock)</td></tr>
   </table>
@@ -475,6 +481,7 @@
     <tr><th>Type</th><th>Stock tracked by</th><th>COGS</th><th>Use for</th></tr>
     <tr><td>Stock Item</td><td>FIFO batches (g / ml / unit)</td><td>Yes (FIFO)</td><td>Anything received from a supplier: drinks, biltong, cheese, packaging</td></tr>
     <tr><td>Recipe</td><td>Ingredients' batches</td><td>Yes (sum of ingredients)</td><td>Prepared items: coffee, sandwiches, baked goods</td></tr>
+    <tr><td>Recipe (Batch-Produced)</td><td>FIFO batches (count / weight / volume)</td><td>Yes (FIFO)</td><td>Made in advance in batches: bread, cake, jam, chutney</td></tr>
     <tr><td>Simple</td><td>Integer qty</td><td>No</td><td>Legacy / simple items without cost tracking</td></tr>
   </table>
 
@@ -504,10 +511,13 @@
   <ol class="steps">
     <li>Click <strong>+ New Product</strong>.</li>
     <li>Choose the product type (Stock Item, Recipe, or Simple).</li>
-    <li>Fill in: name, price, barcode (auto-generated if left blank), unit type, low-stock threshold.</li>
+    <li>Fill in the <strong>name</strong>. Enter a <strong>Category</strong> (optional) — start typing to autocomplete from existing categories, or type a new name to create one automatically on save.</li>
+    <li>Fill in: price, barcode (auto-generated if left blank), unit type, low-stock threshold.</li>
     <li>For <strong>Stock Items</strong>: set unit type (weight/volume/count) and optionally configure purchase package sizes (e.g., "1 kg bag").</li>
     <li>For <strong>Recipes</strong>: add ingredients from the ingredient list and set quantities.</li>
+    <li>For <strong>Batch-Produced Recipes</strong>: tick <strong>Batch produced</strong>, set the <strong>Batch Size</strong> (how many finished units per produce run, e.g. 10 slices per loaf), and optionally enter a <strong>Stock Unit</strong> label (e.g. Slice, Portion, Jar). Set <strong>Unit Type</strong> to Count, Weight, or Volume depending on how you measure finished stock.</li>
     <li>For <strong>Sold by weight</strong> items: tick "Sold by weight" and set price per kg or per litre.</li>
+    <li>Uncheck <strong>Available at till</strong> to make a product invisible at the teller screen. Useful for batch-produced items that are only used as ingredients (e.g., a focacia loaf used in broodjie sandwiches).</li>
     <li>Click <strong>Add</strong>.</li>
   </ol>
 
@@ -582,6 +592,109 @@
   </ol>
 
   <p>The loss appears on the Stats tab. To correct an error, find the entry in <strong>Adjustment History</strong> at the bottom of the Products tab and click ✏️.</p>
+
+  <hr>
+
+  <!-- ═══════════ BATCH-PRODUCED RECIPES ═══════════ -->
+  <h2 id="admin-batch-produce">Batch-Produced Recipes <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Batch-produced recipes are items you bake or prepare in advance (bread, cakes, jams, preserves). Unlike made-to-order recipes, they are produced ahead of time and stored as FIFO stock — just like stock items. This gives you full batch traceability, FIFO costing, and stock level tracking per finished unit.</p>
+
+  <h3>How It Works</h3>
+  <table>
+    <tr><th>Concept</th><th>What it means</th></tr>
+    <tr><td>Batch Size</td><td>How many finished units one produce run creates (e.g., 10 slices per loaf)</td></tr>
+    <tr><td>Stock Unit</td><td>Display label for one finished unit (e.g., Slice, Portion, Jar). Optional — purely cosmetic.</td></tr>
+    <tr><td>Produce run</td><td>Consuming raw ingredients to create a batch of finished units. Creates a StockBatch.</td></tr>
+    <tr><td>Sale</td><td>Deducts finished units from FIFO stock — just like selling a stock item.</td></tr>
+  </table>
+
+  <h3>Setting Up a Batch-Produced Recipe</h3>
+  <ol class="steps">
+    <li>Click <strong>+ New Product</strong> and select <strong>Recipe</strong> as the product type.</li>
+    <li>Tick <strong>Batch produced</strong>. The Batch Size and Stock Unit fields appear.</li>
+    <li>Set the <strong>Unit Type</strong> (usually Count for items like slices and jars).</li>
+    <li>Set <strong>Batch Size</strong> — e.g., 10 if one bake produces 10 slices.</li>
+    <li>Enter a <strong>Stock Unit</strong> label — e.g., <em>Slice</em>. This label appears in stock counts and modals.</li>
+    <li>Add ingredients and their quantities per produce run (not per unit — these are consumed when you click Produce).</li>
+    <li>Set the selling price and click <strong>Add</strong>.</li>
+  </ol>
+
+  <div class="box box-info">
+    <strong>Example: Focacia Bread</strong>
+    Ingredients: flour 500g, olive oil 80ml, salt 5g. Batch size: 10. Stock unit: Slice.<br>
+    One produce run consumes those ingredients and creates 10 Slices in FIFO stock. Each sale deducts 1 Slice.
+  </div>
+
+  <h3>Producing a Batch</h3>
+  <ol class="steps">
+    <li>Go to <strong>Products → Recipes</strong> and find the product.</li>
+    <li>Click the <strong>⋮ menu</strong> and select <strong>Produce batch</strong>.</li>
+    <li>Enter the number of batches to produce (default 1). The preview shows total units added and ingredient cost.</li>
+    <li>Click <strong>Confirm</strong>. Ingredients are deducted from FIFO stock and a new stock batch of finished units is created.</li>
+  </ol>
+
+  <h3>Using a Produced Item as an Ingredient</h3>
+  <p>Batch-produced items appear in the ingredient selector when building other recipes. Example: Focacia Bread (10 Slices) is an ingredient in Broodjie (Qty: 2). The cost of 2 slices is automatically calculated as 2/10 of the focacia batch cost.</p>
+
+  <div class="box box-warn">
+    <strong>Hidden from till</strong>
+    If a batch-produced item is only used as an ingredient (not sold directly), uncheck <strong>Available at till</strong> in its product settings so it doesn't appear in the teller's product list.
+  </div>
+
+  <h3>Deleting a Produce Batch</h3>
+  <p>If you produced a batch by mistake, you can delete it from the stock batch panel:</p>
+  <ol class="steps">
+    <li>Expand the product card to see its batches.</li>
+    <li>Click the <strong>delete icon</strong> next to the produce batch.</li>
+    <li>The system restores all ingredients that were consumed during that produce run back to their original batches.</li>
+  </ol>
+  <div class="box box-danger">
+    <strong>Blocked if units are sold</strong>
+    A produce batch cannot be deleted if any of its finished units have already been sold. Void or edit those sales first.
+  </div>
+
+  <h3>Stocktake and Write-Off for Produced Items</h3>
+  <p>Stocktake and write-off work exactly the same as for stock items. If the product has a Stock Unit set (e.g., Slice), the modal shows counts in that unit rather than weight/volume.</p>
+
+  <hr>
+
+  <!-- ═══════════ CATEGORIES ═══════════ -->
+  <h2 id="admin-categories">Categories <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Categories group products on the Products tab and allow filtering. They are created automatically when you type a new category name in the product editor.</p>
+
+  <h3>Setting a Category</h3>
+  <ol class="steps">
+    <li>Open the product editor (new or edit).</li>
+    <li>Click the <strong>Category</strong> field below the product name.</li>
+    <li>Start typing — existing categories autocomplete. Select one to assign it.</li>
+    <li>To create a new category, type the full name and save the product. The category is created automatically.</li>
+  </ol>
+
+  <h3>Filtering by Category</h3>
+  <p>On the Products tab, use the category filter pills above the product cards to show only one category at a time. Click a pill to filter; click again or click <strong>All</strong> to clear.</p>
+
+  <hr>
+
+  <!-- ═══════════ CSV IMPORT ═══════════ -->
+  <h2 id="admin-csv-import">CSV Bulk Product Import <span class="badge badge-admin">Admin</span></h2>
+
+  <p>Large product catalogues can be imported from a CSV file rather than entered one by one.</p>
+
+  <ol class="steps">
+    <li>Go to <strong>Products</strong> and click <strong>⬆ Import CSV</strong>.</li>
+    <li>Download the template first by clicking <strong>Download Template</strong> — it shows the correct column headings and an example row.</li>
+    <li>Fill in your products and save the CSV.</li>
+    <li>Upload the file. Choose <strong>Preview</strong> mode first — it shows exactly what will be created, updated, or unchanged without making any changes.</li>
+    <li>Review the preview: green = new product, blue = update, grey = no change, red = error.</li>
+    <li>When satisfied, click <strong>Import</strong> to apply.</li>
+  </ol>
+
+  <div class="box box-info">
+    <strong>Updates vs creates</strong>
+    Rows are matched to existing products by barcode. If a barcode matches, the product is updated. If not, a new product is created. Use <strong>Strict mode</strong> to block updates and only allow new products.
+  </div>
 
   <hr>
 
@@ -817,6 +930,32 @@
 
   <hr>
 
+  <!-- ═══════════ SCALE ═══════════ -->
+  <h2 id="admin-scale">Scale (Ishida BC-4000) <span class="badge badge-admin">Admin</span></h2>
+
+  <p>The Ishida BC-4000 label printer scale connects to the POS over the network. Products can be synced to the scale's PLU memory so staff can weigh and print labels directly from the scale.</p>
+
+  <h3>Teller Scale View <span class="badge badge-teller">Teller</span></h3>
+  <p>Tellers can view scale-synced products under <strong>Stock → Scale</strong>. This shows a read-only list of all products synced to the scale: PLU, name, price, tare weight, shelf life, and sync status.</p>
+
+  <h3>Setting Up a Product for the Scale</h3>
+  <ol class="steps">
+    <li>Open the product editor and scroll to the <strong>Scale Sync</strong> section.</li>
+    <li>Tick <strong>Sync to scale</strong>.</li>
+    <li>Set <strong>Tare weight</strong> (in grams) if the item is pre-packaged.</li>
+    <li>Set <strong>Shelf life</strong> (days) — printed on the label.</li>
+    <li>Optionally set <strong>Message 1</strong> and <strong>Message 2</strong> (max 20 characters each) — printed on the label.</li>
+    <li>Click <strong>Update</strong>. The scale syncs automatically within the next sync cycle.</li>
+  </ol>
+
+  <h3>Manual Sync from the Scale</h3>
+  <p>To trigger a sync from the scale side: press <code>9000 + MODE</code> → <strong>P23</strong> → <strong>P23-03</strong> → <strong>P23-03-01</strong> → <strong>ENTER</strong>.</p>
+
+  <h3>PLU Numbers</h3>
+  <p>Each product synced to the scale uses its <strong>Product Code</strong> as the PLU number. Assign a product code in the product editor under the Scale section.</p>
+
+  <hr>
+
   <!-- ═══════════ DEVELOPER ═══════════ -->
   <h2 id="dev-recognition">Recognition Settings <span class="badge badge-dev">Developer</span></h2>
 
@@ -953,7 +1092,7 @@
   <p>The till detection polls every 3 seconds while the Teller tab is active and stops when the tab is hidden to save bandwidth.</p>
 
   <hr>
-  <p style="color:var(--muted);font-size:13px;text-align:center;margin-top:40px;">Farm Stall POS v2.0 &nbsp;·&nbsp; <a href="/" style="color:var(--green);">Back to App</a></p>
+  <p style="color:var(--muted);font-size:13px;text-align:center;margin-top:40px;">Farm Stall POS v2.1 &nbsp;·&nbsp; <a href="/" style="color:var(--green);">Back to App</a></p>
 
 </main>
 
