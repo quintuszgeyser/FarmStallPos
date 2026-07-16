@@ -507,7 +507,7 @@ function renderTellerGrid(q = '') {
     const stockLeft = isProducedRecipe ? (p.stock_level ?? p.stock_qty ?? 0) : 0;
     tile.innerHTML = `
       ${p.image_url
-        ? `<img class="tpt-img" src="${imgVariant(p.image_url, 'thumb')}" loading="lazy" decoding="async" alt="">`
+        ? `<img class="tpt-img" src="${imgVariant(p.image_url, 'small')}" loading="lazy" decoding="async" alt="">`
         : `<div class="tpt-ph"><i class="bi bi-box-seam"></i></div>`}
       <div class="tpt-info">
         <span class="tpt-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
@@ -2609,9 +2609,10 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
     // If opened from a purchase run line, auto-select the new product in that line
     if (_pendingPurchaseLine && result?.id) {
       const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
+      supplierProductIds.add(result.id); // new product belongs to this supplier run
       const sel = _pendingPurchaseLine.querySelector('[data-product-select]');
       if (sel) {
-        sel.innerHTML = _buildProductOptions(supplierProductIds);
+        sel.innerHTML = _buildProductOptions(supplierProductIds, false);
         sel.value = result.id;
         sel.dispatchEvent(new Event('change'));
       }
@@ -3773,13 +3774,18 @@ document.getElementById('btn-add-purchase-line')?.addEventListener('click', addP
 // Track which purchase line is waiting for a new product to be created
 let _pendingPurchaseLine = null;
 
-function _buildProductOptions(supplierProductIds) {
-  // Supplier's own products first (sorted by name), then the rest
+function _buildProductOptions(supplierProductIds, showAll = false) {
   const active = STATE.products.filter(p => !p.is_archived);
   const own    = active.filter(p => supplierProductIds.has(p.id));
-  const rest   = active.filter(p => !supplierProductIds.has(p.id));
-  const sep    = own.length ? `<option disabled>── Other products ──</option>` : '';
-  const opts   = (arr) => arr.map(p => `<option value="${p.id}">${p.name} (${p.product_type})</option>`).join('');
+  if (!showAll && own.length > 0) {
+    // Default: only show products previously bought from this supplier
+    const opts = own.map(p => `<option value="${p.id}">${p.name} (${p.product_type})</option>`).join('');
+    return `<option value="">- Select product -</option>${opts}`;
+  }
+  // Show all products: supplier's own first, then the rest
+  const rest = active.filter(p => !supplierProductIds.has(p.id));
+  const sep  = own.length ? `<option disabled>── Other products ──</option>` : '';
+  const opts = (arr) => arr.map(p => `<option value="${p.id}">${p.name} (${p.product_type})</option>`).join('');
   return `<option value="">- Select product -</option>${opts(own)}${sep}${opts(rest)}`;
 }
 
@@ -3790,6 +3796,7 @@ function addPurchaseLine() {
   const supplierProductIds = new Set(
     (_currentSupplierProducts || []).map(p => p.id)
   );
+  const hasSupplierProducts = supplierProductIds.size > 0;
 
   const line = document.createElement('div');
   line.className = 'border rounded p-2 mb-2';
@@ -3805,6 +3812,7 @@ function addPurchaseLine() {
       <select class="form-select form-select-sm" data-product-select>
         ${_buildProductOptions(supplierProductIds)}
       </select>
+      ${hasSupplierProducts ? `<a href="#" class="d-block mt-1 small text-muted text-end" data-toggle-all-products>Not on list? Show all products</a>` : ''}
     </div>
     <div class="row g-2">
       <div class="col-4"><input type="number" step="0.01" min="0.01" class="form-control form-control-sm" placeholder="Qty" data-qty></div>
@@ -3848,6 +3856,19 @@ function addPurchaseLine() {
   });
 
   line.querySelector('[data-remove-line]')?.addEventListener('click', () => line.remove());
+
+  // Toggle between supplier-only products and all products
+  const toggleLink = line.querySelector('[data-toggle-all-products]');
+  const productSel = line.querySelector('[data-product-select]');
+  let _showingAllProducts = false;
+  toggleLink?.addEventListener('click', e => {
+    e.preventDefault();
+    _showingAllProducts = !_showingAllProducts;
+    const currentVal = productSel.value;
+    productSel.innerHTML = _buildProductOptions(supplierProductIds, _showingAllProducts);
+    if (currentVal) productSel.value = currentVal;
+    toggleLink.textContent = _showingAllProducts ? 'Show supplier products only' : 'Not on list? Show all products';
+  });
 }
 
 document.getElementById('btn-submit-purchase-run')?.addEventListener('click', async () => {
