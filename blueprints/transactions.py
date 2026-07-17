@@ -56,7 +56,7 @@ def api_transactions_get():
 
     q = db.session.query(Sale).filter(
         Sale.voided == False,
-        Sale.payment_method != 'return',  # return rows are confusing negative entries
+        db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return'),
     )
 
     if not require_role('admin'):
