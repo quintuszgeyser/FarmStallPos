@@ -180,17 +180,18 @@ def api_invoices_finalise(inv_id):
             base_name = name.split('(')[0].strip() if '(' in name else name
             p = Product.query.filter(Product.name.ilike(base_name), Product.is_archived == False).first()
         if p:
+            line_cogs = Decimal('0')
             if p.product_type == 'stock_item':
                 conv = _UNIT_TO_BASE.get(p.unit_type, {}).get(unit, 1) if (unit and p.unit_type in ('weight', 'volume')) else 1
-                consume_fifo(p.id, qty_disp * Decimal(str(conv)), sale_uuid, now)
+                line_cogs = consume_fifo(p.id, qty_disp * Decimal(str(conv)), sale_uuid, now)
             elif p.product_type == 'simple':
                 p.stock_qty = max(0, (p.stock_qty or 0) - int(qty_disp))
             elif p.product_type == 'recipe':
                 for rl in RecipeLine.query.filter_by(product_id=p.id).all():
-                    consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * qty_disp, sale_uuid, now)
+                    line_cogs += consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * qty_disp, sale_uuid, now)
             db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=p.id, qty=qty_disp,
                                 unit_price=unit_price, user_id=sale_user_id,
-                                payment_method=inv_payment_method))
+                                payment_method=inv_payment_method, cogs=line_cogs))
     inv.sale_id = sale_uuid; inv.status = 'finalised'; db.session.commit()
     return jsonify({'ok': True, 'sale_id': sale_uuid})
 

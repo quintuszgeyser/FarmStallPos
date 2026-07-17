@@ -57,7 +57,7 @@ def _sum_sales(start_dt, end_dt, payment_method=None, voided=False):
         Sale.date_time >= start_dt,
         Sale.date_time <= end_dt,
         Sale.voided == voided,
-        Sale.payment_method != 'return',  # exclude return rows (negative qty, not voided)
+        db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return'),
     )
     if payment_method:
         q = q.filter(Sale.payment_method == payment_method)

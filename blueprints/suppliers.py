@@ -191,6 +191,8 @@ def api_suppliers_purchase_run(sid):
         if p.product_type == 'stock_item':
             conversion  = _UNIT_CONVERSIONS.get(unit, 1)
             qty_base    = qty * conversion
+            if qty_base == 0:
+                return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
             cost_per_base = total_price / qty_base
             db.session.add(StockBatch(
                 product_id=pid,
