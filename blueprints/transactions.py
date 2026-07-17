@@ -158,13 +158,19 @@ def api_transactions_get():
                 try: line['discount'] = _json.loads(ln.discount_json)
                 except Exception: pass
             if is_admin_req:
-                ptype = product_types_map.get(ln.product_id, 'stock_item')
-                if ptype == 'stock_item':
-                    line_cogs = cogs_by_ingredient[sid].get(ln.product_id, Decimal('0'))
-                elif ptype == 'recipe':
-                    line_cogs = recipe_cogs_per_pid.get(ln.product_id, Decimal('0'))
+                if ln.cogs is not None:
+                    line_cogs = Decimal(str(ln.cogs))
                 else:
-                    line_cogs = Decimal('0')
+                    ptype = product_types_map.get(ln.product_id, 'stock_item')
+                    if ptype == 'stock_item':
+                        line_cogs = cogs_by_ingredient[sid].get(ln.product_id, Decimal('0'))
+                    elif ptype == 'recipe':
+                        line_cogs = recipe_cogs_per_pid.get(ln.product_id, Decimal('0'))
+                        # Batch-produced recipes consume their own finished-goods batch (ingredient_id == product_id)
+                        if line_cogs == Decimal('0'):
+                            line_cogs = cogs_by_ingredient[sid].get(ln.product_id, Decimal('0'))
+                    else:
+                        line_cogs = Decimal('0')
                 line_cogs_f = float(round(line_cogs, 4))
                 if line_cogs_f > 0:
                     sub_f = float(subtotal)
