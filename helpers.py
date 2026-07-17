@@ -185,11 +185,15 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0):
 
     sub_lines = RecipeLine.query.filter_by(product_id=ingredient_id).all()
     if sub_lines:
-        total_cost = Decimal('0')
-        for sub in sub_lines:
-            sub_qty = sub.qty_base * qty_needed
-            total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1)
-        return total_cost
+        prod = db.session.get(Product, ingredient_id)
+        if not (prod and prod.is_produced):
+            # Made-to-order recipe: consume raw ingredients recursively.
+            total_cost = Decimal('0')
+            for sub in sub_lines:
+                sub_qty = sub.qty_base * qty_needed
+                total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1)
+            return total_cost
+        # Batch-produced recipe: fall through to consume from its own finished-goods batch.
 
     qty_to_consume = qty_needed
     total_cost = Decimal('0')
