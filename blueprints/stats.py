@@ -104,7 +104,11 @@ def api_stats():
     # Return transactions restore StockBatch rows but leave StockConsumption intact —
     # deduct the batch value added by returns in this period to avoid overstating COGS.
     # Return sale rows have payment_method='return' and negative qty.
-    return_rows_in_period = [r for r in rows if r.payment_method == 'return']
+    # Return rows are excluded from the main query — query them separately for COGS credit.
+    return_rows_in_period = db.session.query(Sale).filter(
+        Sale.date_time >= start_dt, Sale.date_time <= end_dt,
+        Sale.voided == False, Sale.payment_method == 'return',
+    ).all()
     if return_rows_in_period:
         # Find the original sale_ids referenced in void_reason ('return:<orig_id>:<reason>')
         orig_ids_from_returns = set()
@@ -588,21 +592,34 @@ def api_stats_drilldown_profit():
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
     user_id_filter    = request.args.get('user_id',    type=int)
     product_id_filter = request.args.get('product_id', type=int)
-    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
+    not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, not_return)
     if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
     if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
     rows = q.all()
     sale_ids = list({r.sale_id for r in rows})
     consumptions = StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all() if sale_ids else []
     rev_map = defaultdict(float); qty_map = defaultdict(float)
-    for r in rows: rev_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price); qty_map[r.product_id] += float(r.qty)
-    sale_product_map = {}
     for r in rows:
-        if r.sale_id not in sale_product_map: sale_product_map[r.sale_id] = r.product_id
+        rev_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price)
+        qty_map[r.product_id] += float(r.qty)
+    _new_sale_ids = {r.sale_id for r in rows if r.cogs is not None}
+    _sale_products = defaultdict(set)
+    for r in rows:
+        _sale_products[r.sale_id].add(r.product_id)
     cogs_map = defaultdict(float)
+    for r in rows:
+        if r.cogs is not None:
+            cogs_map[r.product_id] += float(Decimal(str(r.cogs)))
     for c in consumptions:
-        pid = sale_product_map.get(c.sale_id)
-        if pid: cogs_map[pid] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
+        if c.sale_id in _new_sale_ids:
+            continue
+        pids_in_sale = _sale_products.get(c.sale_id, set())
+        cost = float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
+        if c.ingredient_id in pids_in_sale:
+            cogs_map[c.ingredient_id] += cost
+        elif len(pids_in_sale) == 1:
+            cogs_map[next(iter(pids_in_sale))] += cost
     all_pids = set(rev_map.keys())
     names = {p.id: p.name for p in Product.query.filter(Product.id.in_(all_pids)).all()} if all_pids else {}
     result = []
@@ -707,19 +724,34 @@ def export_profit_csv():
     except: pid_filter = None
     try: uid_filter = int(request.args.get('user_id')) if request.args.get('user_id') else None
     except: uid_filter = None
-    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
+    not_return_export = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, not_return_export)
     if pid_filter: q = q.filter(Sale.product_id == pid_filter)
     if uid_filter: q = q.filter(Sale.user_id    == uid_filter)
     rows = q.all()
     sale_ids = list({r.sale_id for r in rows})
     consumptions = StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all() if sale_ids else []
     rev_map = defaultdict(float); qty_map = defaultdict(float)
-    for r in rows: rev_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price); qty_map[r.product_id] += float(r.qty)
-    sale_product_map = {r.sale_id: r.product_id for r in rows}
+    for r in rows:
+        rev_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price)
+        qty_map[r.product_id] += float(r.qty)
+    _new_sale_ids_exp = {r.sale_id for r in rows if r.cogs is not None}
+    _sale_products_exp = defaultdict(set)
+    for r in rows:
+        _sale_products_exp[r.sale_id].add(r.product_id)
     cogs_map = defaultdict(float)
+    for r in rows:
+        if r.cogs is not None:
+            cogs_map[r.product_id] += float(Decimal(str(r.cogs)))
     for c in consumptions:
-        pid = sale_product_map.get(c.sale_id)
-        if pid: cogs_map[pid] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
+        if c.sale_id in _new_sale_ids_exp:
+            continue
+        pids_in_sale = _sale_products_exp.get(c.sale_id, set())
+        cost = float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
+        if c.ingredient_id in pids_in_sale:
+            cogs_map[c.ingredient_id] += cost
+        elif len(pids_in_sale) == 1:
+            cogs_map[next(iter(pids_in_sale))] += cost
     pids = set(rev_map.keys())
     names = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
     sio = StringIO(); sio.write('product,qty_sold,revenue,cogs,gross_profit,margin_pct\n')
