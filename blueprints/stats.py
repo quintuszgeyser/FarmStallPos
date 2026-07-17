@@ -86,10 +86,21 @@ def api_stats():
     avg_basket_qty   = sum(basket_qty_map.values())   / len(basket_qty_map)   if basket_qty_map   else 0.0
 
     sale_ids = list({r.sale_id for r in rows})
-    total_cogs = 0.0; consumptions = []
+    consumptions = []
     if sale_ids:
         consumptions = StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all()
-        total_cogs   = float(sum(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)) for c in consumptions))
+
+    # Split rows: new rows have Sale.cogs stamped at checkout time; old rows use StockConsumption.
+    _new_sale_ids = {r.sale_id for r in rows if r.cogs is not None}
+    _old_sale_ids  = {r.sale_id for r in rows if r.cogs is None}
+
+    # total_cogs: prefer Sale.cogs (immutable, stamped at checkout) for new rows.
+    total_cogs = float(sum(Decimal(str(r.cogs)) for r in rows if r.cogs is not None))
+    if _old_sale_ids:
+        total_cogs += float(sum(
+            Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
+            for c in consumptions if c.sale_id in _old_sale_ids
+        ))
     # Return transactions restore StockBatch rows but leave StockConsumption intact —
     # deduct the batch value added by returns in this period to avoid overstating COGS.
     # Return sale rows have payment_method='return' and negative qty.
@@ -157,12 +168,18 @@ def api_stats():
     _cat_names = {c.id: c.name for c in Category.query.filter(Category.id.in_(_cat_ids)).all()} if _cat_ids else {}
     _pid_cat_id = {r.id: r.category_id for r in _prod_rows}
     category_name_map = {pid: _cat_names.get(_pid_cat_id.get(pid), 'Uncategorised') for pid in all_pids}
-    # Per-product COGS: match ingredient_id directly (stock_items); single-product sales get recipe attribution
+    # Per-product COGS: for new rows use Sale.cogs (per-line, directly attributed to product_id);
+    # for old rows use StockConsumption ingredient attribution as fallback.
     _sale_products = defaultdict(set)
     for r in rows:
         _sale_products[r.sale_id].add(r.product_id)
     top_cogs_map = defaultdict(float)
+    for r in rows:
+        if r.cogs is not None:
+            top_cogs_map[r.product_id] += float(Decimal(str(r.cogs)))
     for c in consumptions:
+        if c.sale_id in _new_sale_ids:
+            continue  # already handled via Sale.cogs above
         pids_in_sale = _sale_products.get(c.sale_id, set())
         if c.ingredient_id in pids_in_sale:
             top_cogs_map[c.ingredient_id] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
@@ -206,12 +223,16 @@ def api_stats():
             for pid in produced_recipes:
                 qty_sold = Decimal(str(top_qty_map.get(pid, 0)))
                 if qty_sold <= 0: continue
+                # Prefer consumption-based COGS (accurate per-batch cost already attributed
+                # by the first loop above). Only fall back to produce-adjustment average when
+                # consumption records didn't capture a value (e.g. pre-produce-adj produce runs).
+                if top_cogs_map.get(pid, 0.0) > 0:
+                    continue
                 d = _produce_totals.get(pid)
                 if d and d['units'] > 0:
-                    # Use actual produce cost records (most accurate)
                     avg_cost_per_unit = d['cost'] / d['units']
                 else:
-                    # Fallback: current FIFO recipe cost
+                    # Last resort: current FIFO recipe cost
                     avg_cost_per_unit = _recipe_fifo_cost(pid)
                 top_cogs_map[pid] = float(avg_cost_per_unit * qty_sold)
 
@@ -256,7 +277,12 @@ def api_stats():
         revenue_per_day[d] += float(Decimal(str(r.qty)) * r.unit_price); tx_per_day[d].add(r.sale_id)
     if sale_ids:
         sale_date_map = {r.sale_id: r.date_time.date().isoformat() for r in rows}
+        for r in rows:
+            if r.cogs is not None:
+                profit_per_day[r.date_time.date().isoformat()] += float(Decimal(str(r.cogs)))
         for c in consumptions:
+            if c.sale_id in _new_sale_ids:
+                continue
             d = sale_date_map.get(c.sale_id)
             if d: profit_per_day[d] += float(Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit)))
     daily = [{'date': d, 'revenue': round(revenue_per_day[d], 2), 'profit': round(revenue_per_day[d] - profit_per_day.get(d, 0), 2), 'tx_count': len(tx_per_day[d])} for d in sorted(revenue_per_day.keys())]

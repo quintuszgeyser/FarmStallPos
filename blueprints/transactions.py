@@ -95,11 +95,19 @@ def api_transactions_get():
     sale_ids     = list(grouped.keys())
     is_admin_req = (u.role == 'admin')
 
-    # Track per-ingredient COGS in a single pass (used for sale total and per-line attribution)
+    # Track per-ingredient COGS in a single pass (used for sale total and per-line attribution).
+    # New rows have Sale.cogs stamped at checkout; old rows fall back to StockConsumption.
     cogs_by_sale       = defaultdict(Decimal)
     cogs_by_ingredient = defaultdict(lambda: defaultdict(Decimal))  # sale_id -> ingredient_id -> cost
+    _new_cogs_ids = {r.sale_id for r in rows if r.cogs is not None}
+    for r in rows:
+        if r.cogs is not None:
+            cogs_by_sale[r.sale_id] += Decimal(str(r.cogs))
+            cogs_by_ingredient[r.sale_id][r.product_id] += Decimal(str(r.cogs))
     if sale_ids:
         for c in StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all():
+            if c.sale_id in _new_cogs_ids:
+                continue  # already handled via Sale.cogs above
             cost = Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
             cogs_by_sale[c.sale_id] += cost
             cogs_by_ingredient[c.sale_id][c.ingredient_id] += cost
@@ -254,20 +262,25 @@ def api_transactions_post():
         # payment_method on every line (they share sale_id); cash_tendered only on the
         # first line so it's recorded once per transaction, not double-counted per line.
         _first_line = (item is cart[0])
-        db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None), card_amount=(card_amount if _first_line else None)))
+        sale_row = Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None), card_amount=(card_amount if _first_line else None))
+        db.session.add(sale_row)
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
-            consume_fifo(pid, qty, sale_uuid, now)
+            sale_row.cogs = consume_fifo(pid, qty, sale_uuid, now)
         elif p.product_type == 'recipe':
             # Made-to-order: consume ingredients at point of sale
+            line_cogs = Decimal('0')
             for rl in RecipeLine.query.filter_by(product_id=pid).all():
                 actual_id = subs.get(rl.ingredient_id, rl.ingredient_id)
                 if actual_id == -1: continue
-                consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_uuid, now)
+                line_cogs += consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_uuid, now)
             for ex in extras:
                 ex_id = int(ex.get('ingredient_id', 0)); ex_qty = Decimal(str(ex.get('qty_base', 0)))
-                if ex_id and ex_qty > 0: consume_fifo(ex_id, ex_qty * qty, sale_uuid, now)
+                if ex_id and ex_qty > 0: line_cogs += consume_fifo(ex_id, ex_qty * qty, sale_uuid, now)
+            sale_row.cogs = line_cogs
+        else:
+            sale_row.cogs = Decimal('0')
 
     max_sort = db.session.query(func.max(KitchenOrder.sort_order)).filter_by(status='pending').scalar() or 0
 
@@ -606,20 +619,24 @@ def api_transaction_edit(sale_id):
             unit_price = Decimal(str((_ep.price if _ep else None) or 0))
         # payment_method preserved from original; cash/card tender only on first new line
         _first = (idx == 0)
-        db.session.add(Sale(sale_id=sale_id, date_time=now, product_id=pid, qty=qty,
-                            unit_price=unit_price, user_id=u.id if u else None,
-                            payment_method=orig_payment_method,
-                            cash_tendered=(orig_cash_tendered if _first else None),
-                            card_amount=(orig_card_amount if _first else None)))
+        sale_row = Sale(sale_id=sale_id, date_time=now, product_id=pid, qty=qty,
+                        unit_price=unit_price, user_id=u.id if u else None,
+                        payment_method=orig_payment_method,
+                        cash_tendered=(orig_cash_tendered if _first else None),
+                        card_amount=(orig_card_amount if _first else None))
+        db.session.add(sale_row)
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
-            consume_fifo(pid, qty, sale_id, now)
+            sale_row.cogs = consume_fifo(pid, qty, sale_id, now)
         elif p.product_type == 'recipe':
-            # Use substitution map from the edited lines
+            line_cogs = Decimal('0')
             for rl in RecipeLine.query.filter_by(product_id=pid).all():
                 actual_id = subs_edit.get(rl.ingredient_id, rl.ingredient_id)
                 if actual_id == -1: continue
-                consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_id, now)
+                line_cogs += consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_id, now)
+            sale_row.cogs = line_cogs
+        else:
+            sale_row.cogs = Decimal('0')
     db.session.commit()
     return jsonify({'ok': True})

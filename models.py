@@ -265,6 +265,7 @@ class StockBatch(db.Model):
     sort_order          = db.Column(db.Integer, nullable=True)
     import_run_id       = db.Column(db.String(36), nullable=True)  # UUID grouping batches from one CSV import
     produce_ref         = db.Column(db.String(36), nullable=True)   # produce_uuid — links to StockConsumption records for the produce run
+    produce_cost        = db.Column(Numeric(10, 4), nullable=True)   # total ingredient cost stamped at produce time
 
 
 class StockConsumption(db.Model):
@@ -345,6 +346,7 @@ class Sale(db.Model):
     cash_tendered     = db.Column(Numeric(10, 2), nullable=True)  # change calc / till reconciliation
     card_amount       = db.Column(Numeric(10, 2), nullable=True)  # split payment card portion
     original_sale_id  = db.Column(db.String(36), nullable=True)   # set on return rows; points to the originating sale_id
+    cogs              = db.Column(Numeric(10, 4), nullable=True)   # FIFO cost stamped at checkout — immutable
 
 
 class AuditLog(db.Model):

@@ -440,6 +440,7 @@ def api_product_produce(pid):
 
     units_added = int((Decimal(str(p.batch_size)) * batches).to_integral_value())
     cost_per_unit = total_ingredient_cost / units_added if units_added > 0 else Decimal('0')
+    before_stock = get_stock_level(pid)
 
     db.session.add(StockBatch(
         product_id=pid,
@@ -449,6 +450,17 @@ def api_product_produce(pid):
         purchased_at=now,
         user_id=u.id if u else None,
         produce_ref=produce_uuid,
+        produce_cost=total_ingredient_cost,
+    ))
+    db.session.add(StockAdjustment(
+        product_id=pid,
+        adjustment_type='produce',
+        qty_change_base=units_added,
+        system_qty_before=Decimal(str(before_stock)),
+        cost_written_off=total_ingredient_cost,
+        reason=f'Batch produce: {int(batches)} batch(es)',
+        adjusted_at=now,
+        user_id=u.id if u else None,
     ))
     db.session.commit()
     new_stock = get_stock_level(pid)

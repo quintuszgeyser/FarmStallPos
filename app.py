@@ -1361,6 +1361,11 @@ def strong_migrate():
         pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_sales_original_sale_id ON sales(original_sale_id)")
 
+        # COGS stamped at sale time — immutable audit trail independent of StockConsumption
+        pg_try("ALTER TABLE sales ADD COLUMN cogs NUMERIC(10,4)")
+        # Produce cost stamped on a batch when it is produced — total ingredient cost for that run
+        pg_try("ALTER TABLE stock_batches ADD COLUMN produce_cost NUMERIC(10,4)")
+
         # Invoice number sequence — safe under concurrent creates
         pg_try("""
             DO $$
