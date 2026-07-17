@@ -71,6 +71,57 @@ def api_stock_ingredients():
     return jsonify(result)
 
 
+@bp.route('/api/stock/products/<int:pid>/batch-history', methods=['GET'])
+def api_stock_batch_history(pid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = db.session.get(Product, pid)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+    start_dt = _parse_dt(request.args.get('start'))
+    end_dt   = _parse_dt(request.args.get('end'), is_end=True)
+    q = StockBatch.query.filter_by(product_id=pid)
+    if start_dt: q = q.filter(StockBatch.purchased_at >= start_dt)
+    if end_dt:   q = q.filter(StockBatch.purchased_at <= end_dt)
+    batches = q.order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).all()
+    batch_ids = [b.id for b in batches]
+    # Sum consumption per batch
+    consumed_map = {}
+    if batch_ids:
+        rows = db.session.query(
+            StockConsumption.batch_id,
+            func.sum(StockConsumption.qty_consumed_base).label('total_consumed'),
+            func.sum(StockConsumption.qty_consumed_base * StockConsumption.cost_per_base_unit).label('total_cost'),
+        ).filter(StockConsumption.batch_id.in_(batch_ids)).group_by(StockConsumption.batch_id).all()
+        for r in rows:
+            consumed_map[r.batch_id] = {'qty': float(r.total_consumed or 0), 'cost': float(r.total_cost or 0)}
+    supplier_ids = {b.supplier_id for b in batches if b.supplier_id}
+    supplier_names = {s.id: s.name for s in Supplier.query.filter(Supplier.id.in_(supplier_ids)).all()} if supplier_ids else {}
+    result = []
+    for b in batches:
+        cons = consumed_map.get(b.id, {'qty': 0.0, 'cost': 0.0})
+        qty_purchased = float(b.qty_purchased_base)
+        qty_remaining = float(b.qty_remaining_base)
+        qty_consumed  = cons['qty']
+        total_value   = round(qty_purchased * float(b.cost_per_base_unit), 4)
+        result.append({
+            'id': b.id,
+            'purchased_at': b.purchased_at.isoformat(),
+            'supplier_name': supplier_names.get(b.supplier_id) if b.supplier_id else None,
+            'qty_purchased_base': qty_purchased,
+            'qty_remaining_base': qty_remaining,
+            'qty_consumed_base': round(qty_consumed, 4),
+            'cost_per_base_unit': float(b.cost_per_base_unit),
+            'total_value': total_value,
+            'cost_consumed': round(cons['cost'], 4),
+            'base_unit': p.base_unit,
+            'produce_ref': b.produce_ref,
+            'produce_cost': float(b.produce_cost) if b.produce_cost is not None else None,
+            'status': 'active' if qty_remaining > 0 else 'consumed',
+        })
+    return jsonify(result)
+
+
 @bp.route('/api/stock/batches/<int:batch_id>/reorder', methods=['POST'])
 def api_stock_batch_reorder(batch_id):
     """Move a batch to a specific position or reset to FIFO (sort_order=NULL)."""

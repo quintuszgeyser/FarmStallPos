@@ -2945,6 +2945,52 @@
   </div>
 </div>
 
+<!-- ═══════════ BATCH HISTORY MODAL ═══════════ -->
+<div class="modal fade" id="batchHistoryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Batch History — <span id="bh-product-name"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-2 align-items-end mb-3 flex-wrap">
+          <div>
+            <label class="form-label form-label-sm mb-1">From</label>
+            <input type="date" id="bh-start" class="form-control form-control-sm" style="width:150px">
+          </div>
+          <div>
+            <label class="form-label form-label-sm mb-1">To</label>
+            <input type="date" id="bh-end" class="form-control form-control-sm" style="width:150px">
+          </div>
+          <button id="bh-filter-btn" class="btn btn-primary btn-sm"><i class="bi bi-funnel me-1"></i>Filter</button>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm table-hover align-middle mb-1">
+            <thead class="table-light">
+              <tr>
+                <th>Date Received</th>
+                <th>Supplier</th>
+                <th>Purchased</th>
+                <th>Consumed</th>
+                <th>Remaining</th>
+                <th>Unit Cost</th>
+                <th>Total Value</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="bh-table-body"></tbody>
+          </table>
+        </div>
+        <div id="bh-summary"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ WRITE-OFF MODAL ═══════════ -->
 <div class="modal fade" id="writeoffModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">

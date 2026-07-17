@@ -726,10 +726,12 @@ function renderProductsCards() {
             <button data-menu="receive"><i class="bi bi-box-arrow-in-down me-1"></i>Receive</button>
             <button data-menu="stocktake"><i class="bi bi-clipboard-check me-1"></i>Stocktake</button>
             <button data-menu="writeoff"><i class="bi bi-trash3 me-1"></i>Write Off</button>
+            <button data-menu="batch-history"><i class="bi bi-clock-history me-1"></i>Batch History</button>
           ` : ''}
           ${p.product_type === 'recipe' && p.is_produced ? `
             <button data-menu="produce"><i class="bi bi-fire me-1 text-warning"></i>Produce batch</button>
             <button data-menu="writeoff-produced"><i class="bi bi-trash3 me-1"></i>Write Off</button>
+            <button data-menu="batch-history"><i class="bi bi-clock-history me-1"></i>Batch History</button>
           ` : ''}
           ${p.is_archived
             ? `<button data-menu="restore"><i class="bi bi-arrow-clockwise me-1"></i>Restore</button>`
@@ -776,6 +778,7 @@ function renderProductsCards() {
     moreMenu.querySelector('[data-menu="restore"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openRestoreModal(p); });
     moreMenu.querySelector('[data-menu="produce"]')?.addEventListener('click',         e => { e.stopPropagation(); moreMenu.classList.remove('open'); openProduceModal(p); });
     moreMenu.querySelector('[data-menu="writeoff-produced"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openWriteoffModal(p); });
+    moreMenu.querySelector('[data-menu="batch-history"]')?.addEventListener('click',    e => { e.stopPropagation(); moreMenu.classList.remove('open'); openBatchHistoryModal(p); });
     if (isStockItem && stockItem) {
       moreMenu.querySelector('[data-menu="receive"]')?.addEventListener('click',   e => { e.stopPropagation(); moreMenu.classList.remove('open'); openReceiveStockModal(stockItem); });
       moreMenu.querySelector('[data-menu="stocktake"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openStocktakeModal(stockItem); });
@@ -3502,6 +3505,96 @@ document.getElementById('btn-writeoff-confirm')?.addEventListener('click', async
     await loadProducts();
   } catch (e) { toast(e.message, 'error'); }
 });
+
+// ═══════════════════════════════════════════════════════
+// BATCH HISTORY MODAL
+// ═══════════════════════════════════════════════════════
+
+function openBatchHistoryModal(product) {
+  const modal = document.getElementById('batchHistoryModal');
+  if (!modal) return;
+  modal.dataset.productId   = product.id;
+  modal.dataset.productName = product.name;
+  modal.dataset.baseUnit    = product.base_unit || '';
+  modal.dataset.unitType    = product.unit_type || '';
+  document.getElementById('bh-product-name').textContent = product.name;
+
+  // Default date range: last 30 days
+  const today = new Date();
+  const prior = new Date(today); prior.setDate(prior.getDate() - 30);
+  document.getElementById('bh-start').value = prior.toISOString().slice(0, 10);
+  document.getElementById('bh-end').value   = today.toISOString().slice(0, 10);
+
+  bootstrap.Modal.getOrCreateInstance(modal).show();
+  loadBatchHistory();
+}
+
+async function loadBatchHistory() {
+  const modal   = document.getElementById('batchHistoryModal');
+  const pid     = modal?.dataset.productId;
+  const start   = document.getElementById('bh-start').value;
+  const end     = document.getElementById('bh-end').value;
+  const body    = document.getElementById('bh-table-body');
+  const summary = document.getElementById('bh-summary');
+  if (!pid || !body) return;
+
+  body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3"><div class="spinner-border spinner-border-sm me-2"></div>Loading...</td></tr>';
+  summary.innerHTML = '';
+
+  try {
+    const batches = await api(`/api/stock/products/${pid}/batch-history?start=${start}&end=${end}`);
+    const baseUnit = modal.dataset.baseUnit;
+    const unitType = modal.dataset.unitType;
+
+    if (!batches.length) {
+      body.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">No batches found in this date range.</td></tr>';
+      return;
+    }
+
+    let totalPurchased = 0, totalConsumed = 0, totalValue = 0, totalCostConsumed = 0;
+    body.innerHTML = batches.map(b => {
+      const pctConsumed = b.qty_purchased_base > 0 ? (b.qty_consumed_base / b.qty_purchased_base * 100) : 0;
+      const statusBadge = b.status === 'active'
+        ? `<span class="badge bg-success">Active</span>`
+        : `<span class="badge bg-secondary">Consumed</span>`;
+      const isProduced = !!b.produce_ref;
+      const costLabel = isProduced
+        ? `R${(b.produce_cost ?? 0).toFixed(4)} <span class="text-muted" style="font-size:10px">(produced)</span>`
+        : `R${b.cost_per_base_unit.toFixed(4)}/${baseUnit}`;
+      totalPurchased    += b.qty_purchased_base;
+      totalConsumed     += b.qty_consumed_base;
+      totalValue        += b.total_value;
+      totalCostConsumed += b.cost_consumed;
+      return `<tr>
+        <td class="text-nowrap">${b.purchased_at.slice(0,10)}</td>
+        <td>${b.supplier_name || '<span class="text-muted">—</span>'}</td>
+        <td>${displayQty(b.qty_purchased_base, unitType)}</td>
+        <td>${displayQty(b.qty_consumed_base, unitType)}</td>
+        <td>${displayQty(b.qty_remaining_base, unitType)}</td>
+        <td class="text-nowrap">${costLabel}</td>
+        <td class="text-nowrap">R${b.total_value.toFixed(2)}</td>
+        <td>${statusBadge}</td>
+      </tr>`;
+    }).join('');
+
+    summary.innerHTML = `
+      <div class="d-flex gap-3 flex-wrap small text-muted mt-2">
+        <span><strong class="text-body">${batches.length}</strong> batch${batches.length !== 1 ? 'es' : ''}</span>
+        <span>Purchased: <strong class="text-body">${displayQty(totalPurchased, unitType)}</strong></span>
+        <span>Consumed: <strong class="text-body">${displayQty(totalConsumed, unitType)}</strong></span>
+        <span>Remaining: <strong class="text-body">${displayQty(totalPurchased - totalConsumed, unitType)}</strong></span>
+        <span>Total cost purchased: <strong class="text-body">R${totalValue.toFixed(2)}</strong></span>
+        <span>Total cost consumed: <strong class="text-body">R${totalCostConsumed.toFixed(2)}</strong></span>
+      </div>`;
+  } catch (err) {
+    body.innerHTML = `<tr><td colspan="8" class="text-danger py-2">${err.message || 'Failed to load'}</td></tr>`;
+  }
+}
+
+document.getElementById('bh-filter-btn')?.addEventListener('click', loadBatchHistory);
+document.getElementById('bh-start')?.addEventListener('keydown', e => { if (e.key === 'Enter') loadBatchHistory(); });
+document.getElementById('bh-end')?.addEventListener('keydown',   e => { if (e.key === 'Enter') loadBatchHistory(); });
+
 
 // ═══════════════════════════════════════════════════════
 // SUPPLIERS
