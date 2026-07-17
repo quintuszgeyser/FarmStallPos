@@ -731,7 +731,6 @@ function renderProductsCards() {
           ${p.product_type === 'recipe' && p.is_produced ? `
             <button data-menu="produce"><i class="bi bi-fire me-1 text-warning"></i>Produce batch</button>
             <button data-menu="writeoff-produced"><i class="bi bi-trash3 me-1"></i>Write Off</button>
-            <button data-menu="batch-history"><i class="bi bi-clock-history me-1"></i>Batch History</button>
           ` : ''}
           ${p.is_archived
             ? `<button data-menu="restore"><i class="bi bi-arrow-clockwise me-1"></i>Restore</button>`
