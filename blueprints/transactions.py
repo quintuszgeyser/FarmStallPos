@@ -513,6 +513,11 @@ def api_transaction_return(sale_id):
         orig_row = next((r for r in orig_rows if r.product_id == pid), None)
         unit_price = orig_row.unit_price if orig_row else Decimal('0')
 
+        # Stamp proportional COGS on the return row so credit calculations don't need StockConsumption.
+        return_cogs = None
+        if orig_row and orig_row.cogs is not None and abs(Decimal(str(orig_row.qty))) > 0:
+            return_cogs = Decimal(str(orig_row.cogs)) * (qty / abs(Decimal(str(orig_row.qty))))
+
         db.session.add(Sale(
             sale_id=return_uuid,
             date_time=now,
@@ -523,6 +528,7 @@ def api_transaction_return(sale_id):
             original_sale_id=sale_id,
             void_reason=f'return:{sale_id}:{reason}',
             payment_method='return',
+            cogs=return_cogs,
         ))
 
         p = db.session.get(Product, pid, with_for_update=True)
@@ -603,10 +609,11 @@ def api_transaction_edit(sale_id):
     orig_payment_method = rows[0].payment_method
     orig_cash_tendered  = rows[0].cash_tendered
     orig_card_amount    = rows[0].card_amount
-    u = current_user(); now = orig_date
+    u = current_user()
+    now_wall = datetime.utcnow()  # use wall-clock for consume_fifo so batch eligibility isn't capped at the original sale date
     _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note='superseded by edit')
     for row in rows:
-        row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = datetime.utcnow()
+        row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = now_wall
         row.void_reason = 'superseded by edit'
     reverse_fifo(sale_id)
     for idx, item in enumerate(lines):
@@ -625,7 +632,7 @@ def api_transaction_edit(sale_id):
             unit_price = Decimal(str((_ep.price if _ep else None) or 0))
         # payment_method preserved from original; cash/card tender only on first new line
         _first = (idx == 0)
-        sale_row = Sale(sale_id=sale_id, date_time=now, product_id=pid, qty=qty,
+        sale_row = Sale(sale_id=sale_id, date_time=orig_date, product_id=pid, qty=qty,
                         unit_price=unit_price, user_id=u.id if u else None,
                         payment_method=orig_payment_method,
                         cash_tendered=(orig_cash_tendered if _first else None),
@@ -634,13 +641,13 @@ def api_transaction_edit(sale_id):
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
-            sale_row.cogs = consume_fifo(pid, qty, sale_id, now)
+            sale_row.cogs = consume_fifo(pid, qty, sale_id, now_wall)
         elif p.product_type == 'recipe':
             line_cogs = Decimal('0')
             for rl in RecipeLine.query.filter_by(product_id=pid).all():
                 actual_id = subs_edit.get(rl.ingredient_id, rl.ingredient_id)
                 if actual_id == -1: continue
-                line_cogs += consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_id, now)
+                line_cogs += consume_fifo(actual_id, Decimal(str(rl.qty_base)) * qty, sale_id, now_wall)
             sale_row.cogs = line_cogs
         else:
             sale_row.cogs = Decimal('0')

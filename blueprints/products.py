@@ -458,6 +458,7 @@ def api_product_produce(pid):
         qty_change_base=units_added,
         system_qty_before=Decimal(str(before_stock)),
         cost_written_off=total_ingredient_cost,
+        base_unit=p.base_unit,
         reason=f'Batch produce: {int(batches)} batch(es)',
         adjusted_at=now,
         user_id=u.id if u else None,
@@ -660,7 +661,7 @@ def api_product_archive(pid):
             db.session.add(StockAdjustment(
                 product_id=pid, adjustment_type='writeoff',
                 qty_change_base=-stock_level, system_qty_before=stock_level,
-                cost_written_off=Decimal('0'), reason='Product archived',
+                cost_written_off=Decimal('0'), base_unit=p.base_unit, reason='Product archived',
                 adjusted_at=now, user_id=u.id if u else None,
             ))
     db.session.commit()

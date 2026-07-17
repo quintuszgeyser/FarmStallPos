@@ -287,6 +287,7 @@ class StockAdjustment(db.Model):
     qty_change_base   = db.Column(Numeric(10, 4), nullable=False)
     system_qty_before = db.Column(Numeric(10, 4), nullable=False)
     cost_written_off  = db.Column(Numeric(10, 4), nullable=True)
+    base_unit         = db.Column(db.String(20), nullable=True)
     reason            = db.Column(db.String(200), nullable=False)
     adjusted_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id           = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)

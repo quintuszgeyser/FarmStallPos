@@ -1365,6 +1365,8 @@ def strong_migrate():
         pg_try("ALTER TABLE sales ADD COLUMN cogs NUMERIC(10,4)")
         # Produce cost stamped on a batch when it is produced — total ingredient cost for that run
         pg_try("ALTER TABLE stock_batches ADD COLUMN produce_cost NUMERIC(10,4)")
+        # Base unit stamped on adjustment at event time — survives product config changes
+        pg_try("ALTER TABLE stock_adjustments ADD COLUMN base_unit VARCHAR(20)")
 
         # Invoice number sequence — safe under concurrent creates
         pg_try("""

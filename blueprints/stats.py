@@ -110,22 +110,24 @@ def api_stats():
         Sale.voided == False, Sale.payment_method == 'return',
     ).all()
     if return_rows_in_period:
-        # Find the original sale_ids referenced in void_reason ('return:<orig_id>:<reason>')
-        orig_ids_from_returns = set()
-        for r in return_rows_in_period:
-            try: orig_ids_from_returns.add(r.void_reason.split(':')[1])
-            except Exception: pass
-        if orig_ids_from_returns:
-            ret_consumptions = StockConsumption.query.filter(
-                StockConsumption.sale_id.in_(list(orig_ids_from_returns))
-            ).all()
-            # Proportion of the original sale that was returned (approximate via row count)
-            return_product_ids = {r.product_id for r in return_rows_in_period}
-            cogs_credit = float(sum(
-                Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
-                for c in ret_consumptions if c.ingredient_id in return_product_ids
-            ))
-            total_cogs = max(0.0, total_cogs - cogs_credit)
+        # New returns have Sale.cogs stamped; old returns fall back to StockConsumption.
+        cogs_credit = float(sum(Decimal(str(r.cogs)) for r in return_rows_in_period if r.cogs is not None))
+        old_returns = [r for r in return_rows_in_period if r.cogs is None]
+        if old_returns:
+            orig_ids_from_returns = set()
+            for r in old_returns:
+                try: orig_ids_from_returns.add(r.void_reason.split(':')[1])
+                except Exception: pass
+            if orig_ids_from_returns:
+                ret_consumptions = StockConsumption.query.filter(
+                    StockConsumption.sale_id.in_(list(orig_ids_from_returns))
+                ).all()
+                return_product_ids = {r.product_id for r in old_returns}
+                cogs_credit += float(sum(
+                    Decimal(str(c.qty_consumed_base)) * Decimal(str(c.cost_per_base_unit))
+                    for c in ret_consumptions if c.ingredient_id in return_product_ids
+                ))
+        total_cogs = max(0.0, total_cogs - cogs_credit)
     gross_profit = total_sales_value - total_cogs
     gross_margin = round(gross_profit / total_sales_value * 100, 1) if total_sales_value > 0 else None
 
@@ -493,7 +495,8 @@ def api_stats_drilldown():
     if voided_filter:
         q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == True)
     else:
-        q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
+        _not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+        q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, _not_return)
     if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
     if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
     if slice_type == 'day' and slice_val:
@@ -688,7 +691,8 @@ def export_transactions_csv():
     except (ValueError, TypeError): pid_filter = None
     try: uid_filter = int(request.args.get('user_id')) if request.args.get('user_id') else None
     except (ValueError, TypeError): uid_filter = None
-    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False)
+    _not_return_tx = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+    q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, _not_return_tx)
     if pid_filter: q = q.filter(Sale.product_id == pid_filter)
     if uid_filter: q = q.filter(Sale.user_id    == uid_filter)
     rows = q.order_by(Sale.date_time.asc(), Sale.sale_id, Sale.id).all()

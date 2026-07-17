@@ -201,13 +201,10 @@ def api_stock_adjust():
         loss_qty = abs(diff)
         cost_written_off = consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now)
     elif diff > 0:
-        latest = StockBatch.query.filter_by(product_id=pid).filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).first()
-        if latest:
-            latest.qty_remaining_base = Decimal(str(latest.qty_remaining_base)) + diff
-        else:
-            db.session.add(StockBatch(product_id=pid, qty_purchased_base=diff, qty_remaining_base=diff, cost_per_base_unit=Decimal('0'), purchased_at=now, user_id=u.id if u else None))
+        # Always create a new zero-cost batch so free units don't inherit the existing batch's cost.
+        db.session.add(StockBatch(product_id=pid, qty_purchased_base=diff, qty_remaining_base=diff, cost_per_base_unit=Decimal('0'), purchased_at=now, user_id=u.id if u else None))
     adj_type = 'writeoff' if diff < 0 else 'stocktake'
-    db.session.add(StockAdjustment(product_id=pid, adjustment_type=adj_type, qty_change_base=diff, system_qty_before=system_base, cost_written_off=cost_written_off if diff < 0 else None, reason=reason, adjusted_at=now, user_id=u.id if u else None))
+    db.session.add(StockAdjustment(product_id=pid, adjustment_type=adj_type, qty_change_base=diff, system_qty_before=system_base, cost_written_off=cost_written_off if diff < 0 else None, base_unit=p.base_unit, reason=reason, adjusted_at=now, user_id=u.id if u else None))
     db.session.commit()
     return jsonify({'ok': True, 'system_before': float(system_base), 'actual': float(actual_base), 'difference': float(diff), 'base_unit': p.base_unit})
 
@@ -293,7 +290,7 @@ def api_stock_writeoff():
         return jsonify({'error': f'Cannot write off {float(qty_base)}{p.base_unit} - only {float(system_before)}{p.base_unit} in stock'}), 400
     u   = current_user(); now = datetime.utcnow()
     cost_written_off = consume_fifo(pid, qty_base, f'wo-{uuid.uuid4()}', now)
-    db.session.add(StockAdjustment(product_id=pid, adjustment_type='writeoff', qty_change_base=-qty_base, system_qty_before=system_before, cost_written_off=cost_written_off, reason=reason, adjusted_at=now, user_id=u.id if u else None))
+    db.session.add(StockAdjustment(product_id=pid, adjustment_type='writeoff', qty_change_base=-qty_base, system_qty_before=system_before, cost_written_off=cost_written_off, base_unit=p.base_unit, reason=reason, adjusted_at=now, user_id=u.id if u else None))
     db.session.commit()
     return jsonify({'ok': True, 'qty_written_off': float(qty_base), 'base_unit': p.base_unit, 'cost_written_off': float(cost_written_off)})
 
@@ -405,7 +402,8 @@ def api_stock_adjustments():
     prod_names = {prod.id: (prod.name, prod.base_unit) for prod in Product.query.filter(Product.id.in_({r.product_id for r in rows})).all()}
     result = []
     for r in rows:
-        pname, bunit = prod_names.get(r.product_id, ('?', '?'))
+        pname, live_bunit = prod_names.get(r.product_id, ('?', '?'))
+        bunit = r.base_unit or live_bunit  # prefer stamped value; fall back to current product
         result.append({'id': r.id, 'product_id': r.product_id, 'product_name': pname, 'base_unit': bunit, 'adjustment_type': r.adjustment_type, 'qty_change_base': float(r.qty_change_base), 'system_qty_before': float(r.system_qty_before), 'cost_written_off': float(r.cost_written_off) if r.cost_written_off else None, 'reason': r.reason, 'adjusted_at': r.adjusted_at.isoformat(), 'adjusted_by': user_names.get(r.user_id, '')})
     return jsonify(result)
 
