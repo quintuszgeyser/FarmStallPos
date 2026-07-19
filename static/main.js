@@ -2198,8 +2198,9 @@ function calcProductMargins(p) {
       price = parseFloat(p.price_per_unit);
     } else {
       // Sold per package - cost is costPerBase × package_size (stored in base units)
-      // Count products (unit_type=count, base_unit=unit) have package_size=1 implicitly
-      const pkgBase = parseFloat(p.package_size) || (p.unit_type === 'count' ? 1 : null);
+      // Count products always sell one base unit at a time; package_size is a receiving
+      // convenience only (e.g. 1 box = 6 units) and must NOT multiply the per-unit COGS.
+      const pkgBase = p.unit_type === 'count' ? 1 : (parseFloat(p.package_size) || null);
       if (!pkgBase) return null;
       cost  = costPerBase * pkgBase;
       price = parseFloat(p.price);
