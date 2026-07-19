@@ -30,7 +30,20 @@ let STATE = {
   _receiptPrinterId: null,  // LabelPrinter.id to use for receipts (null = auto-detect USB)
   _selectedProductIds: new Set(),  // product IDs checked in the products tab
   transactions:       [],           // cached transaction list for client-side filter
+  _cartCount:         {},   // productId -> times added to cart (persisted in localStorage)
+  _productSupplierMap: {},  // productId -> lowercased supplier names string (built from stock batches)
 };
+
+// Load persisted cart counts from localStorage
+try {
+  const saved = localStorage.getItem('farmpos_cart_counts');
+  if (saved) STATE._cartCount = JSON.parse(saved);
+} catch {}
+
+function _bumpCartCount(productId) {
+  STATE._cartCount[productId] = (STATE._cartCount[productId] || 0) + 1;
+  try { localStorage.setItem('farmpos_cart_counts', JSON.stringify(STATE._cartCount)); } catch {}
+}
 
 // ═══════════════════════════════════════════════════════
 // UNIT SYSTEM
@@ -484,14 +497,21 @@ function renderTellerGrid(q = '') {
   const host = document.getElementById('teller-product-grid');
   if (!host) return;
   const lq = q.trim().toLowerCase();
-  const items = STATE.products.filter(p =>
+  let items = STATE.products.filter(p =>
     p.is_for_sale !== false && !p.is_archived && (
       !lq ||
       p.name.toLowerCase().includes(lq) ||
       String(p.id) === lq ||
-      (p.barcode && p.barcode.toLowerCase().includes(lq))
+      (p.barcode && p.barcode.toLowerCase().includes(lq)) ||
+      (STATE._productSupplierMap[p.id] || '').includes(lq)
     )
   );
+  // Sort by cart frequency descending (most-ordered first); ties fall back to name
+  items = items.slice().sort((a, b) => {
+    const ca = STATE._cartCount[a.id] || 0;
+    const cb = STATE._cartCount[b.id] || 0;
+    return cb - ca || a.name.localeCompare(b.name);
+  });
   host.innerHTML = '';
   if (!items.length) {
     host.innerHTML = '<div class="text-muted small py-1">No products match.</div>';
@@ -2843,8 +2863,9 @@ async function loadIngredients() {
   if (!isAdmin()) return;
   try {
     const data = await api('/api/stock/ingredients');
-    STATE._stockCostMap = {};
-    STATE._stockItems   = {};
+    STATE._stockCostMap      = {};
+    STATE._stockItems        = {};
+    STATE._productSupplierMap = {};
     data.forEach(item => {
       STATE._stockItems[item.id] = item;
       const oldestWithStock = item.batches
@@ -2852,6 +2873,9 @@ async function loadIngredients() {
         .sort((a, b) => new Date(a.purchased_at) - new Date(b.purchased_at))
         .find(b => b.qty_remaining_base > 0);
       if (oldestWithStock) STATE._stockCostMap[item.id] = oldestWithStock.cost_per_base_unit;
+      // Build supplier name index for teller search
+      const names = [...new Set(item.batches.map(b => b.supplier_name).filter(Boolean))];
+      if (names.length) STATE._productSupplierMap[item.id] = names.join(' ').toLowerCase();
     });
     // Refresh any already-rendered product cards so stock levels update
     renderProductsCards();
@@ -4364,6 +4388,7 @@ function addToCart(p) {
     };
     toast(`Added: ${p.name}`, 'success', 1200);
   }
+  _bumpCartCount(p.id);
   STATE.scanHistory.push(p.id);
   renderCart();
   detectAndOfferSpecials();
@@ -4382,6 +4407,7 @@ function addToCartQty(p, qty) {
     unit_price: parseFloat(p.price || 0) * newQty, qty: newQty, is_weight: false,
   };
   toast(`${p.name} ×${qty}`, 'success', 1500);
+  _bumpCartCount(p.id);
   STATE.scanHistory.push(p.id);
   renderCart();
   detectAndOfferSpecials();
@@ -4773,6 +4799,7 @@ document.getElementById('btn-weight-add')?.addEventListener('click', () => {
     is_weight:  true,
     _display_total: total,      // for cart display only
   };
+  _bumpCartCount(_weightProduct.id);
   STATE.scanHistory.push(_weightProduct.id);
   renderCart();
   detectAndOfferSpecials();
