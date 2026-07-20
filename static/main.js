@@ -4755,6 +4755,191 @@ document.getElementById('pr-doc-clear')?.addEventListener('click', () => {
   hide(document.getElementById('pr-doc-clear'));
 });
 
+// ── Invoice scanner ─────────────────────────────────────────────────────────
+let _lastScanResult = null;
+
+function _hideScanResult() {
+  _lastScanResult = null;
+  const wrap = document.getElementById('pr-scan-result');
+  if (wrap) { wrap.classList.add('hidden'); }
+  const preview = document.getElementById('pr-scan-preview');
+  if (preview) preview.classList.add('hidden');
+}
+
+document.getElementById('btn-scan-invoice')?.addEventListener('click', () => {
+  document.getElementById('pr-scan-input')?.click();
+});
+
+document.getElementById('pr-scan-input')?.addEventListener('change', async function () {
+  const file = this.files[0];
+  this.value = '';
+  if (!file || !_currentSupplier) return;
+
+  const statusEl  = document.getElementById('pr-scan-status');
+  const resultWrap = document.getElementById('pr-scan-result');
+  const preview   = document.getElementById('pr-scan-preview');
+  show(resultWrap);
+  hide(preview);
+  statusEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Scanning invoice…';
+
+  const fd = new FormData();
+  fd.append('file', file);
+
+  let result;
+  try {
+    const res = await fetch(`/api/suppliers/${_currentSupplier.id}/invoices/parse`, {
+      method: 'POST', body: fd, credentials: 'same-origin',
+    });
+    result = await res.json();
+    if (!res.ok) throw new Error(result.error || 'Parse failed');
+  } catch (e) {
+    statusEl.textContent = `Could not scan: ${e.message}`;
+    return;
+  }
+
+  _lastScanResult = result;
+
+  // Stage the file as a doc attachment too
+  _prStagedFile = file;
+  const nameEl = document.getElementById('pr-doc-filename');
+  const clearBtn = document.getElementById('pr-doc-clear');
+  if (nameEl) nameEl.textContent = file.name;
+  if (clearBtn) show(clearBtn);
+  const refEl = document.getElementById('pr-invoice-ref');
+  if (refEl && !refEl.value && result.invoice_number) refEl.value = result.invoice_number;
+
+  const itemCount = (result.lines || []).length;
+  const extra     = result.shipping ? ` + shipping R${result.shipping.toFixed(2)}` : '';
+  statusEl.textContent = `Found ${itemCount} line item${itemCount !== 1 ? 's' : ''}${extra}.` +
+    (itemCount === 0 ? ' The format may not be fully supported — you can enter items manually.' : '');
+
+  if (itemCount === 0 && !result.invoice_number && !result.date) {
+    statusEl.textContent += ' No data could be extracted.';
+    return;
+  }
+
+  // Build preview table
+  const itemsEl = document.getElementById('pr-scan-items');
+  let html = '';
+  if (result.invoice_number || result.date) {
+    html += `<div class="mb-1 pb-1 border-bottom">`;
+    if (result.invoice_number) html += `<span class="me-3"><strong>Ref:</strong> ${escapeHtml(result.invoice_number)}</span>`;
+    if (result.date)           html += `<span><strong>Date:</strong> ${escapeHtml(result.date)}</span>`;
+    html += `</div>`;
+  }
+  (result.lines || []).forEach((ln, i) => {
+    // Fuzzy match description against products
+    const match = _fuzzyMatchProduct(ln.description);
+    const matchHtml = match
+      ? `<span class="badge bg-success ms-1" style="font-size:10px" title="Will be matched to existing product">${escapeHtml(match.name)}</span>`
+      : `<span class="badge bg-secondary ms-1" style="font-size:10px">New product</span>`;
+    html += `<div class="d-flex align-items-start gap-1 py-1 ${i > 0 ? 'border-top' : ''}">
+      <span class="flex-fill">${escapeHtml(ln.description)}${matchHtml}</span>
+      <span class="text-muted ms-2 text-nowrap">×${ln.qty}</span>
+      <span class="fw-semibold ms-2 text-nowrap">R${fmt(ln.total_price)}</span>
+    </div>`;
+  });
+  if (result.shipping) {
+    html += `<div class="d-flex py-1 border-top">
+      <span class="flex-fill text-muted fst-italic">Shipping / delivery</span>
+      <span class="fw-semibold ms-2">R${fmt(result.shipping)}</span>
+    </div>`;
+  }
+  itemsEl.innerHTML = html || '<span class="text-muted">No line items extracted.</span>';
+  show(preview);
+});
+
+document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
+  const result = _lastScanResult;
+  if (!result) return;
+
+  // Fill invoice ref
+  const refEl  = document.getElementById('pr-invoice-ref');
+  if (refEl && result.invoice_number) refEl.value = result.invoice_number;
+
+  // Fill date
+  const dateEl = document.getElementById('purchase-run-date');
+  if (dateEl && result.date) dateEl.value = result.date;
+
+  // Clear existing lines and add parsed ones
+  const container = document.getElementById('purchase-run-lines');
+  container.innerHTML = '';
+  _purchaseRunLines = [];
+
+  (result.lines || []).forEach(ln => {
+    addPurchaseLine();
+    const lineEl = container.lastElementChild;
+    if (!lineEl) return;
+
+    const productSel = lineEl.querySelector('[data-product-select]');
+    const qtyInput   = lineEl.querySelector('[data-qty]');
+    const priceInput = lineEl.querySelector('[data-price]');
+
+    if (qtyInput)   qtyInput.value   = ln.qty;
+    if (priceInput) priceInput.value = ln.total_price.toFixed(2);
+
+    // Try to pre-select a matching product
+    const match = _fuzzyMatchProduct(ln.description);
+    if (match && productSel) {
+      // Show all products so the option is available
+      const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
+      productSel.innerHTML = _buildProductOptions(supplierProductIds, true);
+      productSel.value = match.id;
+      productSel.dispatchEvent(new Event('change'));
+    }
+
+    // Store parsed description as data attribute so user can see what was on invoice
+    if (productSel) productSel.title = `Invoice: ${ln.description}`;
+  });
+
+  // Add shipping as additional cost if present
+  if (result.shipping && result.shipping > 0) {
+    const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
+    if (prAddlWrap) {
+      const existing = _readAdditionalCosts(prAddlWrap);
+      const alreadyHas = existing.some(c => c.type === 'shipping');
+      if (!alreadyHas) {
+        _renderAdditionalCostsBlock(prAddlWrap, [
+          ...existing,
+          { label: 'Shipping / delivery', type: 'shipping', amount: result.shipping },
+        ]);
+      }
+    }
+  }
+
+  _updatePurchaseRunCostPreview();
+  _hideScanResult();
+  toast(`Applied ${(result.lines || []).length} items from invoice scan`, 'success', 3000);
+});
+
+document.getElementById('btn-scan-discard')?.addEventListener('click', _hideScanResult);
+
+function _fuzzyMatchProduct(description) {
+  if (!description || !STATE.products) return null;
+  const desc = description.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+  const words = desc.split(/\s+/).filter(w => w.length >= 3);
+  if (!words.length) return null;
+
+  let bestMatch = null;
+  let bestScore = 0;
+
+  for (const p of STATE.products) {
+    if (p.is_archived) continue;
+    const name = (p.name || '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+    const nameWords = name.split(/\s+/).filter(w => w.length >= 3);
+
+    // Count matching words
+    const matched = words.filter(w => nameWords.some(nw => nw.includes(w) || w.includes(nw)));
+    const score   = matched.length / Math.max(words.length, nameWords.length);
+
+    if (score > bestScore && score >= 0.4) {
+      bestScore = score;
+      bestMatch = p;
+    }
+  }
+  return bestMatch;
+}
+
 document.getElementById('btn-supplier-new-run')?.addEventListener('click', () => {
   _editingInvoiceId = null;
   const saveBtn = document.getElementById('btn-submit-purchase-run');
@@ -4766,6 +4951,7 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
   if (nameEl) nameEl.textContent = 'No file chosen';
   if (clearBtn) hide(clearBtn);
   if (docInput) docInput.value = '';
+  _hideScanResult();
   const dateInput = document.getElementById('purchase-run-date');
   if (dateInput) dateInput.value = todayISO();
   _purchaseRunLines = [];
@@ -4795,6 +4981,7 @@ document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', ()
   hide(document.getElementById('purchase-run-panel'));
   _purchaseRunLines = [];
   _editingInvoiceId = null;
+  _hideScanResult();
   const saveBtn = document.getElementById('btn-submit-purchase-run');
   if (saveBtn) saveBtn.textContent = 'Save Delivery';
 });

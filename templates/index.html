@@ -1199,13 +1199,29 @@
                 <!-- Step 1: optional invoice document upload -->
                 <div class="border rounded p-2 mb-3 bg-light">
                   <div class="small fw-semibold mb-1"><i class="bi bi-paperclip me-1"></i>Invoice document <span class="text-muted fw-normal">(optional — filename becomes reference)</span></div>
-                  <div class="d-flex align-items-center gap-2">
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
                     <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer">
                       <i class="bi bi-upload me-1"></i>Choose file
                       <input type="file" id="pr-doc-upload-input" class="d-none" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt">
                     </label>
+                    <button id="btn-scan-invoice" class="btn btn-primary btn-sm mb-0" title="Scan PDF and auto-fill this delivery form">
+                      <i class="bi bi-magic me-1"></i>Scan &amp; Auto-fill
+                    </button>
+                    <input type="file" id="pr-scan-input" class="d-none" accept=".pdf">
                     <span id="pr-doc-filename" class="small text-muted">No file chosen</span>
                     <button id="pr-doc-clear" class="btn btn-outline-danger btn-sm py-0 px-1 hidden" title="Remove"><i class="bi bi-x-lg"></i></button>
+                  </div>
+                  <!-- Scan result panel -->
+                  <div id="pr-scan-result" class="hidden mt-2">
+                    <div id="pr-scan-status" class="small text-muted"></div>
+                    <div id="pr-scan-preview" class="hidden mt-1">
+                      <div class="small fw-semibold mb-1">Extracted from invoice — review before applying:</div>
+                      <div id="pr-scan-items" class="border rounded p-1 bg-white" style="font-size:12px;max-height:200px;overflow-y:auto"></div>
+                      <div class="d-flex gap-2 mt-2">
+                        <button id="btn-scan-apply" class="btn btn-success btn-sm"><i class="bi bi-check-lg me-1"></i>Apply to form</button>
+                        <button id="btn-scan-discard" class="btn btn-outline-secondary btn-sm">Discard</button>
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div id="purchase-run-lines"></div>

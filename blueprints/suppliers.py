@@ -1,5 +1,7 @@
+import io
 import json as _json
 import os
+import re
 import uuid
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
@@ -11,6 +13,278 @@ from helpers import require_login, require_role, current_user, _gen_barcode
 from models import db, Supplier, StockBatch, StockConsumption, Purchase, Product, SupplierDocument, SupplierInvoice
 
 bp = Blueprint('suppliers', __name__)
+
+
+# ── Invoice OCR / parsing helpers ────────────────────────────────────────────
+
+_INV_NUM_PATTERNS = [
+    r'(?:invoice\s*(?:number|no|#)\s*[:\s#]+\s*)([\w][\w/-]*)',
+    r'(?:document\s*no\s*[:\s]+\s*)(\w[\w/-]*)',
+    r'(?:number\s*:\s*)([\w][\w/-]*)',
+    r'(?:#\s*)(inv[-\w]+)',
+    r'(?:invoice\s+)([\d]+)',
+    r'\binv[-\s]?([\w\d/-]{3,})',
+    r'(?:order\s+)([\d][\d/-]*)',
+]
+
+_DATE_PATTERNS = [
+    (r'(?:invoice\s*date|order\s*date)[:\s]+(\w+\s+\d{1,2},?\s*\d{4})', '%B %d %Y'),
+    (r'(?:invoice\s*date|order\s*date)[:\s]+(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})', '%d/%m/%Y'),
+    (r'(?:invoice\s*date|order\s*date)[:\s]+(\d{4}[/.-]\d{2}[/.-]\d{2})', '%Y/%m/%d'),
+    (r'(?:invoice\s*date|order\s*date)[:\s]+(\d{1,2}\s+\w+\s+\d{4})', '%d %b %Y'),
+    (r'(?<!\w)date[:\s]+(\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4})', '%d/%m/%Y'),
+    (r'(?<!\w)date[:\s]+(\d{4}[/.-]\d{2}[/.-]\d{2})', '%Y/%m/%d'),
+    (r'(?<!\w)date[:\s]+(\d{1,2}\s+\w+\s+\d{4})', '%d %b %Y'),
+    (r'(\d{4}/\d{2}/\d{2})', '%Y/%m/%d'),
+    (r'(\d{1,2}/\d{1,2}/\d{4})', '%d/%m/%Y'),
+    (r'(\d{1,2}/\d{1,2}/\d{2})(?!\d)', '%d/%m/%y'),
+]
+
+_SKIP_RE = re.compile(
+    r'\b(total|subtotal|sub.total|balance\s+due|vat|tax\s+summary|payment|paid|discount'
+    r'|thank\s+you|powered\s+by|page\s+\d|terms|conditions|banking\s+details|account\s+holder'
+    r'|branch\s+code|swift|bill\s+to|ship\s+to|sold\s+to|delivery\s+details'
+    r'|invoice\s+date|due\s+date|order\s+date|customer\s+order|customer\s+vat'
+    r'|signature|stock\s+controller|produced\s+by|postnet\s+suite|private\s+bag'
+    r'|account\s+number|account\s+no|branch\s+name|account\s+type|account\s+name'
+    r'|reg\s+number|registration\s+number|company\s+id|vat\s+reg|vat\s+no'
+    r'|tel:|fax:|www\.|email:|south\s+africa|western\s+cape|gauteng|kwazulu'
+    r'|eikeboom|hermon|cape\s+town|durbanville|sandton|melrose)\b',
+    re.IGNORECASE,
+)
+
+_HEADER_RE = re.compile(
+    r'^(description|item|qty|quantity|unit\s+price|rate|amount|price|code|ext\.?\s*price'
+    r'|disc\s*%|vat\s*%|excl\.|incl\.|line|date|activity|nett\s+price|no\.?\s+exclusive)\b',
+    re.IGNORECASE,
+)
+
+_SHIPPING_RE = re.compile(r'\b(shipping|courier|freight|transport|delivery|postage|carriage)\b', re.IGNORECASE)
+
+
+def _extract_invoice_number(text):
+    for pat in _INV_NUM_PATTERNS:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            val = m.group(1).strip().rstrip('.,')
+            if len(val) >= 2:
+                return val
+    return None
+
+
+def _extract_date(text):
+    import calendar
+    month_abbrevs = {m.lower(): i+1 for i, m in enumerate(calendar.month_abbr) if m}
+    month_names   = {m.lower(): i+1 for i, m in enumerate(calendar.month_name) if m}
+
+    for pat, fmt in _DATE_PATTERNS:
+        for m in re.finditer(pat, text, re.IGNORECASE):
+            raw = m.group(1).strip().replace('-', '/').replace('.', '/')
+            raw = re.sub(r',', '', raw)
+            # Normalise month names
+            for name, num in {**month_names, **month_abbrevs}.items():
+                raw = re.sub(r'\b' + re.escape(name) + r'\b', str(num), raw, flags=re.IGNORECASE)
+            raw = re.sub(r'\s+', '/', raw)
+            raw = re.sub(r'/+', '/', raw)
+            for tfmt in ('%d/%m/%Y', '%Y/%m/%d', '%d/%m/%y', '%m/%d/%Y'):
+                try:
+                    d = datetime.strptime(raw, tfmt).date()
+                    if 2020 <= d.year <= 2035:
+                        return d.isoformat()
+                except Exception:
+                    pass
+    return None
+
+
+def _clean_num(s):
+    s = re.sub(r'[R\s,]', '', str(s))
+    try:
+        return float(s)
+    except Exception:
+        return None
+
+
+def _try_parse_line(line):
+    """Try to extract (description, qty, total_price) from a text line."""
+    original = line.strip()
+    if not original or len(original) < 8:
+        return None
+
+    # Skip header/footer lines
+    if _SKIP_RE.search(original):
+        return None
+    if _HEADER_RE.match(original):
+        return None
+
+    # Strip leading item code (all-caps alphanum, e.g. "TILES001BLUE", "1HALM", "RBN001 -")
+    line = re.sub(r'^[A-Z][A-Z0-9]{3,}\s*[-–]?\s*', '', original, count=1).strip()
+    # Strip leading date (YYYY/MM/DD or DD/MM/YYYY)
+    line = re.sub(r'^\d{4}[/.-]\d{2}[/.-]\d{2}\s+', '', line).strip()
+    line = re.sub(r'^\d{1,2}[/.-]\d{2}[/.-]\d{2,4}\s+', '', line).strip()
+    # Strip leading line number (a bare integer followed by space)
+    line = re.sub(r'^\d+\s+', '', line, count=1).strip()
+
+    if len(line) < 4:
+        return None
+
+    # Collect all price-like tokens: optional R, digits with optional comma-thousands, decimal
+    # Exclude percentages (numbers immediately followed by %)
+    num_pat = r'R?\s*(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2}|\d{1,5})(?!\s*%)'
+    tokens = []
+    for m in re.finditer(num_pat, line):
+        val = _clean_num(m.group(1))
+        if val is not None and val >= 0:
+            tokens.append((m.start(), m.end(), val))
+
+    if len(tokens) < 2:
+        return None
+
+    # Skip lines that are entirely percentages or pure-number lines
+    non_num = re.sub(num_pat, '', line).strip()
+    if not non_num or re.match(r'^[\s%.,]+$', non_num):
+        return None
+
+    # Last token = total price
+    total = tokens[-1][2]
+    if total <= 0:
+        return None
+
+    # Find qty: look for a small integer (1-9999) among the tokens
+    qty = 1.0
+    unit_price_candidate = None
+
+    if len(tokens) >= 3:
+        # Pattern: ... qty unit_price total
+        # unit_price × qty ≈ total
+        for i in range(len(tokens) - 2, 0, -1):
+            up = tokens[i][2]
+            q_raw = total / up if up > 0 else 0
+            q_round = round(q_raw)
+            if up > 0 and 1 <= q_round <= 500 and abs(q_raw - q_round) < 0.05:
+                qty = float(q_round)
+                unit_price_candidate = up
+                break
+
+    # Description = text before the first number token
+    desc_end = tokens[0][0]
+    desc = line[:desc_end].strip().strip('.,- ')
+
+    # If desc is empty (line started with a number), use the original stripped line up to second token
+    if not desc and len(tokens) >= 2:
+        desc_end = tokens[1][0]
+        desc = line[:desc_end].strip().strip('.,- ')
+
+    # Remove trailing units/tags like "ea", "PACK", "Standard" that got left in desc
+    desc = re.sub(r'\s+\b(ea|PACK|Pack|unit|Unit|Standard|STD|PK)\b\s*$', '', desc, flags=re.IGNORECASE).strip()
+
+    if not desc or len(desc) < 3:
+        return None
+    # Description mustn't be purely numeric
+    if re.match(r'^[\d\s.,R%]+$', desc):
+        return None
+    # Skip if description ends in colon (header field like "Account:", "Branch:")
+    if desc.rstrip().endswith(':'):
+        return None
+    # Skip single short words that are clearly not products (phone numbers, codes, etc.)
+    if re.match(r'^[\w.-]{1,10}:?$', desc) and not any(c.isalpha() for c in desc[2:]):
+        return None
+    # Skip if description looks like address fragments (short + postal code pattern)
+    if re.match(r'^[\w\s]{2,25}\s+\d{4,5}$', desc):
+        return None
+
+    return {
+        'description': desc,
+        'qty':         qty,
+        'unit':        'unit',
+        'total_price': round(total, 2),
+    }
+
+
+def _parse_invoice_pdf(content):
+    """Extract structured invoice data from PDF bytes using pdfplumber."""
+    try:
+        import pdfplumber
+    except ImportError:
+        raise RuntimeError('pdfplumber is not installed on this server')
+
+    full_text_parts = []
+    with pdfplumber.open(io.BytesIO(content)) as pdf:
+        for page in pdf.pages:
+            t = page.extract_text() or ''
+            full_text_parts.append(t)
+
+    full_text = '\n'.join(full_text_parts)
+    if not full_text.strip():
+        raise RuntimeError('No text could be extracted from this PDF — it may be a scanned image')
+
+    invoice_number = _extract_invoice_number(full_text)
+    invoice_date   = _extract_date(full_text)
+
+    lines    = []
+    shipping = 0.0
+
+    for raw in full_text.split('\n'):
+        raw = raw.strip()
+        if not raw:
+            continue
+        if _SHIPPING_RE.search(raw) and not _SKIP_RE.search(raw):
+            # Try to pull out a shipping cost
+            nums = re.findall(r'R?\s*(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2})', raw)
+            if nums:
+                val = _clean_num(nums[-1])
+                if val and val > 0:
+                    shipping = round(shipping + val, 2)
+            continue
+        item = _try_parse_line(raw)
+        if item:
+            lines.append(item)
+
+    # De-duplicate lines that appear twice (some PDFs repeat description in adjacent columns)
+    seen = set()
+    deduped = []
+    for item in lines:
+        key = (item['description'][:30].lower(), item['total_price'])
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+
+    return {
+        'invoice_number': invoice_number,
+        'date':           invoice_date,
+        'lines':          deduped,
+        'shipping':       shipping if shipping > 0 else None,
+        'raw_line_count': len(full_text.split('\n')),
+    }
+
+
+@bp.route('/api/suppliers/<int:sid>/invoices/parse', methods=['POST'])
+def api_supplier_invoice_parse(sid):
+    """Parse an uploaded invoice PDF and return structured delivery data."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if not db.session.get(Supplier, sid):
+        return jsonify({'error': 'Not found'}), 404
+
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({'error': 'No file provided'}), 400
+
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext != '.pdf':
+        return jsonify({'error': 'Only PDF files are supported for invoice scanning'}), 400
+
+    content = f.read()
+    if len(content) > 20 * 1024 * 1024:
+        return jsonify({'error': 'File too large (max 20 MB)'}), 400
+
+    try:
+        result = _parse_invoice_pdf(content)
+        return jsonify(result)
+    except RuntimeError as e:
+        return jsonify({'error': str(e)}), 422
+    except Exception as e:
+        current_app.logger.error(f'Invoice parse error: {e}')
+        return jsonify({'error': 'Failed to parse invoice'}), 422
 
 
 def _parse_addl_costs(raw, source='manual_edit', source_id=None):
