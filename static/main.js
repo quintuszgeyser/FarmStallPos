@@ -829,7 +829,6 @@ function renderProductsCards() {
           <button data-menu="edit"><i class="bi bi-pencil me-1"></i>Edit</button>
           <button data-menu="label"><i class="bi bi-tag me-1"></i>Print Label</button>
           ${isStockItem ? `
-            <button data-menu="receive"><i class="bi bi-box-arrow-in-down me-1"></i>Receive</button>
             <button data-menu="stocktake"><i class="bi bi-clipboard-check me-1"></i>Stocktake</button>
             <button data-menu="writeoff"><i class="bi bi-trash3 me-1"></i>Write Off</button>
             <button data-menu="batch-history"><i class="bi bi-clock-history me-1"></i>Batch History</button>
@@ -885,7 +884,6 @@ function renderProductsCards() {
     moreMenu.querySelector('[data-menu="writeoff-produced"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openWriteoffModal(p); });
     moreMenu.querySelector('[data-menu="batch-history"]')?.addEventListener('click',    e => { e.stopPropagation(); moreMenu.classList.remove('open'); openBatchHistoryModal(p); });
     if (isStockItem && stockItem) {
-      moreMenu.querySelector('[data-menu="receive"]')?.addEventListener('click',   e => { e.stopPropagation(); moreMenu.classList.remove('open'); openReceiveStockModal(stockItem); });
       moreMenu.querySelector('[data-menu="stocktake"]')?.addEventListener('click', e => { e.stopPropagation(); moreMenu.classList.remove('open'); openStocktakeModal(stockItem); });
       moreMenu.querySelector('[data-menu="writeoff"]')?.addEventListener('click',  e => { e.stopPropagation(); moreMenu.classList.remove('open'); openWriteoffModal(stockItem); });
     }

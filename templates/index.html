@@ -1013,7 +1013,6 @@
       <div id="products-sel-bar" class="d-none">
         <span id="products-sel-count">0 selected</span>
         <div class="sel-bar-actions">
-          <button class="btn btn-success btn-sm" data-bulk-action="receive">Receive</button>
           <button class="btn btn-outline-secondary btn-sm" data-bulk-action="stocktake">Stocktake</button>
           <button class="btn btn-outline-danger btn-sm" data-bulk-action="writeoff">Write Off</button>
           <button class="btn btn-warning btn-sm" data-bulk-action="produce" style="display:none"><i class="bi bi-fire me-1"></i>Produce</button>
@@ -3113,69 +3112,7 @@
   </div>
 </div>
 
-<!-- ═══════════ RECEIVE STOCK MODAL ═══════════ -->
-<div class="modal fade" id="receiveStockModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header py-2">
-        <h5 class="modal-title">Receive Stock - <span id="receive-product-name"></span></h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <input type="hidden" id="receive-product-id">
-        <div class="mb-2">
-          <label class="form-label small">Quantity received</label>
-          <div class="row g-2">
-            <div class="col-5">
-              <input id="receive-qty" type="number" step="0.01" min="0.01" class="form-control" placeholder="0">
-            </div>
-            <div class="col-7">
-              <select id="receive-unit" class="form-select"></select>
-            </div>
-          </div>
-          <div id="receive-qty-base-display" class="small text-muted mt-1"></div>
-        </div>
-        <div class="row g-2 mb-3">
-          <div class="col-12">
-            <label class="form-label small">Total amount paid (R)</label>
-            <div class="input-group">
-              <span class="input-group-text">R</span>
-              <input id="receive-total-price" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
-            </div>
-          </div>
-        </div>
-        <div id="receive-cost-preview" class="alert alert-info py-2 small hidden"></div>
-        <div id="receive-addl-costs-wrap" class="mt-2"></div>
-        <div class="mt-2">
-          <label class="form-label small">Supplier (optional)</label>
-          <div class="input-group">
-            <select id="receive-supplier" class="form-select">
-              <option value="">- No supplier -</option>
-            </select>
-            <button id="btn-quick-add-supplier" class="btn btn-outline-secondary btn-sm" type="button" title="Quick add supplier">+</button>
-          </div>
-          <div id="quick-supplier-form" class="mt-2 hidden">
-            <div class="row g-1 mb-1">
-              <div class="col-12"><input id="quick-sup-name"    class="form-control form-control-sm" placeholder="Supplier name *"></div>
-            </div>
-            <div class="row g-1">
-              <div class="col-6"><input id="quick-sup-phone"   class="form-control form-control-sm" placeholder="Phone"></div>
-              <div class="col-6"><input id="quick-sup-email"   class="form-control form-control-sm" placeholder="Email"></div>
-            </div>
-            <button id="btn-quick-sup-save" class="btn btn-success btn-sm w-100 mt-1">Add Supplier</button>
-          </div>
-        </div>
-        <div class="mt-2">
-          <label class="form-label small">Invoice / delivery ref <span class="text-muted">(optional)</span></label>
-          <input id="receive-invoice-number" type="text" class="form-control form-control-sm" placeholder="e.g. INV-2024-001">
-        </div>
-      </div>
-      <div class="modal-footer py-2">
-        <button id="btn-receive-confirm" class="btn btn-success w-100">Confirm - Receive Stock</button>
-      </div>
-    </div>
-  </div>
-</div>
+<!-- receiveStockModal removed — all stock receiving goes through Suppliers tab → New Delivery -->
 
 <div class="modal fade" id="editWriteoffModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered">
