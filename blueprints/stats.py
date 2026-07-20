@@ -1037,15 +1037,15 @@ def api_stats_overhead():
         bq = bq.filter(StockBatch.product_id == product_id_filter)
     batches = bq.all()
 
-    by_type      = defaultdict(lambda: Decimal('0'))
-    by_supplier  = defaultdict(lambda: {'base': Decimal('0'), 'overhead': Decimal('0')})
+    by_type      = defaultdict(lambda: {'total': Decimal('0'), 'batch_count': 0})
+    by_supplier  = defaultdict(lambda: {'name': '', 'base': Decimal('0'), 'overhead': Decimal('0')})
     by_produce   = defaultdict(lambda: {'ingredient': Decimal('0'), 'overhead': Decimal('0')})
     total_base   = Decimal('0')
 
     pids = {b.product_id for b in batches}
     sids = {b.supplier_id for b in batches if b.supplier_id}
     prod_map  = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
-    sup_map   = {s.id: s.name for s in Supplier.query.filter(Supplier.id.in_(sids)).all()} if sids else {}
+    sup_map   = {s.id: s for s in Supplier.query.filter(Supplier.id.in_(sids)).all()} if sids else {}
 
     for b in batches:
         try:
@@ -1058,9 +1058,10 @@ def api_stats_overhead():
                 amt = Decimal(str(e.get('amount', 0)))
             except Exception:
                 amt = Decimal('0')
-            ctype = e.get('type', 'other')
-            by_type[ctype] += amt
-            batch_overhead  += amt
+            ctype = e.get('type', 'other') or 'other'
+            by_type[ctype]['total'] += amt
+            by_type[ctype]['batch_count'] += 1
+            batch_overhead += amt
 
         base = Decimal(str(b.base_cost_total)) if b.base_cost_total is not None else (
             Decimal(str(b.cost_per_base_unit)) * Decimal(str(b.qty_purchased_base)) - batch_overhead
@@ -1072,39 +1073,43 @@ def api_stats_overhead():
             by_produce[b.product_id]['ingredient'] += base
             by_produce[b.product_id]['overhead']   += batch_overhead
         else:
-            sup_name = sup_map.get(b.supplier_id, 'Unknown') if b.supplier_id else 'Unknown'
-            by_supplier[sup_name]['base']     += base
-            by_supplier[sup_name]['overhead'] += batch_overhead
+            # Key by supplier ID (or 0 for unlinked) to avoid name collisions
+            sup_key = b.supplier_id if b.supplier_id else 0
+            sup_obj = sup_map.get(b.supplier_id)
+            by_supplier[sup_key]['name']     = sup_obj.name if sup_obj else ('Unknown' if not b.supplier_id else f'Deleted supplier #{b.supplier_id}')
+            by_supplier[sup_key]['base']     += base
+            by_supplier[sup_key]['overhead'] += batch_overhead
 
-    total_overhead = sum(by_type.values())
+    total_overhead = sum(d['total'] for d in by_type.values())
 
     type_rows = [
         {
             'type': t,
-            'total': round(float(v), 2),
-            'pct_of_base': round(float(v / total_base * 100), 1) if total_base > 0 else 0,
+            'total': round(float(d['total']), 2),
+            'batch_count': d['batch_count'],
+            'pct_of_overhead': round(float(d['total'] / total_overhead * 100), 1) if total_overhead > 0 else 0,
         }
-        for t, v in sorted(by_type.items(), key=lambda x: x[1], reverse=True)
+        for t, d in sorted(by_type.items(), key=lambda x: x[1]['total'], reverse=True)
     ]
     supplier_rows = [
         {
-            'supplier': sup,
+            'supplier': d['name'],
             'base_cost': round(float(d['base']), 2),
             'overhead': round(float(d['overhead']), 2),
             'uplift_pct': round(float(d['overhead'] / d['base'] * 100), 1) if d['base'] > 0 else 0,
         }
-        for sup, d in sorted(by_supplier.items(), key=lambda x: x[1]['overhead'], reverse=True)
+        for sup_key, d in sorted(by_supplier.items(), key=lambda x: x[1]['overhead'], reverse=True)
     ]
     produce_rows = []
     for pid, d in sorted(by_produce.items(), key=lambda x: x[1]['overhead'], reverse=True):
         p = prod_map.get(pid)
         produce_rows.append({
-            'product_id':    pid,
-            'product_name':  p.name if p else str(pid),
+            'product_id':      pid,
+            'product_name':    p.name if p else str(pid),
             'ingredient_cost': round(float(d['ingredient']), 2),
-            'overhead':      round(float(d['overhead']), 2),
-            'total':         round(float(d['ingredient'] + d['overhead']), 2),
-            'overhead_pct':  round(float(d['overhead'] / d['ingredient'] * 100), 1) if d['ingredient'] > 0 else 0,
+            'overhead':        round(float(d['overhead']), 2),
+            'total':           round(float(d['ingredient'] + d['overhead']), 2),
+            'overhead_pct':    round(float(d['overhead'] / d['ingredient'] * 100), 1) if d['ingredient'] > 0 else 0,
         })
 
     return jsonify({

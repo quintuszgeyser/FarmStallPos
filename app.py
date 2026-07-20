@@ -380,18 +380,45 @@ def strong_migrate():
             if 'last_overhead_costs' not in existing_prod_oh:
                 conn.exec_driver_sql("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
 
-            # purchase_runs table
-            conn.exec_driver_sql("""CREATE TABLE IF NOT EXISTS purchase_runs (
+            # supplier_invoices table (was purchase_runs — rename if old name exists)
+            existing_tables = [r[0] for r in conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            if 'purchase_runs' in existing_tables and 'supplier_invoices' not in existing_tables:
+                conn.exec_driver_sql("ALTER TABLE purchase_runs RENAME TO supplier_invoices")
+            conn.exec_driver_sql("""CREATE TABLE IF NOT EXISTS supplier_invoices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
                 date TEXT NOT NULL,
-                invoice_ref TEXT,
-                invoice_additional_total NUMERIC,
+                invoice_number TEXT,
+                subtotal NUMERIC,
+                additional_costs_json TEXT,
+                additional_costs_total NUMERIC,
+                total NUMERIC,
+                status TEXT NOT NULL DEFAULT 'posted',
+                source TEXT,
                 notes TEXT,
                 created_at TEXT,
                 created_by INTEGER REFERENCES users(id)
             )""")
-            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_purchase_runs_supplier ON purchase_runs (supplier_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_supplier_invoices_supplier ON supplier_invoices (supplier_id)")
+            # Add missing columns to supplier_invoices (for upgrade from purchase_runs)
+            existing_si = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(supplier_invoices)").fetchall()]
+            for col, defn in [
+                ('invoice_number', 'TEXT'), ('subtotal', 'NUMERIC'),
+                ('additional_costs_json', 'TEXT'), ('additional_costs_total', 'NUMERIC'),
+                ('total', 'NUMERIC'), ('status', "TEXT NOT NULL DEFAULT 'posted'"), ('source', 'TEXT'),
+            ]:
+                if col not in existing_si:
+                    conn.exec_driver_sql(f"ALTER TABLE supplier_invoices ADD COLUMN {col} {defn}")
+            # Rename purchase_run_id → invoice_id on stock_batches
+            existing_sb2 = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(stock_batches)").fetchall()]
+            if 'purchase_run_id' in existing_sb2 and 'invoice_id' not in existing_sb2:
+                conn.exec_driver_sql("ALTER TABLE stock_batches RENAME COLUMN purchase_run_id TO invoice_id")
+            elif 'invoice_id' not in existing_sb2:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN invoice_id INTEGER")
+            # Add invoice_id to supplier_documents
+            existing_sd = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(supplier_documents)").fetchall()]
+            if 'invoice_id' not in existing_sd:
+                conn.exec_driver_sql("ALTER TABLE supplier_documents ADD COLUMN invoice_id INTEGER")
 
             # cost_categories table
             conn.exec_driver_sql("""CREATE TABLE IF NOT EXISTS cost_categories (
@@ -1423,17 +1450,36 @@ def strong_migrate():
         pg_try("CREATE INDEX IF NOT EXISTS ix_stock_batches_run ON stock_batches (purchase_run_id)")
         pg_try("ALTER TABLE suppliers ADD COLUMN last_run_costs TEXT")
         pg_try("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
-        pg_try("""CREATE TABLE IF NOT EXISTS purchase_runs (
+        # Rename purchase_runs → supplier_invoices if needed
+        pg_try("ALTER TABLE purchase_runs RENAME TO supplier_invoices")
+        pg_try("""CREATE TABLE IF NOT EXISTS supplier_invoices (
             id SERIAL PRIMARY KEY,
             supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
             date DATE NOT NULL,
-            invoice_ref VARCHAR(128),
-            invoice_additional_total NUMERIC(18,4),
+            invoice_number VARCHAR(128),
+            subtotal NUMERIC(18,4),
+            additional_costs_json TEXT,
+            additional_costs_total NUMERIC(18,4),
+            total NUMERIC(18,4),
+            status VARCHAR(20) NOT NULL DEFAULT 'posted',
+            source VARCHAR(30),
             notes TEXT,
             created_at TIMESTAMP,
             created_by INTEGER REFERENCES users(id)
         )""")
-        pg_try("CREATE INDEX IF NOT EXISTS ix_purchase_runs_supplier ON purchase_runs (supplier_id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_supplier_invoices_supplier ON supplier_invoices (supplier_id)")
+        # Add missing columns to supplier_invoices (upgrade path)
+        for col, defn in [
+            ('invoice_number', 'VARCHAR(128)'), ('subtotal', 'NUMERIC(18,4)'),
+            ('additional_costs_json', 'TEXT'), ('additional_costs_total', 'NUMERIC(18,4)'),
+            ('total', 'NUMERIC(18,4)'), ("status", "VARCHAR(20) NOT NULL DEFAULT 'posted'"), ('source', 'VARCHAR(30)'),
+        ]:
+            pg_try(f"ALTER TABLE supplier_invoices ADD COLUMN {col} {defn}")
+        # Rename purchase_run_id → invoice_id on stock_batches
+        pg_try("ALTER TABLE stock_batches RENAME COLUMN purchase_run_id TO invoice_id")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN invoice_id INTEGER REFERENCES supplier_invoices(id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_stock_batches_invoice ON stock_batches (invoice_id)")
+        pg_try("ALTER TABLE supplier_documents ADD COLUMN invoice_id INTEGER REFERENCES supplier_invoices(id)")
         pg_try("""CREATE TABLE IF NOT EXISTS cost_categories (
             id SERIAL PRIMARY KEY,
             name VARCHAR(64) NOT NULL UNIQUE,
@@ -1644,7 +1690,7 @@ def strong_migrate():
 
 
 def _seed_cost_categories():
-    from models import CostCategory
+    from models import CostCategory, SupplierInvoice
     from datetime import datetime as _dt
     if db.session.query(CostCategory).count() == 0:
         defaults = [

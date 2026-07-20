@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request, current_app, send_from_directory,
 from sqlalchemy import func
 
 from helpers import require_login, require_role, current_user, _gen_barcode
-from models import db, Supplier, StockBatch, Purchase, Product, SupplierDocument, PurchaseRun
+from models import db, Supplier, StockBatch, Purchase, Product, SupplierDocument, SupplierInvoice
 
 bp = Blueprint('suppliers', __name__)
 
@@ -208,18 +208,21 @@ def api_suppliers_purchase_run(sid):
     created_products = []
     batches_created  = 0
 
-    # Create PurchaseRun record
-    run = PurchaseRun(
+    # Compute subtotal from lines (after prepared_lines is built below)
+    # Create SupplierInvoice record — flush to get ID before creating batches
+    inv = SupplierInvoice(
         supplier_id=sid,
         date=run_date,
-        invoice_ref=invoice_ref,
-        invoice_additional_total=float(invoice_addl_total) if invoice_addl_total is not None else None,
+        invoice_number=invoice_ref,
+        status='posted',
+        source='purchase_run',
+        notes=data.get('notes') or None,
         created_at=datetime.utcnow(),
         created_by=u.id if u else None,
     )
-    db.session.add(run)
+    db.session.add(inv)
     db.session.flush()
-    run_id = run.id
+    run_id = inv.id
 
     # First pass: build line items with base costs for proportional split
     prepared_lines = []
@@ -316,9 +319,16 @@ def api_suppliers_purchase_run(sid):
             supplier_id=sid,
             user_id=u.id if u else None,
             purchased_at=purchase_date,
-            purchase_run_id=run_id,
+            invoice_id=run_id,
         ))
         batches_created += 1
+
+    # Stamp invoice-level totals
+    subtotal = sum(pl['base_cost_total'] for pl in prepared_lines)
+    inv.subtotal = float(subtotal)
+    inv.additional_costs_json = _json.dumps([{'label': c['label'], 'type': c['type'], 'amount': c['amount']} for c in addl_costs]) if addl_costs else None
+    inv.additional_costs_total = float(total_addl)
+    inv.total = float(subtotal + total_addl)
 
     # Update supplier's last_run_costs for pre-population next time
     if addl_costs and batches_created > 0:
@@ -330,8 +340,8 @@ def api_suppliers_purchase_run(sid):
         'ok': True,
         'created_products': created_products,
         'batches_created':  batches_created,
-        'run_id':           run_id,
-        'invoice_ref':      invoice_ref,
+        'invoice_id':       run_id,
+        'invoice_number':   invoice_ref,
     })
 
 
@@ -422,36 +432,38 @@ def api_supplier_docs_delete(sid, did):
     return jsonify({'ok': True})
 
 
-@bp.route('/api/suppliers/<int:sid>/batches', methods=['GET'])
-def api_supplier_batches(sid):
-    """Return recent batches for a supplier for retrospective cost application."""
+@bp.route('/api/suppliers/<int:sid>/invoices', methods=['GET'])
+def api_supplier_invoices(sid):
+    """Return supplier invoices with nested batches and documents."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     s = db.session.get(Supplier, sid)
     if not s:
         return jsonify({'error': 'Not found'}), 404
-    batches = (StockBatch.query
-               .filter_by(supplier_id=sid)
-               .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
-               .limit(100)
-               .all())
-    pids = {b.product_id for b in batches}
+
+    # Fetch all invoices for this supplier (most recent first)
+    invoices = (SupplierInvoice.query
+                .filter_by(supplier_id=sid)
+                .order_by(SupplierInvoice.date.desc(), SupplierInvoice.id.desc())
+                .limit(50)
+                .all())
+    inv_ids = {inv.id for inv in invoices}
+
+    # Fetch all batches linked to these invoices (+ unlinked batches for this supplier)
+    all_batches = (StockBatch.query
+                   .filter_by(supplier_id=sid)
+                   .order_by(StockBatch.purchased_at.desc())
+                   .all())
+
+    pids = {b.product_id for b in all_batches}
     prod_map = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
-    from collections import OrderedDict
-    runs = OrderedDict()
-    for b in batches:
+
+    def _batch_dict(b):
         p = prod_map.get(b.product_id)
         qty_purchased = float(b.qty_purchased_base)
         qty_remaining = float(b.qty_remaining_base)
         consumed_pct  = round((1 - qty_remaining / qty_purchased) * 100, 1) if qty_purchased > 0 else 0
-        key = b.purchase_run_id if b.purchase_run_id else f'solo_{b.id}'
-        if key not in runs:
-            runs[key] = {
-                'run_id': b.purchase_run_id,
-                'date':   b.purchased_at.strftime('%Y-%m-%d'),
-                'batches': [],
-            }
-        runs[key]['batches'].append({
+        return {
             'id':                 b.id,
             'product_id':         b.product_id,
             'product_name':       p.name if p else str(b.product_id),
@@ -464,22 +476,96 @@ def api_supplier_batches(sid):
             'cost_per_base_unit': float(b.cost_per_base_unit),
             'base_cost_total':    float(b.base_cost_total) if b.base_cost_total is not None else None,
             'additional_costs':   b.additional_costs,
-        })
-    # Fetch PurchaseRun metadata for known run IDs
-    known_run_ids = [k for k in runs if isinstance(k, int)]
-    run_meta = {}
-    if known_run_ids:
-        for pr in db.session.query(PurchaseRun).filter(PurchaseRun.id.in_(known_run_ids)).all():
-            run_meta[pr.id] = {
-                'invoice_ref': pr.invoice_ref,
-                'invoice_additional_total': float(pr.invoice_additional_total) if pr.invoice_additional_total is not None else None,
-            }
+            'updated_at':         b.updated_at.isoformat() if b.updated_at else None,
+        }
+
+    # Group batches by invoice_id
+    from collections import defaultdict
+    batches_by_invoice = defaultdict(list)
+    unlinked_batches   = []
+    for b in all_batches:
+        if b.invoice_id and b.invoice_id in inv_ids:
+            batches_by_invoice[b.invoice_id].append(_batch_dict(b))
+        elif not b.invoice_id:
+            unlinked_batches.append(_batch_dict(b))
+
+    # Fetch documents grouped by invoice_id
+    docs_by_invoice = defaultdict(list)
+    all_docs = SupplierDocument.query.filter_by(supplier_id=sid).all()
+    for d in all_docs:
+        if d.invoice_id and d.invoice_id in inv_ids:
+            docs_by_invoice[d.invoice_id].append({
+                'id': d.id, 'original_name': d.original_name,
+                'filename': d.filename,
+                'uploaded_at': d.uploaded_at.date().isoformat() if d.uploaded_at else None,
+            })
+
     result = []
-    for key, run in runs.items():
-        meta = run_meta.get(key, {})
-        run['invoice_ref']              = meta.get('invoice_ref')
-        run['invoice_additional_total'] = meta.get('invoice_additional_total')
-        run['batch_count'] = len(run['batches'])
-        run['base_total']  = sum(b['base_cost_total'] or 0 for b in run['batches'])
-        result.append(run)
+    for inv in invoices:
+        batches = batches_by_invoice.get(inv.id, [])
+        docs    = docs_by_invoice.get(inv.id, [])
+        result.append({
+            'id':                     inv.id,
+            'invoice_number':         inv.invoice_number,
+            'date':                   inv.date.isoformat() if inv.date else None,
+            'status':                 inv.status,
+            'source':                 inv.source,
+            'subtotal':               float(inv.subtotal) if inv.subtotal is not None else None,
+            'additional_costs_json':  inv.additional_costs_json,
+            'additional_costs_total': float(inv.additional_costs_total) if inv.additional_costs_total is not None else None,
+            'total':                  float(inv.total) if inv.total is not None else None,
+            'notes':                  inv.notes,
+            'batch_count':            len(batches),
+            'batches':                batches,
+            'documents':              docs,
+        })
+
+    # Append unlinked receives as a virtual group at the bottom
+    if unlinked_batches:
+        result.append({
+            'id':            None,
+            'invoice_number': None,
+            'date':           unlinked_batches[0]['purchased_at'][:10] if unlinked_batches else None,
+            'status':        'unlinked',
+            'source':        'quick_receive',
+            'subtotal':      sum(b['base_cost_total'] or 0 for b in unlinked_batches),
+            'additional_costs_json': None,
+            'additional_costs_total': None,
+            'total':         sum(b['base_cost_total'] or 0 for b in unlinked_batches),
+            'batch_count':   len(unlinked_batches),
+            'batches':       unlinked_batches,
+            'documents':     [],
+        })
+
+    return jsonify(result)
+
+
+@bp.route('/api/suppliers/<int:sid>/batches', methods=['GET'])
+def api_supplier_batches(sid):
+    """Legacy alias — returns flat batch list for the apply-costs selector."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    batches = (StockBatch.query
+               .filter_by(supplier_id=sid)
+               .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
+               .limit(100).all())
+    pids = {b.product_id for b in batches}
+    prod_map = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
+    result = []
+    for b in batches:
+        p = prod_map.get(b.product_id)
+        qty_purchased = float(b.qty_purchased_base)
+        qty_remaining = float(b.qty_remaining_base)
+        consumed_pct  = round((1 - qty_remaining / qty_purchased) * 100, 1) if qty_purchased > 0 else 0
+        result.append({
+            'id': b.id, 'product_id': b.product_id,
+            'product_name': p.name if p else str(b.product_id),
+            'purchased_at': b.purchased_at.isoformat(),
+            'qty_purchased_base': qty_purchased, 'qty_remaining_base': qty_remaining,
+            'consumed_pct': consumed_pct,
+            'cost_per_base_unit': float(b.cost_per_base_unit),
+            'base_cost_total': float(b.base_cost_total) if b.base_cost_total is not None else None,
+            'additional_costs': b.additional_costs,
+            'invoice_id': b.invoice_id,
+        })
     return jsonify(result)

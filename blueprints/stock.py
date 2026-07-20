@@ -15,14 +15,12 @@ from helpers import (
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, Purchase, Supplier, User,
+    SupplierInvoice,
 )
 
 bp = Blueprint('stock', __name__)
 
 _UNIT_CONV = {'g': 1, 'kg': 1000, 'ml': 1, 'L': 1000, 'unit': 1, 'dozen': 12}
-
-_VALID_COST_TYPES = {'shipping', 'labour', 'utilities', 'packaging', 'other'}
-
 
 def _parse_addl_costs(raw, source='manual_edit', source_id=None):
     if not raw:
@@ -30,9 +28,7 @@ def _parse_addl_costs(raw, source='manual_edit', source_id=None):
     result = []
     for i, entry in enumerate(raw):
         label = str(entry.get('label') or '').strip()
-        ctype = str(entry.get('type') or 'other').strip()
-        if ctype not in _VALID_COST_TYPES:
-            ctype = 'other'
+        ctype = str(entry.get('type') or 'other').strip() or 'other'
         try:
             amount = Decimal(str(entry.get('amount', 0))).quantize(Decimal('0.01'))
         except (InvalidOperation, TypeError):
@@ -258,16 +254,42 @@ def api_stock_receive():
     overhead_total  = _addl_total(addl_costs)
     cost_per_base   = (base_cost_total + overhead_total) / Decimal(str(qty_base))
     u     = current_user()
+    now   = datetime.utcnow()
+
+    # Create implicit invoice so single receives are traceable
+    invoice_number = data.get('invoice_number') or None
+    inv = SupplierInvoice(
+        supplier_id=supplier_id,
+        date=now.date(),
+        invoice_number=invoice_number,
+        status='posted',
+        source='single_receive',
+        subtotal=float(base_cost_total),
+        additional_costs_json=_json.dumps(addl_costs) if addl_costs else None,
+        additional_costs_total=float(overhead_total),
+        total=float(base_cost_total + overhead_total),
+        created_at=now,
+        created_by=u.id if u else None,
+    )
+    db.session.add(inv)
+    db.session.flush()
+
     batch = StockBatch(
         product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=qty_base,
         cost_per_base_unit=cost_per_base,
         base_cost_total=base_cost_total,
         additional_costs=_json.dumps(addl_costs) if addl_costs else None,
         supplier_id=supplier_id, user_id=u.id if u else None,
+        invoice_id=inv.id,
     )
     db.session.add(batch)
     db.session.commit()
-    return jsonify({'ok': True, 'batch_id': batch.id, 'qty_base': qty_base, 'base_unit': p.base_unit, 'cost_per_base_unit': round(float(cost_per_base), 6)})
+    return jsonify({
+        'ok': True, 'batch_id': batch.id,
+        'invoice_id': inv.id, 'invoice_number': invoice_number,
+        'qty_base': qty_base, 'base_unit': p.base_unit,
+        'cost_per_base_unit': round(float(cost_per_base), 6),
+    })
 
 
 @bp.route('/api/stock/adjust', methods=['POST'])

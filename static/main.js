@@ -7761,38 +7761,49 @@ async function loadOverheadStats(start, end, productId) {
     return;
   }
 
-  let html = '';
+  // Summary header
+  const totalOverhead   = parseFloat(j.total_overhead || 0);
+  const totalBase       = parseFloat(j.total_base || 0);
+  const avgUplift       = totalBase > 0 ? ((totalOverhead / totalBase) * 100).toFixed(1) : '0.0';
+  const receiveOverhead = bySup.reduce((s, r) => s + parseFloat(r.overhead || 0), 0);
+  const produceOverhead = byProd.reduce((s, r) => s + parseFloat(r.overhead || 0), 0);
+
+  let html = `<div class="d-flex gap-4 mb-3 flex-wrap">
+    <div><div class="small text-muted">Base Cost</div><div class="fw-semibold">R${fmt(totalBase)}</div></div>
+    <div><div class="small text-muted">Receiving Overhead</div><div class="fw-semibold text-warning">R${fmt(receiveOverhead)}</div></div>
+    <div><div class="small text-muted">Production Overhead</div><div class="fw-semibold text-warning">R${fmt(produceOverhead)}</div></div>
+    <div><div class="small text-muted">Total Overhead</div><div class="fw-semibold text-warning">R${fmt(totalOverhead)}</div></div>
+    <div><div class="small text-muted">Avg Uplift</div><div class="fw-semibold">${avgUplift}%</div></div>
+  </div>`;
 
   if (byType.length) {
-    const typeTotal = byType.reduce((s, r) => s + parseFloat(r.total || 0), 0);
     html += `<div class="mb-3"><div class="small fw-semibold mb-1">By Type</div>
       <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
         <thead class="table-light"><tr>
-          <th>Type</th><th class="text-end">Total</th><th class="text-end">Batches</th><th class="text-end">% of period</th>
+          <th>Type</th><th class="text-end">Total</th><th class="text-end">Batches</th><th class="text-end">% of overhead</th>
         </tr></thead><tbody>`;
     byType.forEach(r => {
-      const pct = typeTotal > 0 ? ((r.total / typeTotal) * 100).toFixed(1) : 0;
       html += `<tr style="cursor:pointer" onclick="openOverheadTypeDrilldown('${r.type}')">
         <td>${_getCostTypeLabel(r.type)}</td>
         <td class="text-end fw-semibold">R${fmt(r.total)}</td>
-        <td class="text-end">${r.count}</td>
-        <td class="text-end">${pct}%</td>
+        <td class="text-end">${r.batch_count ?? 0}</td>
+        <td class="text-end">${(r.pct_of_overhead ?? 0).toFixed(1)}%</td>
       </tr>`;
     });
     html += `</tbody></table></div></div>`;
   }
 
   if (bySup.length) {
-    html += `<div class="mb-3"><div class="small fw-semibold mb-1">By Supplier</div>
+    html += `<div class="mb-3"><div class="small fw-semibold mb-1">Supplier / Receiving Overhead</div>
       <div class="table-responsive"><table class="table table-sm align-middle mb-0">
         <thead class="table-light"><tr>
           <th>Supplier</th><th class="text-end">Base Cost</th><th class="text-end">Overhead</th><th class="text-end">Uplift %</th>
         </tr></thead><tbody>`;
     bySup.forEach(r => {
       html += `<tr>
-        <td>${escapeHtml(r.supplier_name || 'Unknown')}</td>
+        <td>${escapeHtml(r.supplier || 'Unknown')}</td>
         <td class="text-end">R${fmt(r.base_cost)}</td>
-        <td class="text-end text-warning fw-semibold">R${fmt(r.overhead_total)}</td>
+        <td class="text-end text-warning fw-semibold">R${fmt(r.overhead)}</td>
         <td class="text-end">${r.uplift_pct != null ? r.uplift_pct.toFixed(1) + '%' : '-'}</td>
       </tr>`;
     });
@@ -7800,7 +7811,7 @@ async function loadOverheadStats(start, end, productId) {
   }
 
   if (byProd.length) {
-    html += `<div class="mb-3"><div class="small fw-semibold mb-1">Produce Overhead</div>
+    html += `<div class="mb-3"><div class="small fw-semibold mb-1">Production Overhead (batch totals)</div>
       <div class="table-responsive"><table class="table table-sm align-middle mb-0">
         <thead class="table-light"><tr>
           <th>Product</th><th class="text-end">Ingredient Cost</th><th class="text-end">Overhead</th><th class="text-end">Total</th><th class="text-end">Overhead %</th>

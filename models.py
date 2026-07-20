@@ -248,22 +248,30 @@ class CostCategory(db.Model):
     created_at = db.Column(db.DateTime, nullable=True)
 
 
-class PurchaseRun(db.Model):
-    __tablename__ = 'purchase_runs'
+class SupplierInvoice(db.Model):
+    __tablename__ = 'supplier_invoices'
     id                       = db.Column(db.Integer, primary_key=True)
     supplier_id              = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
     date                     = db.Column(db.Date, nullable=False)
-    invoice_ref              = db.Column(db.String(128), nullable=True)
-    invoice_additional_total = db.Column(db.Numeric(18, 4), nullable=True)
+    invoice_number           = db.Column(db.String(128), nullable=True)   # supplier's ref e.g. INV-001
+    subtotal                 = db.Column(db.Numeric(18, 4), nullable=True)  # sum of product lines
+    additional_costs_json    = db.Column(db.Text, nullable=True)            # original [{label,type,amount}]
+    additional_costs_total   = db.Column(db.Numeric(18, 4), nullable=True)
+    total                    = db.Column(db.Numeric(18, 4), nullable=True)  # subtotal + additional_costs_total
+    status                   = db.Column(db.String(20), nullable=False, default='posted')  # draft | posted
+    source                   = db.Column(db.String(30), nullable=True)      # purchase_run | single_receive | bulk_receive
     notes                    = db.Column(db.Text, nullable=True)
     created_at               = db.Column(db.DateTime, nullable=True)
     created_by               = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    documents                = db.relationship('SupplierDocument', backref='invoice', lazy='dynamic',
+                                               foreign_keys='SupplierDocument.invoice_id')
 
 
 class SupplierDocument(db.Model):
     __tablename__ = 'supplier_documents'
     id           = db.Column(db.Integer, primary_key=True)
     supplier_id  = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False)
+    invoice_id   = db.Column(db.Integer, db.ForeignKey('supplier_invoices.id'), nullable=True, index=True)
     filename     = db.Column(db.String(200), nullable=False)   # stored filename on disk
     original_name = db.Column(db.String(200), nullable=False)  # original upload name
     uploaded_at  = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
@@ -297,7 +305,7 @@ class StockBatch(db.Model):
     cost_adjustment_reason = db.Column(db.Text, nullable=True)     # optional free-text reason for a post-creation edit
     updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
     updated_by          = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    purchase_run_id     = db.Column(db.Integer, db.ForeignKey('purchase_runs.id'), nullable=True, index=True)
+    invoice_id          = db.Column(db.Integer, db.ForeignKey('supplier_invoices.id'), nullable=True, index=True)
 
 
 class StockConsumption(db.Model):
