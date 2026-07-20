@@ -435,7 +435,8 @@ def _parse_addl_costs_p(raw, source='produce_run'):
         if not label:
             raise ValueError(f'additional_costs[{i}].label is required')
         result.append({'label': label, 'type': ctype, 'amount': float(amount),
-                       'source': source, 'source_id': None})
+                       'source': source, 'source_id': None,
+                       'invoice_ref': str(entry.get('invoice_ref') or '').strip() or None})
     return result
 
 

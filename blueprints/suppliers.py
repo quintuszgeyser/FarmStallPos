@@ -36,11 +36,12 @@ def _parse_addl_costs(raw, source='manual_edit', source_id=None):
         except (InvalidOperation, TypeError):
             raise ValueError(f'additional_costs[{i}].amount is invalid')
         result.append({
-            'label': label,
-            'type': ctype,
-            'amount': float(amount.quantize(Decimal('0.01'))),
-            'source': source,
-            'source_id': source_id,
+            'label':       label,
+            'type':        ctype,
+            'amount':      float(amount.quantize(Decimal('0.01'))),
+            'source':      source,
+            'source_id':   source_id,
+            'invoice_ref': str(entry.get('invoice_ref') or '').strip() or None,
         })
     return result
 
@@ -206,6 +207,10 @@ def api_suppliers_purchase_run(sid):
     created_products = []
     batches_created  = 0
 
+    # Generate a unique purchase_run_id for this run
+    max_run = db.session.query(func.max(StockBatch.purchase_run_id)).scalar() or 0
+    run_id = max_run + 1
+
     # First pass: build line items with base costs for proportional split
     prepared_lines = []
     for line in lines:
@@ -301,6 +306,7 @@ def api_suppliers_purchase_run(sid):
             supplier_id=sid,
             user_id=u.id if u else None,
             purchased_at=purchase_date,
+            purchase_run_id=run_id,
         ))
         batches_created += 1
 
@@ -419,23 +425,37 @@ def api_supplier_batches(sid):
                .all())
     pids = {b.product_id for b in batches}
     prod_map = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
-    result = []
+    from collections import OrderedDict
+    runs = OrderedDict()
     for b in batches:
         p = prod_map.get(b.product_id)
         qty_purchased = float(b.qty_purchased_base)
         qty_remaining = float(b.qty_remaining_base)
         consumed_pct  = round((1 - qty_remaining / qty_purchased) * 100, 1) if qty_purchased > 0 else 0
-        result.append({
-            'id':                b.id,
-            'product_id':        b.product_id,
-            'product_name':      p.name if p else str(b.product_id),
-            'base_unit':         p.base_unit if p else None,
-            'purchased_at':      b.purchased_at.isoformat(),
+        key = b.purchase_run_id if b.purchase_run_id else f'solo_{b.id}'
+        if key not in runs:
+            runs[key] = {
+                'run_id': b.purchase_run_id,
+                'date':   b.purchased_at.strftime('%Y-%m-%d'),
+                'batches': [],
+            }
+        runs[key]['batches'].append({
+            'id':                 b.id,
+            'product_id':         b.product_id,
+            'product_name':       p.name if p else str(b.product_id),
+            'base_unit':          p.base_unit if p else None,
+            'unit_type':          p.unit_type if p else None,
+            'purchased_at':       b.purchased_at.isoformat(),
             'qty_purchased_base': qty_purchased,
             'qty_remaining_base': qty_remaining,
-            'consumed_pct':      consumed_pct,
+            'consumed_pct':       consumed_pct,
             'cost_per_base_unit': float(b.cost_per_base_unit),
-            'base_cost_total':   float(b.base_cost_total) if b.base_cost_total is not None else None,
-            'additional_costs':  b.additional_costs,
+            'base_cost_total':    float(b.base_cost_total) if b.base_cost_total is not None else None,
+            'additional_costs':   b.additional_costs,
         })
+    result = []
+    for run in runs.values():
+        run['batch_count'] = len(run['batches'])
+        run['base_total']  = sum(b['base_cost_total'] or 0 for b in run['batches'])
+        result.append(run)
     return jsonify(result)

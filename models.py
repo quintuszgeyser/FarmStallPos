@@ -273,6 +273,7 @@ class StockBatch(db.Model):
     cost_adjustment_reason = db.Column(db.Text, nullable=True)     # optional free-text reason for a post-creation edit
     updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
     updated_by          = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    purchase_run_id     = db.Column(db.Integer, nullable=True, index=True)
 
 
 class StockConsumption(db.Model):

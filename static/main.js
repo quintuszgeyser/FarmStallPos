@@ -60,8 +60,9 @@ function _readAdditionalCosts(wrapEl) {
     const label  = row.querySelector('[data-addl-label]')?.value?.trim() || '';
     const type   = row.querySelector('[data-addl-type]')?.value || 'other';
     const amount = parseFloat(row.querySelector('[data-addl-amount]')?.value || '0');
+    const ref    = row.querySelector('[data-addl-ref]')?.value?.trim() || null;
     if (!label || !amount) continue;
-    result.push({ label, type, amount });
+    result.push({ label, type, amount, ...(ref ? { invoice_ref: ref } : {}) });
   }
   return result;
 }
@@ -87,7 +88,7 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
   `;
   const rowsEl = wrapEl.querySelector('[data-addl-rows]');
 
-  const addRow = (label = '', type = 'shipping', amount = '') => {
+  const addRow = (label = '', type = 'shipping', amount = '', ref = '') => {
     const row = document.createElement('div');
     row.className = 'd-flex gap-1 mb-1 align-items-center';
     row.dataset.addlCostRow = '1';
@@ -100,6 +101,7 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
         <span class="input-group-text">R</span>
         <input type="number" step="0.01" class="form-control" placeholder="0.00" data-addl-amount value="${amount}">
       </div>
+      <input type="text" class="form-control form-control-sm" style="flex:1;min-width:70px" placeholder="Ref (opt)" data-addl-ref value="${escapeHtml(String(ref))}">
       <button type="button" class="btn btn-outline-danger btn-sm" data-addl-remove><i class="bi bi-trash3"></i></button>
     `;
     row.querySelector('[data-addl-type]').value = type;
@@ -107,7 +109,7 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
     rowsEl.appendChild(row);
   };
 
-  (existing || []).forEach(c => addRow(c.label, c.type, c.amount));
+  (existing || []).forEach(c => addRow(c.label, c.type, c.amount, c.invoice_ref || ''));
   wrapEl.querySelector('[data-addl-add-row]').onclick = () => addRow();
 }
 
@@ -3115,6 +3117,7 @@ function _buildStockBody(item, prod) {
             data-base-cost-total="${b.base_cost_total || 0}"
             data-consumed-pct="${b.consumed_pct || 0}"
             data-updated-at="${b.updated_at || ''}"
+            data-addl-costs="${escapeHtml(b.additional_costs || '')}"
             ${alreadySel ? 'checked' : ''}>
         </td>
         <td class="pe-0">
@@ -3203,12 +3206,13 @@ function _updateBatchSelection(chk) {
     if (!STATE._selectedBatchData.some(x => x.id === id)) {
       STATE._selectedBatchData.push({
         id,
-        product_name:   chk.dataset.productName  || '',
-        supplier_id:    chk.dataset.supplierId    ? parseInt(chk.dataset.supplierId) : null,
-        supplier_name:  chk.dataset.supplierName  || '',
+        product_name:    chk.dataset.productName    || '',
+        supplier_id:     chk.dataset.supplierId     ? parseInt(chk.dataset.supplierId) : null,
+        supplier_name:   chk.dataset.supplierName   || '',
         base_cost_total: parseFloat(chk.dataset.baseCostTotal || 0),
-        consumed_pct:   parseFloat(chk.dataset.consumedPct   || 0),
-        updated_at:     chk.dataset.updatedAt     || null,
+        consumed_pct:    parseFloat(chk.dataset.consumedPct   || 0),
+        updated_at:      chk.dataset.updatedAt      || null,
+        additional_costs: chk.dataset.addlCosts     || null,
       });
     }
   } else {
@@ -3277,14 +3281,21 @@ function _openApplyBatchCostsModal(batches) {
         <span class="ms-2 text-muted small">${g.batches.length} batch(es) · base value R${fmt(groupBase)}</span>
       </div>`;
 
-    // Batch list with consumed warnings
+    // Batch list with consumed warnings + existing overhead
     g.batches.forEach(b => {
-      const consumedWarn = b.consumed_pct > 0
+      const existingAddl  = b.additional_costs
+        ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })()
+        : [];
+      const existingTotal = existingAddl.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
+      const existingHtml  = existingAddl.length
+        ? `<span class="badge bg-secondary ms-1" style="font-size:10px" title="${existingAddl.map(c => c.label + ' R' + c.amount).join(', ')}">already R${existingTotal.toFixed(2)} overhead</span>`
+        : '';
+      const consumedWarn  = b.consumed_pct > 0
         ? `<span class="badge bg-warning text-dark ms-1" style="font-size:10px" title="Previous sales NOT affected">${Math.round(b.consumed_pct)}% consumed</span>`
         : '';
       html += `<div class="d-flex align-items-center gap-2 mb-1 ps-1" style="font-size:12px">
         <i class="bi bi-box-seam text-muted"></i>
-        <span>${escapeHtml(b.product_name)}${consumedWarn}</span>
+        <span>${escapeHtml(b.product_name)}${consumedWarn}${existingHtml}</span>
         <span class="ms-auto text-muted">base R${fmt(b.base_cost_total || 0)}</span>
         <span class="badge bg-secondary" data-group-alloc="${gi}-${b.id}" style="min-width:60px;text-align:right">—</span>
       </div>`;
@@ -3310,7 +3321,10 @@ function _openApplyBatchCostsModal(batches) {
     </div>`;
   });
 
-  body.innerHTML = html;
+  body.innerHTML = `<div class="alert alert-light py-2 mb-2 d-flex align-items-center gap-3" style="position:sticky;top:0;z-index:10;border-bottom:1px solid #dee2e6">
+    <span class="small fw-semibold">Session total allocated:</span>
+    <span class="fw-bold" id="apply-costs-grand-total">R0.00</span>
+  </div>` + html;
 
   // Render an addl costs block per group
   groups.forEach((g, gi) => {
@@ -3347,6 +3361,16 @@ function _updateGroupAllocPreview(group, gi) {
     const badge = document.querySelector(`[data-group-alloc="${gi}-${b.id}"]`);
     if (badge) badge.textContent = shares[bi] ? `+R${shares[bi].toFixed(2)}` : '—';
   });
+
+  // Update grand total across all groups
+  const allGroups = _groupBatchesBySupplier(STATE._selectedBatchData);
+  let grandTotal = 0;
+  allGroups.forEach((grp, idx) => {
+    const w = document.getElementById(`group-costs-wrap-${idx}`);
+    if (w) grandTotal += _addlCostsTotal(_readAdditionalCosts(w));
+  });
+  const grandEl = document.getElementById('apply-costs-grand-total');
+  if (grandEl) grandEl.textContent = `R${grandTotal.toFixed(2)}`;
 }
 
 document.getElementById('btn-apply-batch-costs-confirm')?.addEventListener('click', async () => {
@@ -4238,60 +4262,75 @@ async function loadSupplierBatches(supplierId) {
   const wrap = document.getElementById('supplier-recent-batches-wrap');
   if (!wrap) return;
   try {
-    const batches = await api(`/api/suppliers/${supplierId}/batches`);
-    if (!batches.length) {
+    const runs = await api(`/api/suppliers/${supplierId}/batches`);
+    if (!runs.length) {
       wrap.innerHTML = '<div class="text-muted small">No recent batches from this supplier.</div>';
       return;
     }
 
     let html = `
       <div class="d-flex align-items-center mb-2">
-        <span class="small fw-semibold">Select batches to apply costs retroactively</span>
-        <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="btn-apply-costs-to-selected" disabled>Apply costs to selected</button>
-      </div>
-      <div class="table-responsive mb-2">
-        <table class="table table-sm table-hover align-middle mb-0">
-          <thead class="table-light"><tr>
-            <th><input type="checkbox" id="supplier-batches-check-all"></th>
-            <th>Date</th><th>Product</th><th>Qty</th><th>Cost/unit</th><th>Overhead</th>
-          </tr></thead>
-          <tbody>`;
-    batches.forEach(b => {
-      const bAddl    = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
-      const addlTot  = bAddl.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
-      const addlStr  = addlTot > 0 ? `R${fmt(addlTot)}` : '-';
-      const cWarn    = b.consumed_pct > 0 ? ` <span class="badge bg-warning text-dark" style="font-size:10px">${Math.round(b.consumed_pct)}% consumed</span>` : '';
-      html += `<tr>
-        <td><input type="checkbox" class="supplier-batch-chk" data-batch-id="${b.id}" data-base-cost="${b.base_cost_total || 0}" data-consumed="${b.consumed_pct || 0}"></td>
-        <td style="font-size:12px;white-space:nowrap">${b.date || '-'}</td>
-        <td>${escapeHtml(b.product_name || '-')}${cWarn}</td>
-        <td style="font-size:12px">${displayQty(b.qty_base || 0, b.unit_type || 'count')}</td>
-        <td style="font-size:12px">${b.cost_per_base_unit != null ? 'R' + parseFloat(b.cost_per_base_unit).toFixed(4) : '-'}</td>
-        <td style="font-size:12px">${addlStr}</td>
-      </tr>`;
+        <span class="small fw-semibold">Recent Deliveries</span>
+        <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="btn-apply-costs-to-selected" disabled>
+          <i class="bi bi-receipt me-1"></i>Allocate Invoice Costs
+        </button>
+      </div>`;
+
+    runs.forEach((run, ri) => {
+      const runLabel   = run.run_id ? `Run #${run.run_id}` : 'Single receive';
+      const hasConsumed = run.batches.some(b => b.consumed_pct > 0);
+      html += `<div class="border rounded mb-2" id="supplier-run-${ri}">
+        <div class="d-flex align-items-center gap-2 px-2 py-1" style="background:#f8f9fa;cursor:pointer;border-radius:4px 4px 0 0"
+             onclick="this.nextElementSibling.classList.toggle('hidden')">
+          <input type="checkbox" class="supplier-run-chk" data-run-idx="${ri}"
+            onclick="event.stopPropagation(); _selectSupplierRun(${ri}, this.checked); _updateApplyCostsBtn(document.getElementById('supplier-recent-batches-wrap'))">
+          <span class="small fw-semibold">${runLabel}</span>
+          <span class="badge bg-light text-dark border">${run.date}</span>
+          <span class="text-muted small">${run.batch_count} item${run.batch_count !== 1 ? 's' : ''}</span>
+          <span class="ms-auto text-muted small">R${fmt(run.base_total)}</span>
+          ${hasConsumed ? `<span class="badge bg-warning text-dark" style="font-size:10px">partial sales</span>` : ''}
+          <i class="bi bi-chevron-down" style="font-size:11px"></i>
+        </div>
+        <div class="px-2 pb-1">`;
+
+      run.batches.forEach(b => {
+        const addlData = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
+        const addlTot  = addlData.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
+        const addlStr  = addlTot > 0
+          ? `<span class="badge bg-secondary ms-1" style="font-size:10px">${addlData.map(c => (_COST_TYPE_LABELS[c.type] || c.type)).join(', ')} R${addlTot.toFixed(2)}</span>`
+          : '';
+        const cWarn    = b.consumed_pct > 0 ? `<span class="badge bg-warning text-dark ms-1" style="font-size:10px">${Math.round(b.consumed_pct)}% sold</span>` : '';
+        html += `<div class="d-flex align-items-center gap-2 py-1" style="font-size:12px;border-top:1px solid #f0f0f0">
+          <input type="checkbox" class="supplier-batch-chk"
+            data-batch-id="${b.id}"
+            data-base-cost="${b.base_cost_total || 0}"
+            data-consumed="${b.consumed_pct || 0}"
+            data-addl-costs="${escapeHtml(b.additional_costs || '')}"
+            onchange="_updateApplyCostsBtn(document.getElementById('supplier-recent-batches-wrap'))">
+          <span class="flex-fill">${escapeHtml(b.product_name)}${cWarn}${addlStr}</span>
+          <span class="text-muted">R${fmt(b.base_cost_total || 0)}</span>
+        </div>`;
+      });
+
+      html += `</div></div>`;
     });
-    html += `</tbody></table></div>
-      <div id="apply-costs-panel" class="border rounded p-2 hidden">
-        <div class="small fw-semibold mb-2">Apply Additional Costs to Selected Batches</div>
+
+    html += `
+      <div id="apply-costs-panel" class="border rounded p-2 hidden mt-2">
+        <div class="small fw-semibold mb-1"><i class="bi bi-receipt me-1"></i>Allocate Invoice Costs to Selected Batches</div>
         <div id="apply-costs-addl-wrap"></div>
         <div class="mt-2">
-          <label class="form-label small">Reason (optional)</label>
-          <input id="apply-costs-reason" type="text" class="form-control form-control-sm" placeholder="e.g. Courier invoice received">
+          <label class="form-label small">Note (optional)</label>
+          <input id="apply-costs-reason" type="text" class="form-control form-control-sm" placeholder="e.g. Correction — delivery fee omitted at receipt">
         </div>
         <div id="apply-costs-summary" class="mt-2 small text-muted"></div>
         <div class="mt-2 d-flex gap-2">
-          <button class="btn btn-warning btn-sm" id="btn-apply-costs-confirm">Apply Costs</button>
+          <button class="btn btn-warning btn-sm" id="btn-apply-costs-confirm">Apply</button>
           <button class="btn btn-outline-secondary btn-sm" id="btn-apply-costs-cancel">Cancel</button>
         </div>
       </div>`;
 
     wrap.innerHTML = html;
-
-    document.getElementById('supplier-batches-check-all')?.addEventListener('change', e => {
-      wrap.querySelectorAll('.supplier-batch-chk').forEach(c => { c.checked = e.target.checked; });
-      _updateApplyCostsBtn(wrap);
-    });
-    wrap.querySelectorAll('.supplier-batch-chk').forEach(c => c.addEventListener('change', () => _updateApplyCostsBtn(wrap)));
 
     document.getElementById('btn-apply-costs-to-selected')?.addEventListener('click', () => {
       const panel = document.getElementById('apply-costs-panel');
@@ -4312,9 +4351,9 @@ async function loadSupplierBatches(supplierId) {
       const acAddlWrap  = document.getElementById('apply-costs-addl-wrap');
       const acAddlCosts = acAddlWrap ? _readAdditionalCosts(acAddlWrap) : [];
       if (!acAddlCosts.length) return toast('Add at least one cost', 'warning');
-      const acReason      = document.getElementById('apply-costs-reason')?.value?.trim() || null;
-      const selectedChks  = [...wrap.querySelectorAll('.supplier-batch-chk:checked')];
-      const selectedIds   = selectedChks.map(c => parseInt(c.dataset.batchId));
+      const acReason     = document.getElementById('apply-costs-reason')?.value?.trim() || null;
+      const selectedChks = [...wrap.querySelectorAll('.supplier-batch-chk:checked')];
+      const selectedIds  = selectedChks.map(c => parseInt(c.dataset.batchId));
       if (!selectedIds.length) return toast('Select at least one batch', 'warning');
 
       const consumedOnes = selectedChks.filter(c => parseFloat(c.dataset.consumed) > 0);
@@ -4327,7 +4366,7 @@ async function loadSupplierBatches(supplierId) {
         const acBody = { batch_ids: selectedIds, additional_costs: acAddlCosts };
         if (acReason) acBody.cost_adjustment_reason = acReason;
         await api('/api/stock/batches/apply-costs', { method: 'POST', body: JSON.stringify(acBody) });
-        toast(`Costs applied to ${selectedIds.length} batch(es)`, 'success', 3000);
+        toast(`Costs allocated to ${selectedIds.length} batch(es)`, 'success', 3000);
         hide(document.getElementById('apply-costs-panel'));
         loadSupplierBatches(supplierId);
         loadIngredients();
@@ -4336,6 +4375,12 @@ async function loadSupplierBatches(supplierId) {
   } catch (e) {
     wrap.innerHTML = `<span class="text-danger small">Error: ${e.message}</span>`;
   }
+}
+
+function _selectSupplierRun(runIdx, checked) {
+  const runEl = document.getElementById(`supplier-run-${runIdx}`);
+  if (!runEl) return;
+  runEl.querySelectorAll('.supplier-batch-chk').forEach(c => { c.checked = checked; });
 }
 
 function _updateApplyCostsBtn(wrap) {
@@ -4467,6 +4512,7 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
       ? (() => { try { return JSON.parse(_currentSupplier.last_run_costs); } catch { return []; } })()
       : [];
     _renderAdditionalCostsBlock(prAddlWrap, existing);
+    prAddlWrap.addEventListener('input', _updatePurchaseRunCostPreview);
   }
 });
 
@@ -4533,6 +4579,7 @@ function addPurchaseLine() {
       </div>
       <div class="col-4"><input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="Total R" data-price></div>
     </div>
+    <div class="small mt-1" data-line-addl-preview></div>
   `;
 
   container.appendChild(line);
@@ -4554,6 +4601,7 @@ function addPurchaseLine() {
   line.querySelector('[data-product-select]')?.addEventListener('change', e => {
     updateUnitsForProduct(e.target.value);
   });
+  line.querySelector('[data-price]')?.addEventListener('input', _updatePurchaseRunCostPreview);
 
   // "Create New Product" - open the full product editor modal and come back
   line.querySelector('[data-create-product-btn]')?.addEventListener('click', () => {
@@ -4561,7 +4609,7 @@ function addPurchaseLine() {
     openProductEditor(null);
   });
 
-  line.querySelector('[data-remove-line]')?.addEventListener('click', () => line.remove());
+  line.querySelector('[data-remove-line]')?.addEventListener('click', () => { line.remove(); _updatePurchaseRunCostPreview(); });
 
   // Toggle between supplier-only products and all products
   const toggleLink = line.querySelector('[data-toggle-all-products]');
@@ -4574,6 +4622,38 @@ function addPurchaseLine() {
     productSel.innerHTML = _buildProductOptions(supplierProductIds, _showingAllProducts);
     if (currentVal) productSel.value = currentVal;
     toggleLink.textContent = _showingAllProducts ? 'Show supplier products only' : 'Not on list? Show all products';
+  });
+}
+
+function _updatePurchaseRunCostPreview() {
+  const lines    = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
+  const addlWrap = document.getElementById('purchase-run-addl-costs-wrap');
+  const addlCosts = addlWrap ? _readAdditionalCosts(addlWrap) : [];
+  const addlTotal = _addlCostsTotal(addlCosts);
+
+  const linePrices = lines.map(l => parseFloat(l.querySelector('[data-price]')?.value || 0));
+  const totalBase  = linePrices.reduce((s, p) => s + p, 0);
+
+  const shares = (() => {
+    if (!addlTotal || !lines.length) return linePrices.map(() => 0);
+    if (totalBase <= 0) return linePrices.map(() => addlTotal / lines.length);
+    const raw  = linePrices.map(p => parseFloat(((p / totalBase) * addlTotal).toFixed(2)));
+    const diff = parseFloat((addlTotal - raw.reduce((s, x) => s + x, 0)).toFixed(2));
+    raw[raw.length - 1] = parseFloat((raw[raw.length - 1] + diff).toFixed(2));
+    return raw;
+  })();
+
+  lines.forEach((lineEl, i) => {
+    const previewEl = lineEl.querySelector('[data-line-addl-preview]');
+    if (!previewEl) return;
+    const share = shares[i];
+    const price = linePrices[i];
+    if (!addlTotal || !share) { previewEl.innerHTML = ''; return; }
+    const pct = price > 0 ? Math.round((share / price) * 100) : 0;
+    previewEl.innerHTML = addlCosts.map(c => {
+      const cShare = parseFloat(((c.amount / addlTotal) * share).toFixed(2));
+      return `<span class="badge bg-secondary me-1" style="font-size:10px">${_COST_TYPE_LABELS[c.type] || c.type} +R${cShare.toFixed(2)}</span>`;
+    }).join('') + `<span class="text-warning small">(+${pct}% overhead)</span>`;
   });
 }
 

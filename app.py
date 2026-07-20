@@ -368,7 +368,10 @@ def strong_migrate():
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN updated_at TIMESTAMP")
             if 'updated_by' not in existing_sb:
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN updated_by INTEGER")
+            if 'purchase_run_id' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN purchase_run_id INTEGER")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_product ON stock_batches (product_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_run ON stock_batches (purchase_run_id)")
             # SQLite: add last_run_costs/last_overhead_costs if missing
             existing_sup = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(suppliers)").fetchall()]
             if 'last_run_costs' not in existing_sup:
@@ -1391,6 +1394,8 @@ def strong_migrate():
         pg_try("ALTER TABLE stock_batches ADD COLUMN cost_adjustment_reason TEXT")
         pg_try("ALTER TABLE stock_batches ADD COLUMN updated_at TIMESTAMP")
         pg_try("ALTER TABLE stock_batches ADD COLUMN updated_by INTEGER REFERENCES users(id)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN purchase_run_id INTEGER")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_stock_batches_run ON stock_batches (purchase_run_id)")
         pg_try("ALTER TABLE suppliers ADD COLUMN last_run_costs TEXT")
         pg_try("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
 
