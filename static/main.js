@@ -4609,31 +4609,16 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
     const existing = _currentSupplier.last_run_costs
       ? (() => { try { return JSON.parse(_currentSupplier.last_run_costs); } catch { return []; } })()
       : [];
-    // Inject invoice header before cost block (remove existing one first)
+    // Inject invoice ref field before cost block (remove existing one first)
     document.getElementById('pr-invoice-header')?.remove();
     prAddlWrap.insertAdjacentHTML('beforebegin', `
       <div class="border rounded p-2 mb-2 bg-light" id="pr-invoice-header">
-        <div class="row g-2 align-items-end">
-          <div class="col-5">
-            <label class="form-label small mb-1">Invoice Ref <span class="text-muted">(opt)</span></label>
-            <input type="text" class="form-control form-control-sm" id="pr-invoice-ref" placeholder="e.g. INV-2026-441">
-          </div>
-          <div class="col-4">
-            <label class="form-label small mb-1">Expected Additional Total <span class="text-muted">(opt)</span></label>
-            <div class="input-group input-group-sm">
-              <span class="input-group-text">R</span>
-              <input type="number" step="0.01" class="form-control" id="pr-invoice-addl-total" placeholder="0.00">
-            </div>
-          </div>
-          <div class="col-3">
-            <div id="pr-reconcile-badge" class="text-center small py-1"></div>
-          </div>
-        </div>
+        <label class="form-label small mb-1">Invoice Ref <span class="text-muted fw-normal">(optional — auto-filled from document filename)</span></label>
+        <input type="text" class="form-control form-control-sm" id="pr-invoice-ref" placeholder="e.g. INV-2026-441">
       </div>
     `);
-    document.getElementById('pr-invoice-addl-total')?.addEventListener('input', _updatePrReconciliation);
     _renderAdditionalCostsBlock(prAddlWrap, existing);
-    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunCostPreview(); _updatePrReconciliation(); });
+    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunCostPreview(); });
   }
 });
 
@@ -4778,23 +4763,6 @@ function _updatePurchaseRunCostPreview() {
   });
 }
 
-function _updatePrReconciliation() {
-  const expectedEl = document.getElementById('pr-invoice-addl-total');
-  const badgeEl    = document.getElementById('pr-reconcile-badge');
-  if (!expectedEl || !badgeEl) return;
-  const expected = parseFloat(expectedEl.value || 0);
-  if (!expected) { badgeEl.innerHTML = ''; return; }
-  const addlWrap  = document.getElementById('purchase-run-addl-costs-wrap');
-  const allocated = _addlCostsTotal(addlWrap ? _readAdditionalCosts(addlWrap) : []);
-  const diff      = parseFloat((allocated - expected).toFixed(2));
-  if (Math.abs(diff) < 0.01) {
-    badgeEl.innerHTML = `<span class="badge bg-success">Matched R${allocated.toFixed(2)}</span>`;
-  } else if (diff > 0) {
-    badgeEl.innerHTML = `<span class="badge bg-danger">Over by R${diff.toFixed(2)}</span>`;
-  } else {
-    badgeEl.innerHTML = `<span class="badge bg-warning text-dark">R${allocated.toFixed(2)} / R${expected.toFixed(2)}</span>`;
-  }
-}
 
 document.getElementById('btn-submit-purchase-run')?.addEventListener('click', async () => {
   if (!_currentSupplier) return toast('No supplier selected', 'error');
@@ -4824,14 +4792,12 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     const baseTotal = lines.reduce((s, l) => s + l.total_price, 0);
     _checkOverheadWarning(_addlCostsTotal(prAddlCosts), baseTotal);
   }
-  const prInvoiceRef   = document.getElementById('pr-invoice-ref')?.value?.trim() || null;
-  const prInvoiceTotal = parseFloat(document.getElementById('pr-invoice-addl-total')?.value || 0) || null;
+  const prInvoiceRef = document.getElementById('pr-invoice-ref')?.value?.trim() || null;
   const body = {
     lines,
     date: dateVal || todayISO(),
     additional_costs: prAddlCosts,
-    ...(prInvoiceRef   ? { invoice_ref: prInvoiceRef }                : {}),
-    ...(prInvoiceTotal ? { invoice_additional_total: prInvoiceTotal } : {}),
+    ...(prInvoiceRef ? { invoice_ref: prInvoiceRef } : {}),
   };
 
   try {
