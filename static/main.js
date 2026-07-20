@@ -32,6 +32,7 @@ let STATE = {
   transactions:       [],           // cached transaction list for client-side filter
   _cartCount:         {},   // productId -> times added to cart (persisted in localStorage)
   _productSupplierMap: {},  // productId -> lowercased supplier names string (built from stock batches)
+  _selectedBatchData:  [],  // [{id, product_name, supplier_id, supplier_name, base_cost_total, consumed_pct, updated_at}]
 };
 
 // Load persisted cart counts from localStorage
@@ -985,6 +986,17 @@ function _openBulkAction(action) {
   }
 }
 
+function _checkBulkReceiveSupplierMix() {
+  const sels = [...document.querySelectorAll('#bulk-action-body [data-field="supplier"]')];
+  const ids  = sels.map(s => s.value).filter(Boolean);
+  const unique = new Set(ids);
+  const warn = document.getElementById('bulk-receive-supplier-warning');
+  if (warn) {
+    if (unique.size > 1) warn.classList.remove('hidden');
+    else warn.classList.add('hidden');
+  }
+}
+
 function _buildBulkReceive(products) {
   const items = products.filter(p => p.product_type === 'stock_item');
   if (!items.length) return toast('No stock items in selection', 'warning');
@@ -1002,7 +1014,7 @@ function _buildBulkReceive(products) {
       <div class="row g-2">
         <div class="col-12 col-sm-6">
           <label class="form-label small mb-1">Supplier</label>
-          <select class="form-select form-select-sm" data-field="supplier">${supOptions}</select>
+          <select class="form-select form-select-sm" data-field="supplier" data-pid="${p.id}">${supOptions}</select>
         </div>
         <div class="col-8 col-sm-4">
           <label class="form-label small mb-1">Quantity</label>
@@ -1020,11 +1032,15 @@ function _buildBulkReceive(products) {
     </div>
   `).join('') + `
     <div class="border-top mt-3 pt-2" id="bulk-receive-addl-costs-section">
-      <div class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i>Additional costs below are split proportionally across all items by their line total.</div>
+      <div id="bulk-receive-supplier-warning" class="alert alert-info py-1 small hidden">
+        <i class="bi bi-info-circle me-1"></i>
+        Items from multiple suppliers detected. Costs entered here will be split across <strong>all</strong> items.
+        For supplier-specific shipping, save the receive first then use the
+        <strong>Suppliers tab → Recent Batches → Apply Costs</strong>.
+      </div>
+      <div class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i>Additional costs are split proportionally by line total across all items.</div>
       <div id="bulk-receive-addl-costs-wrap"></div>
     </div>`;
-
-  _renderAdditionalCostsBlock(document.getElementById('bulk-receive-addl-costs-wrap'), []);
 
   document.querySelectorAll('#bulk-action-body .bulk-section').forEach(section => {
     const pid = parseInt(section.dataset.sectionPid);
@@ -1045,7 +1061,10 @@ function _buildBulkReceive(products) {
     qtyEl.addEventListener('input', update);
     priceEl.addEventListener('input', update);
     unitEl.addEventListener('change', update);
+    section.querySelector('[data-field="supplier"]')?.addEventListener('change', _checkBulkReceiveSupplierMix);
   });
+
+  _renderAdditionalCostsBlock(document.getElementById('bulk-receive-addl-costs-wrap'), []);
 
   btn.onclick = async () => {
     const sections = [...document.querySelectorAll('#bulk-action-body .bulk-section')];
@@ -2999,6 +3018,10 @@ async function loadIngredients() {
     });
     // Refresh any already-rendered product cards so stock levels update
     renderProductsCards();
+    // Prune any selected batches that no longer exist in the data
+    const allBatchIds = new Set(data.flatMap(item => item.batches.map(b => b.id)));
+    STATE._selectedBatchData = STATE._selectedBatchData.filter(b => allBatchIds.has(b.id));
+    _refreshBatchSelectionBar();
   } catch (e) { console.error('loadIngredients', e); }
 }
 
@@ -3028,6 +3051,7 @@ function _buildStockBody(item, prod) {
     table.innerHTML = `
       <thead class="table-light">
         <tr>
+          <th style="width:20px"><input type="checkbox" class="batch-select-all" title="Select all batches for this product"></th>
           <th style="width:28px"></th>
           <th>Date</th>
           <th>Supplier</th>
@@ -3078,9 +3102,21 @@ function _buildStockBody(item, prod) {
         return `<div class="text-muted" style="font-size:11px;margin-top:2px">${tags} <span class="text-warning">(+${pct}% overhead)</span></div>`;
       })() : '';
 
+      const alreadySel = STATE._selectedBatchData.some(x => x.id === b.id);
       const tr = document.createElement('tr');
       tr.setAttribute('data-batch-row-id', b.id);
       tr.innerHTML = `
+        <td class="pe-0">
+          <input type="checkbox" class="batch-select-chk" title="Select for cost apply"
+            data-batch-id="${b.id}"
+            data-product-name="${escapeHtml(item.name)}"
+            data-supplier-id="${b.supplier_id || ''}"
+            data-supplier-name="${escapeHtml(b.supplier_name || '')}"
+            data-base-cost-total="${b.base_cost_total || 0}"
+            data-consumed-pct="${b.consumed_pct || 0}"
+            data-updated-at="${b.updated_at || ''}"
+            ${alreadySel ? 'checked' : ''}>
+        </td>
         <td class="pe-0">
           <div class="d-flex flex-column gap-0" style="line-height:1">
             <button class="btn btn-link btn-sm p-0 lh-1 text-muted" title="Move up" style="font-size:13px"
@@ -3125,6 +3161,25 @@ function _buildStockBody(item, prod) {
     });
 
     wrap.appendChild(table);
+
+    // Wire select-all checkbox for this product's batch table
+    const selectAll = table.querySelector('.batch-select-all');
+    if (selectAll) {
+      selectAll.addEventListener('change', () => {
+        table.querySelectorAll('.batch-select-chk').forEach(chk => {
+          chk.checked = selectAll.checked;
+          _updateBatchSelection(chk);
+        });
+        _refreshBatchSelectionBar();
+      });
+    }
+    table.querySelectorAll('.batch-select-chk').forEach(chk => {
+      chk.addEventListener('change', () => {
+        _updateBatchSelection(chk);
+        _refreshBatchSelectionBar();
+      });
+    });
+
   } else {
     wrap.innerHTML = '<div class="small text-muted pb-2">No stock received yet.</div>';
   }
@@ -3139,6 +3194,209 @@ function _buildStockBody(item, prod) {
   }
   return wrap;
 }
+
+// ── Batch multi-selection + Apply Costs ──────────────────────────────────────
+
+function _updateBatchSelection(chk) {
+  const id = parseInt(chk.dataset.batchId);
+  if (chk.checked) {
+    if (!STATE._selectedBatchData.some(x => x.id === id)) {
+      STATE._selectedBatchData.push({
+        id,
+        product_name:   chk.dataset.productName  || '',
+        supplier_id:    chk.dataset.supplierId    ? parseInt(chk.dataset.supplierId) : null,
+        supplier_name:  chk.dataset.supplierName  || '',
+        base_cost_total: parseFloat(chk.dataset.baseCostTotal || 0),
+        consumed_pct:   parseFloat(chk.dataset.consumedPct   || 0),
+        updated_at:     chk.dataset.updatedAt     || null,
+      });
+    }
+  } else {
+    STATE._selectedBatchData = STATE._selectedBatchData.filter(x => x.id !== id);
+  }
+}
+
+function _refreshBatchSelectionBar() {
+  const bar      = document.getElementById('batch-selection-bar');
+  const countEl  = document.getElementById('batch-sel-count');
+  const supEl    = document.getElementById('batch-sel-suppliers');
+  if (!bar) return;
+  const n = STATE._selectedBatchData.length;
+  if (n === 0) { bar.classList.add('hidden'); return; }
+  bar.classList.remove('hidden');
+  if (countEl) countEl.textContent = n;
+  if (supEl) {
+    const groups = _groupBatchesBySupplier(STATE._selectedBatchData);
+    const parts = groups.map(g => `${g.supplier_name} (${g.batches.length})`);
+    supEl.textContent = parts.join(' · ');
+  }
+}
+
+document.getElementById('btn-clear-batch-sel')?.addEventListener('click', () => {
+  STATE._selectedBatchData = [];
+  document.querySelectorAll('.batch-select-chk').forEach(c => c.checked = false);
+  document.querySelectorAll('.batch-select-all').forEach(c => c.checked = false);
+  _refreshBatchSelectionBar();
+});
+
+function _groupBatchesBySupplier(batches) {
+  const map = new Map();
+  batches.forEach(b => {
+    const key  = b.supplier_id || '__none__';
+    const name = b.supplier_name || 'No Supplier';
+    if (!map.has(key)) map.set(key, { supplier_id: b.supplier_id || null, supplier_name: name, batches: [] });
+    map.get(key).batches.push(b);
+  });
+  // Sort: named suppliers first, then "No Supplier"
+  return [...map.values()].sort((a, b) => {
+    if (!a.supplier_id && b.supplier_id) return 1;
+    if (a.supplier_id && !b.supplier_id) return -1;
+    return a.supplier_name.localeCompare(b.supplier_name);
+  });
+}
+
+document.getElementById('btn-apply-costs-to-batches')?.addEventListener('click', () => {
+  _openApplyBatchCostsModal(STATE._selectedBatchData);
+});
+
+function _openApplyBatchCostsModal(batches) {
+  if (!batches.length) return toast('Select at least one batch first', 'warning');
+  const groups = _groupBatchesBySupplier(batches);
+  const modal  = bootstrap.Modal.getOrCreateInstance(document.getElementById('applyBatchCostsModal'));
+  const body   = document.getElementById('apply-batch-costs-body');
+
+  let html = '';
+  groups.forEach((g, gi) => {
+    const groupBase = g.batches.reduce((s, b) => s + (b.base_cost_total || 0), 0);
+    const hasNullBase = g.batches.some(b => !b.base_cost_total);
+    const hasConsumed = g.batches.some(b => b.consumed_pct > 0);
+
+    html += `<div class="border rounded mb-3 p-2" data-cost-group="${gi}">
+      <div class="d-flex align-items-center mb-2">
+        <span class="fw-semibold small"><i class="bi bi-truck me-1 text-primary"></i>${escapeHtml(g.supplier_name)}</span>
+        <span class="ms-2 text-muted small">${g.batches.length} batch(es) · base value R${fmt(groupBase)}</span>
+      </div>`;
+
+    // Batch list with consumed warnings
+    g.batches.forEach(b => {
+      const consumedWarn = b.consumed_pct > 0
+        ? `<span class="badge bg-warning text-dark ms-1" style="font-size:10px" title="Previous sales NOT affected">${Math.round(b.consumed_pct)}% consumed</span>`
+        : '';
+      html += `<div class="d-flex align-items-center gap-2 mb-1 ps-1" style="font-size:12px">
+        <i class="bi bi-box-seam text-muted"></i>
+        <span>${escapeHtml(b.product_name)}${consumedWarn}</span>
+        <span class="ms-auto text-muted">base R${fmt(b.base_cost_total || 0)}</span>
+        <span class="badge bg-secondary" data-group-alloc="${gi}-${b.id}" style="min-width:60px;text-align:right">—</span>
+      </div>`;
+    });
+
+    if (hasNullBase) {
+      html += `<div class="alert alert-info py-1 small mb-2">
+        <i class="bi bi-info-circle me-1"></i>
+        Some batches have no base cost recorded (received before this feature). Costs will be split equally across those batches.
+      </div>`;
+    }
+    if (hasConsumed) {
+      html += `<div class="alert alert-warning py-1 small mb-2">
+        <i class="bi bi-exclamation-triangle-fill me-1"></i>
+        Some batches are partially consumed. Costs apply to remaining stock only.
+        <strong>Previous sales and historical profit reports will NOT change.</strong>
+      </div>`;
+    }
+
+    // Per-group cost block
+    html += `<div id="group-costs-wrap-${gi}" class="mt-2"></div>
+      <div class="mt-1 text-muted" style="font-size:11px" id="group-total-${gi}"></div>
+    </div>`;
+  });
+
+  body.innerHTML = html;
+
+  // Render an addl costs block per group
+  groups.forEach((g, gi) => {
+    _renderAdditionalCostsBlock(document.getElementById(`group-costs-wrap-${gi}`), []);
+    // Wire live preview
+    const wrap = document.getElementById(`group-costs-wrap-${gi}`);
+    wrap?.addEventListener('input', () => _updateGroupAllocPreview(g, gi));
+  });
+  document.getElementById('apply-batch-costs-status').textContent = '';
+  modal.show();
+}
+
+function _updateGroupAllocPreview(group, gi) {
+  const wrap     = document.getElementById(`group-costs-wrap-${gi}`);
+  const totEl    = document.getElementById(`group-total-${gi}`);
+  if (!wrap) return;
+  const addlCosts = _readAdditionalCosts(wrap);
+  const addlTotal = _addlCostsTotal(addlCosts);
+  if (totEl) totEl.textContent = addlTotal ? `Total overhead for this group: R${addlTotal.toFixed(2)}` : '';
+
+  // Compute proportional shares and update allocation badges
+  const groupBase = group.batches.reduce((s, b) => s + (b.base_cost_total || 0), 0);
+  const linePrices = group.batches.map(b => b.base_cost_total || 0);
+  const shares = (() => {
+    if (!addlTotal) return linePrices.map(() => 0);
+    if (groupBase <= 0) return linePrices.map(() => addlTotal / group.batches.length);
+    const raw = linePrices.map(p => parseFloat(((p / groupBase) * addlTotal).toFixed(2)));
+    const diff = parseFloat((addlTotal - raw.reduce((s, x) => s + x, 0)).toFixed(2));
+    raw[raw.length - 1] = parseFloat((raw[raw.length - 1] + diff).toFixed(2));
+    return raw;
+  })();
+
+  group.batches.forEach((b, bi) => {
+    const badge = document.querySelector(`[data-group-alloc="${gi}-${b.id}"]`);
+    if (badge) badge.textContent = shares[bi] ? `+R${shares[bi].toFixed(2)}` : '—';
+  });
+}
+
+document.getElementById('btn-apply-batch-costs-confirm')?.addEventListener('click', async () => {
+  const groups  = _groupBatchesBySupplier(STATE._selectedBatchData);
+  const statusEl = document.getElementById('apply-batch-costs-status');
+  const btn      = document.getElementById('btn-apply-batch-costs-confirm');
+
+  // Validate all groups have at least one cost
+  let hasAnyCost = false;
+  groups.forEach((g, gi) => {
+    const wrap = document.getElementById(`group-costs-wrap-${gi}`);
+    if (wrap && _readAdditionalCosts(wrap).length) hasAnyCost = true;
+  });
+  if (!hasAnyCost) return toast('Add at least one cost to a group', 'warning');
+
+  btn.disabled = true;
+  if (statusEl) statusEl.textContent = 'Applying…';
+
+  let totalApplied = 0, errors = [];
+
+  for (let gi = 0; gi < groups.length; gi++) {
+    const g    = groups[gi];
+    const wrap = document.getElementById(`group-costs-wrap-${gi}`);
+    const addlCosts = wrap ? _readAdditionalCosts(wrap) : [];
+    if (!addlCosts.length) continue;  // skip groups with no costs entered
+
+    const batchIds = g.batches.map(b => b.id);
+    try {
+      await api('/api/stock/batches/apply-costs', {
+        method: 'POST',
+        body: JSON.stringify({ batch_ids: batchIds, additional_costs: addlCosts }),
+      });
+      totalApplied += batchIds.length;
+    } catch (e) {
+      errors.push(`${g.supplier_name}: ${e.message}`);
+    }
+  }
+
+  btn.disabled = false;
+  if (errors.length) {
+    toast(`Errors: ${errors.join('; ')}`, 'error', 7000);
+    if (statusEl) statusEl.textContent = '';
+  } else {
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('applyBatchCostsModal')).hide();
+    toast(`Costs applied to ${totalApplied} batch(es)`, 'success', 3000);
+    STATE._selectedBatchData = [];
+    _refreshBatchSelectionBar();
+    await loadIngredients();
+  }
+});
 
 function renderStockList(items) {
   // kept for backward compat - no longer used for display, data goes via STATE._stockItems

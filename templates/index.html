@@ -2823,6 +2823,38 @@
   </div>
 </div>
 
+<!-- ═══════════ BATCH SELECTION BAR ═══════════ -->
+<div id="batch-selection-bar" class="hidden" style="position:fixed;bottom:0;left:0;right:0;z-index:1050;background:#fff;border-top:2px solid #ffc107;box-shadow:0 -2px 8px rgba(0,0,0,.12);padding:10px 16px">
+  <div class="d-flex align-items-center gap-3 flex-wrap">
+    <span class="fw-semibold"><i class="bi bi-check2-square me-1"></i><span id="batch-sel-count">0</span> batch(es) selected</span>
+    <span class="text-muted small" id="batch-sel-suppliers"></span>
+    <button class="btn btn-warning btn-sm" id="btn-apply-costs-to-batches">
+      <i class="bi bi-plus-circle me-1"></i>Apply Additional Costs
+    </button>
+    <button class="btn btn-outline-secondary btn-sm ms-auto" id="btn-clear-batch-sel">Clear selection</button>
+  </div>
+</div>
+
+<!-- ═══════════ APPLY BATCH COSTS MODAL ═══════════ -->
+<div class="modal fade" id="applyBatchCostsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title"><i class="bi bi-boxes me-1"></i>Apply Additional Costs to Batches</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2" id="apply-batch-costs-body">
+        <div class="text-muted small">Loading…</div>
+      </div>
+      <div class="modal-footer py-2 d-flex gap-2">
+        <div class="text-muted small me-auto" id="apply-batch-costs-status"></div>
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning" id="btn-apply-batch-costs-confirm">Apply Costs</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ BULK PRODUCT EDITOR MODAL ═══════════ -->
 <!-- Bulk Action Modal (receive / stocktake / write-off / labels / archive) -->
 <div class="modal fade" id="bulkActionModal" tabindex="-1" aria-hidden="true">
