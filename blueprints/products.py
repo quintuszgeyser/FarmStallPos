@@ -1,7 +1,8 @@
+import json as _json
 import os
 import uuid
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, current_app
@@ -415,6 +416,29 @@ def api_products_update():
     return jsonify({'ok': True})
 
 
+_VALID_COST_TYPES_P = {'shipping', 'labour', 'utilities', 'packaging', 'other'}
+
+
+def _parse_addl_costs_p(raw, source='produce_run'):
+    if not raw:
+        return []
+    result = []
+    for i, entry in enumerate(raw):
+        label = str(entry.get('label') or '').strip()
+        ctype = str(entry.get('type') or 'other').strip()
+        if ctype not in _VALID_COST_TYPES_P:
+            ctype = 'other'
+        try:
+            amount = Decimal(str(entry.get('amount', 0))).quantize(Decimal('0.01'))
+        except (InvalidOperation, TypeError):
+            raise ValueError(f'additional_costs[{i}].amount is invalid')
+        if not label:
+            raise ValueError(f'additional_costs[{i}].label is required')
+        result.append({'label': label, 'type': ctype, 'amount': float(amount),
+                       'source': source, 'source_id': None})
+    return result
+
+
 @bp.route('/api/products/<int:pid>/produce', methods=['POST'])
 def api_product_produce(pid):
     """Consume raw ingredients for N batches and create a StockBatch of finished units."""
@@ -431,6 +455,11 @@ def api_product_produce(pid):
     if batches <= 0:
         return jsonify({'error': 'batches must be > 0'}), 400
 
+    try:
+        addl_costs = _parse_addl_costs_p(data.get('additional_costs', []), source='produce_run')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
     produce_uuid = str(uuid.uuid4())
     now = datetime.utcnow()
     u = current_user()
@@ -438,15 +467,19 @@ def api_product_produce(pid):
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
         total_ingredient_cost += consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches, produce_uuid, now)
 
-    units_added = int((Decimal(str(p.batch_size)) * batches).to_integral_value())
-    cost_per_unit = total_ingredient_cost / units_added if units_added > 0 else Decimal('0')
-    before_stock = get_stock_level(pid)
+    units_added    = int((Decimal(str(p.batch_size)) * batches).to_integral_value())
+    overhead_total = sum(Decimal(str(c['amount'])) for c in addl_costs)
+    total_cost     = total_ingredient_cost + overhead_total
+    cost_per_unit  = total_cost / units_added if units_added > 0 else Decimal('0')
+    before_stock   = get_stock_level(pid)
 
     db.session.add(StockBatch(
         product_id=pid,
         qty_purchased_base=units_added,
         qty_remaining_base=units_added,
         cost_per_base_unit=cost_per_unit,
+        base_cost_total=total_ingredient_cost,
+        additional_costs=_json.dumps(addl_costs) if addl_costs else None,
         purchased_at=now,
         user_id=u.id if u else None,
         produce_ref=produce_uuid,
@@ -463,6 +496,14 @@ def api_product_produce(pid):
         adjusted_at=now,
         user_id=u.id if u else None,
     ))
+
+    # Update last_overhead_costs for pre-population next time
+    if addl_costs:
+        p.last_overhead_costs = _json.dumps([
+            {'label': c['label'], 'type': c['type'], 'amount': c['amount']}
+            for c in addl_costs
+        ])
+
     db.session.commit()
     new_stock = get_stock_level(pid)
     return jsonify({'ok': True, 'units_added': units_added, 'new_stock': new_stock, 'cost': float(total_ingredient_cost)})

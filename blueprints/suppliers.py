@@ -1,6 +1,8 @@
+import json as _json
 import os
 import uuid
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
@@ -9,6 +11,64 @@ from helpers import require_login, require_role, current_user, _gen_barcode
 from models import db, Supplier, StockBatch, Purchase, Product, SupplierDocument
 
 bp = Blueprint('suppliers', __name__)
+
+_VALID_COST_TYPES = {'shipping', 'labour', 'utilities', 'packaging', 'other'}
+
+
+def _parse_addl_costs(raw, source='manual_edit', source_id=None):
+    """Validate and normalize additional_costs list from request.
+    Returns list of dicts with Decimal-safe float amounts."""
+    if not raw:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError('additional_costs must be a list')
+    result = []
+    for i, entry in enumerate(raw):
+        label  = str(entry.get('label') or '').strip()
+        ctype  = str(entry.get('type') or 'other').strip()
+        amount_raw = entry.get('amount')
+        if not label:
+            raise ValueError(f'additional_costs[{i}].label is required')
+        if ctype not in _VALID_COST_TYPES:
+            ctype = 'other'
+        try:
+            amount = Decimal(str(amount_raw))
+        except (InvalidOperation, TypeError):
+            raise ValueError(f'additional_costs[{i}].amount is invalid')
+        result.append({
+            'label': label,
+            'type': ctype,
+            'amount': float(amount.quantize(Decimal('0.01'))),
+            'source': source,
+            'source_id': source_id,
+        })
+    return result
+
+
+def _split_costs(line_totals, total_addl):
+    """Proportional split of total_addl across lines by their base cost.
+    Returns list of Decimal shares in the same order as line_totals.
+    Last item absorbs rounding remainder so sum(shares) == total_addl exactly."""
+    if not line_totals or total_addl == Decimal('0'):
+        return [Decimal('0')] * len(line_totals)
+    grand = sum(line_totals)
+    if grand == Decimal('0'):
+        # Equal split when all line totals are zero
+        per = (total_addl / len(line_totals)).quantize(Decimal('0.01'))
+        shares = [per] * len(line_totals)
+        shares[-1] += total_addl - sum(shares)
+        return shares
+    shares = []
+    running = Decimal('0')
+    for i, lt in enumerate(line_totals):
+        if i == len(line_totals) - 1:
+            shares.append(total_addl - running)
+        else:
+            s = (lt / grand * total_addl).quantize(Decimal('0.01'))
+            shares.append(s)
+            running += s
+    return shares
+
 
 _UNIT_CONVERSIONS = {
     'g': 1, 'kg': 1000,
@@ -25,6 +85,7 @@ def api_suppliers_get():
     return jsonify([{
         'id': s.id, 'name': s.name, 'phone': s.phone,
         'email': s.email, 'website': s.website, 'notes': s.notes,
+        'last_run_costs': s.last_run_costs,
     } for s in suppliers])
 
 
@@ -119,9 +180,10 @@ def api_suppliers_purchase_run(sid):
     if not s:
         return jsonify({'error': 'Not found'}), 404
 
-    data     = request.json or {}
-    lines    = data.get('lines', [])
-    date_str = data.get('date')
+    data            = request.json or {}
+    lines           = data.get('lines', [])
+    date_str        = data.get('date')
+    addl_costs_raw  = data.get('additional_costs', [])
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
@@ -134,10 +196,18 @@ def api_suppliers_purchase_run(sid):
         except Exception:
             return jsonify({'error': 'Invalid date format'}), 400
 
+    # Validate and normalize additional costs
+    try:
+        addl_costs = _parse_addl_costs(addl_costs_raw, source='supplier_run')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
     u = current_user()
     created_products = []
     batches_created  = 0
 
+    # First pass: build line items with base costs for proportional split
+    prepared_lines = []
     for line in lines:
         pid      = line.get('product_id')
         new_prod = line.get('new_product')
@@ -163,8 +233,6 @@ def api_suppliers_purchase_run(sid):
             product_type = 'stock_item'
             base_unit    = new_prod.get('base_unit') or None
             unit_type    = new_prod.get('unit_type') or None
-            if product_type not in ('stock_item',):
-                return jsonify({'error': 'Invalid product_type'}), 400
             try:
                 price = float(price) if price is not None else None
             except Exception:
@@ -189,21 +257,57 @@ def api_suppliers_purchase_run(sid):
             return jsonify({'error': f'Product id {pid} not found'}), 404
 
         if p.product_type == 'stock_item':
-            conversion  = _UNIT_CONVERSIONS.get(unit, 1)
-            qty_base    = qty * conversion
+            conversion = _UNIT_CONVERSIONS.get(unit, 1)
+            qty_base   = qty * conversion
             if qty_base == 0:
                 return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
-            cost_per_base = total_price / qty_base
-            db.session.add(StockBatch(
-                product_id=pid,
-                qty_purchased_base=qty_base,
-                qty_remaining_base=qty_base,
-                cost_per_base_unit=cost_per_base,
-                supplier_id=sid,
-                user_id=u.id if u else None,
-                purchased_at=purchase_date,
-            ))
-            batches_created += 1
+            prepared_lines.append({
+                'pid': pid, 'qty_base': qty_base,
+                'base_cost_total': Decimal(str(total_price)),
+            })
+
+    # Proportional split of additional costs across lines (by base_cost_total)
+    total_addl = sum(Decimal(str(c['amount'])) for c in addl_costs)
+    shares = _split_costs([l['base_cost_total'] for l in prepared_lines], total_addl)
+
+    for i, pl in enumerate(prepared_lines):
+        share = shares[i]
+        # Build per-batch additional_costs with the allocated share
+        batch_addl = []
+        if share != Decimal('0') and addl_costs:
+            if len(addl_costs) == 1:
+                batch_addl = [{**addl_costs[0], 'amount': float(share.quantize(Decimal('0.01')))}]
+            else:
+                # Scale each entry proportionally to their fraction of total_addl
+                if total_addl != Decimal('0'):
+                    batch_addl = []
+                    running = Decimal('0')
+                    for j, ac in enumerate(addl_costs):
+                        if j == len(addl_costs) - 1:
+                            entry_share = share - running
+                        else:
+                            entry_share = (Decimal(str(ac['amount'])) / total_addl * share).quantize(Decimal('0.01'))
+                            running += entry_share
+                        batch_addl.append({**ac, 'amount': float(entry_share)})
+
+        cost_per_base = (pl['base_cost_total'] + share) / Decimal(str(pl['qty_base']))
+        db.session.add(StockBatch(
+            product_id=pl['pid'],
+            qty_purchased_base=pl['qty_base'],
+            qty_remaining_base=pl['qty_base'],
+            cost_per_base_unit=cost_per_base,
+            base_cost_total=pl['base_cost_total'],
+            additional_costs=_json.dumps(batch_addl) if batch_addl else None,
+            supplier_id=sid,
+            user_id=u.id if u else None,
+            purchased_at=purchase_date,
+        ))
+        batches_created += 1
+
+    # Update supplier's last_run_costs for pre-population next time
+    if addl_costs and batches_created > 0:
+        run_level = [{'label': c['label'], 'type': c['type'], 'amount': float(Decimal(str(c['amount'])).quantize(Decimal('0.01')))} for c in addl_costs]
+        s.last_run_costs = _json.dumps(run_level)
 
     db.session.commit()
     return jsonify({
@@ -298,3 +402,40 @@ def api_supplier_docs_delete(sid, did):
     db.session.delete(doc)
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@bp.route('/api/suppliers/<int:sid>/batches', methods=['GET'])
+def api_supplier_batches(sid):
+    """Return recent batches for a supplier for retrospective cost application."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    s = db.session.get(Supplier, sid)
+    if not s:
+        return jsonify({'error': 'Not found'}), 404
+    batches = (StockBatch.query
+               .filter_by(supplier_id=sid)
+               .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
+               .limit(100)
+               .all())
+    pids = {b.product_id for b in batches}
+    prod_map = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
+    result = []
+    for b in batches:
+        p = prod_map.get(b.product_id)
+        qty_purchased = float(b.qty_purchased_base)
+        qty_remaining = float(b.qty_remaining_base)
+        consumed_pct  = round((1 - qty_remaining / qty_purchased) * 100, 1) if qty_purchased > 0 else 0
+        result.append({
+            'id':                b.id,
+            'product_id':        b.product_id,
+            'product_name':      p.name if p else str(b.product_id),
+            'base_unit':         p.base_unit if p else None,
+            'purchased_at':      b.purchased_at.isoformat(),
+            'qty_purchased_base': qty_purchased,
+            'qty_remaining_base': qty_remaining,
+            'consumed_pct':      consumed_pct,
+            'cost_per_base_unit': float(b.cost_per_base_unit),
+            'base_cost_total':   float(b.base_cost_total) if b.base_cost_total is not None else None,
+            'additional_costs':  b.additional_costs,
+        })
+    return jsonify(result)

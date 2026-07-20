@@ -45,6 +45,78 @@ function _bumpCartCount(productId) {
   try { localStorage.setItem('farmpos_cart_counts', JSON.stringify(STATE._cartCount)); } catch {}
 }
 
+// ── Additional Costs Helpers ─────────────────────────────────────────────────
+
+const _COST_TYPE_LABELS = {
+  shipping: 'Shipping', labour: 'Labour', utilities: 'Utilities',
+  packaging: 'Packaging', other: 'Other'
+};
+
+function _readAdditionalCosts(wrapEl) {
+  const rows = wrapEl ? wrapEl.querySelectorAll('[data-addl-cost-row]') : [];
+  const result = [];
+  for (const row of rows) {
+    const label  = row.querySelector('[data-addl-label]')?.value?.trim() || '';
+    const type   = row.querySelector('[data-addl-type]')?.value || 'other';
+    const amount = parseFloat(row.querySelector('[data-addl-amount]')?.value || '0');
+    if (!label || !amount) continue;
+    result.push({ label, type, amount });
+  }
+  return result;
+}
+
+function _addlCostsTotal(costs) {
+  return costs.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
+}
+
+function _renderAdditionalCostsBlock(wrapEl, existing) {
+  if (!wrapEl) return;
+  const typeOpts = Object.entries(_COST_TYPE_LABELS)
+    .map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  wrapEl.innerHTML = `
+    <div class="border rounded p-2">
+      <div class="d-flex align-items-center mb-2">
+        <span class="small fw-semibold">Additional Costs</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" style="font-size:11px" data-addl-add-row>
+          <i class="bi bi-plus-lg"></i> Add Cost
+        </button>
+      </div>
+      <div data-addl-rows></div>
+    </div>
+  `;
+  const rowsEl = wrapEl.querySelector('[data-addl-rows]');
+
+  const addRow = (label = '', type = 'shipping', amount = '') => {
+    const row = document.createElement('div');
+    row.className = 'd-flex gap-1 mb-1 align-items-center';
+    row.dataset.addlCostRow = '1';
+    row.innerHTML = `
+      <input type="text" class="form-control form-control-sm" style="flex:2" placeholder="Label e.g. Courier" data-addl-label value="${escapeHtml(String(label))}">
+      <select class="form-select form-select-sm" style="flex:1;min-width:90px" data-addl-type>
+        ${typeOpts}
+      </select>
+      <div class="input-group input-group-sm" style="flex:1;min-width:80px">
+        <span class="input-group-text">R</span>
+        <input type="number" step="0.01" class="form-control" placeholder="0.00" data-addl-amount value="${amount}">
+      </div>
+      <button type="button" class="btn btn-outline-danger btn-sm" data-addl-remove><i class="bi bi-trash3"></i></button>
+    `;
+    row.querySelector('[data-addl-type]').value = type;
+    row.querySelector('[data-addl-remove]').onclick = () => row.remove();
+    rowsEl.appendChild(row);
+  };
+
+  (existing || []).forEach(c => addRow(c.label, c.type, c.amount));
+  wrapEl.querySelector('[data-addl-add-row]').onclick = () => addRow();
+}
+
+function _checkOverheadWarning(addlTotal, baseTotal) {
+  if (baseTotal > 0 && addlTotal > 0 && (addlTotal / baseTotal) > 0.5) {
+    const pct = Math.round((addlTotal / baseTotal) * 100);
+    toast(`Additional costs (R${addlTotal.toFixed(2)}) are ${pct}% of inventory value. Double-check before saving.`, 'warning', 6000);
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 // UNIT SYSTEM
 // ═══════════════════════════════════════════════════════
@@ -1616,6 +1688,10 @@ function openProduceModal(p) {
   document.getElementById('produce-modal-name').textContent = p.name;
   document.getElementById('produce-batches-input').value = '1';
   _updateProducePreview();
+  const existingOverhead = p.last_overhead_costs
+    ? (() => { try { return JSON.parse(p.last_overhead_costs); } catch { return []; } })()
+    : [];
+  _renderAdditionalCostsBlock(document.getElementById('produce-addl-costs-wrap'), existingOverhead);
   bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).show();
 }
 
@@ -1641,9 +1717,11 @@ document.getElementById('btn-produce-confirm')?.addEventListener('click', async 
   const btn = document.getElementById('btn-produce-confirm');
   btn.disabled = true;
   try {
+    const prodAddlWrap  = document.getElementById('produce-addl-costs-wrap');
+    const prodAddlCosts = prodAddlWrap ? _readAdditionalCosts(prodAddlWrap) : [];
     const r = await api(`/api/products/${_produceProduct.id}/produce`, {
       method: 'POST',
-      body: JSON.stringify({ batches }),
+      body: JSON.stringify({ batches, additional_costs: prodAddlCosts }),
     });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).hide();
     toast(`Produced ${r.units_added} unit${r.units_added !== 1 ? 's' : ''} — stock now ${r.new_stock}`, 'success', 3000);
@@ -2948,6 +3026,16 @@ function _buildStockBody(item, prod) {
       const isLast   = idx === item.batches.length - 1;
       const rowStyle = b.sort_order != null ? ' style="background:rgba(255,193,7,0.08)"' : '';
 
+      // Overhead breakdown for display
+      const bAddlData = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
+      const bHasAddl  = bAddlData.length > 0;
+      const bAddlHtml = bHasAddl ? (() => {
+        const addlTot = bAddlData.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
+        const pct = b.base_cost_total > 0 ? Math.round((addlTot / b.base_cost_total) * 100) : 0;
+        const tags = bAddlData.map(c => `<span class="badge bg-secondary" style="font-size:10px">${_COST_TYPE_LABELS[c.type] || c.type} R${parseFloat(c.amount).toFixed(2)}</span>`).join(' ');
+        return `<div class="text-muted" style="font-size:11px;margin-top:2px">${tags} <span class="text-warning">(+${pct}% overhead)</span></div>`;
+      })() : '';
+
       const tr = document.createElement('tr');
       tr.setAttribute('data-batch-row-id', b.id);
       tr.innerHTML = `
@@ -2964,7 +3052,7 @@ function _buildStockBody(item, prod) {
         <td class="text-end"${rowStyle}>${purchased}</td>
         <td class="text-end"${rowStyle}><strong>${remaining}</strong></td>
         <td class="text-end text-muted"${rowStyle}>R${fmt(stockValue)}</td>
-        <td class="text-end text-muted"${rowStyle}>${cogsStr}</td>
+        <td class="text-end text-muted"${rowStyle}>${cogsStr}${bAddlHtml}</td>
         <td class="text-end text-success"${rowStyle}>${saleStr}</td>
         <td class="text-end"${rowStyle}>
           <div class="d-flex gap-1 justify-content-end">
@@ -2980,7 +3068,11 @@ function _buildStockBody(item, prod) {
               data-edit-batch-unit="${item.unit_type}"
               data-edit-batch-base-unit="${item.base_unit || 'g'}"
               data-edit-batch-package-size="${item.package_size || ''}"
-              data-edit-batch-package-unit="${item.package_unit || ''}"><i class="bi bi-pencil"></i></button>
+              data-edit-batch-package-unit="${item.package_unit || ''}"
+              data-edit-batch-addl-costs="${escapeHtml(b.additional_costs || '')}"
+              data-edit-batch-base-cost-total="${b.base_cost_total || ''}"
+              data-edit-batch-consumed-pct="${b.consumed_pct || 0}"
+              data-edit-batch-updated-at="${b.updated_at || ''}"><i class="bi bi-pencil"></i></button>
             ${Math.abs(b.qty_remaining_base - b.qty_purchased_base) < 0.0001 ? `<button class="btn btn-outline-danger btn-sm py-0 px-1" title="Delete batch"
               data-delete-batch-id="${b.id}"
               data-delete-batch-date="${new Date(b.purchased_at).toLocaleDateString('en-ZA')}"
@@ -3069,6 +3161,9 @@ document.getElementById('products-card-list')?.addEventListener('click', (e) => 
   const baseUnit     = btn.dataset.editBatchBaseUnit || 'g';
   const packageSize  = btn.dataset.editBatchPackageSize || '';
   const packageUnit  = btn.dataset.editBatchPackageUnit || '';
+  const addlCostsJson   = btn.dataset.editBatchAddlCosts   || '[]';
+  const consumedPct     = parseFloat(btn.dataset.editBatchConsumedPct || '0');
+  const editBatchUpdAt  = btn.dataset.editBatchUpdatedAt   || '';
 
   // Build unit dropdown (same options as receive modal)
   const unitSel = document.getElementById('edit-batch-unit');
@@ -3104,6 +3199,27 @@ document.getElementById('products-card-list')?.addEventListener('click', (e) => 
     supSel.appendChild(opt);
   });
 
+  // Optimistic lock timestamp and reason
+  document.getElementById('edit-batch-updated-at').value = editBatchUpdAt;
+  const ebReasonEl = document.getElementById('edit-batch-reason');
+  if (ebReasonEl) ebReasonEl.value = '';
+
+  // Consumed warning
+  const ebWarnEl = document.getElementById('edit-batch-consumed-warning');
+  if (ebWarnEl) {
+    if (consumedPct > 0) {
+      ebWarnEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>${Math.round(consumedPct)}% consumed.</strong> Adding costs now updates only the remaining ${Math.round(100 - consumedPct)}%. <strong>Previous sales and historical profit reports will NOT change.</strong>`;
+      show(ebWarnEl);
+    } else {
+      hide(ebWarnEl);
+    }
+  }
+
+  // Populate additional costs block
+  let existingAddl = [];
+  try { existingAddl = JSON.parse(addlCostsJson) || []; } catch {}
+  _renderAdditionalCostsBlock(document.getElementById('edit-batch-addl-costs-wrap'), existingAddl);
+
   bootstrap.Modal.getOrCreateInstance(document.getElementById('editBatchModal')).show();
 });
 
@@ -3124,20 +3240,34 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
   if (!qtyDisplay || qtyDisplay <= 0) return toast('Enter a valid quantity', 'warning');
   if (qtyBase < qtyRemaining) return toast(`Cannot reduce below already-consumed qty (${displayQty(qtyRemaining, unitType)} used)`, 'warning');
 
+  const ebAddlWrap  = document.getElementById('edit-batch-addl-costs-wrap');
+  const ebAddlCosts = ebAddlWrap ? _readAdditionalCosts(ebAddlWrap) : [];
+  const ebReason    = document.getElementById('edit-batch-reason')?.value?.trim() || null;
+  const ebUpdatedAt = document.getElementById('edit-batch-updated-at')?.value || null;
+  if (ebAddlCosts.length) _checkOverheadWarning(_addlCostsTotal(ebAddlCosts), totalPrice);
+
   try {
-    await api(`/api/stock/batches/${batchId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({
-        supplier_id:       supplierId ? parseInt(supplierId) : null,
-        purchased_at:      date,
-        total_price:       totalPrice,
-        qty_purchased_base: qtyBase,
-      }),
-    });
+    const ebBody = {
+      supplier_id:        supplierId ? parseInt(supplierId) : null,
+      purchased_at:       date,
+      total_price:        totalPrice,
+      qty_purchased_base: qtyBase,
+      additional_costs:   ebAddlCosts,
+    };
+    if (ebReason)    ebBody.cost_adjustment_reason = ebReason;
+    if (ebUpdatedAt) ebBody.updated_at = ebUpdatedAt;
+
+    await api(`/api/stock/batches/${batchId}`, { method: 'PATCH', body: JSON.stringify(ebBody) });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editBatchModal')).hide();
     toast('Batch updated', 'success', 2000);
     await loadIngredients();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    if (e.message?.includes('409') || e.status === 409) {
+      toast('Batch was updated by someone else — reload and retry', 'warning', 5000);
+    } else {
+      toast(e.message, 'error');
+    }
+  }
 });
 
 // ── Delete Batch ──
@@ -3167,6 +3297,7 @@ function openReceiveStockModal(item) {
   document.getElementById('receive-total-price').value  = '';
   document.getElementById('receive-qty-base-display').textContent = '';
   hide(document.getElementById('receive-cost-preview'));
+  _renderAdditionalCostsBlock(document.getElementById('receive-addl-costs-wrap'), []);
 
   // Build unit dropdown
   const unitSel = document.getElementById('receive-unit');
@@ -3219,10 +3350,15 @@ function updateReceivePreview() {
   }
 
   if (qty_base > 0 && totalPrice > 0) {
-    const cpu = totalPrice / qty_base;
-    const { cost: cpuDisplay, unit: cpuUnit } = displayCost(cpu, qty_base, unitType);
+    const addlWrap  = document.getElementById('receive-addl-costs-wrap');
+    const addlCosts = addlWrap ? _readAdditionalCosts(addlWrap) : [];
+    const addlTotal = _addlCostsTotal(addlCosts);
+    const totalCost = totalPrice + addlTotal;
+    const cpuFull   = totalCost / qty_base;
+    const { cost: cpuFullDisp, unit: cpuFullUnit } = displayCost(cpuFull, qty_base, unitType);
+    const overheadNote = addlTotal > 0 ? ` (incl. R${addlTotal.toFixed(2)} overhead)` : '';
     show(preview);
-    preview.textContent = `Cost: R${cpuDisplay < 0.01 ? cpuDisplay.toFixed(4) : cpuDisplay.toFixed(2)}/${cpuUnit}`;
+    preview.textContent = `Cost: R${cpuFullDisp < 0.01 ? cpuFullDisp.toFixed(4) : cpuFullDisp.toFixed(2)}/${cpuFullUnit}${overheadNote}`;
   } else {
     hide(preview);
   }
@@ -3231,6 +3367,9 @@ function updateReceivePreview() {
 document.getElementById('receive-qty')?.addEventListener('input', updateReceivePreview);
 document.getElementById('receive-total-price')?.addEventListener('input', updateReceivePreview);
 document.getElementById('receive-unit')?.addEventListener('change', updateReceivePreview);
+document.getElementById('receiveStockModal')?.addEventListener('input', e => {
+  if (e.target.closest('[data-addl-cost-row]')) updateReceivePreview();
+});
 
 document.getElementById('btn-receive-confirm')?.addEventListener('click', async () => {
   const pid        = parseInt(document.getElementById('receive-product-id').value || '0', 10);
@@ -3244,10 +3383,14 @@ document.getElementById('btn-receive-confirm')?.addEventListener('click', async 
 
   const supplier_id = parseInt(document.getElementById('receive-supplier')?.value || '0') || null;
 
+  const recAddlWrap  = document.getElementById('receive-addl-costs-wrap');
+  const recAddlCosts = recAddlWrap ? _readAdditionalCosts(recAddlWrap) : [];
+  if (recAddlCosts.length) _checkOverheadWarning(_addlCostsTotal(recAddlCosts), totalPrice);
+
   try {
     const j = await api('/api/stock/receive', {
       method: 'POST',
-      body: JSON.stringify({ product_id: pid, qty, unit, total_price: totalPrice, supplier_id })
+      body: JSON.stringify({ product_id: pid, qty, unit, total_price: totalPrice, supplier_id, additional_costs: recAddlCosts })
     });
     toast(`Stock received - R${j.cost_per_base_unit}/unit (${j.qty_base.toFixed(2)} ${j.base_unit})`, 'success', 4000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('receiveStockModal')).hide();
@@ -3691,6 +3834,7 @@ function openSupplierDetail(supplier) {
 
   loadSupplierProducts(supplier.id);
   loadSupplierDocs(supplier.id);
+  loadSupplierBatches(supplier.id);
 }
 
 async function loadSupplierDocs(sid) {
@@ -3780,6 +3924,143 @@ document.getElementById('supplier-products-toggle')?.addEventListener('click', (
   const collapsed = body.classList.toggle('hidden');
   if (chevron) chevron.textContent = collapsed ? '▶' : '▼';
 });
+
+// Toggle batches collapse
+document.getElementById('supplier-batches-toggle')?.addEventListener('click', () => {
+  const body    = document.getElementById('supplier-batches-collapse');
+  const chevron = document.getElementById('supplier-batches-chevron');
+  if (!body) return;
+  const collapsed = body.classList.toggle('hidden');
+  if (chevron) chevron.textContent = collapsed ? '▶' : '▼';
+});
+
+async function loadSupplierBatches(supplierId) {
+  const wrap = document.getElementById('supplier-recent-batches-wrap');
+  if (!wrap) return;
+  try {
+    const batches = await api(`/api/suppliers/${supplierId}/batches`);
+    if (!batches.length) {
+      wrap.innerHTML = '<div class="text-muted small">No recent batches from this supplier.</div>';
+      return;
+    }
+
+    let html = `
+      <div class="d-flex align-items-center mb-2">
+        <span class="small fw-semibold">Select batches to apply costs retroactively</span>
+        <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="btn-apply-costs-to-selected" disabled>Apply costs to selected</button>
+      </div>
+      <div class="table-responsive mb-2">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light"><tr>
+            <th><input type="checkbox" id="supplier-batches-check-all"></th>
+            <th>Date</th><th>Product</th><th>Qty</th><th>Cost/unit</th><th>Overhead</th>
+          </tr></thead>
+          <tbody>`;
+    batches.forEach(b => {
+      const bAddl    = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
+      const addlTot  = bAddl.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
+      const addlStr  = addlTot > 0 ? `R${fmt(addlTot)}` : '-';
+      const cWarn    = b.consumed_pct > 0 ? ` <span class="badge bg-warning text-dark" style="font-size:10px">${Math.round(b.consumed_pct)}% consumed</span>` : '';
+      html += `<tr>
+        <td><input type="checkbox" class="supplier-batch-chk" data-batch-id="${b.id}" data-base-cost="${b.base_cost_total || 0}" data-consumed="${b.consumed_pct || 0}"></td>
+        <td style="font-size:12px;white-space:nowrap">${b.date || '-'}</td>
+        <td>${escapeHtml(b.product_name || '-')}${cWarn}</td>
+        <td style="font-size:12px">${displayQty(b.qty_base || 0, b.unit_type || 'count')}</td>
+        <td style="font-size:12px">${b.cost_per_base_unit != null ? 'R' + parseFloat(b.cost_per_base_unit).toFixed(4) : '-'}</td>
+        <td style="font-size:12px">${addlStr}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>
+      <div id="apply-costs-panel" class="border rounded p-2 hidden">
+        <div class="small fw-semibold mb-2">Apply Additional Costs to Selected Batches</div>
+        <div id="apply-costs-addl-wrap"></div>
+        <div class="mt-2">
+          <label class="form-label small">Reason (optional)</label>
+          <input id="apply-costs-reason" type="text" class="form-control form-control-sm" placeholder="e.g. Courier invoice received">
+        </div>
+        <div id="apply-costs-summary" class="mt-2 small text-muted"></div>
+        <div class="mt-2 d-flex gap-2">
+          <button class="btn btn-warning btn-sm" id="btn-apply-costs-confirm">Apply Costs</button>
+          <button class="btn btn-outline-secondary btn-sm" id="btn-apply-costs-cancel">Cancel</button>
+        </div>
+      </div>`;
+
+    wrap.innerHTML = html;
+
+    document.getElementById('supplier-batches-check-all')?.addEventListener('change', e => {
+      wrap.querySelectorAll('.supplier-batch-chk').forEach(c => { c.checked = e.target.checked; });
+      _updateApplyCostsBtn(wrap);
+    });
+    wrap.querySelectorAll('.supplier-batch-chk').forEach(c => c.addEventListener('change', () => _updateApplyCostsBtn(wrap)));
+
+    document.getElementById('btn-apply-costs-to-selected')?.addEventListener('click', () => {
+      const panel = document.getElementById('apply-costs-panel');
+      if (!panel) return;
+      show(panel);
+      _renderAdditionalCostsBlock(document.getElementById('apply-costs-addl-wrap'), []);
+      _updateApplyCostsSummary(wrap);
+      panel.addEventListener('input', e => {
+        if (e.target.closest('[data-addl-cost-row]')) _updateApplyCostsSummary(wrap);
+      });
+    });
+
+    document.getElementById('btn-apply-costs-cancel')?.addEventListener('click', () => {
+      hide(document.getElementById('apply-costs-panel'));
+    });
+
+    document.getElementById('btn-apply-costs-confirm')?.addEventListener('click', async () => {
+      const acAddlWrap  = document.getElementById('apply-costs-addl-wrap');
+      const acAddlCosts = acAddlWrap ? _readAdditionalCosts(acAddlWrap) : [];
+      if (!acAddlCosts.length) return toast('Add at least one cost', 'warning');
+      const acReason      = document.getElementById('apply-costs-reason')?.value?.trim() || null;
+      const selectedChks  = [...wrap.querySelectorAll('.supplier-batch-chk:checked')];
+      const selectedIds   = selectedChks.map(c => parseInt(c.dataset.batchId));
+      if (!selectedIds.length) return toast('Select at least one batch', 'warning');
+
+      const consumedOnes = selectedChks.filter(c => parseFloat(c.dataset.consumed) > 0);
+      if (consumedOnes.length > 0) {
+        const msg = `${consumedOnes.length} selected batch(es) are partially consumed. Costs will apply only to remaining stock. Previous sales will NOT change. Continue?`;
+        if (!confirm(msg)) return;
+      }
+
+      try {
+        const acBody = { batch_ids: selectedIds, additional_costs: acAddlCosts };
+        if (acReason) acBody.cost_adjustment_reason = acReason;
+        await api('/api/stock/batches/apply-costs', { method: 'POST', body: JSON.stringify(acBody) });
+        toast(`Costs applied to ${selectedIds.length} batch(es)`, 'success', 3000);
+        hide(document.getElementById('apply-costs-panel'));
+        loadSupplierBatches(supplierId);
+        loadIngredients();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  } catch (e) {
+    wrap.innerHTML = `<span class="text-danger small">Error: ${e.message}</span>`;
+  }
+}
+
+function _updateApplyCostsBtn(wrap) {
+  const selected = wrap.querySelectorAll('.supplier-batch-chk:checked').length;
+  const btn = document.getElementById('btn-apply-costs-to-selected');
+  if (btn) {
+    btn.disabled   = selected === 0;
+    btn.textContent = selected > 0 ? `Apply costs to ${selected} selected` : 'Apply costs to selected';
+  }
+  const panel = document.getElementById('apply-costs-panel');
+  if (panel && !panel.classList.contains('hidden')) _updateApplyCostsSummary(wrap);
+}
+
+function _updateApplyCostsSummary(wrap) {
+  const summaryEl = document.getElementById('apply-costs-summary');
+  if (!summaryEl) return;
+  const acAddlWrap  = document.getElementById('apply-costs-addl-wrap');
+  const acAddlCosts = acAddlWrap ? _readAdditionalCosts(acAddlWrap) : [];
+  const addlTotal   = _addlCostsTotal(acAddlCosts);
+  const selectedChks = [...wrap.querySelectorAll('.supplier-batch-chk:checked')];
+  const totalBase   = selectedChks.reduce((s, c) => s + parseFloat(c.dataset.baseCost || 0), 0);
+  const count       = selectedChks.length;
+  if (!count || !addlTotal) { summaryEl.textContent = ''; return; }
+  summaryEl.innerHTML = `Splitting R${addlTotal.toFixed(2)} across ${count} batch(es) (base inventory value R${totalBase.toFixed(2)})`;
+}
 
 function populateSupplierDropdowns() {
   // Receive stock modal dropdown
@@ -3879,6 +4160,14 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
   document.getElementById('purchase-run-lines').innerHTML = '';
   show(document.getElementById('purchase-run-panel'));
   addPurchaseLine();
+  // Pre-populate addl costs from last run
+  const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
+  if (prAddlWrap && _currentSupplier) {
+    const existing = _currentSupplier.last_run_costs
+      ? (() => { try { return JSON.parse(_currentSupplier.last_run_costs); } catch { return []; } })()
+      : [];
+    _renderAdditionalCostsBlock(prAddlWrap, existing);
+  }
 });
 
 document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', () => {
@@ -4009,8 +4298,14 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
 
   if (lines.length === 0) return toast('Add at least one item', 'warning');
 
-  const dateVal = document.getElementById('purchase-run-date')?.value;
-  const body = { lines, date: dateVal || todayISO() };
+  const dateVal     = document.getElementById('purchase-run-date')?.value;
+  const prAddlWrap  = document.getElementById('purchase-run-addl-costs-wrap');
+  const prAddlCosts = prAddlWrap ? _readAdditionalCosts(prAddlWrap) : [];
+  if (prAddlCosts.length) {
+    const baseTotal = lines.reduce((s, l) => s + l.total_price, 0);
+    _checkOverheadWarning(_addlCostsTotal(prAddlCosts), baseTotal);
+  }
+  const body = { lines, date: dateVal || todayISO(), additional_costs: prAddlCosts };
 
   try {
     const result = await api(`/api/suppliers/${_currentSupplier.id}/purchase_run`, {
@@ -7003,7 +7298,121 @@ async function loadStats() {
       }
     }
 
+    // Fire overhead stats in parallel — non-blocking
+    loadOverheadStats(start, end, productId).catch(e => console.error('overhead stats', e));
+
   } catch (e) { console.error('loadStats', e); toast('Could not load stats', 'error'); }
+}
+
+async function loadOverheadStats(start, end, productId) {
+  const wrap = document.getElementById('overhead-stats-body');
+  if (!wrap) return;
+
+  const params = new URLSearchParams({ start, end });
+  if (productId) params.set('product_id', productId);
+
+  const j = await api(`/api/stats/overhead?${params}`);
+  const byType = j.by_type    || [];
+  const bySup  = j.by_supplier || [];
+  const byProd = j.by_produce  || [];
+
+  if (!byType.length && !bySup.length && !byProd.length) {
+    wrap.innerHTML = '<div class="text-muted small">No overhead costs recorded in this period.</div>';
+    return;
+  }
+
+  let html = '';
+
+  if (byType.length) {
+    const typeTotal = byType.reduce((s, r) => s + parseFloat(r.total || 0), 0);
+    html += `<div class="mb-3"><div class="small fw-semibold mb-1">By Type</div>
+      <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>Type</th><th class="text-end">Total</th><th class="text-end">Batches</th><th class="text-end">% of period</th>
+        </tr></thead><tbody>`;
+    byType.forEach(r => {
+      const pct = typeTotal > 0 ? ((r.total / typeTotal) * 100).toFixed(1) : 0;
+      html += `<tr style="cursor:pointer" onclick="openOverheadTypeDrilldown('${r.type}')">
+        <td>${_COST_TYPE_LABELS[r.type] || r.type}</td>
+        <td class="text-end fw-semibold">R${fmt(r.total)}</td>
+        <td class="text-end">${r.count}</td>
+        <td class="text-end">${pct}%</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  if (bySup.length) {
+    html += `<div class="mb-3"><div class="small fw-semibold mb-1">By Supplier</div>
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>Supplier</th><th class="text-end">Base Cost</th><th class="text-end">Overhead</th><th class="text-end">Uplift %</th>
+        </tr></thead><tbody>`;
+    bySup.forEach(r => {
+      html += `<tr>
+        <td>${escapeHtml(r.supplier_name || 'Unknown')}</td>
+        <td class="text-end">R${fmt(r.base_cost)}</td>
+        <td class="text-end text-warning fw-semibold">R${fmt(r.overhead_total)}</td>
+        <td class="text-end">${r.uplift_pct != null ? r.uplift_pct.toFixed(1) + '%' : '-'}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  if (byProd.length) {
+    html += `<div class="mb-3"><div class="small fw-semibold mb-1">Produce Overhead</div>
+      <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>Product</th><th class="text-end">Ingredient Cost</th><th class="text-end">Overhead</th><th class="text-end">Total</th><th class="text-end">Overhead %</th>
+        </tr></thead><tbody>`;
+    byProd.forEach(r => {
+      html += `<tr>
+        <td>${escapeHtml(r.product_name)}</td>
+        <td class="text-end">R${fmt(r.ingredient_cost)}</td>
+        <td class="text-end text-warning">R${fmt(r.overhead)}</td>
+        <td class="text-end fw-semibold">R${fmt(r.total)}</td>
+        <td class="text-end">${r.overhead_pct != null ? r.overhead_pct.toFixed(1) + '%' : '-'}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div></div>`;
+  }
+
+  wrap.innerHTML = html;
+}
+
+async function openOverheadTypeDrilldown(type) {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));
+  const label = _COST_TYPE_LABELS[type] || type;
+  document.getElementById('drilldown-title').textContent = `Overhead — ${label}`;
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
+  modal.show();
+  try {
+    const start  = document.getElementById('stats-start')?.value || todayISO();
+    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const params = new URLSearchParams({ type, start, end });
+    const rows   = await api(`/api/stats/drilldown/overhead-type?${params}`);
+    if (!rows.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">No records found.</div>';
+      return;
+    }
+    let html = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr>
+        <th>Date</th><th>Product</th><th>Supplier</th><th>Label</th><th class="text-end">Amount</th>
+      </tr></thead><tbody>`;
+    rows.forEach(r => {
+      html += `<tr>
+        <td style="white-space:nowrap;font-size:12px">${r.date}</td>
+        <td>${escapeHtml(r.product_name || '-')}</td>
+        <td>${escapeHtml(r.supplier_name || '-')}</td>
+        <td class="text-muted" style="font-size:12px">${escapeHtml(r.label || '')}</td>
+        <td class="text-end fw-semibold">R${fmt(r.amount)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    document.getElementById('drilldown-body').innerHTML = html;
+  } catch (e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
 }
 
 document.querySelectorAll('[data-chart-tab]').forEach(btn => {

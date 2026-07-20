@@ -1163,6 +1163,19 @@
               </div>
             </div>
 
+            <!-- Recent Batches (for retrospective cost application) -->
+            <div class="card mb-3">
+              <div class="card-header py-2 d-flex align-items-center" style="cursor:pointer" id="supplier-batches-toggle">
+                <span class="small fw-bold"><i class="bi bi-boxes me-1"></i>Recent Batches</span>
+                <span class="ms-2 small" id="supplier-batches-chevron">▼</span>
+              </div>
+              <div id="supplier-batches-collapse">
+                <div id="supplier-recent-batches-wrap" class="card-body p-2">
+                  <span class="text-muted small">Loading...</span>
+                </div>
+              </div>
+            </div>
+
             <!-- Documents -->
             <div class="card mb-3">
               <div class="card-header py-2 d-flex align-items-center gap-2">
@@ -1186,6 +1199,7 @@
               <div class="card-body p-2">
                 <div id="purchase-run-lines"></div>
                 <button id="btn-add-purchase-line" class="btn btn-outline-secondary btn-sm mt-2">+ Add Item</button>
+                <div id="purchase-run-addl-costs-wrap" class="mt-2"></div>
               </div>
               <div class="card-footer d-flex gap-2">
                 <button id="btn-submit-purchase-run" class="btn btn-success">Save Purchase Run</button>
@@ -1440,6 +1454,14 @@
         </div>
         <div id="till-sessions-table">
           <div class="text-muted small">Load stats to see Z-report data.</div>
+        </div>
+      </div>
+
+      <!-- ── Overhead Costs ── -->
+      <div class="mt-3 border-top pt-3" id="stats-section-overhead">
+        <h6 class="mb-2"><i class="bi bi-boxes me-1"></i>Overhead Costs</h6>
+        <div id="overhead-stats-body">
+          <div class="text-muted small">Load stats to see overhead data.</div>
         </div>
       </div>
 
@@ -3066,6 +3088,7 @@
           </div>
         </div>
         <div id="receive-cost-preview" class="alert alert-info py-2 small hidden"></div>
+        <div id="receive-addl-costs-wrap" class="mt-2"></div>
         <div class="mt-2">
           <label class="form-label small">Supplier (optional)</label>
           <div class="input-group">
@@ -3189,6 +3212,7 @@
           <input id="produce-batches-input" type="number" min="1" step="1" value="1" class="form-control" style="max-width:140px">
         </div>
         <div id="produce-modal-preview" class="small text-muted"></div>
+        <div id="produce-addl-costs-wrap" class="mt-2"></div>
       </div>
       <div class="modal-footer py-2">
         <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
@@ -3248,6 +3272,13 @@
             <input id="edit-batch-total-price" type="number" step="0.01" min="0" class="form-control" placeholder="0.00">
           </div>
         </div>
+        <div id="edit-batch-consumed-warning" class="alert alert-warning py-2 small hidden"></div>
+        <div id="edit-batch-addl-costs-wrap" class="mt-2"></div>
+        <div class="mt-2">
+          <label class="form-label small">Reason for change (optional)</label>
+          <input id="edit-batch-reason" type="text" class="form-control form-control-sm" placeholder="e.g. Shipping invoice received later">
+        </div>
+        <input type="hidden" id="edit-batch-updated-at">
       </div>
       <div class="modal-footer py-2">
         <button id="btn-edit-batch-confirm" class="btn btn-primary w-100">Save Changes</button>

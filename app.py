@@ -358,7 +358,24 @@ def strong_migrate():
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN import_run_id VARCHAR(36)")
             if 'produce_ref' not in existing_sb:
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN produce_ref VARCHAR(36)")
+            if 'additional_costs' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN additional_costs TEXT")
+            if 'base_cost_total' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN base_cost_total REAL")
+            if 'cost_adjustment_reason' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN cost_adjustment_reason TEXT")
+            if 'updated_at' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN updated_at TIMESTAMP")
+            if 'updated_by' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN updated_by INTEGER")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_product ON stock_batches (product_id)")
+            # SQLite: add last_run_costs/last_overhead_costs if missing
+            existing_sup = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(suppliers)").fetchall()]
+            if 'last_run_costs' not in existing_sup:
+                conn.exec_driver_sql("ALTER TABLE suppliers ADD COLUMN last_run_costs TEXT")
+            existing_prod_oh = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(products)").fetchall()]
+            if 'last_overhead_costs' not in existing_prod_oh:
+                conn.exec_driver_sql("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
 
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS stock_consumption (
@@ -1367,6 +1384,15 @@ def strong_migrate():
         pg_try("ALTER TABLE stock_batches ADD COLUMN produce_cost NUMERIC(10,4)")
         # Base unit stamped on adjustment at event time — survives product config changes
         pg_try("ALTER TABLE stock_adjustments ADD COLUMN base_unit VARCHAR(20)")
+
+        # Additional costs on stock batches (shipping, labour, utilities, etc.)
+        pg_try("ALTER TABLE stock_batches ADD COLUMN additional_costs TEXT")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN base_cost_total NUMERIC(18,4)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN cost_adjustment_reason TEXT")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN updated_at TIMESTAMP")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN updated_by INTEGER REFERENCES users(id)")
+        pg_try("ALTER TABLE suppliers ADD COLUMN last_run_costs TEXT")
+        pg_try("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
 
         # Invoice number sequence — safe under concurrent creates
         pg_try("""

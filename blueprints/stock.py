@@ -1,5 +1,6 @@
 import csv
 import io
+import json as _json
 import uuid
 from decimal import Decimal, InvalidOperation
 from datetime import datetime
@@ -19,6 +20,33 @@ from models import (
 bp = Blueprint('stock', __name__)
 
 _UNIT_CONV = {'g': 1, 'kg': 1000, 'ml': 1, 'L': 1000, 'unit': 1, 'dozen': 12}
+
+_VALID_COST_TYPES = {'shipping', 'labour', 'utilities', 'packaging', 'other'}
+
+
+def _parse_addl_costs(raw, source='manual_edit', source_id=None):
+    if not raw:
+        return []
+    result = []
+    for i, entry in enumerate(raw):
+        label = str(entry.get('label') or '').strip()
+        ctype = str(entry.get('type') or 'other').strip()
+        if ctype not in _VALID_COST_TYPES:
+            ctype = 'other'
+        try:
+            amount = Decimal(str(entry.get('amount', 0))).quantize(Decimal('0.01'))
+        except (InvalidOperation, TypeError):
+            raise ValueError(f'additional_costs[{i}].amount is invalid')
+        if not label:
+            raise ValueError(f'additional_costs[{i}].label is required')
+        result.append({'label': label, 'type': ctype, 'amount': float(amount),
+                       'source': source, 'source_id': source_id})
+    return result
+
+
+def _addl_total(addl_costs):
+    """Sum amount fields from a parsed additional_costs list."""
+    return sum(Decimal(str(c['amount'])) for c in (addl_costs or []))
 
 
 def _unit_conversion(p, unit):
@@ -59,6 +87,12 @@ def api_stock_ingredients():
                 'supplier_id': b.supplier_id,
                 'supplier_name': db.session.get(Supplier, b.supplier_id).name if b.supplier_id else None,
                 'sort_order': b.sort_order,
+                'additional_costs': b.additional_costs,
+                'base_cost_total': float(b.base_cost_total) if b.base_cost_total is not None else None,
+                'updated_at': b.updated_at.isoformat() if b.updated_at else None,
+                'consumed_pct': round(
+                    (1 - float(b.qty_remaining_base) / float(b.qty_purchased_base)) * 100, 1
+                ) if float(b.qty_purchased_base) > 0 else 0,
             } for b in batches],
             'sell_packages': [{
                 'id': pkg.id, 'name': pkg.name,
@@ -195,6 +229,7 @@ def api_stock_receive():
     total_price    = data.get('total_price')
     price_per_unit = data.get('price_per_unit')
     supplier_id    = data.get('supplier_id') or None
+    addl_costs_raw = data.get('additional_costs', [])
     if supplier_id:
         try: supplier_id = int(supplier_id)
         except Exception: supplier_id = None
@@ -205,22 +240,33 @@ def api_stock_receive():
     p = db.session.get(Product, pid)
     if not p or p.product_type != 'stock_item':
         return jsonify({'error': 'Product not found or not a stock_item'}), 404
+    try:
+        addl_costs = _parse_addl_costs(addl_costs_raw, source='single_receive')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
     conversion = _unit_conversion(p, unit)
     qty_base   = qty * conversion
     if total_price is not None:
-        try: cost_per_base = float(total_price) / qty_base
+        try: base_cost_total = Decimal(str(float(total_price)))
         except Exception: return jsonify({'error': 'Invalid total_price'}), 400
     elif price_per_unit is not None:
-        try: cost_per_base = float(price_per_unit) / conversion
+        try: base_cost_total = Decimal(str(float(price_per_unit))) * Decimal(str(conversion))
         except Exception: return jsonify({'error': 'Invalid price_per_unit'}), 400
     else:
         return jsonify({'error': 'total_price or price_per_unit required'}), 400
+    overhead_total  = _addl_total(addl_costs)
+    cost_per_base   = (base_cost_total + overhead_total) / Decimal(str(qty_base))
     u     = current_user()
-    batch = StockBatch(product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=qty_base,
-                       cost_per_base_unit=cost_per_base, supplier_id=supplier_id, user_id=u.id if u else None)
+    batch = StockBatch(
+        product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=qty_base,
+        cost_per_base_unit=cost_per_base,
+        base_cost_total=base_cost_total,
+        additional_costs=_json.dumps(addl_costs) if addl_costs else None,
+        supplier_id=supplier_id, user_id=u.id if u else None,
+    )
     db.session.add(batch)
     db.session.commit()
-    return jsonify({'ok': True, 'batch_id': batch.id, 'qty_base': qty_base, 'base_unit': p.base_unit, 'cost_per_base_unit': round(cost_per_base, 6)})
+    return jsonify({'ok': True, 'batch_id': batch.id, 'qty_base': qty_base, 'base_unit': p.base_unit, 'cost_per_base_unit': round(float(cost_per_base), 6)})
 
 
 @bp.route('/api/stock/adjust', methods=['POST'])
@@ -287,6 +333,14 @@ def api_stock_batch_edit(batch_id):
     batch = db.session.get(StockBatch, batch_id)
     if not batch:
         return jsonify({'error': 'Batch not found'}), 404
+
+    # Optimistic lock: if caller passed updated_at, verify it matches DB
+    if 'updated_at' in data and data['updated_at'] is not None:
+        client_ts = data['updated_at']
+        db_ts = batch.updated_at.isoformat() if batch.updated_at else None
+        if client_ts != db_ts:
+            return jsonify({'error': 'Batch was updated by someone else — reload and retry'}), 409
+
     if 'supplier_id' in data:
         sid = data['supplier_id']
         batch.supplier_id = int(sid) if sid else None
@@ -299,18 +353,141 @@ def api_stock_batch_edit(batch_id):
             if new_qty <= 0: return jsonify({'error': 'qty_purchased_base must be positive'}), 400
             consumed = Decimal(str(batch.qty_purchased_base)) - Decimal(str(batch.qty_remaining_base))
             if new_qty < consumed: return jsonify({'error': f'Cannot reduce below already-consumed qty ({float(consumed):.4f})'}), 400
-            current_total            = Decimal(str(batch.cost_per_base_unit)) * Decimal(str(batch.qty_purchased_base))
             batch.qty_purchased_base = new_qty
             batch.qty_remaining_base = new_qty - consumed
-            batch.cost_per_base_unit = current_total / new_qty
         except Exception: return jsonify({'error': 'Invalid qty_purchased_base'}), 400
-    if 'total_price' in data:
+
+    # Handle costs: prefer the new base_cost_total + additional_costs pattern
+    costs_changed = False
+    if 'base_cost_total' in data:
+        try:
+            batch.base_cost_total = Decimal(str(float(data['base_cost_total'])))
+            costs_changed = True
+        except Exception: return jsonify({'error': 'Invalid base_cost_total'}), 400
+
+    if 'additional_costs' in data:
+        try:
+            addl = _parse_addl_costs(data['additional_costs'], source='manual_edit')
+            batch.additional_costs = _json.dumps(addl) if addl else None
+            costs_changed = True
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+
+    if costs_changed and batch.base_cost_total is not None:
+        # Recompute cost_per_base_unit from base_cost_total + sum(additional_costs)
+        addl_list = _json.loads(batch.additional_costs) if batch.additional_costs else []
+        overhead  = _addl_total(addl_list)
+        batch.cost_per_base_unit = (Decimal(str(batch.base_cost_total)) + overhead) / Decimal(str(batch.qty_purchased_base))
+    elif 'total_price' in data and not costs_changed:
+        # Legacy path: total_price includes overhead; no base/addl breakdown
         try:
             total = Decimal(str(float(data['total_price'])))
             batch.cost_per_base_unit = total / Decimal(str(batch.qty_purchased_base))
         except Exception: return jsonify({'error': 'Invalid total_price'}), 400
+
+    if 'cost_adjustment_reason' in data:
+        reason = (data['cost_adjustment_reason'] or '').strip()
+        batch.cost_adjustment_reason = reason or None
+
+    u = current_user()
+    batch.updated_at = datetime.utcnow()
+    batch.updated_by = u.id if u else None
+
     db.session.commit()
-    return jsonify({'ok': True})
+    return jsonify({'ok': True, 'updated_at': batch.updated_at.isoformat()})
+
+
+@bp.route('/api/stock/batches/apply-costs', methods=['POST'])
+def api_stock_batches_apply_costs():
+    """Retrospectively apply shared additional costs to multiple existing batches.
+    Splits proportionally by base_cost_total; all updates in one transaction."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data        = request.json or {}
+    batch_ids   = data.get('batch_ids', [])
+    addl_raw    = data.get('additional_costs', [])
+    reason      = (data.get('cost_adjustment_reason') or '').strip() or None
+
+    if not batch_ids:
+        return jsonify({'error': 'batch_ids required'}), 400
+    try:
+        batch_ids = [int(x) for x in batch_ids]
+    except Exception:
+        return jsonify({'error': 'batch_ids must be a list of integers'}), 400
+
+    try:
+        addl_costs = _parse_addl_costs(addl_raw, source='manual_edit')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    if not addl_costs:
+        return jsonify({'error': 'additional_costs required'}), 400
+
+    batches = [db.session.get(StockBatch, bid) for bid in batch_ids]
+    missing = [batch_ids[i] for i, b in enumerate(batches) if b is None]
+    if missing:
+        return jsonify({'error': f'Batch ids not found: {missing}'}), 404
+
+    total_addl = _addl_total(addl_costs)
+    # Determine base cost for each batch (use base_cost_total if available, else full cost)
+    line_totals = []
+    for b in batches:
+        if b.base_cost_total is not None:
+            line_totals.append(Decimal(str(b.base_cost_total)))
+        else:
+            # Legacy batch: estimate base from cost_per_base_unit * qty_purchased_base
+            line_totals.append(Decimal(str(b.cost_per_base_unit)) * Decimal(str(b.qty_purchased_base)))
+
+    # Compute proportional shares
+    grand = sum(line_totals)
+    shares = []
+    running = Decimal('0')
+    for i, lt in enumerate(line_totals):
+        if i == len(line_totals) - 1:
+            shares.append(total_addl - running)
+        elif grand == Decimal('0'):
+            s = (total_addl / len(line_totals)).quantize(Decimal('0.01'))
+            shares.append(s); running += s
+        else:
+            s = (lt / grand * total_addl).quantize(Decimal('0.01'))
+            shares.append(s); running += s
+
+    u   = current_user()
+    now = datetime.utcnow()
+    results = []
+    for i, b in enumerate(batches):
+        share = shares[i]
+        # Merge into existing additional_costs (accumulate, don't replace)
+        existing = _json.loads(b.additional_costs) if b.additional_costs else []
+        for ac in addl_costs:
+            # Scale each entry proportionally to share / total_addl
+            if total_addl != Decimal('0'):
+                entry_amount = (Decimal(str(ac['amount'])) / total_addl * share).quantize(Decimal('0.01'))
+            else:
+                entry_amount = Decimal('0')
+            existing.append({**ac, 'amount': float(entry_amount)})
+
+        b.additional_costs = _json.dumps(existing)
+        # Recompute cost_per_base_unit
+        base = b.base_cost_total if b.base_cost_total is not None else (
+            Decimal(str(b.cost_per_base_unit)) * Decimal(str(b.qty_purchased_base))
+        )
+        overhead = _addl_total(existing)
+        b.cost_per_base_unit = (Decimal(str(base)) + overhead) / Decimal(str(b.qty_purchased_base))
+        if b.base_cost_total is None:
+            b.base_cost_total = base
+        if reason:
+            b.cost_adjustment_reason = reason
+        b.updated_at = now
+        b.updated_by = u.id if u else None
+        results.append({
+            'batch_id':           b.id,
+            'share':              float(share),
+            'new_cost_per_unit':  round(float(b.cost_per_base_unit), 6),
+        })
+
+    db.session.commit()
+    return jsonify({'ok': True, 'results': results})
 
 
 @bp.route('/api/stock/writeoff', methods=['POST'])

@@ -480,6 +480,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'is_produced':             p.is_produced,
         'batch_size':              float(p.batch_size) if p.batch_size is not None else 1.0,
         'stock_unit':              p.stock_unit,
+        'last_overhead_costs':     p.last_overhead_costs,
         'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
             'filename':      img.filename,

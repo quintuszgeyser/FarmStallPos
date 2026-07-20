@@ -74,6 +74,7 @@ class Product(db.Model):
     is_produced          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     batch_size           = db.Column(Numeric(10, 2), nullable=False, default=1, server_default='1')
     stock_unit           = db.Column(db.String(30), nullable=True)
+    last_overhead_costs  = db.Column(db.Text, nullable=True)   # JSON — pre-fills next produce run overhead
 
 
 class Category(db.Model):
@@ -232,6 +233,7 @@ class Supplier(db.Model):
     email   = db.Column(db.String(120), nullable=True)
     website = db.Column(db.String(200), nullable=True)
     notes   = db.Column(db.String(500), nullable=True)
+    last_run_costs = db.Column(db.Text, nullable=True)  # JSON — pre-fills next purchase run
 
 
 class SupplierDocument(db.Model):
@@ -266,6 +268,11 @@ class StockBatch(db.Model):
     import_run_id       = db.Column(db.String(36), nullable=True)  # UUID grouping batches from one CSV import
     produce_ref         = db.Column(db.String(36), nullable=True)   # produce_uuid — links to StockConsumption records for the produce run
     produce_cost        = db.Column(Numeric(10, 4), nullable=True)   # total ingredient cost stamped at produce time
+    additional_costs    = db.Column(db.Text, nullable=True)         # JSON array of {label,type,amount,source,source_id}
+    base_cost_total     = db.Column(Numeric(18, 4), nullable=True)  # product line cost only, excl overhead
+    cost_adjustment_reason = db.Column(db.Text, nullable=True)     # optional free-text reason for a post-creation edit
+    updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
+    updated_by          = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 
 class StockConsumption(db.Model):
