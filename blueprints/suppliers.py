@@ -8,11 +8,9 @@ from flask import Blueprint, jsonify, request, current_app, send_from_directory,
 from sqlalchemy import func
 
 from helpers import require_login, require_role, current_user, _gen_barcode
-from models import db, Supplier, StockBatch, Purchase, Product, SupplierDocument
+from models import db, Supplier, StockBatch, Purchase, Product, SupplierDocument, PurchaseRun
 
 bp = Blueprint('suppliers', __name__)
-
-_VALID_COST_TYPES = {'shipping', 'labour', 'utilities', 'packaging', 'other'}
 
 
 def _parse_addl_costs(raw, source='manual_edit', source_id=None):
@@ -24,13 +22,11 @@ def _parse_addl_costs(raw, source='manual_edit', source_id=None):
         raise ValueError('additional_costs must be a list')
     result = []
     for i, entry in enumerate(raw):
-        label  = str(entry.get('label') or '').strip()
-        ctype  = str(entry.get('type') or 'other').strip()
+        label      = str(entry.get('label') or '').strip()
+        ctype      = str(entry.get('type') or 'other').strip() or 'other'
         amount_raw = entry.get('amount')
         if not label:
             raise ValueError(f'additional_costs[{i}].label is required')
-        if ctype not in _VALID_COST_TYPES:
-            ctype = 'other'
         try:
             amount = Decimal(str(amount_raw))
         except (InvalidOperation, TypeError):
@@ -185,14 +181,19 @@ def api_suppliers_purchase_run(sid):
     lines           = data.get('lines', [])
     date_str        = data.get('date')
     addl_costs_raw  = data.get('additional_costs', [])
+    invoice_ref     = str(data.get('invoice_ref') or '').strip() or None
+    invoice_addl_total = data.get('invoice_additional_total')
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
 
+    from datetime import date as _date
     purchase_date = datetime.now()
+    run_date      = _date.today()
     if date_str:
         try:
             parts = date_str.split('-')
+            run_date      = _date(int(parts[0]), int(parts[1]), int(parts[2]))
             purchase_date = datetime(int(parts[0]), int(parts[1]), int(parts[2]))
         except Exception:
             return jsonify({'error': 'Invalid date format'}), 400
@@ -207,9 +208,18 @@ def api_suppliers_purchase_run(sid):
     created_products = []
     batches_created  = 0
 
-    # Generate a unique purchase_run_id for this run
-    max_run = db.session.query(func.max(StockBatch.purchase_run_id)).scalar() or 0
-    run_id = max_run + 1
+    # Create PurchaseRun record
+    run = PurchaseRun(
+        supplier_id=sid,
+        date=run_date,
+        invoice_ref=invoice_ref,
+        invoice_additional_total=float(invoice_addl_total) if invoice_addl_total is not None else None,
+        created_at=datetime.utcnow(),
+        created_by=u.id if u else None,
+    )
+    db.session.add(run)
+    db.session.flush()
+    run_id = run.id
 
     # First pass: build line items with base costs for proportional split
     prepared_lines = []
@@ -320,6 +330,8 @@ def api_suppliers_purchase_run(sid):
         'ok': True,
         'created_products': created_products,
         'batches_created':  batches_created,
+        'run_id':           run_id,
+        'invoice_ref':      invoice_ref,
     })
 
 
@@ -453,8 +465,20 @@ def api_supplier_batches(sid):
             'base_cost_total':    float(b.base_cost_total) if b.base_cost_total is not None else None,
             'additional_costs':   b.additional_costs,
         })
+    # Fetch PurchaseRun metadata for known run IDs
+    known_run_ids = [k for k in runs if isinstance(k, int)]
+    run_meta = {}
+    if known_run_ids:
+        for pr in db.session.query(PurchaseRun).filter(PurchaseRun.id.in_(known_run_ids)).all():
+            run_meta[pr.id] = {
+                'invoice_ref': pr.invoice_ref,
+                'invoice_additional_total': float(pr.invoice_additional_total) if pr.invoice_additional_total is not None else None,
+            }
     result = []
-    for run in runs.values():
+    for key, run in runs.items():
+        meta = run_meta.get(key, {})
+        run['invoice_ref']              = meta.get('invoice_ref')
+        run['invoice_additional_total'] = meta.get('invoice_additional_total')
         run['batch_count'] = len(run['batches'])
         run['base_total']  = sum(b['base_cost_total'] or 0 for b in run['batches'])
         result.append(run)

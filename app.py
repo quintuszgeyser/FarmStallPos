@@ -380,6 +380,31 @@ def strong_migrate():
             if 'last_overhead_costs' not in existing_prod_oh:
                 conn.exec_driver_sql("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
 
+            # purchase_runs table
+            conn.exec_driver_sql("""CREATE TABLE IF NOT EXISTS purchase_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+                date TEXT NOT NULL,
+                invoice_ref TEXT,
+                invoice_additional_total NUMERIC,
+                notes TEXT,
+                created_at TEXT,
+                created_by INTEGER REFERENCES users(id)
+            )""")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_purchase_runs_supplier ON purchase_runs (supplier_id)")
+
+            # cost_categories table
+            conn.exec_driver_sql("""CREATE TABLE IF NOT EXISTS cost_categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                color TEXT,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER REFERENCES users(id),
+                created_at TEXT
+            )""")
+
             conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS stock_consumption (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1398,6 +1423,27 @@ def strong_migrate():
         pg_try("CREATE INDEX IF NOT EXISTS ix_stock_batches_run ON stock_batches (purchase_run_id)")
         pg_try("ALTER TABLE suppliers ADD COLUMN last_run_costs TEXT")
         pg_try("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
+        pg_try("""CREATE TABLE IF NOT EXISTS purchase_runs (
+            id SERIAL PRIMARY KEY,
+            supplier_id INTEGER NOT NULL REFERENCES suppliers(id),
+            date DATE NOT NULL,
+            invoice_ref VARCHAR(128),
+            invoice_additional_total NUMERIC(18,4),
+            notes TEXT,
+            created_at TIMESTAMP,
+            created_by INTEGER REFERENCES users(id)
+        )""")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_purchase_runs_supplier ON purchase_runs (supplier_id)")
+        pg_try("""CREATE TABLE IF NOT EXISTS cost_categories (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(64) NOT NULL UNIQUE,
+            label VARCHAR(128) NOT NULL,
+            color VARCHAR(16),
+            is_active BOOLEAN NOT NULL DEFAULT TRUE,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_by INTEGER REFERENCES users(id),
+            created_at TIMESTAMP
+        )""")
 
         # Invoice number sequence — safe under concurrent creates
         pg_try("""
@@ -1595,6 +1641,22 @@ def strong_migrate():
 
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
+
+
+def _seed_cost_categories():
+    from models import CostCategory
+    from datetime import datetime as _dt
+    if db.session.query(CostCategory).count() == 0:
+        defaults = [
+            CostCategory(name='shipping',   label='Shipping',   color='#0d6efd', sort_order=1),
+            CostCategory(name='labour',     label='Labour',     color='#198754', sort_order=2),
+            CostCategory(name='utilities',  label='Utilities',  color='#fd7e14', sort_order=3),
+            CostCategory(name='packaging',  label='Packaging',  color='#6f42c1', sort_order=4),
+            CostCategory(name='other',      label='Other',      color='#6c757d', sort_order=5),
+        ]
+        for d in defaults:
+            db.session.add(d)
+        db.session.commit()
 
 
 def create_app():
@@ -1795,6 +1857,7 @@ def create_app():
     with app.app_context():
         strong_migrate()
         seed_first_admin()
+        _seed_cost_categories()
         try:
             _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
             with db.engine.begin() as _conn:
@@ -1834,6 +1897,7 @@ def _register_routes(_app):
     from blueprints.till_sessions   import bp as till_sessions_bp
     from blueprints.labels          import bp as labels_bp
     from blueprints.bulk            import bp as bulk_bp
+    from blueprints.cost_categories import bp as cost_categories_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -1856,6 +1920,7 @@ def _register_routes(_app):
     _app.register_blueprint(till_sessions_bp)
     _app.register_blueprint(labels_bp)
     _app.register_blueprint(bulk_bp)
+    _app.register_blueprint(cost_categories_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

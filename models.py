@@ -236,6 +236,30 @@ class Supplier(db.Model):
     last_run_costs = db.Column(db.Text, nullable=True)  # JSON — pre-fills next purchase run
 
 
+class CostCategory(db.Model):
+    __tablename__ = 'cost_categories'
+    id         = db.Column(db.Integer, primary_key=True)
+    name       = db.Column(db.String(64), nullable=False, unique=True)   # slug e.g. "shipping"
+    label      = db.Column(db.String(128), nullable=False)               # display e.g. "Shipping"
+    color      = db.Column(db.String(16), nullable=True)
+    is_active  = db.Column(db.Boolean, nullable=False, default=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    created_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at = db.Column(db.DateTime, nullable=True)
+
+
+class PurchaseRun(db.Model):
+    __tablename__ = 'purchase_runs'
+    id                       = db.Column(db.Integer, primary_key=True)
+    supplier_id              = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
+    date                     = db.Column(db.Date, nullable=False)
+    invoice_ref              = db.Column(db.String(128), nullable=True)
+    invoice_additional_total = db.Column(db.Numeric(18, 4), nullable=True)
+    notes                    = db.Column(db.Text, nullable=True)
+    created_at               = db.Column(db.DateTime, nullable=True)
+    created_by               = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
 class SupplierDocument(db.Model):
     __tablename__ = 'supplier_documents'
     id           = db.Column(db.Integer, primary_key=True)
@@ -273,7 +297,7 @@ class StockBatch(db.Model):
     cost_adjustment_reason = db.Column(db.Text, nullable=True)     # optional free-text reason for a post-creation edit
     updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
     updated_by          = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    purchase_run_id     = db.Column(db.Integer, nullable=True, index=True)
+    purchase_run_id     = db.Column(db.Integer, db.ForeignKey('purchase_runs.id'), nullable=True, index=True)
 
 
 class StockConsumption(db.Model):

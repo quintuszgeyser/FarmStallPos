@@ -48,10 +48,20 @@ function _bumpCartCount(productId) {
 
 // ── Additional Costs Helpers ─────────────────────────────────────────────────
 
-const _COST_TYPE_LABELS = {
-  shipping: 'Shipping', labour: 'Labour', utilities: 'Utilities',
-  packaging: 'Packaging', other: 'Other'
-};
+let _costCategories = [
+  {name:'shipping',label:'Shipping',color:'#0d6efd'},
+  {name:'labour',label:'Labour',color:'#198754'},
+  {name:'utilities',label:'Utilities',color:'#fd7e14'},
+  {name:'packaging',label:'Packaging',color:'#6f42c1'},
+  {name:'other',label:'Other',color:'#6c757d'},
+];
+async function _loadCostCategories() {
+  try { _costCategories = await api('/api/cost-categories'); } catch {}
+}
+function _getCostTypeLabel(name) {
+  const cat = _costCategories.find(c => c.name === name);
+  return cat ? cat.label : (name || 'Other');
+}
 
 function _readAdditionalCosts(wrapEl) {
   const rows = wrapEl ? wrapEl.querySelectorAll('[data-addl-cost-row]') : [];
@@ -73,8 +83,8 @@ function _addlCostsTotal(costs) {
 
 function _renderAdditionalCostsBlock(wrapEl, existing) {
   if (!wrapEl) return;
-  const typeOpts = Object.entries(_COST_TYPE_LABELS)
-    .map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+  const typeOpts = _costCategories
+    .map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.label)}</option>`).join('');
   wrapEl.innerHTML = `
     <div class="border rounded p-2">
       <div class="d-flex align-items-center mb-2">
@@ -505,6 +515,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     if (tellerTab) bootstrap.Tab.getOrCreateInstance(tellerTab).show();
     setTimeout(_focusTrap, 400);
     initSerialSupport();
+    _loadCostCategories();   // non-blocking: populates type dropdown for cost entry
     await loadProducts();
     _restoreCartFromSession();  // restore cart if session expired mid-sale
     await loadTransactions();
@@ -3100,7 +3111,7 @@ function _buildStockBody(item, prod) {
       const bAddlHtml = bHasAddl ? (() => {
         const addlTot = bAddlData.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
         const pct = b.base_cost_total > 0 ? Math.round((addlTot / b.base_cost_total) * 100) : 0;
-        const tags = bAddlData.map(c => `<span class="badge bg-secondary" style="font-size:10px">${_COST_TYPE_LABELS[c.type] || c.type} R${parseFloat(c.amount).toFixed(2)}</span>`).join(' ');
+        const tags = bAddlData.map(c => `<span class="badge bg-secondary" style="font-size:10px">${_getCostTypeLabel(c.type)} R${parseFloat(c.amount).toFixed(2)}</span>`).join(' ');
         return `<div class="text-muted" style="font-size:11px;margin-top:2px">${tags} <span class="text-warning">(+${pct}% overhead)</span></div>`;
       })() : '';
 
@@ -4297,7 +4308,7 @@ async function loadSupplierBatches(supplierId) {
         const addlData = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
         const addlTot  = addlData.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
         const addlStr  = addlTot > 0
-          ? `<span class="badge bg-secondary ms-1" style="font-size:10px">${addlData.map(c => (_COST_TYPE_LABELS[c.type] || c.type)).join(', ')} R${addlTot.toFixed(2)}</span>`
+          ? `<span class="badge bg-secondary ms-1" style="font-size:10px">${addlData.map(c => (_getCostTypeLabel(c.type))).join(', ')} R${addlTot.toFixed(2)}</span>`
           : '';
         const cWarn    = b.consumed_pct > 0 ? `<span class="badge bg-warning text-dark ms-1" style="font-size:10px">${Math.round(b.consumed_pct)}% sold</span>` : '';
         html += `<div class="d-flex align-items-center gap-2 py-1" style="font-size:12px;border-top:1px solid #f0f0f0">
@@ -4505,14 +4516,37 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
   document.getElementById('purchase-run-lines').innerHTML = '';
   show(document.getElementById('purchase-run-panel'));
   addPurchaseLine();
-  // Pre-populate addl costs from last run
+  // Invoice header + pre-populated addl costs
   const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
   if (prAddlWrap && _currentSupplier) {
     const existing = _currentSupplier.last_run_costs
       ? (() => { try { return JSON.parse(_currentSupplier.last_run_costs); } catch { return []; } })()
       : [];
+    // Inject invoice header before cost block (remove existing one first)
+    document.getElementById('pr-invoice-header')?.remove();
+    prAddlWrap.insertAdjacentHTML('beforebegin', `
+      <div class="border rounded p-2 mb-2 bg-light" id="pr-invoice-header">
+        <div class="row g-2 align-items-end">
+          <div class="col-5">
+            <label class="form-label small mb-1">Invoice Ref <span class="text-muted">(opt)</span></label>
+            <input type="text" class="form-control form-control-sm" id="pr-invoice-ref" placeholder="e.g. INV-2026-441">
+          </div>
+          <div class="col-4">
+            <label class="form-label small mb-1">Expected Additional Total <span class="text-muted">(opt)</span></label>
+            <div class="input-group input-group-sm">
+              <span class="input-group-text">R</span>
+              <input type="number" step="0.01" class="form-control" id="pr-invoice-addl-total" placeholder="0.00">
+            </div>
+          </div>
+          <div class="col-3">
+            <div id="pr-reconcile-badge" class="text-center small py-1"></div>
+          </div>
+        </div>
+      </div>
+    `);
+    document.getElementById('pr-invoice-addl-total')?.addEventListener('input', _updatePrReconciliation);
     _renderAdditionalCostsBlock(prAddlWrap, existing);
-    prAddlWrap.addEventListener('input', _updatePurchaseRunCostPreview);
+    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunCostPreview(); _updatePrReconciliation(); });
   }
 });
 
@@ -4652,9 +4686,27 @@ function _updatePurchaseRunCostPreview() {
     const pct = price > 0 ? Math.round((share / price) * 100) : 0;
     previewEl.innerHTML = addlCosts.map(c => {
       const cShare = parseFloat(((c.amount / addlTotal) * share).toFixed(2));
-      return `<span class="badge bg-secondary me-1" style="font-size:10px">${_COST_TYPE_LABELS[c.type] || c.type} +R${cShare.toFixed(2)}</span>`;
+      return `<span class="badge bg-secondary me-1" style="font-size:10px">${_getCostTypeLabel(c.type)} +R${cShare.toFixed(2)}</span>`;
     }).join('') + `<span class="text-warning small">(+${pct}% overhead)</span>`;
   });
+}
+
+function _updatePrReconciliation() {
+  const expectedEl = document.getElementById('pr-invoice-addl-total');
+  const badgeEl    = document.getElementById('pr-reconcile-badge');
+  if (!expectedEl || !badgeEl) return;
+  const expected = parseFloat(expectedEl.value || 0);
+  if (!expected) { badgeEl.innerHTML = ''; return; }
+  const addlWrap  = document.getElementById('purchase-run-addl-costs-wrap');
+  const allocated = _addlCostsTotal(addlWrap ? _readAdditionalCosts(addlWrap) : []);
+  const diff      = parseFloat((allocated - expected).toFixed(2));
+  if (Math.abs(diff) < 0.01) {
+    badgeEl.innerHTML = `<span class="badge bg-success">Matched R${allocated.toFixed(2)}</span>`;
+  } else if (diff > 0) {
+    badgeEl.innerHTML = `<span class="badge bg-danger">Over by R${diff.toFixed(2)}</span>`;
+  } else {
+    badgeEl.innerHTML = `<span class="badge bg-warning text-dark">R${allocated.toFixed(2)} / R${expected.toFixed(2)}</span>`;
+  }
 }
 
 document.getElementById('btn-submit-purchase-run')?.addEventListener('click', async () => {
@@ -4685,7 +4737,15 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     const baseTotal = lines.reduce((s, l) => s + l.total_price, 0);
     _checkOverheadWarning(_addlCostsTotal(prAddlCosts), baseTotal);
   }
-  const body = { lines, date: dateVal || todayISO(), additional_costs: prAddlCosts };
+  const prInvoiceRef   = document.getElementById('pr-invoice-ref')?.value?.trim() || null;
+  const prInvoiceTotal = parseFloat(document.getElementById('pr-invoice-addl-total')?.value || 0) || null;
+  const body = {
+    lines,
+    date: dateVal || todayISO(),
+    additional_costs: prAddlCosts,
+    ...(prInvoiceRef   ? { invoice_ref: prInvoiceRef }                : {}),
+    ...(prInvoiceTotal ? { invoice_additional_total: prInvoiceTotal } : {}),
+  };
 
   try {
     const result = await api(`/api/suppliers/${_currentSupplier.id}/purchase_run`, {
@@ -7713,7 +7773,7 @@ async function loadOverheadStats(start, end, productId) {
     byType.forEach(r => {
       const pct = typeTotal > 0 ? ((r.total / typeTotal) * 100).toFixed(1) : 0;
       html += `<tr style="cursor:pointer" onclick="openOverheadTypeDrilldown('${r.type}')">
-        <td>${_COST_TYPE_LABELS[r.type] || r.type}</td>
+        <td>${_getCostTypeLabel(r.type)}</td>
         <td class="text-end fw-semibold">R${fmt(r.total)}</td>
         <td class="text-end">${r.count}</td>
         <td class="text-end">${pct}%</td>
@@ -7762,7 +7822,7 @@ async function loadOverheadStats(start, end, productId) {
 
 async function openOverheadTypeDrilldown(type) {
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));
-  const label = _COST_TYPE_LABELS[type] || type;
+  const label = _getCostTypeLabel(type);
   document.getElementById('drilldown-title').textContent = `Overhead — ${label}`;
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
   modal.show();
@@ -13832,3 +13892,69 @@ document.getElementById('bulkEditorModal')?.addEventListener('shown.bs.modal', (
   bulkLoadHistory();
 });
 document.querySelector('[href="#bulk-tab-history"]')?.addEventListener('click', bulkLoadHistory);
+
+
+// ═══════════════════════════════════════════════════════
+// COST CATEGORIES (Settings tab)
+// ═══════════════════════════════════════════════════════
+async function loadCostCategoriesSettings() {
+  const list = document.getElementById('cost-categories-list');
+  if (!list) return;
+  try {
+    const cats = await api('/api/cost-categories/all');
+    if (!cats.length) {
+      list.innerHTML = '<div class="text-muted small">No categories yet.</div>';
+      return;
+    }
+    list.innerHTML = cats.map(c => `
+      <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-cat-row="${c.id}">
+        <span class="rounded-circle d-inline-block" style="width:12px;height:12px;background:${c.color||'#6c757d'};flex-shrink:0"></span>
+        <span class="flex-fill small fw-semibold">${escapeHtml(c.label)}</span>
+        <span class="text-muted small">${escapeHtml(c.name)}</span>
+        ${!c.is_active ? '<span class="badge bg-secondary" style="font-size:10px">inactive</span>' : ''}
+        <button class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:11px"
+          onclick="_editCostCategory(${c.id}, ${JSON.stringify(c.label)}, ${JSON.stringify(c.color||'')}, ${c.is_active})">
+          Edit
+        </button>
+        ${c.is_active ? `<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:11px"
+          onclick="_toggleCostCategory(${c.id}, false)">Hide</button>` : `<button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:11px"
+          onclick="_toggleCostCategory(${c.id}, true)">Show</button>`}
+      </div>
+    `).join('');
+  } catch (e) { list.innerHTML = `<div class="text-danger small">${escapeHtml(e.message)}</div>`; }
+}
+
+async function _editCostCategory(id, label, color, isActive) {
+  const newLabel = prompt('Category label:', label);
+  if (!newLabel || newLabel.trim() === label) return;
+  try {
+    await api(`/api/cost-categories/${id}`, { method: 'PATCH', body: JSON.stringify({ label: newLabel.trim() }) });
+    await _loadCostCategories();
+    loadCostCategoriesSettings();
+    toast('Category updated', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function _toggleCostCategory(id, isActive) {
+  try {
+    await api(`/api/cost-categories/${id}`, { method: 'PATCH', body: JSON.stringify({ is_active: isActive }) });
+    await _loadCostCategories();
+    loadCostCategoriesSettings();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+document.getElementById('btn-add-cost-category')?.addEventListener('click', async () => {
+  const label = prompt('New category name (e.g. "Cold Storage", "Transport", "Customs"):');
+  if (!label || !label.trim()) return;
+  try {
+    await api('/api/cost-categories', { method: 'POST', body: JSON.stringify({ label: label.trim() }) });
+    await _loadCostCategories();
+    loadCostCategoriesSettings();
+    toast(`Category "${label.trim()}" added`, 'success');
+  } catch (e) { toast(e.message, 'error'); }
+});
+
+// Load when the Configuration tab is shown
+document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', () => {
+  if (isAdmin()) loadCostCategoriesSettings();
+});
