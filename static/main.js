@@ -3064,8 +3064,10 @@ function _buildStockBody(item, prod) {
         <tr>
           <th style="width:20px"><input type="checkbox" class="batch-select-all" title="Select all batches for this product"></th>
           <th style="width:28px"></th>
+          <th style="width:36px" class="text-muted">ID</th>
           <th>Date</th>
           <th>Supplier</th>
+          <th>Invoice</th>
           <th class="text-end">Bought</th>
           <th class="text-end">Left</th>
           <th class="text-end">Stock Value</th>
@@ -3137,8 +3139,10 @@ function _buildStockBody(item, prod) {
               data-reorder-batch="${b.id}" data-reorder-action="move_down" ${isLast ? 'disabled' : ''}><i class="bi bi-chevron-down"></i></button>
           </div>
         </td>
+        <td${rowStyle}><span class="text-muted" style="font-size:10px">#${b.id}</span></td>
         <td${rowStyle}>${date}${b.sort_order != null && isFirst ? ' <i class="bi bi-arrow-up-circle-fill text-warning" title="Used next"></i>' : ''}</td>
         <td${rowStyle}>${b.supplier_name ? `<span class="badge bg-info text-dark">${supplier}</span>` : `<span class="text-muted">${supplier}</span>`}</td>
+        <td${rowStyle}>${b.invoice_number ? `<a href="#" class="text-decoration-none" style="font-size:11px" onclick="event.preventDefault();_openSupplierById(${b.supplier_id},${b.invoice_id})">${escapeHtml(b.invoice_number)}</a>` : (b.invoice_id ? `<span class="text-muted" style="font-size:11px">Delivery #${b.invoice_id}</span>` : '<span class="text-muted" style="font-size:11px">—</span>')}</td>
         <td class="text-end"${rowStyle}>${purchased}</td>
         <td class="text-end"${rowStyle}><strong>${remaining}</strong></td>
         <td class="text-end text-muted"${rowStyle}>R${fmt(stockValue)}</td>
@@ -3622,6 +3626,16 @@ document.addEventListener('click', async (e) => {
     if (pid) document.querySelector(`.product-row[data-product-id="${pid}"]`)?.click();
     if (_currentSupplier) loadSupplierInvoices(_currentSupplier.id);
   } catch (err) { toast(err.message || 'Delete failed', 'error'); }
+});
+
+// ── Edit Invoice (open New Delivery panel pre-filled) ──
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-edit-invoice-idx]');
+  if (!btn) return;
+  e.stopPropagation();
+  const idx = parseInt(btn.dataset.editInvoiceIdx);
+  const inv = _currentSupplierInvoices[idx];
+  if (inv) _editInvoice(inv);
 });
 
 // ── Delete Invoice ──
@@ -4128,6 +4142,9 @@ let _editingSupplierId = null;
 let _currentSupplier = null;
 let _purchaseRunLines = [];
 let _currentSupplierProducts = [];
+let _pendingScrollInvoiceId = null;
+let _editingInvoiceId = null;
+let _currentSupplierInvoices = [];
 
 async function loadSuppliers() {
   const roles = STATE.user?.roles || [STATE.user?.role];
@@ -4192,6 +4209,100 @@ function openSupplierDetail(supplier) {
   loadSupplierProducts(supplier.id);
   loadSupplierDocs(supplier.id);
   loadSupplierInvoices(supplier.id);
+}
+
+function _openSupplierById(supplierId, invoiceId) {
+  // Switch to Suppliers tab
+  const tabBtn = document.querySelector('button.nav-link[data-bs-target="#suppliers"]');
+  if (tabBtn) bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+  // Find supplier and open detail
+  const s = _suppliers.find(x => x.id === supplierId);
+  if (s) {
+    _pendingScrollInvoiceId = invoiceId || null;
+    openSupplierDetail(s);
+  } else {
+    toast('Supplier not found', 'warning');
+  }
+}
+
+function _editInvoice(inv) {
+  if (!inv.id) { toast('Cannot edit legacy batches', 'warning'); return; }
+  const consumed = (inv.batches || []).filter(b => b.consumed_pct > 0);
+  if (consumed.length) {
+    toast(`Cannot edit: ${consumed.length} batch${consumed.length !== 1 ? 'es have' : ' has'} stock already used in sales`, 'error', 5000);
+    return;
+  }
+
+  _editingInvoiceId = inv.id;
+  _prStagedFile = null;
+
+  // Reset doc UI
+  const nameEl   = document.getElementById('pr-doc-filename');
+  const clearBtn = document.getElementById('pr-doc-clear');
+  const docInput = document.getElementById('pr-doc-upload-input');
+  if (nameEl)   nameEl.textContent = 'No file chosen';
+  if (clearBtn) hide(clearBtn);
+  if (docInput) docInput.value = '';
+
+  const dateInput = document.getElementById('purchase-run-date');
+  if (dateInput) dateInput.value = inv.date ? inv.date.slice(0, 10) : todayISO();
+
+  _purchaseRunLines = [];
+  document.getElementById('purchase-run-lines').innerHTML = '';
+  show(document.getElementById('purchase-run-panel'));
+
+  // Pre-fill invoice ref and addl costs
+  const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
+  if (prAddlWrap && _currentSupplier) {
+    document.getElementById('pr-invoice-header')?.remove();
+    prAddlWrap.insertAdjacentHTML('beforebegin', `
+      <div class="border rounded p-2 mb-2 bg-light" id="pr-invoice-header">
+        <label class="form-label small mb-1">Invoice Ref <span class="text-muted fw-normal">(optional — auto-filled from document filename)</span></label>
+        <input type="text" class="form-control form-control-sm" id="pr-invoice-ref" placeholder="e.g. INV-2026-441" value="${escapeHtml(inv.invoice_number || '')}">
+      </div>
+    `);
+    const existing = inv.additional_costs_json
+      ? (() => { try { return JSON.parse(inv.additional_costs_json); } catch { return []; } })()
+      : [];
+    _renderAdditionalCostsBlock(prAddlWrap, existing);
+    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunCostPreview(); });
+  }
+
+  // Pre-fill lines from batches
+  const container = document.getElementById('purchase-run-lines');
+  (inv.batches || []).forEach(b => {
+    addPurchaseLine();
+    const lineEl = container.lastElementChild;
+    if (!lineEl) return;
+    const productSel = lineEl.querySelector('[data-product-select]');
+    const qtyInput   = lineEl.querySelector('[data-qty]');
+    const unitSel    = lineEl.querySelector('[data-unit]');
+    const priceInput = lineEl.querySelector('[data-price]');
+
+    if (productSel) {
+      const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
+      productSel.innerHTML = _buildProductOptions(supplierProductIds, true);
+      productSel.value = b.product_id;
+      productSel.dispatchEvent(new Event('change'));
+    }
+
+    // Present qty in the most natural display unit (kg instead of g if >= 1000)
+    let dispQty = b.qty_purchased_base, dispUnit = b.base_unit || 'unit';
+    if (b.unit_type === 'weight' && b.base_unit === 'g' && b.qty_purchased_base >= 1000) {
+      dispQty = b.qty_purchased_base / 1000; dispUnit = 'kg';
+    } else if (b.unit_type === 'volume' && b.base_unit === 'ml' && b.qty_purchased_base >= 1000) {
+      dispQty = b.qty_purchased_base / 1000; dispUnit = 'L';
+    }
+    if (qtyInput)   qtyInput.value   = dispQty;
+    if (unitSel)    unitSel.value    = dispUnit;
+    if (priceInput) priceInput.value = b.base_cost_total != null ? parseFloat(b.base_cost_total).toFixed(2) : '';
+  });
+
+  // Update save button label
+  const saveBtn = document.getElementById('btn-submit-purchase-run');
+  if (saveBtn) saveBtn.textContent = 'Update Delivery';
+
+  _updatePurchaseRunCostPreview();
 }
 
 async function loadSupplierDocs(sid) {
@@ -4296,6 +4407,7 @@ async function loadSupplierInvoices(supplierId) {
   if (!wrap) return;
   try {
     const invoices = await api(`/api/suppliers/${supplierId}/invoices`);
+    _currentSupplierInvoices = invoices;
     if (!invoices.length) {
       wrap.innerHTML = '<div class="text-muted small">No invoices or deliveries yet.</div>';
       return;
@@ -4323,7 +4435,7 @@ async function loadSupplierInvoices(supplierId) {
       const docCount    = (inv.documents||[]).length;
       const batchesId   = `inv-batches-${ri}`;
 
-      html += `<div class="border rounded mb-2" id="supplier-inv-${ri}">
+      html += `<div class="border rounded mb-2" id="supplier-inv-${ri}" data-invoice-id="${inv.id || ''}">
         <div class="d-flex align-items-center gap-2 px-2 py-2 flex-wrap" style="background:#f8f9fa;border-radius:4px 4px 0 0">
           <input type="checkbox" class="supplier-run-chk" data-run-idx="${ri}"
             onclick="event.stopPropagation(); _selectSupplierRun(${ri}, this.checked); _updateApplyCostsBtn(document.getElementById('supplier-invoices-wrap'))">
@@ -4335,6 +4447,8 @@ async function loadSupplierInvoices(supplierId) {
           ${addlTotal > 0 ? `<span class="badge bg-warning text-dark" style="font-size:10px">+R${fmt(addlTotal)} overhead</span>` : ''}
           ${hasConsumed ? `<span class="badge bg-info text-dark" style="font-size:10px">partial sales</span>` : ''}
           ${docCount > 0 ? `<span class="badge bg-success" style="font-size:10px"><i class="bi bi-paperclip"></i> ${docCount}</span>` : ''}
+          ${inv.id && inv.source !== 'unlinked' ? `<button class="btn btn-outline-secondary btn-sm py-0 px-1 ms-1" title="Edit delivery"
+            data-edit-invoice-idx="${ri}"><i class="bi bi-pencil-square"></i></button>` : ''}
           ${inv.id ? `<button class="btn btn-outline-danger btn-sm py-0 px-1 ms-1" title="Delete invoice"
             data-delete-invoice-id="${inv.id}"
             data-delete-invoice-label="${escapeHtml(invLabel)}"><i class="bi bi-trash"></i></button>` : ''}
@@ -4378,7 +4492,7 @@ async function loadSupplierInvoices(supplierId) {
             data-consumed="${b.consumed_pct || 0}"
             data-addl-costs="${escapeHtml(b.additional_costs || '')}"
             onchange="_updateApplyCostsBtn(document.getElementById('supplier-invoices-wrap'))">
-          <span class="flex-fill">${escapeHtml(b.product_name)}${cWarn}${addlStr}</span>
+          <span class="flex-fill"><span class="text-muted me-1" style="font-size:10px">#${b.id}</span>${escapeHtml(b.product_name)}${cWarn}${addlStr}</span>
           <span class="text-muted me-1">R${fmt(b.base_cost_total || 0)}</span>
           <button class="btn btn-outline-secondary btn-sm py-0 px-1"
             title="Edit batch"
@@ -4423,6 +4537,13 @@ async function loadSupplierInvoices(supplierId) {
       </div>`;
 
     wrap.innerHTML = html;
+
+    // Scroll to a specific invoice if navigated from another tab
+    if (_pendingScrollInvoiceId) {
+      const target = wrap.querySelector(`[data-invoice-id="${_pendingScrollInvoiceId}"]`);
+      if (target) { target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); target.style.outline = '2px solid #0d6efd'; setTimeout(() => { target.style.outline = ''; }, 2000); }
+      _pendingScrollInvoiceId = null;
+    }
 
     // Per-invoice document upload
     wrap.querySelectorAll('.inv-doc-upload').forEach(input => {
@@ -4635,6 +4756,9 @@ document.getElementById('pr-doc-clear')?.addEventListener('click', () => {
 });
 
 document.getElementById('btn-supplier-new-run')?.addEventListener('click', () => {
+  _editingInvoiceId = null;
+  const saveBtn = document.getElementById('btn-submit-purchase-run');
+  if (saveBtn) saveBtn.textContent = 'Save Delivery';
   _prStagedFile = null;
   const nameEl = document.getElementById('pr-doc-filename');
   const clearBtn = document.getElementById('pr-doc-clear');
@@ -4670,6 +4794,9 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
 document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', () => {
   hide(document.getElementById('purchase-run-panel'));
   _purchaseRunLines = [];
+  _editingInvoiceId = null;
+  const saveBtn = document.getElementById('btn-submit-purchase-run');
+  if (saveBtn) saveBtn.textContent = 'Save Delivery';
 });
 
 document.getElementById('btn-add-purchase-line')?.addEventListener('click', addPurchaseLine);
@@ -4846,29 +4973,40 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
   };
 
   try {
-    const result = await api(`/api/suppliers/${_currentSupplier.id}/purchase_run`, {
-      method: 'POST',
-      body: JSON.stringify(body)
-    });
+    let result;
+    if (_editingInvoiceId) {
+      result = await api(`/api/suppliers/${_currentSupplier.id}/invoices/${_editingInvoiceId}`, {
+        method: 'PUT', body: JSON.stringify(body)
+      });
+    } else {
+      result = await api(`/api/suppliers/${_currentSupplier.id}/purchase_run`, {
+        method: 'POST', body: JSON.stringify(body)
+      });
+    }
 
-    // Upload staged invoice document now that we have the invoice_id
-    if (_prStagedFile && result.invoice_id) {
+    // Upload staged invoice document (new deliveries only — edits keep existing docs)
+    if (_prStagedFile && result.invoice_id && !_editingInvoiceId) {
       try {
         const fd = new FormData();
         fd.append('file', _prStagedFile);
         fd.append('invoice_id', result.invoice_id);
         const res = await fetch(`/api/suppliers/${_currentSupplier.id}/documents`, { method: 'POST', body: fd, credentials: 'same-origin' });
-        if (!res.ok) toast('Invoice saved but document upload failed', 'warning');
-      } catch { toast('Invoice saved but document upload failed', 'warning'); }
+        if (!res.ok) toast('Delivery saved but document upload failed', 'warning');
+      } catch { toast('Delivery saved but document upload failed', 'warning'); }
       _prStagedFile = null;
     }
 
-    let msg = `Delivery saved: ${result.batches_created} batch${result.batches_created !== 1 ? 'es' : ''} created`;
-    if (result.created_products?.length > 0) msg += `, ${result.created_products.length} new products created`;
+    const isEdit = !!_editingInvoiceId;
+    const msg = isEdit
+      ? `Delivery updated: ${result.batches_created} batch${result.batches_created !== 1 ? 'es' : ''}`
+      : `Delivery saved: ${result.batches_created} batch${result.batches_created !== 1 ? 'es' : ''} created${result.created_products?.length > 0 ? `, ${result.created_products.length} new products` : ''}`;
     toast(msg, 'success', 5000);
 
+    _editingInvoiceId = null;
     hide(document.getElementById('purchase-run-panel'));
     _purchaseRunLines = [];
+    const saveBtn = document.getElementById('btn-submit-purchase-run');
+    if (saveBtn) saveBtn.textContent = 'Save Delivery';
 
     await loadProducts();
     await loadSupplierProducts(_currentSupplier.id);

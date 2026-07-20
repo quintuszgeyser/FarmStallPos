@@ -542,6 +542,124 @@ def api_supplier_invoices(sid):
     return jsonify(result)
 
 
+@bp.route('/api/suppliers/<int:sid>/invoices/<int:inv_id>', methods=['PUT'])
+def api_supplier_invoice_update(sid, inv_id):
+    """Replace all batches on an invoice with new lines (only if no stock consumed)."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    inv = db.session.get(SupplierInvoice, inv_id)
+    if not inv or inv.supplier_id != sid:
+        return jsonify({'error': 'Invoice not found'}), 404
+
+    batches = StockBatch.query.filter_by(invoice_id=inv_id).all()
+    for b in batches:
+        if StockConsumption.query.filter_by(batch_id=b.id).first():
+            return jsonify({'error': f'Cannot edit — stock from batch #{b.id} has already been used in sales'}), 400
+        if Decimal(str(b.qty_remaining_base)) != Decimal(str(b.qty_purchased_base)):
+            return jsonify({'error': f'Cannot edit — some stock from batch #{b.id} has already been consumed'}), 400
+
+    data           = request.json or {}
+    lines          = data.get('lines', [])
+    date_str       = data.get('date')
+    addl_costs_raw = data.get('additional_costs', [])
+    invoice_ref    = str(data.get('invoice_ref') or '').strip() or None
+
+    if not lines:
+        return jsonify({'error': 'No lines provided'}), 400
+
+    from datetime import date as _date
+    run_date      = _date.today()
+    purchase_date = datetime.now()
+    if date_str:
+        try:
+            parts         = date_str.split('-')
+            run_date      = _date(int(parts[0]), int(parts[1]), int(parts[2]))
+            purchase_date = datetime(int(parts[0]), int(parts[1]), int(parts[2]))
+        except Exception:
+            return jsonify({'error': 'Invalid date format'}), 400
+
+    try:
+        addl_costs = _parse_addl_costs(addl_costs_raw, source='supplier_run')
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    u = current_user()
+
+    # Delete existing batches
+    for b in batches:
+        db.session.delete(b)
+
+    # Update invoice metadata
+    inv.invoice_number = invoice_ref
+    inv.date           = run_date
+
+    # Re-create batches with same split logic as purchase_run
+    prepared_lines = []
+    for line in lines:
+        pid         = line.get('product_id')
+        qty         = line.get('qty')
+        unit        = line.get('unit', 'unit')
+        total_price = line.get('total_price')
+        try:
+            pid         = int(pid)
+            qty         = float(qty)
+            total_price = float(total_price)
+        except Exception:
+            return jsonify({'error': 'Invalid product_id, qty, or total_price'}), 400
+        p = db.session.get(Product, pid)
+        if not p:
+            return jsonify({'error': f'Product id {pid} not found'}), 404
+        conversion = _UNIT_CONVERSIONS.get(unit, 1)
+        qty_base   = qty * conversion
+        if qty_base == 0:
+            return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
+        prepared_lines.append({'pid': pid, 'qty_base': qty_base, 'base_cost_total': Decimal(str(total_price))})
+
+    total_addl = sum(Decimal(str(c['amount'])) for c in addl_costs)
+    shares     = _split_costs([l['base_cost_total'] for l in prepared_lines], total_addl)
+    batches_created = 0
+
+    for i, pl in enumerate(prepared_lines):
+        share      = shares[i]
+        batch_addl = []
+        if share != Decimal('0') and addl_costs:
+            if len(addl_costs) == 1:
+                batch_addl = [{**addl_costs[0], 'amount': float(share.quantize(Decimal('0.01')))}]
+            else:
+                if total_addl != Decimal('0'):
+                    running = Decimal('0')
+                    for j, ac in enumerate(addl_costs):
+                        if j == len(addl_costs) - 1:
+                            entry_share = share - running
+                        else:
+                            entry_share = (Decimal(str(ac['amount'])) / total_addl * share).quantize(Decimal('0.01'))
+                            running += entry_share
+                        batch_addl.append({**ac, 'amount': float(entry_share)})
+        cost_per_base = (pl['base_cost_total'] + share) / Decimal(str(pl['qty_base']))
+        db.session.add(StockBatch(
+            product_id=pl['pid'],
+            qty_purchased_base=pl['qty_base'],
+            qty_remaining_base=pl['qty_base'],
+            cost_per_base_unit=cost_per_base,
+            base_cost_total=pl['base_cost_total'],
+            additional_costs=_json.dumps(batch_addl) if batch_addl else None,
+            supplier_id=sid,
+            user_id=u.id if u else None,
+            purchased_at=purchase_date,
+            invoice_id=inv_id,
+        ))
+        batches_created += 1
+
+    subtotal = sum(pl['base_cost_total'] for pl in prepared_lines)
+    inv.subtotal               = float(subtotal)
+    inv.additional_costs_json  = _json.dumps([{'label': c['label'], 'type': c['type'], 'amount': c['amount']} for c in addl_costs]) if addl_costs else None
+    inv.additional_costs_total = float(total_addl)
+    inv.total                  = float(subtotal + total_addl)
+
+    db.session.commit()
+    return jsonify({'ok': True, 'batches_created': batches_created, 'invoice_id': inv_id, 'invoice_number': invoice_ref})
+
+
 @bp.route('/api/suppliers/<int:sid>/invoices/<int:inv_id>', methods=['DELETE'])
 def api_supplier_invoice_delete(sid, inv_id):
     """Delete an invoice and all its batches (only if no stock has been consumed)."""

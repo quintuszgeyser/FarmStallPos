@@ -15,6 +15,7 @@ from helpers import (
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, Purchase, Supplier, User,
+    SupplierInvoice,
 )
 
 bp = Blueprint('stock', __name__)
@@ -82,10 +83,13 @@ def api_stock_ingredients():
                 'purchased_at': b.purchased_at.isoformat(),
                 'supplier_id': b.supplier_id,
                 'supplier_name': db.session.get(Supplier, b.supplier_id).name if b.supplier_id else None,
+                'invoice_id': b.invoice_id,
+                'invoice_number': db.session.get(SupplierInvoice, b.invoice_id).invoice_number if b.invoice_id else None,
                 'sort_order': b.sort_order,
                 'additional_costs': b.additional_costs,
                 'base_cost_total': float(b.base_cost_total) if b.base_cost_total is not None else None,
                 'updated_at': b.updated_at.isoformat() if b.updated_at else None,
+                'produce_ref': b.produce_ref,
                 'consumed_pct': round(
                     (1 - float(b.qty_remaining_base) / float(b.qty_purchased_base)) * 100, 1
                 ) if float(b.qty_purchased_base) > 0 else 0,
