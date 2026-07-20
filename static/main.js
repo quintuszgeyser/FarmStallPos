@@ -4564,7 +4564,41 @@ document.getElementById('btn-supplier-edit')?.addEventListener('click', () => {
 });
 
 // Purchase Run
+// Staged delivery document (set when user picks a file before submitting)
+let _prStagedFile = null;
+
+document.getElementById('pr-doc-upload-input')?.addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return;
+  _prStagedFile = file;
+  const nameEl = document.getElementById('pr-doc-filename');
+  const clearBtn = document.getElementById('pr-doc-clear');
+  if (nameEl) nameEl.textContent = file.name;
+  if (clearBtn) show(clearBtn);
+  // Auto-fill invoice ref with filename (strip extension)
+  const refEl = document.getElementById('pr-invoice-ref');
+  if (refEl && !refEl.value) {
+    refEl.value = file.name.replace(/\.[^/.]+$/, '');
+  }
+});
+
+document.getElementById('pr-doc-clear')?.addEventListener('click', () => {
+  _prStagedFile = null;
+  const input = document.getElementById('pr-doc-upload-input');
+  if (input) input.value = '';
+  const nameEl = document.getElementById('pr-doc-filename');
+  if (nameEl) nameEl.textContent = 'No file chosen';
+  hide(document.getElementById('pr-doc-clear'));
+});
+
 document.getElementById('btn-supplier-new-run')?.addEventListener('click', () => {
+  _prStagedFile = null;
+  const nameEl = document.getElementById('pr-doc-filename');
+  const clearBtn = document.getElementById('pr-doc-clear');
+  const docInput = document.getElementById('pr-doc-upload-input');
+  if (nameEl) nameEl.textContent = 'No file chosen';
+  if (clearBtn) hide(clearBtn);
+  if (docInput) docInput.value = '';
   const dateInput = document.getElementById('purchase-run-date');
   if (dateInput) dateInput.value = todayISO();
   _purchaseRunLines = [];
@@ -4808,18 +4842,29 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
       body: JSON.stringify(body)
     });
 
-    let msg = `Purchase run saved: ${result.batches_created} batches created`;
-    if (result.created_products?.length > 0) {
-      msg += `, ${result.created_products.length} new products created`;
+    // Upload staged invoice document now that we have the invoice_id
+    if (_prStagedFile && result.invoice_id) {
+      try {
+        const fd = new FormData();
+        fd.append('file', _prStagedFile);
+        fd.append('invoice_id', result.invoice_id);
+        const res = await fetch(`/api/suppliers/${_currentSupplier.id}/documents`, { method: 'POST', body: fd, credentials: 'same-origin' });
+        if (!res.ok) toast('Invoice saved but document upload failed', 'warning');
+      } catch { toast('Invoice saved but document upload failed', 'warning'); }
+      _prStagedFile = null;
     }
+
+    let msg = `Delivery saved: ${result.batches_created} batch${result.batches_created !== 1 ? 'es' : ''} created`;
+    if (result.created_products?.length > 0) msg += `, ${result.created_products.length} new products created`;
     toast(msg, 'success', 5000);
 
     hide(document.getElementById('purchase-run-panel'));
     _purchaseRunLines = [];
 
-    // Reload products and supplier products
     await loadProducts();
     await loadSupplierProducts(_currentSupplier.id);
+    loadSupplierInvoices(_currentSupplier.id);
+    loadSupplierDocs(_currentSupplier.id);
   } catch (e) {
     toast(e.message, 'error');
   }

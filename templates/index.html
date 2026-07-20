@@ -1143,7 +1143,7 @@
                 <div class="d-flex align-items-center gap-2 mb-1">
                   <h6 id="supplier-detail-name" class="mb-0 fw-bold"></h6>
                   <button id="btn-supplier-edit"    class="btn btn-outline-secondary btn-sm ms-auto">Edit</button>
-                  <button id="btn-supplier-new-run" class="btn btn-success btn-sm">+ Purchase Run</button>
+                  <button id="btn-supplier-new-run" class="btn btn-success btn-sm"><i class="bi bi-truck me-1"></i>New Delivery</button>
                 </div>
                 <div id="supplier-detail-contact" class="small text-muted"></div>
               </div>
@@ -1190,19 +1190,31 @@
               </div>
             </div>
 
-            <!-- Purchase run form -->
+            <!-- New Delivery / Purchase run form -->
             <div id="purchase-run-panel" class="card hidden">
               <div class="card-header py-2 d-flex align-items-center">
-                <span class="fw-bold small">New Purchase Run</span>
+                <span class="fw-bold small"><i class="bi bi-truck me-1"></i>New Delivery</span>
                 <input type="date" id="purchase-run-date" class="form-control form-control-sm ms-3" style="width:150px">
               </div>
               <div class="card-body p-2">
+                <!-- Step 1: optional invoice document upload -->
+                <div class="border rounded p-2 mb-3 bg-light">
+                  <div class="small fw-semibold mb-1"><i class="bi bi-paperclip me-1"></i>Invoice document <span class="text-muted fw-normal">(optional — filename becomes reference)</span></div>
+                  <div class="d-flex align-items-center gap-2">
+                    <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer">
+                      <i class="bi bi-upload me-1"></i>Choose file
+                      <input type="file" id="pr-doc-upload-input" class="d-none" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt">
+                    </label>
+                    <span id="pr-doc-filename" class="small text-muted">No file chosen</span>
+                    <button id="pr-doc-clear" class="btn btn-outline-danger btn-sm py-0 px-1 hidden" title="Remove"><i class="bi bi-x-lg"></i></button>
+                  </div>
+                </div>
                 <div id="purchase-run-lines"></div>
                 <button id="btn-add-purchase-line" class="btn btn-outline-secondary btn-sm mt-2">+ Add Item</button>
                 <div id="purchase-run-addl-costs-wrap" class="mt-2"></div>
               </div>
               <div class="card-footer d-flex gap-2">
-                <button id="btn-submit-purchase-run" class="btn btn-success">Save Purchase Run</button>
+                <button id="btn-submit-purchase-run" class="btn btn-success">Save Delivery</button>
                 <button id="btn-cancel-purchase-run" class="btn btn-outline-secondary">Cancel</button>
               </div>
             </div>

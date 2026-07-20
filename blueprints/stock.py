@@ -15,7 +15,6 @@ from helpers import (
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, Purchase, Supplier, User,
-    SupplierInvoice,
 )
 
 bp = Blueprint('stock', __name__)
@@ -253,26 +252,8 @@ def api_stock_receive():
         return jsonify({'error': 'total_price or price_per_unit required'}), 400
     overhead_total  = _addl_total(addl_costs)
     cost_per_base   = (base_cost_total + overhead_total) / Decimal(str(qty_base))
-    u     = current_user()
-    now   = datetime.utcnow()
-
-    # Create implicit invoice so single receives are traceable
-    invoice_number = data.get('invoice_number') or None
-    inv = SupplierInvoice(
-        supplier_id=supplier_id,
-        date=now.date(),
-        invoice_number=invoice_number,
-        status='posted',
-        source='single_receive',
-        subtotal=float(base_cost_total),
-        additional_costs_json=_json.dumps(addl_costs) if addl_costs else None,
-        additional_costs_total=float(overhead_total),
-        total=float(base_cost_total + overhead_total),
-        created_at=now,
-        created_by=u.id if u else None,
-    )
-    db.session.add(inv)
-    db.session.flush()
+    u   = current_user()
+    now = datetime.utcnow()
 
     batch = StockBatch(
         product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=qty_base,
@@ -280,13 +261,13 @@ def api_stock_receive():
         base_cost_total=base_cost_total,
         additional_costs=_json.dumps(addl_costs) if addl_costs else None,
         supplier_id=supplier_id, user_id=u.id if u else None,
-        invoice_id=inv.id,
+        # invoice_id intentionally null — single receives are not auto-invoiced;
+        # use New Delivery (purchase run) when receiving against a supplier invoice
     )
     db.session.add(batch)
     db.session.commit()
     return jsonify({
         'ok': True, 'batch_id': batch.id,
-        'invoice_id': inv.id, 'invoice_number': invoice_number,
         'qty_base': qty_base, 'base_unit': p.base_unit,
         'cost_per_base_unit': round(float(cost_per_base), 6),
     })
