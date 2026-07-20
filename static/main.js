@@ -3480,7 +3480,7 @@ function _updateEditBatchPreview() {
 document.getElementById('edit-batch-qty-purchased')?.addEventListener('input', _updateEditBatchPreview);
 document.getElementById('edit-batch-unit')?.addEventListener('change', _updateEditBatchPreview);
 
-document.getElementById('products-card-list')?.addEventListener('click', (e) => {
+document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-edit-batch-id]');
   if (!btn) return;
   e.stopPropagation();
@@ -3594,6 +3594,7 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editBatchModal')).hide();
     toast('Batch updated', 'success', 2000);
     await loadIngredients();
+    if (_currentSupplier) loadSupplierInvoices(_currentSupplier.id);
   } catch (e) {
     if (e.message?.includes('409') || e.status === 409) {
       toast('Batch was updated by someone else — reload and retry', 'warning', 5000);
@@ -3603,8 +3604,8 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
   }
 });
 
-// ── Delete Batch ──
-document.getElementById('products-card-list')?.addEventListener('click', async (e) => {
+// ── Delete Batch (global — works from products page and supplier invoices view) ──
+document.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-delete-batch-id]');
   if (!btn) return;
   e.stopPropagation();
@@ -3615,10 +3616,29 @@ document.getElementById('products-card-list')?.addEventListener('click', async (
   try {
     await api(`/api/stock/batches/${batchId}`, { method: 'DELETE' });
     toast('Batch deleted', 'success', 2000);
+    // Refresh whichever view triggered this
     const pid = btn.closest('.product-row')?.dataset.productId;
     await loadIngredients();
     if (pid) document.querySelector(`.product-row[data-product-id="${pid}"]`)?.click();
-  } catch (err) { toast(err.message || 'Delete failed', 'danger'); }
+    if (_currentSupplier) loadSupplierInvoices(_currentSupplier.id);
+  } catch (err) { toast(err.message || 'Delete failed', 'error'); }
+});
+
+// ── Delete Invoice ──
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-delete-invoice-id]');
+  if (!btn) return;
+  e.stopPropagation();
+  const invId    = btn.dataset.deleteInvoiceId;
+  const invLabel = btn.dataset.deleteInvoiceLabel || `Invoice #${invId}`;
+  if (!confirm(`Delete "${invLabel}" and all its batches?\n\nThis cannot be undone. Only invoices with no consumed stock can be deleted.`)) return;
+  try {
+    await api(`/api/suppliers/${_currentSupplier.id}/invoices/${invId}`, { method: 'DELETE' });
+    toast('Invoice deleted', 'success', 2000);
+    loadSupplierInvoices(_currentSupplier.id);
+    loadSupplierDocs(_currentSupplier.id);
+    await loadIngredients();
+  } catch (err) { toast(err.message || 'Delete failed', 'error'); }
 });
 
 // ── Receive Stock Modal ──
@@ -4315,6 +4335,9 @@ async function loadSupplierInvoices(supplierId) {
           ${addlTotal > 0 ? `<span class="badge bg-warning text-dark" style="font-size:10px">+R${fmt(addlTotal)} overhead</span>` : ''}
           ${hasConsumed ? `<span class="badge bg-info text-dark" style="font-size:10px">partial sales</span>` : ''}
           ${docCount > 0 ? `<span class="badge bg-success" style="font-size:10px"><i class="bi bi-paperclip"></i> ${docCount}</span>` : ''}
+          ${inv.id ? `<button class="btn btn-outline-danger btn-sm py-0 px-1 ms-1" title="Delete invoice"
+            data-delete-invoice-id="${inv.id}"
+            data-delete-invoice-label="${escapeHtml(invLabel)}"><i class="bi bi-trash"></i></button>` : ''}
         </div>
 
         <div class="px-2 pb-2" style="background:#fafafa;border-top:1px solid #eee">
@@ -4347,6 +4370,7 @@ async function loadSupplierInvoices(supplierId) {
           ? `<span class="badge bg-secondary ms-1" style="font-size:10px">${addlData.map(c => _getCostTypeLabel(c.type)).join(', ')} R${bAddlTot.toFixed(2)}</span>`
           : '';
         const cWarn    = b.consumed_pct > 0 ? `<span class="badge bg-warning text-dark ms-1" style="font-size:10px">${Math.round(b.consumed_pct)}% sold</span>` : '';
+        const canDelete = Math.abs((b.qty_remaining_base || 0) - (b.qty_purchased_base || 0)) < 0.0001;
         html += `<div class="d-flex align-items-center gap-2 py-1" style="font-size:12px;border-top:1px solid #f0f0f0">
           <input type="checkbox" class="supplier-batch-chk"
             data-batch-id="${b.id}"
@@ -4355,7 +4379,28 @@ async function loadSupplierInvoices(supplierId) {
             data-addl-costs="${escapeHtml(b.additional_costs || '')}"
             onchange="_updateApplyCostsBtn(document.getElementById('supplier-invoices-wrap'))">
           <span class="flex-fill">${escapeHtml(b.product_name)}${cWarn}${addlStr}</span>
-          <span class="text-muted">R${fmt(b.base_cost_total || 0)}</span>
+          <span class="text-muted me-1">R${fmt(b.base_cost_total || 0)}</span>
+          <button class="btn btn-outline-secondary btn-sm py-0 px-1"
+            title="Edit batch"
+            data-edit-batch-id="${b.id}"
+            data-edit-batch-date="${(b.purchased_at||'').slice(0,10)}"
+            data-edit-batch-supplier="${supplierId}"
+            data-edit-batch-total="${b.base_cost_total || 0}"
+            data-edit-batch-qty-base="${b.qty_purchased_base || 0}"
+            data-edit-batch-qty-remaining="${b.qty_remaining_base || 0}"
+            data-edit-batch-unit="${b.unit_type || 'weight'}"
+            data-edit-batch-base-unit="${b.base_unit || 'g'}"
+            data-edit-batch-package-size=""
+            data-edit-batch-package-unit=""
+            data-edit-batch-addl-costs="${escapeHtml(b.additional_costs || '')}"
+            data-edit-batch-base-cost-total="${b.base_cost_total || ''}"
+            data-edit-batch-consumed-pct="${b.consumed_pct || 0}"
+            data-edit-batch-updated-at="${b.updated_at || ''}"><i class="bi bi-pencil"></i></button>
+          ${canDelete ? `<button class="btn btn-outline-danger btn-sm py-0 px-1"
+            title="Delete batch"
+            data-delete-batch-id="${b.id}"
+            data-delete-batch-date="${(b.purchased_at||'').slice(0,10)}"
+            data-delete-batch-product="${escapeHtml(b.product_name)}"><i class="bi bi-trash"></i></button>` : ''}
         </div>`;
       });
 

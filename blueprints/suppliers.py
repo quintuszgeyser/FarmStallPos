@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request, current_app, send_from_directory,
 from sqlalchemy import func
 
 from helpers import require_login, require_role, current_user, _gen_barcode
-from models import db, Supplier, StockBatch, Purchase, Product, SupplierDocument, SupplierInvoice
+from models import db, Supplier, StockBatch, StockConsumption, Purchase, Product, SupplierDocument, SupplierInvoice
 
 bp = Blueprint('suppliers', __name__)
 
@@ -540,6 +540,39 @@ def api_supplier_invoices(sid):
         })
 
     return jsonify(result)
+
+
+@bp.route('/api/suppliers/<int:sid>/invoices/<int:inv_id>', methods=['DELETE'])
+def api_supplier_invoice_delete(sid, inv_id):
+    """Delete an invoice and all its batches (only if no stock has been consumed)."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    inv = db.session.get(SupplierInvoice, inv_id)
+    if not inv or inv.supplier_id != sid:
+        return jsonify({'error': 'Invoice not found'}), 404
+
+    batches = StockBatch.query.filter_by(invoice_id=inv_id).all()
+    for b in batches:
+        if StockConsumption.query.filter_by(batch_id=b.id).first():
+            return jsonify({'error': f'Cannot delete — stock from batch #{b.id} has already been used in sales'}), 400
+        if Decimal(str(b.qty_remaining_base)) != Decimal(str(b.qty_purchased_base)):
+            return jsonify({'error': f'Cannot delete — some stock from batch #{b.id} has already been consumed'}), 400
+
+    # Delete linked documents from disk
+    for doc in SupplierDocument.query.filter_by(invoice_id=inv_id).all():
+        try:
+            path = os.path.join(_doc_dir(), doc.filename)
+            if os.path.exists(path):
+                os.remove(path)
+        except Exception:
+            pass
+        db.session.delete(doc)
+
+    for b in batches:
+        db.session.delete(b)
+    db.session.delete(inv)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @bp.route('/api/suppliers/<int:sid>/batches', methods=['GET'])
