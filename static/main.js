@@ -1018,7 +1018,13 @@ function _buildBulkReceive(products) {
       </div>
       <div class="text-muted small mt-1" data-field="preview"></div>
     </div>
-  `).join('');
+  `).join('') + `
+    <div class="border-top mt-3 pt-2" id="bulk-receive-addl-costs-section">
+      <div class="small text-muted mb-1"><i class="bi bi-info-circle me-1"></i>Additional costs below are split proportionally across all items by their line total.</div>
+      <div id="bulk-receive-addl-costs-wrap"></div>
+    </div>`;
+
+  _renderAdditionalCostsBlock(document.getElementById('bulk-receive-addl-costs-wrap'), []);
 
   document.querySelectorAll('#bulk-action-body .bulk-section').forEach(section => {
     const pid = parseInt(section.dataset.sectionPid);
@@ -1042,17 +1048,53 @@ function _buildBulkReceive(products) {
   });
 
   btn.onclick = async () => {
-    const errs = [], ok = [];
-    for (const section of document.querySelectorAll('#bulk-action-body .bulk-section')) {
+    const sections = [...document.querySelectorAll('#bulk-action-body .bulk-section')];
+
+    // Collect line data first (validate all before sending any)
+    const lineData = [];
+    for (const section of sections) {
       const pid   = parseInt(section.dataset.sectionPid);
       const p     = items.find(x => x.id === pid);
       const qty   = parseFloat(section.querySelector('[data-field="qty"]').value) || 0;
       const price = parseFloat(section.querySelector('[data-field="price"]').value) || 0;
       const unit  = section.querySelector('[data-field="unit"]').value;
       const sid   = parseInt(section.querySelector('[data-field="supplier"]').value) || null;
-      if (qty <= 0 || price <= 0) { errs.push(`${p.name}: qty and cost required`); continue; }
+      if (qty <= 0 || price <= 0) return toast(`${p.name}: qty and cost required`, 'warning');
+      lineData.push({ pid, p, qty, price, unit, sid });
+    }
+
+    // Split run-level additional costs proportionally by line price
+    const addlWrap  = document.getElementById('bulk-receive-addl-costs-wrap');
+    const addlCosts = addlWrap ? _readAdditionalCosts(addlWrap) : [];
+    const addlTotal = _addlCostsTotal(addlCosts);
+    const linePrices = lineData.map(l => l.price);
+    const totalBase  = linePrices.reduce((s, p) => s + p, 0);
+
+    // Compute per-line shares (last item absorbs rounding remainder)
+    const shares = addlCosts.length ? (() => {
+      if (totalBase <= 0) return linePrices.map(() => addlTotal / lineData.length);
+      const raw = linePrices.map(p => parseFloat(((p / totalBase) * addlTotal).toFixed(2)));
+      const diff = parseFloat((addlTotal - raw.reduce((s, x) => s + x, 0)).toFixed(2));
+      raw[raw.length - 1] = parseFloat((raw[raw.length - 1] + diff).toFixed(2));
+      return raw;
+    })() : linePrices.map(() => 0);
+
+    if (addlCosts.length) _checkOverheadWarning(addlTotal, totalBase);
+
+    const errs = [], ok = [];
+    for (let i = 0; i < lineData.length; i++) {
+      const { pid, p, qty, price, unit, sid } = lineData[i];
+      // Build per-batch cost entries with this line's proportional share
+      const batchAddl = addlCosts.length && shares[i] ? addlCosts.map(c => ({
+        ...c,
+        amount: parseFloat(((c.amount / addlTotal) * shares[i]).toFixed(2)),
+        source: 'bulk_receive',
+      })) : [];
       try {
-        await api('/api/stock/receive', { method: 'POST', body: JSON.stringify({ product_id: pid, qty, unit, total_price: price, supplier_id: sid }) });
+        await api('/api/stock/receive', { method: 'POST', body: JSON.stringify({
+          product_id: pid, qty, unit, total_price: price, supplier_id: sid,
+          additional_costs: batchAddl,
+        }) });
         ok.push(p.name);
       } catch (e) { errs.push(`${p.name}: ${e.message}`); }
     }
