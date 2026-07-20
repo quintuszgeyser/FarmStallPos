@@ -1163,14 +1163,14 @@
               </div>
             </div>
 
-            <!-- Recent Batches (for retrospective cost application) -->
+            <!-- Invoices / Deliveries -->
             <div class="card mb-3">
-              <div class="card-header py-2 d-flex align-items-center" style="cursor:pointer" id="supplier-batches-toggle">
-                <span class="small fw-bold"><i class="bi bi-boxes me-1"></i>Recent Batches</span>
-                <span class="ms-2 small" id="supplier-batches-chevron">▼</span>
+              <div class="card-header py-2 d-flex align-items-center" style="cursor:pointer" id="supplier-invoices-toggle">
+                <span class="small fw-bold"><i class="bi bi-receipt me-1"></i>Invoices &amp; Deliveries</span>
+                <span class="ms-2 small" id="supplier-invoices-chevron">▼</span>
               </div>
-              <div id="supplier-batches-collapse">
-                <div id="supplier-recent-batches-wrap" class="card-body p-2">
+              <div id="supplier-invoices-collapse">
+                <div id="supplier-invoices-wrap" class="card-body p-2">
                   <span class="text-muted small">Loading...</span>
                 </div>
               </div>
@@ -3152,6 +3152,10 @@
             </div>
             <button id="btn-quick-sup-save" class="btn btn-success btn-sm w-100 mt-1">Add Supplier</button>
           </div>
+        </div>
+        <div class="mt-2">
+          <label class="form-label small">Invoice / delivery ref <span class="text-muted">(optional)</span></label>
+          <input id="receive-invoice-number" type="text" class="form-control form-control-sm" placeholder="e.g. INV-2024-001">
         </div>
       </div>
       <div class="modal-footer py-2">

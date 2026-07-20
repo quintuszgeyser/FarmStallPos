@@ -3631,6 +3631,8 @@ function openReceiveStockModal(item) {
   document.getElementById('receive-qty').value          = '';
   document.getElementById('receive-total-price').value  = '';
   document.getElementById('receive-qty-base-display').textContent = '';
+  const invNumEl = document.getElementById('receive-invoice-number');
+  if (invNumEl) invNumEl.value = '';
   hide(document.getElementById('receive-cost-preview'));
   _renderAdditionalCostsBlock(document.getElementById('receive-addl-costs-wrap'), []);
 
@@ -3716,7 +3718,8 @@ document.getElementById('btn-receive-confirm')?.addEventListener('click', async 
   if (!pid || qty <= 0)         return toast('Enter a valid quantity', 'warning');
   if (totalPrice <= 0)          return toast('Enter the total amount paid', 'warning');
 
-  const supplier_id = parseInt(document.getElementById('receive-supplier')?.value || '0') || null;
+  const supplier_id    = parseInt(document.getElementById('receive-supplier')?.value || '0') || null;
+  const invoice_number = document.getElementById('receive-invoice-number')?.value?.trim() || null;
 
   const recAddlWrap  = document.getElementById('receive-addl-costs-wrap');
   const recAddlCosts = recAddlWrap ? _readAdditionalCosts(recAddlWrap) : [];
@@ -3725,12 +3728,13 @@ document.getElementById('btn-receive-confirm')?.addEventListener('click', async 
   try {
     const j = await api('/api/stock/receive', {
       method: 'POST',
-      body: JSON.stringify({ product_id: pid, qty, unit, total_price: totalPrice, supplier_id, additional_costs: recAddlCosts })
+      body: JSON.stringify({ product_id: pid, qty, unit, total_price: totalPrice, supplier_id, invoice_number, additional_costs: recAddlCosts })
     });
     toast(`Stock received - R${j.cost_per_base_unit}/unit (${j.qty_base.toFixed(2)} ${j.base_unit})`, 'success', 4000);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('receiveStockModal')).hide();
     await loadIngredients();
     await loadProducts();
+    if (_currentSupplier && supplier_id && _currentSupplier.id === supplier_id) loadSupplierInvoices(supplier_id);
   } catch (e) { toast(e.message, 'error'); }
 });
 
@@ -4169,7 +4173,7 @@ function openSupplierDetail(supplier) {
 
   loadSupplierProducts(supplier.id);
   loadSupplierDocs(supplier.id);
-  loadSupplierBatches(supplier.id);
+  loadSupplierInvoices(supplier.id);
 }
 
 async function loadSupplierDocs(sid) {
@@ -4260,55 +4264,89 @@ document.getElementById('supplier-products-toggle')?.addEventListener('click', (
   if (chevron) chevron.textContent = collapsed ? '▶' : '▼';
 });
 
-// Toggle batches collapse
-document.getElementById('supplier-batches-toggle')?.addEventListener('click', () => {
-  const body    = document.getElementById('supplier-batches-collapse');
-  const chevron = document.getElementById('supplier-batches-chevron');
+// Toggle invoices collapse
+document.getElementById('supplier-invoices-toggle')?.addEventListener('click', () => {
+  const body    = document.getElementById('supplier-invoices-collapse');
+  const chevron = document.getElementById('supplier-invoices-chevron');
   if (!body) return;
   const collapsed = body.classList.toggle('hidden');
   if (chevron) chevron.textContent = collapsed ? '▶' : '▼';
 });
 
-async function loadSupplierBatches(supplierId) {
-  const wrap = document.getElementById('supplier-recent-batches-wrap');
+async function loadSupplierInvoices(supplierId) {
+  const wrap = document.getElementById('supplier-invoices-wrap');
   if (!wrap) return;
   try {
-    const runs = await api(`/api/suppliers/${supplierId}/batches`);
-    if (!runs.length) {
-      wrap.innerHTML = '<div class="text-muted small">No recent batches from this supplier.</div>';
+    const invoices = await api(`/api/suppliers/${supplierId}/invoices`);
+    if (!invoices.length) {
+      wrap.innerHTML = '<div class="text-muted small">No invoices or deliveries yet.</div>';
       return;
     }
 
     let html = `
       <div class="d-flex align-items-center mb-2">
-        <span class="small fw-semibold">Recent Deliveries</span>
+        <span class="small fw-semibold text-muted">${invoices.length} invoice${invoices.length !== 1 ? 's' : ''}</span>
         <button type="button" class="btn btn-outline-primary btn-sm ms-auto" id="btn-apply-costs-to-selected" disabled>
-          <i class="bi bi-receipt me-1"></i>Allocate Invoice Costs
+          <i class="bi bi-receipt me-1"></i>Allocate costs to selected
         </button>
       </div>`;
 
-    runs.forEach((run, ri) => {
-      const runLabel   = run.run_id ? `Run #${run.run_id}` : 'Single receive';
-      const hasConsumed = run.batches.some(b => b.consumed_pct > 0);
-      html += `<div class="border rounded mb-2" id="supplier-run-${ri}">
-        <div class="d-flex align-items-center gap-2 px-2 py-1" style="background:#f8f9fa;cursor:pointer;border-radius:4px 4px 0 0"
-             onclick="this.nextElementSibling.classList.toggle('hidden')">
-          <input type="checkbox" class="supplier-run-chk" data-run-idx="${ri}"
-            onclick="event.stopPropagation(); _selectSupplierRun(${ri}, this.checked); _updateApplyCostsBtn(document.getElementById('supplier-recent-batches-wrap'))">
-          <span class="small fw-semibold">${runLabel}</span>
-          <span class="badge bg-light text-dark border">${run.date}</span>
-          <span class="text-muted small">${run.batch_count} item${run.batch_count !== 1 ? 's' : ''}</span>
-          <span class="ms-auto text-muted small">R${fmt(run.base_total)}</span>
-          ${hasConsumed ? `<span class="badge bg-warning text-dark" style="font-size:10px">partial sales</span>` : ''}
-          <i class="bi bi-chevron-down" style="font-size:11px"></i>
-        </div>
-        <div class="px-2 pb-1">`;
+    const _sourceBadge = s => {
+      if (s === 'purchase_run')   return `<span class="badge bg-primary"   style="font-size:10px">Purchase run</span>`;
+      if (s === 'single_receive') return `<span class="badge bg-secondary" style="font-size:10px">Single receive</span>`;
+      if (s === 'unlinked')       return `<span class="badge bg-light text-dark border" style="font-size:10px">Legacy</span>`;
+      return `<span class="badge bg-light text-dark border" style="font-size:10px">${escapeHtml(s||'')}</span>`;
+    };
 
-      run.batches.forEach(b => {
+    invoices.forEach((inv, ri) => {
+      const invLabel    = inv.invoice_number ? `#${inv.invoice_number}` : (inv.id ? `Delivery #${inv.id}` : 'Legacy batches');
+      const hasConsumed = (inv.batches||[]).some(b => b.consumed_pct > 0);
+      const addlTotal   = parseFloat(inv.additional_costs_total || 0);
+      const docCount    = (inv.documents||[]).length;
+      const batchesId   = `inv-batches-${ri}`;
+
+      html += `<div class="border rounded mb-2" id="supplier-inv-${ri}">
+        <div class="d-flex align-items-center gap-2 px-2 py-2 flex-wrap" style="background:#f8f9fa;border-radius:4px 4px 0 0">
+          <input type="checkbox" class="supplier-run-chk" data-run-idx="${ri}"
+            onclick="event.stopPropagation(); _selectSupplierRun(${ri}, this.checked); _updateApplyCostsBtn(document.getElementById('supplier-invoices-wrap'))">
+          <span class="fw-semibold small">${escapeHtml(invLabel)}</span>
+          ${_sourceBadge(inv.source)}
+          ${inv.date ? `<span class="text-muted small">${inv.date}</span>` : ''}
+          <span class="text-muted small ms-auto">${inv.batch_count} batch${inv.batch_count !== 1 ? 'es' : ''}</span>
+          ${inv.total != null ? `<span class="small fw-semibold">R${fmt(inv.total)}</span>` : ''}
+          ${addlTotal > 0 ? `<span class="badge bg-warning text-dark" style="font-size:10px">+R${fmt(addlTotal)} overhead</span>` : ''}
+          ${hasConsumed ? `<span class="badge bg-info text-dark" style="font-size:10px">partial sales</span>` : ''}
+          ${docCount > 0 ? `<span class="badge bg-success" style="font-size:10px"><i class="bi bi-paperclip"></i> ${docCount}</span>` : ''}
+        </div>
+
+        <div class="px-2 pb-2" style="background:#fafafa;border-top:1px solid #eee">
+          <!-- Documents row -->
+          <div class="d-flex align-items-center gap-2 pt-2 pb-1 flex-wrap" style="font-size:12px">
+            ${(inv.documents||[]).map(d => `
+              <a href="/api/suppliers/${supplierId}/documents/${d.id}/download"
+                 class="badge bg-light text-dark border text-decoration-none"
+                 title="${escapeHtml(d.original_name)}" download>
+                <i class="bi bi-file-earmark-text me-1"></i>${escapeHtml(d.original_name.length > 20 ? d.original_name.slice(0,20)+'…' : d.original_name)}
+              </a>`).join('')}
+            ${inv.id ? `
+              <label class="btn btn-outline-secondary btn-sm py-0 px-1 ms-1" style="font-size:11px;cursor:pointer" title="Attach document to this invoice">
+                <i class="bi bi-paperclip"></i> Attach
+                <input type="file" class="inv-doc-upload" data-inv-id="${inv.id}" style="display:none"
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.xlsx,.xls,.csv,.doc,.docx,.txt">
+              </label>` : ''}
+          </div>
+
+          <!-- Batches toggle -->
+          <div class="small text-muted" style="cursor:pointer;padding:4px 0" onclick="document.getElementById('${batchesId}').classList.toggle('hidden')">
+            <i class="bi bi-box-seam me-1"></i>Show / hide batches
+          </div>
+          <div id="${batchesId}" class="hidden">`;
+
+      (inv.batches||[]).forEach(b => {
         const addlData = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
-        const addlTot  = addlData.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
-        const addlStr  = addlTot > 0
-          ? `<span class="badge bg-secondary ms-1" style="font-size:10px">${addlData.map(c => (_getCostTypeLabel(c.type))).join(', ')} R${addlTot.toFixed(2)}</span>`
+        const bAddlTot = addlData.reduce((s, c) => s + parseFloat(c.amount || 0), 0);
+        const addlStr  = bAddlTot > 0
+          ? `<span class="badge bg-secondary ms-1" style="font-size:10px">${addlData.map(c => _getCostTypeLabel(c.type)).join(', ')} R${bAddlTot.toFixed(2)}</span>`
           : '';
         const cWarn    = b.consumed_pct > 0 ? `<span class="badge bg-warning text-dark ms-1" style="font-size:10px">${Math.round(b.consumed_pct)}% sold</span>` : '';
         html += `<div class="d-flex align-items-center gap-2 py-1" style="font-size:12px;border-top:1px solid #f0f0f0">
@@ -4317,18 +4355,18 @@ async function loadSupplierBatches(supplierId) {
             data-base-cost="${b.base_cost_total || 0}"
             data-consumed="${b.consumed_pct || 0}"
             data-addl-costs="${escapeHtml(b.additional_costs || '')}"
-            onchange="_updateApplyCostsBtn(document.getElementById('supplier-recent-batches-wrap'))">
+            onchange="_updateApplyCostsBtn(document.getElementById('supplier-invoices-wrap'))">
           <span class="flex-fill">${escapeHtml(b.product_name)}${cWarn}${addlStr}</span>
           <span class="text-muted">R${fmt(b.base_cost_total || 0)}</span>
         </div>`;
       });
 
-      html += `</div></div>`;
+      html += `</div></div></div>`;
     });
 
     html += `
       <div id="apply-costs-panel" class="border rounded p-2 hidden mt-2">
-        <div class="small fw-semibold mb-1"><i class="bi bi-receipt me-1"></i>Allocate Invoice Costs to Selected Batches</div>
+        <div class="small fw-semibold mb-1"><i class="bi bi-receipt me-1"></i>Allocate costs to selected batches</div>
         <div id="apply-costs-addl-wrap"></div>
         <div class="mt-2">
           <label class="form-label small">Note (optional)</label>
@@ -4342,6 +4380,26 @@ async function loadSupplierBatches(supplierId) {
       </div>`;
 
     wrap.innerHTML = html;
+
+    // Per-invoice document upload
+    wrap.querySelectorAll('.inv-doc-upload').forEach(input => {
+      input.addEventListener('change', async function () {
+        const file   = this.files[0];
+        const invId  = this.dataset.invId;
+        if (!file || !invId || !_currentSupplier) return;
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('invoice_id', invId);
+        this.value = '';
+        try {
+          const res = await fetch(`/api/suppliers/${_currentSupplier.id}/documents`, { method: 'POST', body: fd, credentials: 'same-origin' });
+          if (!res.ok) { const j = await res.json().catch(() => ({})); toast(j.error || 'Upload failed', 'error'); return; }
+          toast('Document attached to invoice', 'success');
+          loadSupplierInvoices(supplierId);
+          loadSupplierDocs(_currentSupplier.id);
+        } catch { toast('Upload failed', 'error'); }
+      });
+    });
 
     document.getElementById('btn-apply-costs-to-selected')?.addEventListener('click', () => {
       const panel = document.getElementById('apply-costs-panel');
@@ -4366,20 +4424,17 @@ async function loadSupplierBatches(supplierId) {
       const selectedChks = [...wrap.querySelectorAll('.supplier-batch-chk:checked')];
       const selectedIds  = selectedChks.map(c => parseInt(c.dataset.batchId));
       if (!selectedIds.length) return toast('Select at least one batch', 'warning');
-
       const consumedOnes = selectedChks.filter(c => parseFloat(c.dataset.consumed) > 0);
       if (consumedOnes.length > 0) {
-        const msg = `${consumedOnes.length} selected batch(es) are partially consumed. Costs will apply only to remaining stock. Previous sales will NOT change. Continue?`;
-        if (!confirm(msg)) return;
+        if (!confirm(`${consumedOnes.length} selected batch(es) are partially consumed. Costs will apply only to remaining stock. Previous sales will NOT change. Continue?`)) return;
       }
-
       try {
         const acBody = { batch_ids: selectedIds, additional_costs: acAddlCosts };
         if (acReason) acBody.cost_adjustment_reason = acReason;
         await api('/api/stock/batches/apply-costs', { method: 'POST', body: JSON.stringify(acBody) });
         toast(`Costs allocated to ${selectedIds.length} batch(es)`, 'success', 3000);
         hide(document.getElementById('apply-costs-panel'));
-        loadSupplierBatches(supplierId);
+        loadSupplierInvoices(supplierId);
         loadIngredients();
       } catch (e) { toast(e.message, 'error'); }
     });
@@ -4389,7 +4444,7 @@ async function loadSupplierBatches(supplierId) {
 }
 
 function _selectSupplierRun(runIdx, checked) {
-  const runEl = document.getElementById(`supplier-run-${runIdx}`);
+  const runEl = document.getElementById(`supplier-inv-${runIdx}`);
   if (!runEl) return;
   runEl.querySelectorAll('.supplier-batch-chk').forEach(c => { c.checked = checked; });
 }
@@ -4398,7 +4453,7 @@ function _updateApplyCostsBtn(wrap) {
   const selected = wrap.querySelectorAll('.supplier-batch-chk:checked').length;
   const btn = document.getElementById('btn-apply-costs-to-selected');
   if (btn) {
-    btn.disabled   = selected === 0;
+    btn.disabled    = selected === 0;
     btn.textContent = selected > 0 ? `Apply costs to ${selected} selected` : 'Apply costs to selected';
   }
   const panel = document.getElementById('apply-costs-panel');

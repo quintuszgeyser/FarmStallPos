@@ -392,8 +392,10 @@ def api_supplier_docs_upload(sid):
     with open(path, 'wb') as fh:
         fh.write(content)
     u = current_user()
+    invoice_id = request.form.get('invoice_id', type=int) or None
     doc = SupplierDocument(
         supplier_id=sid,
+        invoice_id=invoice_id,
         filename=stored_name,
         original_name=f.filename,
         uploaded_by=u.id if u else None,
