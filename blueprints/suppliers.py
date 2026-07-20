@@ -61,6 +61,100 @@ _HEADER_RE = re.compile(
 
 _SHIPPING_RE = re.compile(r'\b(shipping|courier|freight|transport|delivery|postage|carriage)\b', re.IGNORECASE)
 
+# Patterns that unambiguously start a new product line in a merged description cell
+_PRODUCT_START_RE = re.compile(
+    r'^\d+\s*[xX]\s+'               # "20 x 50g", "6 x"
+    r'|^\d+\s*(?:g|ml|kg|l)\b'      # "500g Honey", "250ml Sauce"
+    r'|^(?:Jar|Box|Pack|Bag|Bottle|Tin|Tub|Can|Tube|Cup|Sachet|Dr\.?)\s',
+    re.IGNORECASE,
+)
+
+
+def _split_desc_lines(lines, n):
+    """Split merged description lines into n product groups using definite-start boundaries."""
+    lines = [l for l in lines if l]
+    if not lines:
+        return [''] * n
+    if len(lines) <= n:
+        return lines + [''] * (n - len(lines))
+
+    # Find lines that unambiguously start a new product
+    start_indices = [
+        i for i, ln in enumerate(lines)
+        if _PRODUCT_START_RE.match(ln) or _SHIPPING_RE.search(ln)
+    ]
+
+    if len(start_indices) == n:
+        groups = []
+        for k, si in enumerate(start_indices):
+            end = start_indices[k + 1] if k + 1 < n else len(lines)
+            groups.append(' '.join(lines[si:end]))
+        return groups
+
+    # Fallback: equal chunks, first line of each chunk
+    chunk = max(1, (len(lines) + n - 1) // n)
+    return [lines[k * chunk] for k in range(min(n, (len(lines) + chunk - 1) // chunk))]
+
+
+def _extract_from_tables(pdf):
+    """Extract line items from pdfplumber PDF tables, handling merged multi-value cells."""
+    results = []
+    shipping = 0.0
+
+    for page in pdf.pages:
+        for table in (page.extract_tables() or []):
+            if not table or len(table) < 2:
+                continue
+            header = [str(c or '').lower().strip() for c in (table[0] or [])]
+            if not header:
+                continue
+
+            desc_col  = next((i for i, h in enumerate(header) if 'desc' in h or ('item' in h and 'no' not in h)), None)
+            qty_col   = next((i for i, h in enumerate(header) if h in ('qty', 'quantity') or h.startswith('qty')), None)
+            total_col = next((i for i, h in enumerate(header) if 'total' in h or 'amount' in h or 'nett' in h), None)
+
+            if desc_col is None or total_col is None:
+                continue
+
+            for row in table[1:]:
+                if not any(row):
+                    continue
+
+                def _cell(idx):
+                    if idx is None or idx >= len(row):
+                        return ''
+                    return str(row[idx] or '').strip()
+
+                total_cell = _cell(total_col)
+                qty_cell   = _cell(qty_col)
+                desc_cell  = _cell(desc_col)
+
+                total_lines = [l.strip() for l in total_cell.split('\n') if l.strip()]
+                qty_lines   = [l.strip() for l in qty_cell.split('\n') if l.strip()]
+                desc_lines  = [l.strip() for l in desc_cell.split('\n') if l.strip()]
+
+                if not total_lines:
+                    continue
+
+                n = len(total_lines)
+                desc_groups = _split_desc_lines(desc_lines, n)
+                qty_groups  = qty_lines[:n] if len(qty_lines) >= n else ([qty_lines[0]] * n if qty_lines else ['1'] * n)
+
+                for k in range(n):
+                    price = _clean_num(total_lines[k])
+                    if not price or price <= 0:
+                        continue
+                    desc = desc_groups[k] if k < len(desc_groups) else ''
+                    if not desc or _SKIP_RE.search(desc) or _HEADER_RE.match(desc):
+                        continue
+                    qty = _clean_num(qty_groups[k]) if k < len(qty_groups) else 1.0
+                    if _SHIPPING_RE.search(desc):
+                        shipping = round(shipping + price, 2)
+                    else:
+                        results.append({'description': desc, 'qty': qty or 1.0, 'unit': 'unit', 'total_price': round(price, 2)})
+
+    return results, shipping
+
 
 def _extract_invoice_number(text):
     for pat in _INV_NUM_PATTERNS:
@@ -176,6 +270,8 @@ def _try_parse_line(line):
 
     # Remove trailing units/tags like "ea", "PACK", "Standard" that got left in desc
     desc = re.sub(r'\s+\b(ea|PACK|Pack|unit|Unit|Standard|STD|PK)\b\s*$', '', desc, flags=re.IGNORECASE).strip()
+    # Remove trailing "x" from "x6" product names like "MM Choc Chip x6" → "MM Choc Chip"
+    desc = re.sub(r'\s+[xX]\s*$', '', desc).strip()
 
     if not desc or len(desc) < 3:
         return None
@@ -208,18 +304,36 @@ def _parse_invoice_pdf(content):
         raise RuntimeError('pdfplumber is not installed on this server')
 
     full_text_parts = []
+    table_results   = []
+    table_shipping  = 0.0
+
     with pdfplumber.open(io.BytesIO(content)) as pdf:
+        table_results, table_shipping = _extract_from_tables(pdf)
         for page in pdf.pages:
             t = page.extract_text() or ''
             full_text_parts.append(t)
 
     full_text = '\n'.join(full_text_parts)
     if not full_text.strip():
-        raise RuntimeError('No text could be extracted from this PDF — it may be a scanned image')
+        raise RuntimeError(
+            'This PDF is a scanned image — no text could be extracted. '
+            'Please fill in the delivery details manually.'
+        )
 
     invoice_number = _extract_invoice_number(full_text)
     invoice_date   = _extract_date(full_text)
 
+    # Prefer structured table extraction when it found items (handles merged cells)
+    if table_results:
+        return {
+            'invoice_number': invoice_number,
+            'date':           invoice_date,
+            'lines':          table_results,
+            'shipping':       table_shipping if table_shipping > 0 else None,
+            'raw_line_count': len(full_text.split('\n')),
+        }
+
+    # Fall back to line-by-line text parsing
     lines    = []
     shipping = 0.0
 
@@ -228,7 +342,6 @@ def _parse_invoice_pdf(content):
         if not raw:
             continue
         if _SHIPPING_RE.search(raw) and not _SKIP_RE.search(raw):
-            # Try to pull out a shipping cost
             nums = re.findall(r'R?\s*(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2})', raw)
             if nums:
                 val = _clean_num(nums[-1])
