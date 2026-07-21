@@ -4849,9 +4849,12 @@ document.getElementById('pr-scan-input')?.addEventListener('change', async funct
         ? `<span class="badge bg-success ms-1" style="font-size:10px" title="Fuzzy match">${escapeHtml(match.name)}</span>`
         : `<span class="badge bg-secondary ms-1" style="font-size:10px">New product</span>`;
     }
+    const qtyDisplay = (ln.pack_multiplier && ln.pack_multiplier > 1)
+      ? `<span class="text-info fw-semibold">×${ln.qty * ln.pack_multiplier}</span><span class="text-muted small ms-1">(${ln.qty}×${ln.pack_multiplier})</span>`
+      : `<span class="text-muted">×${ln.qty}</span>`;
     html += `<div class="d-flex align-items-start gap-1 py-1 ${i > 0 ? 'border-top' : ''}">
       <span class="flex-fill">${escapeHtml(ln.description)}${matchHtml}</span>
-      <span class="text-muted ms-2 text-nowrap">×${ln.qty}</span>
+      <span class="ms-2 text-nowrap">${qtyDisplay}</span>
       <span class="fw-semibold ms-2 text-nowrap">R${fmt(ln.total_price)}</span>
     </div>`;
   });
@@ -4890,7 +4893,11 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
     const qtyInput   = lineEl.querySelector('[data-qty]');
     const priceInput = lineEl.querySelector('[data-price]');
 
-    if (qtyInput)   qtyInput.value   = ln.qty;
+    // Apply pack multiplier: "20 x 50g" with invoice qty=1 → stock qty=20
+    const appliedQty = (ln.pack_multiplier && ln.pack_multiplier > 1)
+      ? ln.qty * ln.pack_multiplier
+      : ln.qty;
+    if (qtyInput)   qtyInput.value   = appliedQty;
     if (priceInput) priceInput.value = ln.total_price.toFixed(2);
 
     // Pre-select product: server-learned mapping takes priority over fuzzy match

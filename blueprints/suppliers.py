@@ -568,6 +568,17 @@ def _apply_mappings(sid, lines, document_type='unknown'):
                        .first())
 
         if not mapping:
+            # No DB mapping yet — try description-based pack detection as a first-scan suggestion
+            dm = _CONFIDENT_MULT_RE.search(raw_desc)
+            if dm:
+                desc_mult = int(dm.group(1))
+                if desc_mult >= 2:
+                    enriched_line = dict(line)
+                    enriched_line['pack_multiplier']  = desc_mult
+                    enriched_line['confidence_tier']  = 'suggest'
+                    enriched_line['confidence']       = 0.70
+                    enriched.append(enriched_line)
+                    continue
             enriched.append(line)
             continue
 
