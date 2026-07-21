@@ -161,6 +161,7 @@ def _extract_from_tables(pdf):
                     desc = desc_groups[k] if k < len(desc_groups) else ''
                     if not desc or _SKIP_RE.search(desc) or _HEADER_RE.match(desc):
                         continue
+                    desc = _deduplicate_description(desc)
                     qty = _clean_num(qty_groups[k]) if k < len(qty_groups) else 1.0
                     if _SHIPPING_RE.search(desc):
                         shipping = round(shipping + price, 2)
@@ -189,12 +190,20 @@ def _undouble_chars(line):
 
 
 def _deduplicate_description(desc):
-    """Remove repeated phrase prefix from merged descriptions ('Foo Bar Foo Bar Baz' → 'Foo Bar Baz')."""
+    """Remove repeated phrase prefix from merged descriptions.
+    Handles word-level ('Foo Bar Foo Bar Baz' → 'Foo Bar Baz') and
+    char-level joins with no space ('Foo BarFoo Bar Baz' → 'Foo Bar Baz').
+    """
     words = desc.split()
     n = len(words)
     for i in range(max(2, n // 5), n // 2 + 1):
         if words[:i] == words[i:2 * i]:
             return ' '.join(words[i:])
+    # Char-level: handles 'Milk Tart and White ChocolateMilk Tart and White Chocolate Layered...'
+    # Find longest prefix desc[:k] such that desc[k:] starts with desc[:k]
+    for k in range(max(4, len(desc) // 5), len(desc) // 2 + 1):
+        if desc[k:].startswith(desc[:k]):
+            return desc[k:]
     return desc
 
 
@@ -271,7 +280,11 @@ def _try_parse_line(line):
     # Strip embedded dates (mid-line "due date" columns like "2026/07/08")
     line = re.sub(r'\b\d{4}[/.-]\d{2}[/.-]\d{2}\b', '', line)
     line = re.sub(r'\b\d{1,2}[/.-]\d{2}[/.-]\d{4}\b', '', line)
-    # Strip product size specs in parentheses: (12x60g), (480g), (480g Tub)
+    # Capture pack size spec before stripping — preserve in description for _detect_pack_multiplier
+    # e.g. "(12x60g)" → pack_multiplier=12; this MUST be saved before stripping numbers
+    _psm = re.search(r'\(\d+\s*[xX]\s*\d+\s*[gmlk][gl]?\)', line, re.IGNORECASE)
+    _captured_size_spec = _psm.group(0) if _psm else ''
+    # Strip product size specs in parentheses: (12x60g), (480g), (480g Tub) — prevents false qty/price tokens
     line = re.sub(r'\(\d+\s*[xX]\s*\d+\s*[gmlk][gl]?\)', '', line)
     line = re.sub(r'\(\d+\s*[gmlk][gl]?(?:\s+\w+)?\)', '', line)
     # Strip percentage column values like "0.00%", "15.00%" before they produce false qty tokens
@@ -346,6 +359,9 @@ def _try_parse_line(line):
     desc = re.sub(r'\s+[xX]\s*\d*\s*$', '', desc).strip()
     # De-duplicate repeated phrase prefix (Nutri-Go activity+description columns merged)
     desc = _deduplicate_description(desc)
+    # Re-append pack size spec so _detect_pack_multiplier can extract e.g. 12 from (12x60g)
+    if _captured_size_spec and _captured_size_spec not in desc:
+        desc = f'{desc} {_captured_size_spec}'.strip()
 
     if not desc or len(desc) < 3:
         return None
