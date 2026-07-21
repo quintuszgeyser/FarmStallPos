@@ -1,9 +1,9 @@
 # Start PostgreSQL if not running
-$pgBin   = "C:\Users\Quintusz\PostgreSQL\pgsql\bin"
+$pgBin   = "C:\Program Files\PostgreSQL\18\bin"
 $pgCtl   = "$pgBin\pg_ctl.exe"
-$pgData  = "C:\Users\Quintusz\PostgreSQL\data"
-$pgLog   = "C:\Users\Quintusz\PostgreSQL\pg.log"
-$python  = "$PSScriptRoot\.venv\Scripts\python.exe"
+$pgData  = "C:\Program Files\PostgreSQL\18\data"
+$pgLog   = "$env:TEMP\pg_prod.log"
+$python  = "C:\Python314\python.exe"
 
 $status = & $pgCtl status -D $pgData 2>&1
 if ($status -match "server is running") {

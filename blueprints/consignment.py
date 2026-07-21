@@ -20,7 +20,7 @@ def api_consignment_summary():
 
     liabilities = ConsignmentLiability.query.filter_by(status='outstanding').all()
 
-    total_outstanding = sum(Decimal(str(l.amount_owed)) for l in liabilities)
+    total_outstanding = sum((Decimal(str(l.amount_owed)) for l in liabilities), Decimal('0'))
 
     by_supplier = {}
     for lib in liabilities:
@@ -54,11 +54,11 @@ def api_consignment_summary():
     month_settlements = ConsignmentSettlement.query.filter(
         ConsignmentSettlement.created_at >= month_start
     ).all()
-    settled_this_month = sum(Decimal(str(s.total_amount)) for s in month_settlements)
+    settled_this_month = sum((Decimal(str(s.total_amount)) for s in month_settlements), Decimal('0'))
 
     return jsonify({
         'total_outstanding': float(total_outstanding.quantize(Decimal('0.01'))),
-        'total_units_pending': float(sum(r['units'] for r in by_supplier.values()).quantize(Decimal('0.01'))),
+        'total_units_pending': float(sum((r['units'] for r in by_supplier.values()), Decimal('0')).quantize(Decimal('0.01'))),
         'unsold_stock_value': float(unsold_value.quantize(Decimal('0.01'))),
         'settled_this_month': float(settled_this_month.quantize(Decimal('0.01'))),
         'suppliers': [
