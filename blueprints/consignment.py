@@ -150,6 +150,7 @@ def api_consignment_settle():
     data = request.json or {}
     sid  = data.get('supplier_id')
     note = str(data.get('note') or '').strip() or None
+    settlement_amount_raw = data.get('settlement_amount')
 
     try:
         sid = int(sid)
@@ -162,19 +163,34 @@ def api_consignment_settle():
 
     liabilities = (ConsignmentLiability.query
                    .filter_by(supplier_id=sid, status='outstanding')
+                   .order_by(ConsignmentLiability.created_at.asc())
                    .with_for_update()
                    .all())
 
     if not liabilities:
         return jsonify({'error': 'No outstanding liabilities for this supplier'}), 400
 
-    total = sum(Decimal(str(l.amount_owed)) for l in liabilities)
-    u     = current_user()
-    now   = datetime.utcnow()
+    total_owed = sum(Decimal(str(l.amount_owed)) for l in liabilities)
+    u          = current_user()
+    now        = datetime.utcnow()
+
+    # Determine actual payment amount (may be partial)
+    if settlement_amount_raw is not None:
+        try:
+            settlement_amount = Decimal(str(settlement_amount_raw)).quantize(Decimal('0.01'))
+        except Exception:
+            return jsonify({'error': 'Invalid settlement_amount'}), 400
+        if settlement_amount <= 0:
+            return jsonify({'error': 'settlement_amount must be positive'}), 400
+        settlement_amount = min(settlement_amount, total_owed)
+    else:
+        settlement_amount = total_owed
+
+    partial = settlement_amount < total_owed
 
     settlement = ConsignmentSettlement(
         supplier_id=sid,
-        total_amount=float(total.quantize(Decimal('0.01'))),
+        total_amount=float(settlement_amount.quantize(Decimal('0.01'))),
         note=note,
         created_by=u.id if u else None,
         created_at=now,
@@ -182,7 +198,13 @@ def api_consignment_settle():
     db.session.add(settlement)
     db.session.flush()  # get settlement.id
 
+    # Settle liabilities oldest-first up to settlement_amount
+    remaining = settlement_amount
+    lines_settled = 0
     for lib in liabilities:
+        lib_amount = Decimal(str(lib.amount_owed))
+        if remaining <= 0:
+            break
         db.session.add(ConsignmentSettlementLine(
             settlement_id=settlement.id,
             liability_id=lib.id,
@@ -191,19 +213,23 @@ def api_consignment_settle():
             batch_id=lib.batch_id,
             qty=lib.qty_consumed,
             unit_cost=lib.unit_cost,
-            amount=lib.amount_owed,
+            amount=float(min(lib_amount, remaining).quantize(Decimal('0.01'))),
         ))
         lib.status        = 'settled'
         lib.settlement_id = settlement.id
         lib.settled_at    = now
+        remaining -= lib_amount
+        lines_settled += 1
 
     db.session.commit()
     return jsonify({
         'ok': True,
         'settlement_id': settlement.id,
         'supplier_name': supplier.name,
-        'total_amount': float(total.quantize(Decimal('0.01'))),
-        'lines_settled': len(liabilities),
+        'settlement_amount': float(settlement_amount.quantize(Decimal('0.01'))),
+        'total_owed': float(total_owed.quantize(Decimal('0.01'))),
+        'lines_settled': lines_settled,
+        'partial': partial,
     })
 
 

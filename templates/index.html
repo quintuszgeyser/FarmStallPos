@@ -3827,9 +3827,17 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="consignment-settle-sid">
-        <p class="mb-2">Settling all outstanding liabilities for: <strong id="consignment-settle-supplier-name"></strong></p>
-        <div class="mt-2">
-          <label class="form-label small fw-semibold mb-1">Settlement note <span class="text-muted fw-normal">(optional)</span></label>
+        <p class="mb-2">Settling outstanding liabilities for: <strong id="consignment-settle-supplier-name"></strong></p>
+        <p class="mb-2 small text-muted">Total outstanding: <strong id="consignment-settle-total" class="text-dark"></strong></p>
+        <div class="mb-2">
+          <label class="form-label small fw-semibold mb-1">Amount paid <span class="text-muted fw-normal">(leave blank to pay full amount)</span></label>
+          <div class="input-group input-group-sm">
+            <span class="input-group-text">R</span>
+            <input type="number" class="form-control" id="consignment-settle-amount" min="0.01" step="0.01" placeholder="Full amount">
+          </div>
+        </div>
+        <div>
+          <label class="form-label small fw-semibold mb-1">Note <span class="text-muted fw-normal">(optional)</span></label>
           <input type="text" class="form-control form-control-sm" id="consignment-settle-note" placeholder="e.g. July 2026 settlement">
         </div>
       </div>

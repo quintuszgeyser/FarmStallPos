@@ -8608,25 +8608,40 @@ async function openConsignmentSupplierDrilldown(sid) {
   }
 }
 
-function openConsignmentSettleModal() {
+async function openConsignmentSettleModal() {
   const sel = document.getElementById('consignment-settle-supplier');
   const sid = sel ? parseInt(sel.value) : 0;
   if (!sid) { toast('Select a supplier first', 'warning'); return; }
   const label = sel.options[sel.selectedIndex]?.text || '';
   document.getElementById('consignment-settle-supplier-name').textContent = label;
   document.getElementById('consignment-settle-note').value = '';
+  document.getElementById('consignment-settle-amount').value = '';
   document.getElementById('consignment-settle-sid').value = sid;
+  const totalEl = document.getElementById('consignment-settle-total');
+  totalEl.textContent = '…';
   bootstrap.Modal.getOrCreateInstance(document.getElementById('consignmentSettleModal')).show();
+  try {
+    const j = await api(`/api/consignment/supplier/${sid}`);
+    const total = j.outstanding ?? j.outstanding_total ?? 0;
+    totalEl.textContent = `R${fmt(total)}`;
+    document.getElementById('consignment-settle-amount').placeholder = fmt(total);
+  } catch (_) { totalEl.textContent = ''; }
 }
 
-document.getElementById('btn-consignment-settle-confirm')?.addEventListener('click', async () => {
-  const sid  = parseInt(document.getElementById('consignment-settle-sid')?.value || 0);
-  const note = document.getElementById('consignment-settle-note')?.value?.trim() || '';
+// Event delegation — modal is rendered after this script tag
+document.addEventListener('click', async (e) => {
+  if (!e.target.closest('#btn-consignment-settle-confirm')) return;
+  const sid    = parseInt(document.getElementById('consignment-settle-sid')?.value || 0);
+  const note   = document.getElementById('consignment-settle-note')?.value?.trim() || '';
+  const rawAmt = document.getElementById('consignment-settle-amount')?.value?.trim();
+  const body   = { supplier_id: sid, note };
+  if (rawAmt) body.settlement_amount = parseFloat(rawAmt);
   if (!sid) return;
   try {
-    const j = await api('/api/consignment/settle', { method: 'POST', body: JSON.stringify({ supplier_id: sid, note }) });
+    const j = await api('/api/consignment/settle', { method: 'POST', body: JSON.stringify(body) });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('consignmentSettleModal')).hide();
-    toast(`Settled R${fmt(j.total_amount)} for ${j.supplier_name} (${j.lines_settled} lines)`, 'success', 5000);
+    const partial = j.partial ? ` (partial — R${fmt(j.settlement_amount)} of R${fmt(j.total_owed)})` : '';
+    toast(`Settled R${fmt(j.settlement_amount)} for ${j.supplier_name} (${j.lines_settled} lines)${partial}`, 'success', 5000);
     loadConsignmentStats().catch(() => {});
   } catch (e) { toast(e.message, 'error'); }
 });
