@@ -165,13 +165,13 @@ function displayCost(cost_per_base, qty_base, unitType) {
 // Build unit dropdown options including package unit
 function buildUnitOptions(unitType, packageSize, packageUnit) {
   const opts = [];
-  if (packageSize && packageUnit) {
-    opts.push({ value: packageUnit, label: `${packageUnit} (${displayQty(packageSize, unitType)} each)`, conv: packageSize });
-  }
   if (UNITS[unitType]) {
     UNITS[unitType].display.forEach(u => {
       if (u !== packageUnit) opts.push({ value: u, label: u, conv: UNITS[unitType].toBase[u] });
     });
+  }
+  if (packageSize && packageUnit) {
+    opts.push({ value: packageUnit, label: `${packageUnit} (${displayQty(packageSize, unitType)} each)`, conv: packageSize });
   }
   return opts;
 }
@@ -5140,16 +5140,6 @@ function addPurchaseLine() {
       </div>
       <div class="col-4"><input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="Total R" data-price></div>
     </div>
-    <div class="row g-2 mt-1" data-consignment-cost-row style="display:none">
-      <div class="col-12">
-        <div class="input-group input-group-sm">
-          <span class="input-group-text">Consignment cost R</span>
-          <input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="Settlement cost per unit" data-consignment-unit-cost>
-          <span class="input-group-text text-muted small">per base unit</span>
-        </div>
-        <div class="form-text">Settlement cost paid to supplier per unit sold (separate from inventory cost above).</div>
-      </div>
-    </div>
     <div class="small mt-1" data-line-addl-preview></div>
   `;
 
@@ -5167,15 +5157,8 @@ function addPurchaseLine() {
     }
   }
 
-  function updateConsignmentField(pid) {
-    const p = STATE.products.find(pr => pr.id === parseInt(pid));
-    const row = line.querySelector('[data-consignment-cost-row]');
-    if (row) row.style.display = p?.is_consignment ? '' : 'none';
-  }
-
   line.querySelector('[data-product-select]')?.addEventListener('change', e => {
     updateUnitsForProduct(e.target.value);
-    updateConsignmentField(e.target.value);
   });
   line.querySelector('[data-price]')?.addEventListener('input', _updatePurchaseRunCostPreview);
 
@@ -5252,9 +5235,7 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     if (!productId) return toast('Please select a product for all lines', 'warning');
     if (qty <= 0)   return toast('Quantity must be greater than 0', 'warning');
     if (price < 0)  return toast('Price cannot be negative', 'warning');
-    const cucRaw = lineEl.querySelector('[data-consignment-unit-cost]')?.value;
     const lineObj = { product_id: productId, qty, unit, total_price: price };
-    if (cucRaw && parseFloat(cucRaw) > 0) lineObj.consignment_unit_cost = parseFloat(cucRaw);
     lines.push(lineObj);
   }
 

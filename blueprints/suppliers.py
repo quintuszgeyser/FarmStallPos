@@ -46,7 +46,7 @@ _DATE_PATTERNS = [
 
 _SKIP_RE = re.compile(
     # Word-boundary patterns (keyword must appear as a whole word)
-    r'\b(?:total|subtotal|sub.total|balance\s+due|vat|tax\s+summary|payment|paid|discount'
+    r'\b(?:total|subtotal|sub.total|balance\s+due|vat|tax\b|payment|paid|discount'
     r'|thank\s+you|powered\s+by|page\s+\d|terms|conditions|banking\s+details|account\s+holder'
     r'|branch\s+code|swift|bill\s+to|ship\s+to|sold\s+to|delivery\s+details'
     r'|invoice\s+date|due\s+date|order\s+date|customer\s+order|customer\s+vat'
@@ -55,13 +55,21 @@ _SKIP_RE = re.compile(
     r'|reg\s+number|registration\s+number|company\s+id|vat\s+reg|vat\s+no'
     r'|document\s+no|ref\s+no|purchase\s+order|bill\s+from|remit\s+to|prepared\s+by'
     r'|south\s+africa|western\s+cape|gauteng|kwazulu'
-    r'|eikeboom|hermon|cape\s+town|durbanville|sandton|melrose|boston)\b'
+    r'|eikeboom|hermon|cape\s+town|durbanville|sandton|melrose|boston'
+    r'|first\s+national\s+bank|nedbank|absa|standard\s+bank|capitec\s+bank|fnb'
+    r'|account\s+holder|branch\s+name|universal\s+branch|account\s+no\b'
+    r'|waybill|tracking\s+no|tracking\s+number|box\s+\d+\s+of\s+\d+'
+    r'|receiver|consignee|consignor|courier\s+ref)\b'
+    r'|\b\d{4,5}\b\s*$'    # lines ending with a postcode (SA 4-digit)
     # Non-word-boundary patterns (end in colon, period, or slash — \b fails after them)
-    r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by)\s*:'
+    r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by|sales\s+rep|name|additional\s+charges?)\s*:'
+    r'|(?:additional\s+charges?)'
     r'|(?:tel|fax|email|www)\s*[.:]'
     r'|p\.o\.|s\.o\.'
     # Invoice/order header lines like "Order 015832", "Invoice 12345"
     r'|\border\s+\d{5,}'
+    # Page number indicators
+    r'|\bpage\s*[:/#]\s*\d'
     # Contact footer lines: "Name, 082 XXXXXXX, email@domain" — phone number pattern
     r'|\b0[678]\d\s*\d{3}\s*\d{4}\b'
     # Lines containing an email address
@@ -76,6 +84,15 @@ _HEADER_RE = re.compile(
 )
 
 _SHIPPING_RE = re.compile(r'\b(shipping|courier|freight|transport|delivery|postage|carriage)\b', re.IGNORECASE)
+
+# Phrases that indicate a non-product footer/header line — used to reject continuation candidates
+_CONTINUATION_SKIP_RE = re.compile(
+    r'\b(?:tax\s+invoice|received\s+in|if\s+you\s+have|thank\s+you|your\s+order|banking\s+detail'
+    r'|amount\s+due|order\s+total|subtotal|delivery\s+note|goods\s+received|good\s+order'
+    r'|this\s+invoice|please\s+pay|payment\s+due|enquiries|questions)\b'
+    r'|^\s*[#*─═]+\s*$',
+    re.IGNORECASE,
+)
 
 # Patterns that unambiguously start a new product line in a merged description cell
 _PRODUCT_START_RE = re.compile(
@@ -131,7 +148,7 @@ def _extract_from_tables(pdf):
             qty_col   = next((i for i, h in enumerate(header) if h in ('qty', 'quantity') or h.startswith('qty')), None)
             total_col = next((i for i, h in enumerate(header) if 'total' in h or 'amount' in h or 'nett' in h), None)
 
-            if desc_col is None or total_col is None:
+            if desc_col is None or total_col is None or desc_col == total_col:
                 continue
 
             for row in table[1:]:
@@ -309,8 +326,12 @@ def _try_parse_line(line):
     # Strip leading date (YYYY/MM/DD or DD/MM/YYYY)
     line = re.sub(r'^\d{4}[/.-]\d{2}[/.-]\d{2}\s+', '', line).strip()
     line = re.sub(r'^\d{1,2}[/.-]\d{2}[/.-]\d{2,4}\s+', '', line).strip()
+    # Strip SA company registration numbers at line start (e.g. "2010/", "2010/123456/07 ")
+    line = re.sub(r'^\d{4}/(?:\d+/\d+)?\s*', '', line).strip()
     # Strip leading line number (a bare integer followed by space)
     line = re.sub(r'^\d+\s+', '', line, count=1).strip()
+    # Re-apply item code strip after line number removal (e.g. "1 SCCBM01 Product" → "Product")
+    line = re.sub(r'^(?:[A-Z][A-Z0-9]{3,}\s*[-–]?\s*)+', '', line).strip()
 
     if len(line) < 4:
         return None
@@ -1060,12 +1081,28 @@ def _parse_invoice_pdf(content):
     # Fall back to line-by-line text parsing
     lines    = []
     shipping = 0.0
+    # Continuation lines: lines with alpha content but no price tokens, collected after a parsed item.
+    _cont_buf = []
+
+    def _flush_cont():
+        if lines and _cont_buf:
+            cont = _deduplicate_description(' '.join(_cont_buf))
+            # Only append if it adds new words not already in the description
+            cur = lines[-1]['description']
+            tail_words = set(cont.lower().split())
+            cur_words  = set(cur.lower().split())
+            extra = [w for w in cont.split() if w.lower() not in cur_words]
+            if extra:
+                lines[-1]['description'] = _deduplicate_description(cur + ' ' + ' '.join(extra))
+        _cont_buf.clear()
 
     for raw in full_text.split('\n'):
         raw = raw.strip()
         if not raw:
+            _flush_cont()
             continue
         if _SHIPPING_RE.search(raw) and not _SKIP_RE.search(raw):
+            _flush_cont()
             nums = re.findall(r'R?\s*(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2})', raw)
             if nums:
                 val = _clean_num(nums[-1])
@@ -1074,7 +1111,14 @@ def _parse_invoice_pdf(content):
             continue
         item = _try_parse_line(raw)
         if item:
+            _flush_cont()
             lines.append(item)
+        elif lines and re.search(r'[a-zA-Z]{3,}', raw) and not _SKIP_RE.search(raw) and not _HEADER_RE.match(raw) and not _CONTINUATION_SKIP_RE.search(raw):
+            # Likely a description continuation (no price) — collect for the previous item
+            _cont_buf.append(_deduplicate_description(raw.strip()))
+        else:
+            _flush_cont()
+    _flush_cont()
 
     # De-duplicate lines that appear twice (some PDFs repeat description in adjacent columns)
     seen = set()
@@ -1478,6 +1522,8 @@ def api_suppliers_purchase_run(sid):
         cost_per_base    = final_cost / Decimal(str(pl['qty_base']))
         _ownership  = 'CONSIGNMENT' if pl.get('is_consignment') else 'NORMAL'
         _cuc        = pl.get('consignment_unit_cost')
+        if _ownership == 'CONSIGNMENT' and _cuc is None and pl['qty_base']:
+            _cuc = float((pl['base_cost_total'] / Decimal(str(pl['qty_base']))).quantize(Decimal('0.0001')))
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],

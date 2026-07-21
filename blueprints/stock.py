@@ -259,10 +259,13 @@ def api_stock_receive():
     u   = current_user()
     now = datetime.utcnow()
 
+    _is_consign = bool(getattr(p, 'is_consignment', False))
+    _cuc = float((base_cost_total / Decimal(str(qty_base))).quantize(Decimal('0.0001'))) if _is_consign and qty_base else None
     batch = StockBatch(
         product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=qty_base,
         cost_per_base_unit=cost_per_base,
-        ownership_type='CONSIGNMENT' if getattr(p, 'is_consignment', False) else 'NORMAL',
+        ownership_type='CONSIGNMENT' if _is_consign else 'NORMAL',
+        consignment_unit_cost=_cuc,
         base_cost_total=base_cost_total,
         additional_costs=_json.dumps(addl_costs) if addl_costs else None,
         supplier_id=supplier_id, user_id=u.id if u else None,

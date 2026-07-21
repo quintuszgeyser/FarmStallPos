@@ -1824,6 +1824,34 @@ def strong_migrate():
               )
         """)
 
+        # Backfill ConsignmentLiability for stock consumptions that happened before the
+        # ownership_type fix was deployed (consignment_liabilities table may be empty even
+        # though batches were consumed).
+        pg_try("""
+            INSERT INTO consignment_liabilities
+                (supplier_id, product_id, batch_id, sale_id, qty_consumed, unit_cost, amount_owed, status, created_at)
+            SELECT
+                sb.supplier_id,
+                sc.ingredient_id,
+                sc.batch_id,
+                sc.sale_id,
+                CAST(sc.qty_consumed_base AS FLOAT),
+                CAST(COALESCE(sb.consignment_unit_cost, sb.cost_per_base_unit) AS FLOAT),
+                ROUND(CAST(sc.qty_consumed_base AS NUMERIC) *
+                      COALESCE(sb.consignment_unit_cost, sb.cost_per_base_unit), 2),
+                'outstanding',
+                sc.consumed_at
+            FROM stock_consumption sc
+            JOIN stock_batches sb ON sc.batch_id = sb.id
+            WHERE sb.ownership_type = 'CONSIGNMENT'
+              AND sb.supplier_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM consignment_liabilities cl
+                  WHERE cl.batch_id = sc.batch_id
+                    AND cl.sale_id  = sc.sale_id
+              )
+        """)
+
         # Legacy backfill
         sales_count = conn.execute(text("SELECT COUNT(*) FROM sales")).scalar_one()
         if sales_count == 0:
