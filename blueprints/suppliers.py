@@ -13,7 +13,8 @@ from sqlalchemy import func
 from helpers import require_login, require_role, current_user, _gen_barcode
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
-                    SupplierInvoiceTemplate, SupplierProductMapping)
+                    SupplierInvoiceTemplate, SupplierProductMapping,
+                    SupplierInvoiceLearningEvent)
 
 bp = Blueprint('suppliers', __name__)
 
@@ -518,10 +519,91 @@ def _detect_pack_multiplier(raw_desc, invoice_qty, stock_qty):
     return mult, 0.50
 
 
-def _run_learning(sid, scan_result, confirmed_lines):
+def _normalize_invoice_number(inv_num):
+    """Normalise invoice ref for duplicate detection: 'INV-3388' → '3388'."""
+    if not inv_num:
+        return None
+    digits = re.sub(r'[^0-9]', '', str(inv_num))
+    return digits if digits else str(inv_num).strip().lower()
+
+
+def _apply_mappings(sid, lines, document_type='unknown'):
+    """Apply learned mappings to parsed scan lines.
+    Each line gets: suggested_product_id, suggested_product_name, pack_multiplier,
+    confidence_tier (auto/review/suggest), mapping_id, mapping_state."""
+    if not lines or not sid:
+        return lines
+
+    enriched = []
+    for line in lines:
+        raw_desc = line.get('description', '')
+        if not raw_desc:
+            enriched.append(line)
+            continue
+
+        norm_desc = _normalize_desc(raw_desc)
+        desc_hash = _desc_hash(norm_desc)
+        sku       = line.get('sku') or ''
+        mapping   = None
+
+        # 1. SKU match — strongest signal
+        if sku:
+            mapping = (SupplierProductMapping.query
+                       .filter_by(supplier_id=sid, supplier_sku=sku)
+                       .filter(SupplierProductMapping.mapping_state.notin_(['REJECTED', 'IGNORED']))
+                       .first())
+
+        # 2. Hash + document_type
+        if not mapping:
+            mapping = (SupplierProductMapping.query
+                       .filter_by(supplier_id=sid, raw_description_hash=desc_hash, document_type=document_type)
+                       .filter(SupplierProductMapping.mapping_state.notin_(['REJECTED', 'IGNORED']))
+                       .first())
+
+        # 3. Hash + 'unknown' fallback
+        if not mapping and document_type != 'unknown':
+            mapping = (SupplierProductMapping.query
+                       .filter_by(supplier_id=sid, raw_description_hash=desc_hash, document_type='unknown')
+                       .filter(SupplierProductMapping.mapping_state.notin_(['REJECTED', 'IGNORED']))
+                       .first())
+
+        if not mapping:
+            enriched.append(line)
+            continue
+
+        conf  = float(mapping.confidence)
+        state = mapping.mapping_state
+
+        if state == 'CONFIRMED' or conf >= 0.85:
+            tier = 'auto'
+        elif conf >= 0.60:
+            tier = 'review'
+        else:
+            tier = 'suggest'
+
+        prod = db.session.get(Product, mapping.product_id) if mapping.product_id else None
+
+        enriched_line = dict(line)
+        enriched_line['mapping_id']      = mapping.id
+        enriched_line['mapping_state']   = state
+        enriched_line['confidence_tier'] = tier
+        enriched_line['confidence']      = conf
+
+        if mapping.product_id and mapping.line_type not in ('SHIPPING', 'UNKNOWN'):
+            enriched_line['suggested_product_id']   = mapping.product_id
+            enriched_line['suggested_product_name'] = prod.name if prod else ''
+            enriched_line['pack_multiplier']        = float(mapping.pack_multiplier)
+
+        enriched.append(enriched_line)
+
+    return enriched
+
+
+def _run_learning(sid, scan_result, confirmed_lines, invoice_id=None):
     """
-    After a purchase run is confirmed/edited, compare confirmed lines to the
+    After a purchase run is confirmed/received, compare confirmed lines to the
     original scan result and update supplier_product_mappings.
+    New mappings are created as SUGGESTED; learning events are written for audit.
 
     confirmed_lines: [{product_id, product_name, qty, total_price, supplier_sku?}]
     Returns list of learned-mapping dicts for UI display.
@@ -530,6 +612,7 @@ def _run_learning(sid, scan_result, confirmed_lines):
         return []
 
     scan_lines = scan_result.get('lines') or []
+    doc_type   = scan_result.get('document_type', 'unknown')
     if not scan_lines:
         return []
 
@@ -545,12 +628,13 @@ def _run_learning(sid, scan_result, confirmed_lines):
         if not raw_desc:
             continue
 
-        norm_desc = _normalize_desc(raw_desc)
-        desc_hash = _desc_hash(norm_desc)
+        norm_desc  = _normalize_desc(raw_desc)
+        desc_hash  = _desc_hash(norm_desc)
+        tokens_str = ' '.join(sorted(set(re.sub(r'[^a-z0-9]', ' ', norm_desc).split())))
 
-        product_id  = ci.get('product_id')
-        stock_qty   = float(ci.get('qty', 1))
-        inv_qty     = float(si.get('qty', 1))
+        product_id = ci.get('product_id')
+        stock_qty  = float(ci.get('qty', 1))
+        inv_qty    = float(si.get('qty', 1))
 
         # Classify line type
         if _SHIPPING_RE.search(raw_desc):
@@ -563,32 +647,58 @@ def _run_learning(sid, scan_result, confirmed_lines):
 
         pack_mult, mult_conf = _detect_pack_multiplier(raw_desc, inv_qty, stock_qty)
 
+        # Lookup: doc_type-specific first, then 'unknown' fallback
         existing = SupplierProductMapping.query.filter_by(
-            supplier_id=sid, raw_description_hash=desc_hash,
+            supplier_id=sid, raw_description_hash=desc_hash, document_type=doc_type,
         ).first()
+        if not existing:
+            existing = SupplierProductMapping.query.filter_by(
+                supplier_id=sid, raw_description_hash=desc_hash, document_type='unknown',
+            ).first()
 
         if existing:
-            prev_conf  = float(existing.confidence)
+            # Never modify REJECTED or IGNORED — user explicitly set those
+            if existing.mapping_state in ('REJECTED', 'IGNORED'):
+                continue
+
+            old_conf    = float(existing.confidence)
+            old_prod_id = existing.product_id
+            old_state   = existing.mapping_state
             prod_changed = product_id and existing.product_id != product_id
             mult_changed = abs(float(existing.pack_multiplier) - pack_mult) > 0.01
+            new_conf     = old_conf
 
             if prod_changed:
                 existing.product_id = product_id
-                prev_conf = max(0.10, prev_conf - 0.30)
+                new_conf = max(0.10, new_conf - 0.30)
             if mult_changed:
                 existing.pack_multiplier = pack_mult
-                prev_conf = max(0.10, prev_conf - 0.20)
+                new_conf = max(0.10, new_conf - 0.20)
             if not prod_changed and not mult_changed:
-                prev_conf = min(0.95, prev_conf + 0.10)
+                new_conf = min(0.95, new_conf + 0.10)
 
-            existing.line_type        = line_type
-            existing.confidence       = prev_conf
-            existing.correction_count += 1
-            existing.last_used_at     = now
-            existing.updated_at       = now
+            existing.line_type            = line_type
+            existing.confidence           = new_conf
+            existing.correction_count    += 1
+            existing.raw_description_tokens = tokens_str
+            existing.last_used_at         = now
+            existing.updated_at           = now
+            if doc_type != 'unknown':
+                existing.document_type = doc_type
+
+            db.session.flush()
+            db.session.add(SupplierInvoiceLearningEvent(
+                invoice_id=invoice_id, supplier_id=sid, mapping_id=existing.id,
+                raw_description=raw_desc, matched_product_id=product_id,
+                action='updated', old_confidence=old_conf, new_confidence=new_conf,
+                old_product_id=old_prod_id, new_product_id=product_id,
+                old_state=old_state, new_state=existing.mapping_state,
+                match_score=score, created_at=now,
+            ))
 
             learned.append({
-                'action': 'updated', 'raw_description': raw_desc,
+                'action': 'updated', 'mapping_id': existing.id, 'mapping_state': existing.mapping_state,
+                'raw_description': raw_desc,
                 'product_id': existing.product_id, 'product_name': ci.get('product_name', ''),
                 'pack_multiplier': pack_mult, 'invoice_qty': inv_qty, 'stock_qty': stock_qty,
                 'line_type': line_type, 'confidence': float(existing.confidence),
@@ -601,21 +711,36 @@ def _run_learning(sid, scan_result, confirmed_lines):
                 raw_description_original=raw_desc,
                 raw_description_normalized=norm_desc,
                 raw_description_hash=desc_hash,
+                raw_description_tokens=tokens_str,
+                document_type=doc_type,
                 supplier_sku=si.get('sku') or None,
                 product_id=product_id if line_type == 'STOCK_ITEM' else None,
                 line_type=line_type,
                 pack_multiplier=pack_mult,
                 invoice_unit=si.get('unit', 'unit'),
+                mapping_state='SUGGESTED',
                 correction_count=1,
                 confidence=init_conf,
+                first_learned_at=now,
                 last_used_at=now,
                 created_at=now,
                 updated_at=now,
             )
             db.session.add(mapping)
+            db.session.flush()  # get mapping.id before writing event
+
+            db.session.add(SupplierInvoiceLearningEvent(
+                invoice_id=invoice_id, supplier_id=sid, mapping_id=mapping.id,
+                raw_description=raw_desc, matched_product_id=product_id,
+                action='created', old_confidence=None, new_confidence=init_conf,
+                old_product_id=None, new_product_id=product_id,
+                old_state=None, new_state='SUGGESTED',
+                match_score=score, created_at=now,
+            ))
 
             learned.append({
-                'action': 'created', 'raw_description': raw_desc,
+                'action': 'created', 'mapping_id': mapping.id, 'mapping_state': 'SUGGESTED',
+                'raw_description': raw_desc,
                 'product_id': product_id, 'product_name': ci.get('product_name', ''),
                 'pack_multiplier': pack_mult, 'invoice_qty': inv_qty, 'stock_qty': stock_qty,
                 'line_type': line_type, 'confidence': init_conf,
@@ -623,9 +748,10 @@ def _run_learning(sid, scan_result, confirmed_lines):
             })
 
     # Update/create supplier invoice template with detected document type
-    doc_type    = scan_result.get('document_type', 'unknown')
     layout_type = scan_result.get('layout_type', 'unknown')
-    tmpl = SupplierInvoiceTemplate.query.filter_by(supplier_id=sid, active=True).first()
+    tmpl = SupplierInvoiceTemplate.query.filter_by(supplier_id=sid, document_type=doc_type).first()
+    if not tmpl:
+        tmpl = SupplierInvoiceTemplate.query.filter_by(supplier_id=sid, active=True).first()
     if not tmpl:
         tmpl = SupplierInvoiceTemplate(
             supplier_id=sid, document_type=doc_type, layout_type=layout_type,
@@ -745,6 +871,8 @@ def api_supplier_invoice_parse(sid):
 
     try:
         result = _parse_invoice_pdf(content)
+        # Enrich lines with learned mappings for this supplier
+        result['lines'] = _apply_mappings(sid, result.get('lines', []), result.get('document_type', 'unknown'))
         return jsonify(result)
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 422
@@ -917,16 +1045,31 @@ def api_suppliers_purchase_run(sid):
     if not s:
         return jsonify({'error': 'Not found'}), 404
 
-    data            = request.json or {}
-    lines           = data.get('lines', [])
-    date_str        = data.get('date')
-    addl_costs_raw  = data.get('additional_costs', [])
-    invoice_ref     = str(data.get('invoice_ref') or '').strip() or None
+    data               = request.json or {}
+    lines              = data.get('lines', [])
+    date_str           = data.get('date')
+    addl_costs_raw     = data.get('additional_costs', [])
+    invoice_ref        = str(data.get('invoice_ref') or '').strip() or None
     invoice_addl_total = data.get('invoice_additional_total')
-    scan_result     = data.get('scan_result')   # original parser output — triggers learning
+    scan_result        = data.get('scan_result')   # original parser output — triggers learning
+    bypass_dup         = bool(data.get('bypass_duplicate_check', False))
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
+
+    # Duplicate invoice detection — soft block; caller re-submits with bypass_duplicate_check=true
+    if invoice_ref and not bypass_dup:
+        norm_ref = _normalize_invoice_number(invoice_ref)
+        if norm_ref:
+            for existing_inv in SupplierInvoice.query.filter_by(supplier_id=sid).all():
+                if _normalize_invoice_number(existing_inv.invoice_number) == norm_ref:
+                    return jsonify({
+                        'duplicate_warning':      True,
+                        'existing_invoice_id':    existing_inv.id,
+                        'existing_invoice_number': existing_inv.invoice_number,
+                        'existing_date':          existing_inv.date.isoformat() if existing_inv.date else None,
+                        'existing_total':         float(existing_inv.total or 0),
+                    })
 
     from datetime import date as _date
     purchase_date = datetime.now()
@@ -1102,7 +1245,7 @@ def api_suppliers_purchase_run(sid):
     learned = []
     if scan_result:
         try:
-            learned = _run_learning(sid, scan_result, confirmed_for_learning)
+            learned = _run_learning(sid, scan_result, confirmed_for_learning, invoice_id=run_id)
         except Exception as _le:
             current_app.logger.warning(f'Learning step failed for supplier {sid}: {_le}')
 
@@ -1141,6 +1284,9 @@ def api_supplier_product_mappings(sid):
             'invoice_unit':        m.invoice_unit,
             'confidence':          float(m.confidence),
             'correction_count':    m.correction_count,
+            'mapping_state':       getattr(m, 'mapping_state', 'SUGGESTED'),
+            'document_type':       getattr(m, 'document_type', 'unknown'),
+            'first_learned_at':    m.first_learned_at.date().isoformat() if getattr(m, 'first_learned_at', None) else None,
             'last_used_at':        m.last_used_at.date().isoformat() if m.last_used_at else None,
         })
     return jsonify(result)
@@ -1156,6 +1302,31 @@ def api_supplier_product_mapping_delete(sid, mid):
     db.session.delete(m)
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@bp.route('/api/suppliers/<int:sid>/product-mappings/<int:mid>', methods=['PATCH'])
+def api_supplier_product_mapping_patch(sid, mid):
+    """Update mapping_state: SUGGESTED | CONFIRMED | REJECTED | IGNORED."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    m = SupplierProductMapping.query.filter_by(id=mid, supplier_id=sid).first()
+    if not m:
+        return jsonify({'error': 'Not found'}), 404
+    data      = request.json or {}
+    new_state = data.get('mapping_state')
+    if new_state not in ('SUGGESTED', 'CONFIRMED', 'REJECTED', 'IGNORED'):
+        return jsonify({'error': 'mapping_state must be SUGGESTED, CONFIRMED, REJECTED, or IGNORED'}), 400
+    old_state = getattr(m, 'mapping_state', 'SUGGESTED')
+    m.mapping_state = new_state
+    m.updated_at    = datetime.utcnow()
+    db.session.add(SupplierInvoiceLearningEvent(
+        supplier_id=sid, mapping_id=m.id,
+        raw_description=m.raw_description_original, matched_product_id=m.product_id,
+        action='state_changed', old_state=old_state, new_state=new_state,
+        created_at=datetime.utcnow(),
+    ))
+    db.session.commit()
+    return jsonify({'ok': True, 'mapping_state': new_state})
 
 
 _ALLOWED_DOC_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt'}

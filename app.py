@@ -1476,6 +1476,44 @@ def strong_migrate():
         pg_try("CREATE INDEX IF NOT EXISTS ix_spm_hash ON supplier_product_mappings (supplier_id, raw_description_hash)")
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN scan_raw_json TEXT")
 
+        # Phase 2b: additional columns on supplier_product_mappings
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS mapping_state TEXT NOT NULL DEFAULT 'SUGGESTED'")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS document_type TEXT NOT NULL DEFAULT 'unknown'")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS first_learned_at TIMESTAMP")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS default_overhead_allocation TEXT")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS purchase_unit TEXT")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS contains_qty INTEGER")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS item_size NUMERIC(10,4)")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS item_size_unit TEXT")
+        pg_try("ALTER TABLE supplier_product_mappings ADD COLUMN IF NOT EXISTS raw_description_tokens TEXT")
+        # Replace old UNIQUE(supplier_id, hash) with UNIQUE(supplier_id, hash, document_type)
+        pg_try("ALTER TABLE supplier_product_mappings DROP CONSTRAINT IF EXISTS supplier_product_mappings_supplier_id_raw_description_hash_key")
+        pg_try("CREATE UNIQUE INDEX IF NOT EXISTS uq_spm_supplier_hash_doctype ON supplier_product_mappings (supplier_id, raw_description_hash, document_type)")
+        # UNIQUE on templates per (supplier_id, document_type)
+        pg_try("CREATE UNIQUE INDEX IF NOT EXISTS uq_sit_supplier_doctype ON supplier_invoice_templates (supplier_id, document_type)")
+        # Learning events audit table
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS supplier_invoice_learning_events (
+              id                 SERIAL PRIMARY KEY,
+              invoice_id         INTEGER REFERENCES supplier_invoices(id),
+              supplier_id        INTEGER NOT NULL REFERENCES suppliers(id),
+              mapping_id         INTEGER REFERENCES supplier_product_mappings(id),
+              raw_description    TEXT,
+              matched_product_id INTEGER REFERENCES products(id),
+              action             TEXT NOT NULL,
+              old_confidence     NUMERIC(5,4),
+              new_confidence     NUMERIC(5,4),
+              old_product_id     INTEGER,
+              new_product_id     INTEGER,
+              old_state          TEXT,
+              new_state          TEXT,
+              match_score        NUMERIC(5,4),
+              created_at         TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        pg_try("CREATE INDEX IF NOT EXISTS ix_sile_supplier ON supplier_invoice_learning_events (supplier_id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_sile_invoice  ON supplier_invoice_learning_events (invoice_id)")
+
         # Return tracking: dedicated column instead of void_reason string pattern
         pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_sales_original_sale_id ON sales(original_sale_id)")

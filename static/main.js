@@ -4827,12 +4827,28 @@ document.getElementById('pr-scan-input')?.addEventListener('change', async funct
     if (result.date)           html += `<span><strong>Date:</strong> ${escapeHtml(result.date)}</span>`;
     html += `</div>`;
   }
+  // Document type warning for non-final document types
+  const _warnDocTypes = { proforma: 'Proforma Invoice', sales_order: 'Sales Order', quote: 'Quotation' };
+  if (_warnDocTypes[result.document_type]) {
+    html += `<div class="alert alert-warning py-2 small mb-2">
+      <i class="bi bi-exclamation-triangle me-1"></i>
+      <strong>${escapeHtml(_warnDocTypes[result.document_type])}</strong> — not a final invoice. Confirm before processing stock.
+    </div>`;
+  }
   (result.lines || []).forEach((ln, i) => {
-    // Fuzzy match description against products
-    const match = _fuzzyMatchProduct(ln.description);
-    const matchHtml = match
-      ? `<span class="badge bg-success ms-1" style="font-size:10px" title="Will be matched to existing product">${escapeHtml(match.name)}</span>`
-      : `<span class="badge bg-secondary ms-1" style="font-size:10px">New product</span>`;
+    let matchHtml;
+    if (ln.suggested_product_id && ln.suggested_product_name) {
+      // Server-side learned mapping
+      const tierCls = ln.confidence_tier === 'auto' ? 'success' : ln.confidence_tier === 'review' ? 'warning text-dark' : 'secondary';
+      const tierLbl = ln.confidence_tier === 'auto' ? 'Learned' : ln.confidence_tier === 'review' ? 'Review' : 'Suggested';
+      matchHtml = `<span class="badge bg-${tierCls} ms-1" style="font-size:10px" title="${tierLbl}: ${Math.round((ln.confidence||0)*100)}% confidence">${escapeHtml(ln.suggested_product_name)}</span>`;
+    } else {
+      // Fall back to fuzzy match
+      const match = _fuzzyMatchProduct(ln.description);
+      matchHtml = match
+        ? `<span class="badge bg-success ms-1" style="font-size:10px" title="Fuzzy match">${escapeHtml(match.name)}</span>`
+        : `<span class="badge bg-secondary ms-1" style="font-size:10px">New product</span>`;
+    }
     html += `<div class="d-flex align-items-start gap-1 py-1 ${i > 0 ? 'border-top' : ''}">
       <span class="flex-fill">${escapeHtml(ln.description)}${matchHtml}</span>
       <span class="text-muted ms-2 text-nowrap">×${ln.qty}</span>
@@ -4877,13 +4893,16 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
     if (qtyInput)   qtyInput.value   = ln.qty;
     if (priceInput) priceInput.value = ln.total_price.toFixed(2);
 
-    // Try to pre-select a matching product
-    const match = _fuzzyMatchProduct(ln.description);
-    if (match && productSel) {
-      // Show all products so the option is available
+    // Pre-select product: server-learned mapping takes priority over fuzzy match
+    let selectedProductId = ln.suggested_product_id || null;
+    if (!selectedProductId) {
+      const match = _fuzzyMatchProduct(ln.description);
+      if (match) selectedProductId = match.id;
+    }
+    if (selectedProductId && productSel) {
       const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
       productSel.innerHTML = _buildProductOptions(supplierProductIds, true);
-      productSel.value = match.id;
+      productSel.value = selectedProductId;
       productSel.dispatchEvent(new Event('change'));
     }
 
@@ -5168,6 +5187,19 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
       result = await api(`/api/suppliers/${_currentSupplier.id}/purchase_run`, {
         method: 'POST', body: JSON.stringify(body)
       });
+      // Handle duplicate invoice warning — re-submit with bypass flag if user confirms
+      if (result.duplicate_warning) {
+        const dup = result;
+        const proceed = confirm(
+          `Duplicate invoice detected!\n\n` +
+          `"${dup.existing_invoice_number || '?'}" was already saved on ${dup.existing_date || 'unknown date'} (R${fmt(dup.existing_total || 0)}).\n\n` +
+          `Save this delivery anyway?`
+        );
+        if (!proceed) return;
+        result = await api(`/api/suppliers/${_currentSupplier.id}/purchase_run`, {
+          method: 'POST', body: JSON.stringify({ ...body, bypass_duplicate_check: true })
+        });
+      }
     }
 
     // Upload staged invoice document (new deliveries only — edits keep existing docs)
@@ -5190,7 +5222,7 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
 
     // Show learning summary if anything was learned
     if (result.learned?.length > 0) {
-      _showLearningSummary(result.learned, _currentSupplier.name);
+      _showLearningSummary(result.learned, _currentSupplier.name, _currentSupplier.id);
     }
 
     _editingInvoiceId = null;
@@ -5211,7 +5243,7 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
 
 // ── Invoice learning summary modal ───────────────────────────────────────────
 
-function _showLearningSummary(learned, supplierName) {
+function _showLearningSummary(learned, supplierName, supplierId) {
   const lineTypeLabel = { STOCK_ITEM: 'Stock item', SHIPPING: 'Shipping', UNKNOWN: 'Unknown', DISCOUNT: 'Discount' };
   const confLabel = c => c >= 0.85 ? 'High' : c >= 0.60 ? 'Medium' : 'Low';
   const confClass = c => c >= 0.85 ? 'success' : c >= 0.60 ? 'warning' : 'secondary';
@@ -5224,34 +5256,57 @@ function _showLearningSummary(learned, supplierName) {
       ? `<span class="text-success small">→ ${escapeHtml(m.product_name)}</span>`
       : `<span class="text-muted small">${lineTypeLabel[m.line_type] || m.line_type}</span>`;
     const badge = `<span class="badge bg-${confClass(m.confidence)} ms-1">${confLabel(m.confidence)} (${Math.round(m.confidence * 100)}%)</span>`;
-    return `<tr>
+    const actionBtns = m.mapping_id && supplierId
+      ? `<div class="btn-group btn-group-sm" role="group">
+           <button class="btn btn-outline-success" title="Confirm — apply automatically next scan"
+             onclick="_patchMappingState(${supplierId},${m.mapping_id},'CONFIRMED',this)">
+             <i class="bi bi-check-lg"></i>
+           </button>
+           <button class="btn btn-outline-danger" title="Reject — never use this mapping"
+             onclick="_patchMappingState(${supplierId},${m.mapping_id},'REJECTED',this)">
+             <i class="bi bi-x-lg"></i>
+           </button>
+           <button class="btn btn-outline-secondary" title="Ignore — skip learning for this description"
+             onclick="_patchMappingState(${supplierId},${m.mapping_id},'IGNORED',this)">
+             <i class="bi bi-eye-slash"></i>
+           </button>
+         </div>`
+      : '';
+    return `<tr data-mapping-id="${m.mapping_id || ''}">
       <td class="small">${escapeHtml(m.raw_description)}</td>
       <td>${prod}</td>
       <td>${mult}</td>
       <td>${badge} <span class="badge bg-${m.action === 'created' ? 'primary' : 'secondary'} ms-1">${m.action}</span></td>
+      <td style="white-space:nowrap">${actionBtns}</td>
     </tr>`;
   }).join('');
 
+  const mappingIds = learned.filter(m => m.mapping_id).map(m => m.mapping_id).join(',');
+
   const html = `
     <div class="modal fade" id="learningSummaryModal" tabindex="-1">
-      <div class="modal-dialog modal-lg">
+      <div class="modal-dialog modal-xl">
         <div class="modal-content">
           <div class="modal-header">
             <h5 class="modal-title"><i class="bi bi-mortarboard me-2"></i>Learned for ${escapeHtml(supplierName)}</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body p-0">
-            <div class="alert alert-info m-3 py-2 small mb-0">
-              These mappings will be used to improve future invoice scans from this supplier.
-              High-confidence mappings apply automatically; medium requires review.
+            <div class="alert alert-info m-3 py-2 small mb-2">
+              <strong>Review these mappings.</strong> Confirmed mappings apply automatically next scan.
+              Rejected are never used. Ignored are silently skipped. Unreviewed stay as Suggested and apply above 60% confidence.
             </div>
             <table class="table table-sm table-hover mb-0">
-              <thead><tr><th>Invoice description</th><th>Mapped to</th><th>Qty</th><th>Confidence</th></tr></thead>
+              <thead><tr><th>Invoice description</th><th>Mapped to</th><th>Qty</th><th>Confidence</th><th style="width:115px">Review</th></tr></thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
           <div class="modal-footer">
-            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+            ${supplierId && mappingIds ? `<button type="button" class="btn btn-success btn-sm me-auto" id="btn-confirm-all-mappings"
+                data-supplier-id="${supplierId}" data-mapping-ids="${mappingIds}">
+              <i class="bi bi-check-all me-1"></i>Confirm All
+            </button>` : ''}
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Done</button>
           </div>
         </div>
       </div>
@@ -5260,11 +5315,56 @@ function _showLearningSummary(learned, supplierName) {
   // Remove stale modal if present
   document.getElementById('learningSummaryModal')?.remove();
   document.body.insertAdjacentHTML('beforeend', html);
+
+  // Wire up Confirm All button
+  document.getElementById('btn-confirm-all-mappings')?.addEventListener('click', async function() {
+    const sid = this.dataset.supplierId;
+    const ids = (this.dataset.mappingIds || '').split(',').filter(Boolean);
+    this.disabled = true;
+    this.innerHTML = '<i class="bi bi-hourglass me-1"></i>Confirming...';
+    let ok = 0, fail = 0;
+    for (const mid of ids) {
+      const row = document.querySelector(`#learningSummaryModal [data-mapping-id="${mid}"]`);
+      // Skip rows already reviewed (row has table-danger / table-secondary)
+      if (row && (row.classList.contains('table-danger') || row.classList.contains('table-secondary'))) continue;
+      try {
+        await api(`/api/suppliers/${sid}/product-mappings/${mid}`, {
+          method: 'PATCH', body: JSON.stringify({ mapping_state: 'CONFIRMED' })
+        });
+        if (row) { row.classList.add('table-success'); row.querySelector('td:last-child').innerHTML = '<span class="badge bg-success">Confirmed</span>'; }
+        ok++;
+      } catch { fail++; }
+    }
+    if (fail) toast(`Confirmed ${ok}, ${fail} failed`, 'warning');
+    else toast(`${ok} mapping${ok !== 1 ? 's' : ''} confirmed`, 'success', 3000);
+    this.innerHTML = '<i class="bi bi-check-all me-1"></i>All Confirmed';
+  });
+
   const modal = new bootstrap.Modal(document.getElementById('learningSummaryModal'));
   document.getElementById('learningSummaryModal').addEventListener('hidden.bs.modal', () => {
     document.getElementById('learningSummaryModal')?.remove();
   });
   modal.show();
+}
+
+async function _patchMappingState(supplierId, mappingId, newState, btn) {
+  const labels  = { CONFIRMED: 'Confirmed', REJECTED: 'Rejected', IGNORED: 'Ignored' };
+  const classes = { CONFIRMED: 'success',   REJECTED: 'danger',   IGNORED: 'secondary' };
+  try {
+    await api(`/api/suppliers/${supplierId}/product-mappings/${mappingId}`, {
+      method: 'PATCH', body: JSON.stringify({ mapping_state: newState })
+    });
+    const row = btn?.closest('tr');
+    if (row) {
+      row.classList.remove('table-success', 'table-danger', 'table-secondary');
+      row.classList.add(`table-${classes[newState]}`);
+      const cell = row.querySelector('td:last-child');
+      if (cell) cell.innerHTML = `<span class="badge bg-${classes[newState]}">${labels[newState]}</span>`;
+    }
+    toast(`Mapping ${labels[newState].toLowerCase()}`, 'success', 2000);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
 }
 
 // Quick-add supplier from receive modal

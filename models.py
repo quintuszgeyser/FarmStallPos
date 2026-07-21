@@ -307,9 +307,38 @@ class SupplierProductMapping(db.Model):
     allocation_method          = db.Column(db.Text, nullable=True)
     correction_count           = db.Column(db.Integer, nullable=False, default=1)
     confidence                 = db.Column(Numeric(5, 4), nullable=False, default=Decimal('0.6000'))
+    mapping_state              = db.Column(db.Text, nullable=False, default='SUGGESTED')  # SUGGESTED | CONFIRMED | REJECTED | IGNORED
+    document_type              = db.Column(db.Text, nullable=False, default='unknown')
+    first_learned_at           = db.Column(db.DateTime, nullable=True)
+    default_overhead_allocation = db.Column(db.Text, nullable=True)
+    purchase_unit              = db.Column(db.Text, nullable=True)
+    contains_qty               = db.Column(db.Integer, nullable=True)
+    item_size                  = db.Column(Numeric(10, 4), nullable=True)
+    item_size_unit             = db.Column(db.Text, nullable=True)
+    raw_description_tokens     = db.Column(db.Text, nullable=True)
     last_used_at               = db.Column(db.DateTime, nullable=True)
     created_at                 = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     updated_at                 = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class SupplierInvoiceLearningEvent(db.Model):
+    """Immutable audit trail of every learning action — never updated or deleted."""
+    __tablename__ = 'supplier_invoice_learning_events'
+    id                 = db.Column(db.Integer, primary_key=True)
+    invoice_id         = db.Column(db.Integer, db.ForeignKey('supplier_invoices.id'), nullable=True, index=True)
+    supplier_id        = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
+    mapping_id         = db.Column(db.Integer, db.ForeignKey('supplier_product_mappings.id'), nullable=True)
+    raw_description    = db.Column(db.Text, nullable=True)
+    matched_product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
+    action             = db.Column(db.Text, nullable=False)  # created | updated | confirmed | rejected | ignored | state_changed
+    old_confidence     = db.Column(Numeric(5, 4), nullable=True)
+    new_confidence     = db.Column(Numeric(5, 4), nullable=True)
+    old_product_id     = db.Column(db.Integer, nullable=True)
+    new_product_id     = db.Column(db.Integer, nullable=True)
+    old_state          = db.Column(db.Text, nullable=True)
+    new_state          = db.Column(db.Text, nullable=True)
+    match_score        = db.Column(Numeric(5, 4), nullable=True)
+    created_at         = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class SupplierDocument(db.Model):
