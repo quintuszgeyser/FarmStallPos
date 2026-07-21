@@ -254,10 +254,14 @@ class SupplierInvoice(db.Model):
     supplier_id              = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
     date                     = db.Column(db.Date, nullable=False)
     invoice_number           = db.Column(db.String(128), nullable=True)   # supplier's ref e.g. INV-001
-    subtotal                 = db.Column(db.Numeric(18, 4), nullable=True)  # sum of product lines
-    additional_costs_json    = db.Column(db.Text, nullable=True)            # original [{label,type,amount}]
+    subtotal                 = db.Column(db.Numeric(18, 4), nullable=True)  # sum of product lines excl VAT
+    additional_costs_json    = db.Column(db.Text, nullable=True)            # [{label,type,amount}] — shipping/overhead only
     additional_costs_total   = db.Column(db.Numeric(18, 4), nullable=True)
-    total                    = db.Column(db.Numeric(18, 4), nullable=True)  # subtotal + additional_costs_total
+    vat_total                = db.Column(db.Numeric(18, 4), nullable=True)  # VAT on invoice — never allocated to batches
+    discount_total           = db.Column(db.Numeric(18, 4), nullable=True)  # total discount on invoice
+    vat_treatment            = db.Column(db.Text, nullable=True)            # lines_excl_vat | lines_incl_vat | unknown
+    accounting_balanced      = db.Column(db.Boolean, nullable=True)         # lines + overheads + VAT ≈ invoice total
+    total                    = db.Column(db.Numeric(18, 4), nullable=True)  # subtotal + additional_costs_total + vat_total
     status                   = db.Column(db.String(20), nullable=False, default='posted')  # draft | posted
     source                   = db.Column(db.String(30), nullable=True)      # purchase_run | single_receive | bulk_receive
     notes                    = db.Column(db.Text, nullable=True)
@@ -374,8 +378,9 @@ class StockBatch(db.Model):
     import_run_id       = db.Column(db.String(36), nullable=True)  # UUID grouping batches from one CSV import
     produce_ref         = db.Column(db.String(36), nullable=True)   # produce_uuid — links to StockConsumption records for the produce run
     produce_cost        = db.Column(Numeric(10, 4), nullable=True)   # total ingredient cost stamped at produce time
+    vat_amount          = db.Column(Numeric(10, 4), nullable=True)   # VAT allocated to this batch — retained for reporting
     additional_costs    = db.Column(db.Text, nullable=True)         # JSON array of {label,type,amount,source,source_id}
-    base_cost_total     = db.Column(Numeric(18, 4), nullable=True)  # product line cost only, excl overhead
+    base_cost_total     = db.Column(Numeric(18, 4), nullable=True)  # product line cost ex-VAT
     cost_adjustment_reason = db.Column(db.Text, nullable=True)     # optional free-text reason for a post-creation edit
     updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
     updated_by          = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)

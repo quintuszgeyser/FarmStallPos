@@ -1514,6 +1514,13 @@ def strong_migrate():
         pg_try("CREATE INDEX IF NOT EXISTS ix_sile_supplier ON supplier_invoice_learning_events (supplier_id)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_sile_invoice  ON supplier_invoice_learning_events (invoice_id)")
 
+        # Phase 2f: VAT tracking — retained per-batch and per-invoice for reporting
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS vat_total NUMERIC(18,4)")
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS discount_total NUMERIC(18,4)")
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS vat_treatment TEXT")
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS accounting_balanced BOOLEAN")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(10,4)")
+
         # Return tracking: dedicated column instead of void_reason string pattern
         pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_sales_original_sale_id ON sales(original_sale_id)")

@@ -842,6 +842,101 @@ def _run_learning(sid, scan_result, confirmed_lines, invoice_id=None):
     return learned
 
 
+def _extract_invoice_totals(full_text):
+    """Extract VAT trio from invoice footer using the math relationship:
+    total_incl = total_excl + total_vat, total_vat ≈ total_excl × 0.15 (SA VAT).
+    Searches the last ~30% of text lines for consecutive amount triples.
+    Returns {'total_excl', 'total_vat', 'total_incl', 'discount_total'}.
+    """
+    lines_text = full_text.split('\n')
+    footer_start = max(0, len(lines_text) - max(25, len(lines_text) // 3))
+    footer_lines = lines_text[footer_start:]
+
+    amounts = []
+    discount_total = 0.0
+
+    for line in footer_lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Extract amounts with two decimal places (money values)
+        nums = [_clean_num(m) for m in re.findall(
+            r'R?\s*(\d{1,3}(?:[,\s]\d{3})*\.\d{2}|\d{1,7}\.\d{2})', line
+        )]
+        nums = [v for v in nums if v is not None and v > 0]
+        if not nums:
+            continue
+        if re.search(r'\bdiscount\b', line, re.IGNORECASE):
+            discount_total = nums[-1]
+            continue
+        amounts.append(nums[-1])
+
+    total_excl = total_vat = total_incl = None
+
+    # Sliding window: find A, B, C where B/A ≈ 0.15 and C ≈ A + B
+    for i in range(len(amounts) - 2):
+        for j in range(i + 1, min(i + 4, len(amounts) - 1)):
+            for k in range(j + 1, min(j + 4, len(amounts))):
+                a, b, c = amounts[i], amounts[j], amounts[k]
+                if a > 0 and b > 0:
+                    if abs(b / a - 0.15) < 0.03 and abs(c - (a + b)) < max(2.0, c * 0.005):
+                        total_excl, total_vat, total_incl = a, b, c
+                        break
+            if total_excl is not None:
+                break
+        if total_excl is not None:
+            break
+
+    # Fallback: adjacent pair in 1.15 ratio
+    if total_vat is None:
+        for i in range(len(amounts) - 1):
+            a, b = amounts[i], amounts[i + 1]
+            if a > 0 and abs(b / a - 1.15) < 0.025:
+                total_excl = a
+                total_incl = b
+                total_vat  = round(b - a, 2)
+                break
+
+    return {
+        'total_excl':     total_excl,
+        'total_vat':      total_vat,
+        'total_incl':     total_incl,
+        'discount_total': discount_total,
+    }
+
+
+def _detect_vat_treatment(all_lines_sum, footer):
+    """Compare all_lines_sum (product lines + shipping combined) against footer totals.
+    Returns (vat_treatment, accounting_balanced).
+    vat_treatment: 'lines_excl_vat' | 'lines_incl_vat' | 'unknown'
+    """
+    if not all_lines_sum or all_lines_sum <= 0:
+        return 'unknown', False
+    TOLERANCE = 2.0
+    total_excl = footer.get('total_excl')
+    total_vat  = footer.get('total_vat')
+    total_incl = footer.get('total_incl')
+    discount   = footer.get('discount_total', 0.0) or 0.0
+
+    if total_excl and abs(all_lines_sum - total_excl) <= TOLERANCE:
+        balanced = (total_incl is not None and total_vat is not None and
+                    abs((total_excl + total_vat) - total_incl) <= TOLERANCE)
+        return 'lines_excl_vat', balanced
+
+    if total_incl and abs(all_lines_sum - total_incl) <= TOLERANCE:
+        return 'lines_incl_vat', True
+
+    if total_excl and discount and abs(all_lines_sum - (total_excl + discount)) <= TOLERANCE:
+        balanced = (total_incl is not None and total_vat is not None and
+                    abs((total_excl + total_vat) - total_incl) <= TOLERANCE)
+        return 'lines_excl_vat', balanced
+
+    if total_incl and discount and abs(all_lines_sum - (total_incl + discount)) <= TOLERANCE:
+        return 'lines_incl_vat', True
+
+    return 'unknown', False
+
+
 def _parse_invoice_pdf(content):
     """Extract structured invoice data from PDF bytes using pdfplumber."""
     try:
@@ -872,14 +967,23 @@ def _parse_invoice_pdf(content):
 
     # Prefer structured table extraction when it found items (handles merged cells)
     if table_results:
+        footer = _extract_invoice_totals(full_text)
+        all_lines_sum = sum(r['total_price'] for r in table_results) + table_shipping
+        vat_treatment, accounting_balanced = _detect_vat_treatment(all_lines_sum, footer)
         return {
-            'invoice_number': invoice_number,
-            'date':           invoice_date,
-            'lines':          table_results,
-            'shipping':       table_shipping if table_shipping > 0 else None,
-            'raw_line_count': len(full_text.split('\n')),
-            'document_type':  document_type,
-            'layout_type':    'table',
+            'invoice_number':      invoice_number,
+            'date':                invoice_date,
+            'lines':               table_results,
+            'shipping':            table_shipping if table_shipping > 0 else None,
+            'raw_line_count':      len(full_text.split('\n')),
+            'document_type':       document_type,
+            'layout_type':         'table',
+            'vat_total':           footer.get('total_vat'),
+            'vat_treatment':       vat_treatment,
+            'accounting_balanced': accounting_balanced,
+            'invoice_total_excl':  footer.get('total_excl'),
+            'invoice_total_incl':  footer.get('total_incl'),
+            'discount_total':      footer.get('discount_total') or 0,
         }
 
     # Fall back to line-by-line text parsing
@@ -910,14 +1014,23 @@ def _parse_invoice_pdf(content):
             seen.add(key)
             deduped.append(item)
 
+    footer = _extract_invoice_totals(full_text)
+    all_lines_sum = sum(r['total_price'] for r in deduped) + shipping
+    vat_treatment, accounting_balanced = _detect_vat_treatment(all_lines_sum, footer)
     return {
-        'invoice_number': invoice_number,
-        'date':           invoice_date,
-        'lines':          deduped,
-        'shipping':       shipping if shipping > 0 else None,
-        'raw_line_count': len(full_text.split('\n')),
-        'document_type':  document_type,
-        'layout_type':    'text',
+        'invoice_number':      invoice_number,
+        'date':                invoice_date,
+        'lines':               deduped,
+        'shipping':            shipping if shipping > 0 else None,
+        'raw_line_count':      len(full_text.split('\n')),
+        'document_type':       document_type,
+        'layout_type':         'text',
+        'vat_total':           footer.get('total_vat'),
+        'vat_treatment':       vat_treatment,
+        'accounting_balanced': accounting_balanced,
+        'invoice_total_excl':  footer.get('total_excl'),
+        'invoice_total_incl':  footer.get('total_incl'),
+        'discount_total':      footer.get('discount_total') or 0,
     }
 
 
@@ -1125,6 +1238,13 @@ def api_suppliers_purchase_run(sid):
     invoice_addl_total = data.get('invoice_additional_total')
     scan_result        = data.get('scan_result')   # original parser output — triggers learning
     bypass_dup         = bool(data.get('bypass_duplicate_check', False))
+    # VAT fields from invoice scan — retained for reporting, VAT included in COGS
+    vat_total_req      = data.get('vat_total')
+    vat_total          = Decimal(str(vat_total_req)) if vat_total_req is not None else Decimal('0')
+    discount_total_req = data.get('discount_total')
+    discount_total_inv = Decimal(str(discount_total_req)) if discount_total_req is not None else Decimal('0')
+    vat_treatment      = str(data.get('vat_treatment') or 'unknown')
+    accounting_balanced = bool(data.get('accounting_balanced', False))
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
@@ -1241,19 +1361,26 @@ def api_suppliers_purchase_run(sid):
                 'base_cost_total': Decimal(str(total_price)),
             })
 
-    # Proportional split of additional costs across lines (by base_cost_total)
+    # Step 1: proportional VAT allocation across product lines (ex-VAT base)
+    # VAT is allocated to products only (not shipping); retained per-batch for reporting.
+    # COGS = base_ex_vat + vat_amount + overhead_share  (VAT is included in inventory value)
+    subtotal = sum(pl['base_cost_total'] for pl in prepared_lines)
+    vat_shares = _split_costs([l['base_cost_total'] for l in prepared_lines], vat_total)
+
+    # Step 2: proportional split of additional costs (shipping/overhead) across lines
+    # Overhead is applied on top of the incl-VAT base
     total_addl = sum(Decimal(str(c['amount'])) for c in addl_costs)
-    shares = _split_costs([l['base_cost_total'] for l in prepared_lines], total_addl)
+    incl_vat_bases = [pl['base_cost_total'] + vat_shares[i] for i, pl in enumerate(prepared_lines)]
+    shares = _split_costs(incl_vat_bases, total_addl)
 
     for i, pl in enumerate(prepared_lines):
-        share = shares[i]
-        # Build per-batch additional_costs with the allocated share
+        vat_share  = vat_shares[i]
+        share      = shares[i]
         batch_addl = []
         if share != Decimal('0') and addl_costs:
             if len(addl_costs) == 1:
                 batch_addl = [{**addl_costs[0], 'amount': float(share.quantize(Decimal('0.01')))}]
             else:
-                # Scale each entry proportionally to their fraction of total_addl
                 if total_addl != Decimal('0'):
                     batch_addl = []
                     running = Decimal('0')
@@ -1265,13 +1392,15 @@ def api_suppliers_purchase_run(sid):
                             running += entry_share
                         batch_addl.append({**ac, 'amount': float(entry_share)})
 
-        cost_per_base = (pl['base_cost_total'] + share) / Decimal(str(pl['qty_base']))
+        # FIFO cost = (ex_vat + vat + overhead) / qty_base
+        cost_per_base = (pl['base_cost_total'] + vat_share + share) / Decimal(str(pl['qty_base']))
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
             qty_remaining_base=pl['qty_base'],
             cost_per_base_unit=cost_per_base,
             base_cost_total=pl['base_cost_total'],
+            vat_amount=float(vat_share.quantize(Decimal('0.0001'))) if vat_total > 0 else None,
             additional_costs=_json.dumps(batch_addl) if batch_addl else None,
             supplier_id=sid,
             user_id=u.id if u else None,
@@ -1281,11 +1410,14 @@ def api_suppliers_purchase_run(sid):
         batches_created += 1
 
     # Stamp invoice-level totals
-    subtotal = sum(pl['base_cost_total'] for pl in prepared_lines)
-    inv.subtotal = float(subtotal)
-    inv.additional_costs_json = _json.dumps([{'label': c['label'], 'type': c['type'], 'amount': c['amount']} for c in addl_costs]) if addl_costs else None
+    inv.subtotal               = float(subtotal)
+    inv.additional_costs_json  = _json.dumps([{'label': c['label'], 'type': c['type'], 'amount': c['amount']} for c in addl_costs]) if addl_costs else None
     inv.additional_costs_total = float(total_addl)
-    inv.total = float(subtotal + total_addl)
+    inv.vat_total              = float(vat_total) if vat_total > 0 else None
+    inv.discount_total         = float(discount_total_inv) if discount_total_inv > 0 else None
+    inv.vat_treatment          = vat_treatment
+    inv.accounting_balanced    = accounting_balanced
+    inv.total                  = float(subtotal + vat_total + total_addl)
 
     # Update supplier's last_run_costs for pre-population next time
     if addl_costs and batches_created > 0:
@@ -1571,6 +1703,10 @@ def api_supplier_invoices(sid):
             'subtotal':               float(inv.subtotal) if inv.subtotal is not None else None,
             'additional_costs_json':  inv.additional_costs_json,
             'additional_costs_total': float(inv.additional_costs_total) if inv.additional_costs_total is not None else None,
+            'vat_total':              float(inv.vat_total) if getattr(inv, 'vat_total', None) is not None else None,
+            'discount_total':         float(inv.discount_total) if getattr(inv, 'discount_total', None) is not None else None,
+            'vat_treatment':          getattr(inv, 'vat_treatment', None),
+            'accounting_balanced':    getattr(inv, 'accounting_balanced', None),
             'total':                  float(inv.total) if inv.total is not None else None,
             'notes':                  inv.notes,
             'batch_count':            len(batches),
@@ -1619,6 +1755,10 @@ def api_supplier_invoice_update(sid, inv_id):
     date_str       = data.get('date')
     addl_costs_raw = data.get('additional_costs', [])
     invoice_ref    = str(data.get('invoice_ref') or '').strip() or None
+    vat_total_req  = data.get('vat_total')
+    vat_total_upd  = Decimal(str(vat_total_req)) if vat_total_req is not None else Decimal('0')
+    vat_treatment_upd    = str(data.get('vat_treatment') or getattr(inv, 'vat_treatment', 'unknown') or 'unknown')
+    accounting_bal_upd   = bool(data.get('accounting_balanced', getattr(inv, 'accounting_balanced', False) or False))
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
@@ -1649,7 +1789,7 @@ def api_supplier_invoice_update(sid, inv_id):
     inv.invoice_number = invoice_ref
     inv.date           = run_date
 
-    # Re-create batches with same split logic as purchase_run
+    # Re-create batches with same VAT-first allocation logic as purchase_run
     prepared_lines = []
     for line in lines:
         pid         = line.get('product_id')
@@ -1671,11 +1811,15 @@ def api_supplier_invoice_update(sid, inv_id):
             return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
         prepared_lines.append({'pid': pid, 'qty_base': qty_base, 'base_cost_total': Decimal(str(total_price))})
 
-    total_addl = sum(Decimal(str(c['amount'])) for c in addl_costs)
-    shares     = _split_costs([l['base_cost_total'] for l in prepared_lines], total_addl)
-    batches_created = 0
+    subtotal_upd = sum(pl['base_cost_total'] for pl in prepared_lines)
+    vat_shares_upd   = _split_costs([l['base_cost_total'] for l in prepared_lines], vat_total_upd)
+    total_addl       = sum(Decimal(str(c['amount'])) for c in addl_costs)
+    incl_vat_bases   = [pl['base_cost_total'] + vat_shares_upd[i] for i, pl in enumerate(prepared_lines)]
+    shares           = _split_costs(incl_vat_bases, total_addl)
+    batches_created  = 0
 
     for i, pl in enumerate(prepared_lines):
+        vat_share  = vat_shares_upd[i]
         share      = shares[i]
         batch_addl = []
         if share != Decimal('0') and addl_costs:
@@ -1691,13 +1835,14 @@ def api_supplier_invoice_update(sid, inv_id):
                             entry_share = (Decimal(str(ac['amount'])) / total_addl * share).quantize(Decimal('0.01'))
                             running += entry_share
                         batch_addl.append({**ac, 'amount': float(entry_share)})
-        cost_per_base = (pl['base_cost_total'] + share) / Decimal(str(pl['qty_base']))
+        cost_per_base = (pl['base_cost_total'] + vat_share + share) / Decimal(str(pl['qty_base']))
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
             qty_remaining_base=pl['qty_base'],
             cost_per_base_unit=cost_per_base,
             base_cost_total=pl['base_cost_total'],
+            vat_amount=float(vat_share.quantize(Decimal('0.0001'))) if vat_total_upd > 0 else None,
             additional_costs=_json.dumps(batch_addl) if batch_addl else None,
             supplier_id=sid,
             user_id=u.id if u else None,
@@ -1706,11 +1851,13 @@ def api_supplier_invoice_update(sid, inv_id):
         ))
         batches_created += 1
 
-    subtotal = sum(pl['base_cost_total'] for pl in prepared_lines)
-    inv.subtotal               = float(subtotal)
+    inv.subtotal               = float(subtotal_upd)
     inv.additional_costs_json  = _json.dumps([{'label': c['label'], 'type': c['type'], 'amount': c['amount']} for c in addl_costs]) if addl_costs else None
     inv.additional_costs_total = float(total_addl)
-    inv.total                  = float(subtotal + total_addl)
+    inv.vat_total              = float(vat_total_upd) if vat_total_upd > 0 else None
+    inv.vat_treatment          = vat_treatment_upd
+    inv.accounting_balanced    = accounting_bal_upd
+    inv.total                  = float(subtotal_upd + vat_total_upd + total_addl)
 
     db.session.commit()
     return jsonify({'ok': True, 'batches_created': batches_created, 'invoice_id': inv_id, 'invoice_number': invoice_ref})

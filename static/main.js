@@ -4432,6 +4432,7 @@ async function loadSupplierInvoices(supplierId) {
       const invLabel    = inv.invoice_number ? `#${inv.invoice_number}` : (inv.id ? `Delivery #${inv.id}` : 'Legacy batches');
       const hasConsumed = (inv.batches||[]).some(b => b.consumed_pct > 0);
       const addlTotal   = parseFloat(inv.additional_costs_total || 0);
+      const vatTotal    = parseFloat(inv.vat_total || 0);
       const docCount    = (inv.documents||[]).length;
       const batchesId   = `inv-batches-${ri}`;
 
@@ -4444,6 +4445,7 @@ async function loadSupplierInvoices(supplierId) {
           ${inv.date ? `<span class="text-muted small">${inv.date}</span>` : ''}
           <span class="text-muted small ms-auto">${inv.batch_count} batch${inv.batch_count !== 1 ? 'es' : ''}</span>
           ${inv.total != null ? `<span class="small fw-semibold">R${fmt(inv.total)}</span>` : ''}
+          ${vatTotal > 0 ? `<span class="badge bg-info text-dark" style="font-size:10px">VAT R${fmt(vatTotal)}</span>` : ''}
           ${addlTotal > 0 ? `<span class="badge bg-warning text-dark" style="font-size:10px">+R${fmt(addlTotal)} overhead</span>` : ''}
           ${hasConsumed ? `<span class="badge bg-info text-dark" style="font-size:10px">partial sales</span>` : ''}
           ${docCount > 0 ? `<span class="badge bg-success" style="font-size:10px"><i class="bi bi-paperclip"></i> ${docCount}</span>` : ''}
@@ -4875,6 +4877,28 @@ document.getElementById('pr-scan-input')?.addEventListener('change', async funct
       <span class="fw-semibold ms-2">R${fmt(result.shipping)}</span>
     </div>`;
   }
+  // VAT detection footer
+  if (result.vat_total && result.vat_total > 0) {
+    const vatBadge = result.vat_treatment === 'lines_excl_vat'
+      ? `<span class="badge bg-info text-dark ms-1" style="font-size:10px">Lines excl-VAT</span>`
+      : result.vat_treatment === 'lines_incl_vat'
+        ? `<span class="badge bg-secondary ms-1" style="font-size:10px">Lines incl-VAT</span>`
+        : '';
+    const balBadge = result.accounting_balanced
+      ? `<span class="badge bg-success ms-1" style="font-size:10px"><i class="bi bi-check-circle"></i> Balanced</span>`
+      : `<span class="badge bg-warning text-dark ms-1" style="font-size:10px"><i class="bi bi-exclamation-triangle"></i> Unbalanced</span>`;
+    html += `<div class="d-flex py-1 border-top align-items-center">
+      <span class="flex-fill text-muted fst-italic">VAT (15%)${vatBadge}${balBadge}</span>
+      <span class="fw-semibold ms-2">R${fmt(result.vat_total)}</span>
+    </div>`;
+    const linesTotal = (result.lines || []).reduce((s, l) => s + (l.total_price || 0), 0)
+                     + (result.shipping || 0);
+    const invoiceTotal = linesTotal + result.vat_total;
+    html += `<div class="d-flex py-1 border-top">
+      <span class="flex-fill small text-muted">Invoice total (incl VAT)</span>
+      <span class="fw-semibold ms-2">R${fmt(invoiceTotal)}</span>
+    </div>`;
+  }
   itemsEl.innerHTML = html || '<span class="text-muted">No line items extracted.</span>';
   show(preview);
 });
@@ -5191,6 +5215,13 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     date: dateVal || todayISO(),
     additional_costs: prAddlCosts,
     ...(prInvoiceRef ? { invoice_ref: prInvoiceRef } : {}),
+    // VAT fields from scan — proportionally allocated to batches, retained for reporting
+    ...(_lastScanResult?.vat_total > 0 ? {
+      vat_total:           _lastScanResult.vat_total,
+      discount_total:      _lastScanResult.discount_total || 0,
+      vat_treatment:       _lastScanResult.vat_treatment || 'unknown',
+      accounting_balanced: _lastScanResult.accounting_balanced || false,
+    } : {}),
     // Include original scan result so backend can learn from corrections
     ...(_lastScanResult ? { scan_result: _lastScanResult } : {}),
   };
