@@ -95,6 +95,19 @@ _CONTINUATION_SKIP_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Hard-stop patterns for n=1 desc cell contamination — break at first match, don't just skip
+# These always signal address/header/footer overflow from adjacent page regions
+_ADDRESS_STOP_RE = re.compile(
+    r'\(pty\)|pty\s+ltd'
+    r'|postal\s+address|physical\s+address'
+    r'|\bfrom\s+to\b'                # SAKSAK "FROM TO" page-2 header
+    r'|(?:branch|account)\s*:'       # banking details: "Branch: 250655", "Account: 62862781393"
+    r'|\bproforma\s+invoice\b'       # page header on proforma invoices
+    r'|\bdue\s*/\s*\(?credit\)?'     # payment footer: "Due / (Credit)"
+    r'|\bstatement\s+date\b',
+    re.IGNORECASE,
+)
+
 # Patterns that unambiguously start a new product line in a merged description cell
 _PRODUCT_START_RE = re.compile(
     r'^\d+\s*[xX]\s+'               # "20 x 50g", "6 x"
@@ -181,14 +194,23 @@ def _extract_from_tables(pdf):
                     if not price or price <= 0:
                         continue
                     if n == 1:
-                        # Single product per row — join all desc lines, filtering out header/footer junk
-                        clean_dl = [l for l in desc_lines if l
-                                    and not _SKIP_RE.search(l)
-                                    and not _CONTINUATION_SKIP_RE.search(l)
-                                    and not _HEADER_RE.match(l)]
+                        # Single product per row — join desc lines, stopping at first contamination
+                        clean_dl = []
+                        for _dl in desc_lines:
+                            if not _dl:
+                                continue
+                            # Hard stop: page header / address / banking details overflow
+                            if _ADDRESS_STOP_RE.search(_dl) or _CONTINUATION_SKIP_RE.search(_dl) or _HEADER_RE.match(_dl):
+                                break
+                            # Soft skip: generic footer keywords (page numbers, etc.)
+                            if _SKIP_RE.search(_dl):
+                                continue
+                            clean_dl.append(_dl)
                         desc = ' '.join(clean_dl)
-                        # Strip item codes that may have bled from adjacent Code column
+                        # Strip all-caps item codes (e.g. "FGAP300 ")
                         desc = re.sub(r'^(?:[A-Z][A-Z0-9]{3,}\s*[-–]?\s*)+', '', desc).strip()
+                        # Strip PascalCase item codes with all-caps suffix (e.g. "SampleFDSD ", "SampleFDCB ")
+                        desc = re.sub(r'^(?:[A-Z][a-z]+[A-Z]{2,}[A-Za-z0-9]*\s*[-–]?\s*)+', '', desc).strip()
                         desc = re.sub(r'^\([A-Z0-9/]+\)\s*', '', desc).strip()   # "(GREEN) " remnants
                         desc = re.sub(r'^/[A-Z0-9/]+\s+', '', desc).strip()      # "/YEL " remnants
                         desc = _deduplicate_description(desc)
@@ -226,11 +248,23 @@ def _undouble_chars(line):
 
 def _deduplicate_description(desc):
     """Remove repeated phrase prefix from merged descriptions.
-    Handles three cases:
+    Handles four cases:
     1. Word-level exact repeat: 'Foo Bar Foo Bar Baz' → 'Foo Bar Baz'
     2. Char-level prefix repeat: 'Foo BarFoo Bar Baz' → 'Foo Bar Baz'
     3. Suffix-prefix overlap: 'Superior One – VanillaVanilla - Whey...' → 'Superior One – Vanilla - Whey...'
+    4. X - X mirror: 'kant.sak Cream Wholesale - kant.sak Cream Wholesale' → 'kant.sak Cream Wholesale'
     """
+    # Case 4: "X - X" where one side is a prefix of the other (pdfplumber multi-line desc join)
+    mid = desc.find(' - ')
+    if mid > 3:
+        left = desc[:mid].strip()
+        right = desc[mid + 3:].strip()
+        if left and right:
+            if right.startswith(left) or right == left:
+                return right
+            if left.startswith(right):
+                return left
+
     # Case 1: word-level exact duplicate prefix
     words = desc.split()
     n = len(words)
