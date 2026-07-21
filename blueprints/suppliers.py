@@ -61,7 +61,11 @@ _SKIP_RE = re.compile(
     r'|(?:tel|fax|email|www)\s*[.:]'
     r'|p\.o\.|s\.o\.'
     # Invoice/order header lines like "Order 015832", "Invoice 12345"
-    r'|\border\s+\d{5,}',
+    r'|\border\s+\d{5,}'
+    # Contact footer lines: "Name, 082 XXXXXXX, email@domain" — phone number pattern
+    r'|\b0[678]\d\s*\d{3}\s*\d{4}\b'
+    # Lines containing an email address
+    r'|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}',
     re.IGNORECASE,
 )
 
@@ -242,7 +246,15 @@ def _extract_date(text):
 
 
 def _clean_num(s):
-    s = re.sub(r'[R\s,]', '', str(s))
+    s = str(s).strip().lstrip('R').strip()
+    # Remove space-thousands separators first: "1 147" → "1147"
+    s = re.sub(r'(\d) (\d{3})(?=,\d{1,2}$|$)', r'\1\2', s)
+    s = re.sub(r'(\d) (\d{3})', r'\1\2', s)
+    # SA comma-decimal: digits,2digits at end → comma is decimal separator
+    if re.search(r'^\d+,\d{1,2}$', s):
+        s = s.replace(',', '.')
+    else:
+        s = s.replace(',', '')  # comma is thousands separator
     try:
         return float(s)
     except Exception:
@@ -291,9 +303,19 @@ def _try_parse_line(line):
     line = re.sub(r'\b\d+\.?\d*\s*%', '', line)
     line = re.sub(r'\s{2,}', ' ', line).strip()
 
-    # Collect all price-like tokens: optional R, digits with optional comma-thousands, decimal
-    # Exclude percentages (numbers immediately followed by %)
-    num_pat = r'R?\s*(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2}|\d{1,5})(?!\s*%)'
+    # Collect all price-like tokens: optional R, digits with optional separators/decimal
+    # Handles SA format: space-thousands + comma-decimal (e.g. "1 147,83" = 1147.83, "47,83" = 47.83)
+    # Alt order: longest/most-specific first so "1 147,83" beats "1 147" and "47,83" beats "47"
+    num_pat = (
+        r'R?\s*('
+        r'\d{1,3}(?:\s\d{3})+,\d{1,2}'        # SA space-thousands + comma-decimal: "1 147,83"
+        r'|\d{1,3}(?:\s\d{3})+(?:\.\d{1,2})?'  # space-thousands (+ optional dot-decimal): "1 147"
+        r'|\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?'   # US comma-thousands: "1,147"
+        r'|\d{1,3},\d{1,2}'                     # SA comma-decimal only: "47,83"
+        r'|\d+\.\d{1,2}'                        # dot-decimal: "47.83"
+        r'|\d{1,5}'                             # plain integer
+        r')(?!\s*%)'
+    )
     tokens = []
     for m in re.finditer(num_pat, line):
         # Skip pack-size specifiers like "x6", "X12" — but only simple integers, not space-thousands prices
@@ -876,8 +898,15 @@ def _extract_invoice_totals(full_text):
         if not line:
             continue
         # Extract amounts with two decimal places (money values)
+        # Handles both dot-decimal (1147.83) and SA comma-decimal (1 147,83 / 47,83 / R3 624,00)
         nums = [_clean_num(m) for m in re.findall(
-            r'R?\s*(\d{1,3}(?:[,\s]\d{3})*\.\d{2}|\d{1,7}\.\d{2})', line
+            r'R?\s*('
+            r'\d{1,3}(?:\s\d{3})+,\d{2}'   # SA: "3 151,30", "R3 624,00" (space-thousands + comma-decimal)
+            r'|\d{1,3}(?:\s\d{3})+\.\d{2}'  # space-thousands + dot-decimal: "3 151.30"
+            r'|\d{1,3}(?:,\d{3})+\.\d{2}'   # US comma-thousands + dot-decimal: "3,151.30"
+            r'|\d{1,5},\d{2}'               # SA comma-decimal only: "472,70"
+            r'|\d{1,7}\.\d{2}'              # plain dot-decimal: "3151.30"
+            r')', line
         )]
         nums = [v for v in nums if v is not None and v > 0]
         if not nums:
