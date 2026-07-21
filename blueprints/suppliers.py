@@ -49,7 +49,7 @@ _SKIP_RE = re.compile(
     r'\b(?:total|subtotal|sub.total|balance\s+due|vat|tax\b|payment|paid|discount'
     r'|thank\s+you|powered\s+by|page\s+\d|terms|conditions|banking\s+details|account\s+holder'
     r'|branch\s+code|swift|bill\s+to|ship\s+to|sold\s+to|delivery\s+details'
-    r'|invoice\s+date|due\s+date|order\s+date|customer\s+order|customer\s+vat|date\b'
+    r'|invoice\s+date|due\s+date|order\s+date|customer\s+order|customer\s+vat'
     r'|signature|stock\s+controller|produced\s+by|postnet\s+suite|private\s+bag'
     r'|account\s+number|account\s+no|branch\s+name|account\s+type|account\s+name'
     r'|reg\s+number|registration\s+number|company\s+id|vat\s+reg|vat\s+no'
@@ -65,7 +65,7 @@ _SKIP_RE = re.compile(
     r'|\bbusiness\s+par'   # "Business Park", "Business Parl)" address fragments
     r'|\b\d{4,5}\b\s*$'    # lines ending with a postcode (SA 4-digit)
     # Non-word-boundary patterns (end in colon, period, or slash — \b fails after them)
-    r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by|sales\s+rep|name|additional\s+charges?|branch|account)\s*:'
+    r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by|sales\s+rep|name|additional\s+charges?|branch|account|date)\s*:'
     r'|\b\d+\s+\w+\s+(?:street|road|avenue|drive|lane|close|crescent|way)\b'
     r'|(?:additional\s+charges?)'
     r'|(?:tel|fax|email|www)\s*[.:]'
