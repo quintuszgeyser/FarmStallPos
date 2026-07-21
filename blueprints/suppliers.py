@@ -41,15 +41,21 @@ _DATE_PATTERNS = [
 ]
 
 _SKIP_RE = re.compile(
-    r'\b(total|subtotal|sub.total|balance\s+due|vat|tax\s+summary|payment|paid|discount'
+    # Word-boundary patterns (keyword must appear as a whole word)
+    r'\b(?:total|subtotal|sub.total|balance\s+due|vat|tax\s+summary|payment|paid|discount'
     r'|thank\s+you|powered\s+by|page\s+\d|terms|conditions|banking\s+details|account\s+holder'
     r'|branch\s+code|swift|bill\s+to|ship\s+to|sold\s+to|delivery\s+details'
     r'|invoice\s+date|due\s+date|order\s+date|customer\s+order|customer\s+vat'
     r'|signature|stock\s+controller|produced\s+by|postnet\s+suite|private\s+bag'
     r'|account\s+number|account\s+no|branch\s+name|account\s+type|account\s+name'
     r'|reg\s+number|registration\s+number|company\s+id|vat\s+reg|vat\s+no'
-    r'|tel:|fax:|www\.|email:|south\s+africa|western\s+cape|gauteng|kwazulu'
-    r'|eikeboom|hermon|cape\s+town|durbanville|sandton|melrose)\b',
+    r'|document\s+no|ref\s+no|purchase\s+order|bill\s+from|remit\s+to|prepared\s+by'
+    r'|south\s+africa|western\s+cape|gauteng|kwazulu'
+    r'|eikeboom|hermon|cape\s+town|durbanville|sandton|melrose|boston)\b'
+    # Non-word-boundary patterns (end in colon, period, or slash — \b fails after them)
+    r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by)\s*:'
+    r'|(?:tel|fax|email|www)\s*[.:]'
+    r'|p\.o\.|s\.o\.',
     re.IGNORECASE,
 )
 
@@ -156,6 +162,34 @@ def _extract_from_tables(pdf):
     return results, shipping
 
 
+def _undouble_chars(line):
+    """Fix PDFs where every char is rendered twice: 'TTaaxx IInnvv' → 'Tax Inv'."""
+    stripped = line.replace(' ', '')
+    if len(stripped) < 6:
+        return line
+    pairs = sum(1 for i in range(0, len(stripped) - 1, 2) if stripped[i] == stripped[i + 1])
+    if pairs / max(1, len(stripped) // 2) < 0.70:
+        return line
+    result, i = [], 0
+    while i < len(line):
+        c = line[i]
+        if c != ' ' and i + 1 < len(line) and line[i + 1] == c:
+            result.append(c); i += 2
+        else:
+            result.append(c); i += 1
+    return ''.join(result)
+
+
+def _deduplicate_description(desc):
+    """Remove repeated phrase prefix from merged descriptions ('Foo Bar Foo Bar Baz' → 'Foo Bar Baz')."""
+    words = desc.split()
+    n = len(words)
+    for i in range(max(2, n // 5), n // 2 + 1):
+        if words[:i] == words[i:2 * i]:
+            return ' '.join(words[i:])
+    return desc
+
+
 def _extract_invoice_number(text):
     for pat in _INV_NUM_PATTERNS:
         m = re.search(pat, text, re.IGNORECASE)
@@ -200,7 +234,7 @@ def _clean_num(s):
 
 def _try_parse_line(line):
     """Try to extract (description, qty, total_price) from a text line."""
-    original = line.strip()
+    original = _undouble_chars(line.strip())
     if not original or len(original) < 8:
         return None
 
@@ -208,6 +242,10 @@ def _try_parse_line(line):
     if _SKIP_RE.search(original):
         return None
     if _HEADER_RE.match(original):
+        return None
+
+    # Skip customer name lines like "Nicolene Geyser DATE 15/07/2026"
+    if re.search(r'\bDATE\b', original, re.IGNORECASE) and not re.search(r'\binvoice\b|\border\b', original, re.IGNORECASE):
         return None
 
     # Strip leading item code (all-caps alphanum, e.g. "TILES001BLUE", "1HALM", "RBN001 -")
@@ -272,11 +310,16 @@ def _try_parse_line(line):
     desc = re.sub(r'\s+\b(ea|PACK|Pack|unit|Unit|Standard|STD|PK)\b\s*$', '', desc, flags=re.IGNORECASE).strip()
     # Remove trailing "x" from "x6" product names like "MM Choc Chip x6" → "MM Choc Chip"
     desc = re.sub(r'\s+[xX]\s*$', '', desc).strip()
+    # De-duplicate repeated phrase prefix (Nutri-Go activity+description columns merged)
+    desc = _deduplicate_description(desc)
 
     if not desc or len(desc) < 3:
         return None
     # Description mustn't be purely numeric
     if re.match(r'^[\d\s.,R%]+$', desc):
+        return None
+    # Skip if starts with # (invoice/document number line like "# Inv-000368")
+    if desc.startswith('#'):
         return None
     # Skip if description ends in colon (header field like "Account:", "Branch:")
     if desc.rstrip().endswith(':'):

@@ -4867,8 +4867,7 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
   _purchaseRunLines = [];
 
   (result.lines || []).forEach(ln => {
-    addPurchaseLine();
-    const lineEl = container.lastElementChild;
+    const lineEl = addPurchaseLine();
     if (!lineEl) return;
 
     const productSel = lineEl.querySelector('[data-product-select]');
@@ -5088,6 +5087,8 @@ function addPurchaseLine() {
     if (currentVal) productSel.value = currentVal;
     toggleLink.textContent = _showingAllProducts ? 'Show supplier products only' : 'Not on list? Show all products';
   });
+
+  return line;
 }
 
 function _updatePurchaseRunCostPreview() {
