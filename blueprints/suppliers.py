@@ -527,6 +527,55 @@ def _normalize_invoice_number(inv_num):
     return digits if digits else str(inv_num).strip().lower()
 
 
+def _check_cost_sanity(product_id, inv_qty, line_total, detected_multiplier):
+    """Compare parsed unit cost against historical median from stock_batches.
+    Returns a warning dict when pack multiplier is likely missing, else None.
+    Requires ≥2 historical batches; only fires when detected_multiplier > 1."""
+    if not product_id or not detected_multiplier or detected_multiplier <= 1:
+        return None
+    if inv_qty <= 0 or line_total <= 0:
+        return None
+
+    batches = (StockBatch.query
+               .filter_by(product_id=product_id)
+               .filter(StockBatch.cost_per_base_unit.isnot(None),
+                       StockBatch.cost_per_base_unit > 0)
+               .order_by(StockBatch.purchased_at.desc())
+               .limit(8).all())
+
+    if len(batches) < 2:
+        return None
+
+    prod = db.session.get(Product, product_id)
+    if not prod:
+        return None
+
+    # Convert cost_per_base_unit to per-item cost
+    # unit-type products: direct; weight/volume products: × package_size
+    pkg_size = float(getattr(prod, 'package_size', None) or 1) or 1.0
+    costs = sorted(float(b.cost_per_base_unit) * pkg_size for b in batches)
+    n = len(costs)
+    hist_median = costs[n // 2] if n % 2 else (costs[n//2 - 1] + costs[n//2]) / 2
+
+    if hist_median <= 0:
+        return None
+
+    current_cost = line_total / inv_qty
+    pack_cost    = line_total / (inv_qty * detected_multiplier)
+
+    # Flag when: current_cost is abnormally high (>3× hist) AND pack-adjusted is close (within 50%)
+    if (current_cost > hist_median * 3
+            and abs(pack_cost - hist_median) / hist_median < 0.50):
+        return {
+            'detected_multiplier': detected_multiplier,
+            'current_unit_cost':   round(current_cost, 2),
+            'pack_unit_cost':      round(pack_cost, 2),
+            'historical_median':   round(hist_median, 2),
+            'sample_count':        n,
+        }
+    return None
+
+
 def _apply_mappings(sid, lines, document_type='unknown'):
     """Apply learned mappings to parsed scan lines.
     Each line gets: suggested_product_id, suggested_product_name, pack_multiplier,
@@ -604,6 +653,18 @@ def _apply_mappings(sid, lines, document_type='unknown'):
             enriched_line['suggested_product_id']   = mapping.product_id
             enriched_line['suggested_product_name'] = prod.name if prod else ''
             enriched_line['pack_multiplier']        = float(mapping.pack_multiplier)
+
+            # Cost sanity: compare unit cost vs historical median (catches forgotten multiplier)
+            pm = float(mapping.pack_multiplier)
+            if pm > 1:
+                cw = _check_cost_sanity(
+                    mapping.product_id,
+                    float(line.get('qty', 1)),
+                    float(line.get('total_price', 0)),
+                    pm,
+                )
+                if cw:
+                    enriched_line['cost_warning'] = cw
 
         enriched.append(enriched_line)
 

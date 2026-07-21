@@ -4852,10 +4852,21 @@ document.getElementById('pr-scan-input')?.addEventListener('change', async funct
     const qtyDisplay = (ln.pack_multiplier && ln.pack_multiplier > 1)
       ? `<span class="text-info fw-semibold">×${ln.qty * ln.pack_multiplier}</span><span class="text-muted small ms-1">(${ln.qty}×${ln.pack_multiplier})</span>`
       : `<span class="text-muted">×${ln.qty}</span>`;
-    html += `<div class="d-flex align-items-start gap-1 py-1 ${i > 0 ? 'border-top' : ''}">
-      <span class="flex-fill">${escapeHtml(ln.description)}${matchHtml}</span>
-      <span class="ms-2 text-nowrap">${qtyDisplay}</span>
-      <span class="fw-semibold ms-2 text-nowrap">R${fmt(ln.total_price)}</span>
+    const costWarnHtml = ln.cost_warning ? (() => {
+      const cw = ln.cost_warning;
+      return `<div class="alert alert-warning py-1 px-2 small mt-1 mb-0">
+        <i class="bi bi-exclamation-triangle me-1"></i>
+        Unit cost <strong>R${fmt(cw.current_unit_cost)}</strong> is abnormal
+        (historical median R${fmt(cw.historical_median)} from ${cw.sample_count} purchase${cw.sample_count !== 1 ? 's' : ''}).
+        Pack-adjusted R${fmt(cw.pack_unit_cost)} (÷${cw.detected_multiplier}) looks correct.
+      </div>`;
+    })() : '';
+    html += `<div class="py-1 ${i > 0 ? 'border-top' : ''}">
+      <div class="d-flex align-items-start gap-1">
+        <span class="flex-fill">${escapeHtml(ln.description)}${matchHtml}</span>
+        <span class="ms-2 text-nowrap">${qtyDisplay}</span>
+        <span class="fw-semibold ms-2 text-nowrap">R${fmt(ln.total_price)}</span>
+      </div>${costWarnHtml}
     </div>`;
   });
   if (result.shipping) {
