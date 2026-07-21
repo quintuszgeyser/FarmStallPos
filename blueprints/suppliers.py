@@ -1426,6 +1426,24 @@ def api_suppliers_purchase_run(sid):
     inv.accounting_balanced    = accounting_balanced
     inv.total                  = float(subtotal + vat_total + total_addl)
 
+    # VAT reconciliation check — warn if float storage drifts from computed Decimal totals
+    if vat_total > 0 and prepared_lines:
+        sum_vat_shares = sum(vat_shares)
+        # Σ(vat_shares) must equal vat_total exactly (_split_costs guarantees this)
+        if abs(sum_vat_shares - vat_total) > Decimal('0.02'):
+            current_app.logger.warning(
+                f'[purchase_run] VAT reconciliation mismatch for invoice {run_id}: '
+                f'sum_vat_shares={sum_vat_shares} != vat_total={vat_total}'
+            )
+        # Σ(base_ex_vat) + Σ(vat_shares) == Σ(base_incl_vat) — waterfall integrity
+        sum_ex   = sum(pl['base_cost_total'] for pl in prepared_lines)
+        sum_incl = sum(pl['base_cost_total'] + vat_shares[i] for i, pl in enumerate(prepared_lines))
+        if abs((sum_ex + sum_vat_shares) - sum_incl) > Decimal('0.01'):
+            current_app.logger.warning(
+                f'[purchase_run] VAT waterfall mismatch for invoice {run_id}: '
+                f'sum_ex={sum_ex} + sum_vat={sum_vat_shares} != sum_incl={sum_incl}'
+            )
+
     # Update supplier's last_run_costs for pre-population next time
     if addl_costs and batches_created > 0:
         run_level = [{'label': c['label'], 'type': c['type'], 'amount': float(Decimal(str(c['amount'])).quantize(Decimal('0.01')))} for c in addl_costs]

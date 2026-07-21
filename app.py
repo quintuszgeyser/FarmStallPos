@@ -1645,6 +1645,10 @@ def strong_migrate():
         pg_try("INSERT INTO settings (key, value) VALUES ('receipt_printer_id', '') ON CONFLICT DO NOTHING")
         pg_try("INSERT INTO settings (key, value) VALUES ('auto_print_receipt', 'false') ON CONFLICT DO NOTHING")
 
+        # Costing mode: VAT_INCLUSIVE = COGS uses final_cost_incl_vat (default for VAT-registered Lady Coleen)
+        # Switch to VAT_EXCLUSIVE later (e.g. accountant request) without migrating any batch data
+        pg_try("INSERT INTO settings (key, value) VALUES ('costing_mode', 'VAT_INCLUSIVE') ON CONFLICT DO NOTHING")
+
         # White-label branding keys (seed as '' = use Lady Coleen / env fallback, so the
         # LC box and any un-customised store render byte-identical). See White-Label
         # Branding Plan. Runtime-editable via /api/settings + the Branding UI card.
