@@ -378,9 +378,16 @@ class StockBatch(db.Model):
     import_run_id       = db.Column(db.String(36), nullable=True)  # UUID grouping batches from one CSV import
     produce_ref         = db.Column(db.String(36), nullable=True)   # produce_uuid — links to StockConsumption records for the produce run
     produce_cost        = db.Column(Numeric(10, 4), nullable=True)   # total ingredient cost stamped at produce time
-    vat_amount          = db.Column(Numeric(10, 4), nullable=True)   # VAT allocated to this batch — retained for reporting
-    additional_costs    = db.Column(db.Text, nullable=True)         # JSON array of {label,type,amount,source,source_id}
-    base_cost_total     = db.Column(Numeric(18, 4), nullable=True)  # product line cost ex-VAT
+    # VAT-aware costing columns — all stamped at creation time, never derived at query time.
+    # Allocation order: base_cost_total (ex-VAT) → +vat_amount → base_cost_incl_vat
+    #                   → +overheads → final_cost_incl_vat  (= cost_per_base_unit × qty_base)
+    # Future: add vat_rate per line when mixed-rate (0%/15%) invoices are needed.
+    vat_amount           = db.Column(Numeric(10, 4), nullable=True)  # proportional VAT share
+    base_cost_total      = db.Column(Numeric(18, 4), nullable=True)  # product line cost ex-VAT
+    base_cost_incl_vat   = db.Column(Numeric(18, 4), nullable=True)  # base_cost_total + vat_amount
+    allocated_shipping   = db.Column(Numeric(18, 4), nullable=True)  # shipping overhead share only
+    final_cost_incl_vat  = db.Column(Numeric(18, 4), nullable=True)  # base_incl_vat + all overheads
+    additional_costs     = db.Column(db.Text, nullable=True)         # JSON {label,type,amount,source,source_id}
     cost_adjustment_reason = db.Column(db.Text, nullable=True)     # optional free-text reason for a post-creation edit
     updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
     updated_by          = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)

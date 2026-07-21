@@ -1392,8 +1392,12 @@ def api_suppliers_purchase_run(sid):
                             running += entry_share
                         batch_addl.append({**ac, 'amount': float(entry_share)})
 
-        # FIFO cost = (ex_vat + vat + overhead) / qty_base
-        cost_per_base = (pl['base_cost_total'] + vat_share + share) / Decimal(str(pl['qty_base']))
+        # Allocation: ex_vat + vat = incl_vat → + overheads = final_cost
+        base_incl_vat    = pl['base_cost_total'] + vat_share
+        shipping_alloc   = sum(Decimal(str(e['amount'])) for e in batch_addl
+                               if e.get('type') == 'shipping') if batch_addl else Decimal('0')
+        final_cost       = base_incl_vat + share
+        cost_per_base    = final_cost / Decimal(str(pl['qty_base']))
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
@@ -1401,6 +1405,9 @@ def api_suppliers_purchase_run(sid):
             cost_per_base_unit=cost_per_base,
             base_cost_total=pl['base_cost_total'],
             vat_amount=float(vat_share.quantize(Decimal('0.0001'))) if vat_total > 0 else None,
+            base_cost_incl_vat=float(base_incl_vat),
+            allocated_shipping=float(shipping_alloc) if shipping_alloc > 0 else None,
+            final_cost_incl_vat=float(final_cost),
             additional_costs=_json.dumps(batch_addl) if batch_addl else None,
             supplier_id=sid,
             user_id=u.id if u else None,
@@ -1835,7 +1842,11 @@ def api_supplier_invoice_update(sid, inv_id):
                             entry_share = (Decimal(str(ac['amount'])) / total_addl * share).quantize(Decimal('0.01'))
                             running += entry_share
                         batch_addl.append({**ac, 'amount': float(entry_share)})
-        cost_per_base = (pl['base_cost_total'] + vat_share + share) / Decimal(str(pl['qty_base']))
+        base_incl_vat_upd   = pl['base_cost_total'] + vat_share
+        shipping_alloc_upd  = sum(Decimal(str(e['amount'])) for e in batch_addl
+                                  if e.get('type') == 'shipping') if batch_addl else Decimal('0')
+        final_cost_upd      = base_incl_vat_upd + share
+        cost_per_base       = final_cost_upd / Decimal(str(pl['qty_base']))
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
@@ -1843,6 +1854,9 @@ def api_supplier_invoice_update(sid, inv_id):
             cost_per_base_unit=cost_per_base,
             base_cost_total=pl['base_cost_total'],
             vat_amount=float(vat_share.quantize(Decimal('0.0001'))) if vat_total_upd > 0 else None,
+            base_cost_incl_vat=float(base_incl_vat_upd),
+            allocated_shipping=float(shipping_alloc_upd) if shipping_alloc_upd > 0 else None,
+            final_cost_incl_vat=float(final_cost_upd),
             additional_costs=_json.dumps(batch_addl) if batch_addl else None,
             supplier_id=sid,
             user_id=u.id if u else None,

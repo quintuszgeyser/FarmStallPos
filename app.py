@@ -1519,7 +1519,11 @@ def strong_migrate():
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS discount_total NUMERIC(18,4)")
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS vat_treatment TEXT")
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS accounting_balanced BOOLEAN")
+        # Per-batch VAT costing columns (allocation order: ex_vat → +vat → incl_vat → +overheads → final)
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(10,4)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS base_cost_incl_vat NUMERIC(18,4)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS allocated_shipping NUMERIC(18,4)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS final_cost_incl_vat NUMERIC(18,4)")
 
         # Return tracking: dedicated column instead of void_reason string pattern
         pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
