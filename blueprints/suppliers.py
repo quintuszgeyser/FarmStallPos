@@ -55,7 +55,9 @@ _SKIP_RE = re.compile(
     # Non-word-boundary patterns (end in colon, period, or slash — \b fails after them)
     r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by)\s*:'
     r'|(?:tel|fax|email|www)\s*[.:]'
-    r'|p\.o\.|s\.o\.',
+    r'|p\.o\.|s\.o\.'
+    # Invoice/order header lines like "Order 015832", "Invoice 12345"
+    r'|\border\s+\d{5,}',
     re.IGNORECASE,
 )
 
@@ -115,7 +117,9 @@ def _extract_from_tables(pdf):
             if not header:
                 continue
 
-            desc_col  = next((i for i, h in enumerate(header) if 'desc' in h or ('item' in h and 'no' not in h)), None)
+            desc_col  = next((i for i, h in enumerate(header) if 'desc' in h), None)
+            if desc_col is None:
+                desc_col = next((i for i, h in enumerate(header) if 'item' in h and 'no' not in h), None)
             qty_col   = next((i for i, h in enumerate(header) if h in ('qty', 'quantity') or h.startswith('qty')), None)
             total_col = next((i for i, h in enumerate(header) if 'total' in h or 'amount' in h or 'nett' in h), None)
 
@@ -248,8 +252,9 @@ def _try_parse_line(line):
     if re.search(r'\bDATE\b', original, re.IGNORECASE) and not re.search(r'\binvoice\b|\border\b', original, re.IGNORECASE):
         return None
 
-    # Strip leading item code (all-caps alphanum, e.g. "TILES001BLUE", "1HALM", "RBN001 -")
-    line = re.sub(r'^[A-Z][A-Z0-9]{3,}\s*[-–]?\s*', '', original, count=1).strip()
+    # Strip leading item code(s) (all-caps alphanum, e.g. "TILES001BLUE", "LEO03 BROWNSLIM")
+    # Using + to handle consecutive codes on the same line
+    line = re.sub(r'^(?:[A-Z][A-Z0-9]{3,}\s*[-–]?\s*)+', '', original).strip()
     # Strip leading date (YYYY/MM/DD or DD/MM/YYYY)
     line = re.sub(r'^\d{4}[/.-]\d{2}[/.-]\d{2}\s+', '', line).strip()
     line = re.sub(r'^\d{1,2}[/.-]\d{2}[/.-]\d{2,4}\s+', '', line).strip()
@@ -259,11 +264,26 @@ def _try_parse_line(line):
     if len(line) < 4:
         return None
 
+    # Strip embedded dates (mid-line "due date" columns like "2026/07/08")
+    line = re.sub(r'\b\d{4}[/.-]\d{2}[/.-]\d{2}\b', '', line)
+    line = re.sub(r'\b\d{1,2}[/.-]\d{2}[/.-]\d{4}\b', '', line)
+    # Strip product size specs in parentheses: (12x60g), (480g), (480g Tub)
+    line = re.sub(r'\(\d+\s*[xX]\s*\d+\s*[gmlk][gl]?\)', '', line)
+    line = re.sub(r'\(\d+\s*[gmlk][gl]?(?:\s+\w+)?\)', '', line)
+    # Strip percentage column values like "0.00%", "15.00%" before they produce false qty tokens
+    line = re.sub(r'\b\d+\.?\d*\s*%', '', line)
+    line = re.sub(r'\s{2,}', ' ', line).strip()
+
     # Collect all price-like tokens: optional R, digits with optional comma-thousands, decimal
     # Exclude percentages (numbers immediately followed by %)
     num_pat = r'R?\s*(\d{1,3}(?:[,\s]\d{3})*(?:\.\d{1,2})?|\d+\.\d{1,2}|\d{1,5})(?!\s*%)'
     tokens = []
     for m in re.finditer(num_pat, line):
+        # Skip pack-size specifiers like "x6", "X12" — but only simple integers, not space-thousands prices
+        if m.start() > 0 and line[m.start() - 1].lower() == 'x':
+            raw_tok = m.group(1)
+            if ' ' not in raw_tok and ',' not in raw_tok:
+                continue
         val = _clean_num(m.group(1))
         if val is not None and val >= 0:
             tokens.append((m.start(), m.end(), val))
@@ -308,8 +328,8 @@ def _try_parse_line(line):
 
     # Remove trailing units/tags like "ea", "PACK", "Standard" that got left in desc
     desc = re.sub(r'\s+\b(ea|PACK|Pack|unit|Unit|Standard|STD|PK)\b\s*$', '', desc, flags=re.IGNORECASE).strip()
-    # Remove trailing "x" from "x6" product names like "MM Choc Chip x6" → "MM Choc Chip"
-    desc = re.sub(r'\s+[xX]\s*$', '', desc).strip()
+    # Remove trailing pack-size suffix like "x6", "x 6", "x" from product names
+    desc = re.sub(r'\s+[xX]\s*\d*\s*$', '', desc).strip()
     # De-duplicate repeated phrase prefix (Nutri-Go activity+description columns merged)
     desc = _deduplicate_description(desc)
 
