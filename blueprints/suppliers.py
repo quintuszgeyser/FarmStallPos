@@ -58,6 +58,7 @@ _SKIP_RE = re.compile(
     r'|eikeboom|hermon|cape\s+town|durbanville|sandton|melrose|boston'
     r'|first\s+national\s+bank|nedbank|absa|standard\s+bank|capitec\s+bank|fnb'
     r'|account\s+holder|branch\s+name|universal\s+branch|account\s+no\b'
+    r'|\(pty\)|pty\s+ltd|postal\s+address|physical\s+address'
     r'|waybill|tracking\s+no|tracking\s+number|box\s+\d+\s+of\s+\d+'
     r'|receiver|consignee|consignor|courier\s+ref)\b'
     r'|\b\d{4,5}\b\s*$'    # lines ending with a postcode (SA 4-digit)
@@ -146,7 +147,7 @@ def _extract_from_tables(pdf):
             if desc_col is None:
                 desc_col = next((i for i, h in enumerate(header) if 'item' in h and 'no' not in h), None)
             qty_col   = next((i for i, h in enumerate(header) if h in ('qty', 'quantity') or h.startswith('qty')), None)
-            total_col = next((i for i, h in enumerate(header) if 'total' in h or 'amount' in h or 'nett' in h), None)
+            total_col = next((i for i, h in enumerate(header) if 'total' in h or 'amount' in h or 'nett' in h or h.startswith('ext')), None)
 
             if desc_col is None or total_col is None or desc_col == total_col:
                 continue
@@ -179,7 +180,20 @@ def _extract_from_tables(pdf):
                     price = _clean_num(total_lines[k])
                     if not price or price <= 0:
                         continue
-                    desc = desc_groups[k] if k < len(desc_groups) else ''
+                    if n == 1:
+                        # Single product per row — join all desc lines, filtering out header/footer junk
+                        clean_dl = [l for l in desc_lines if l
+                                    and not _SKIP_RE.search(l)
+                                    and not _CONTINUATION_SKIP_RE.search(l)
+                                    and not _HEADER_RE.match(l)]
+                        desc = ' '.join(clean_dl)
+                        # Strip item codes that may have bled from adjacent Code column
+                        desc = re.sub(r'^(?:[A-Z][A-Z0-9]{3,}\s*[-–]?\s*)+', '', desc).strip()
+                        desc = re.sub(r'^\([A-Z0-9/]+\)\s*', '', desc).strip()   # "(GREEN) " remnants
+                        desc = re.sub(r'^/[A-Z0-9/]+\s+', '', desc).strip()      # "/YEL " remnants
+                        desc = _deduplicate_description(desc)
+                    else:
+                        desc = desc_groups[k] if k < len(desc_groups) else ''
                     if not desc or _SKIP_RE.search(desc) or _HEADER_RE.match(desc):
                         continue
                     desc = _deduplicate_description(desc)
@@ -328,7 +342,9 @@ def _try_parse_line(line):
     line = re.sub(r'^\d{1,2}[/.-]\d{2}[/.-]\d{2,4}\s+', '', line).strip()
     # Strip SA company registration numbers at line start (e.g. "2010/", "2010/123456/07 ")
     line = re.sub(r'^\d{4}/(?:\d+/\d+)?\s*', '', line).strip()
-    # Strip leading line number (a bare integer followed by space)
+    # Strip leading line number — save value in case it's actually the qty
+    _line_num_m = re.match(r'^(\d+)\s+', line)
+    _saved_leading_int = int(_line_num_m.group(1)) if _line_num_m else None
     line = re.sub(r'^\d+\s+', '', line, count=1).strip()
     # Re-apply item code strip after line number removal (e.g. "1 SCCBM01 Product" → "Product")
     line = re.sub(r'^(?:[A-Z][A-Z0-9]{3,}\s*[-–]?\s*)+', '', line).strip()
@@ -374,6 +390,10 @@ def _try_parse_line(line):
         rest = line[m.end():m.end() + 4].lower()
         if re.match(r'(?:ml|kg|g(?!b)|l(?!b))\b', rest):
             continue
+        # Skip "N per <unit>" pack-count descriptors: "24 per packet", "25 per packet"
+        rest_long = line[m.end():m.end() + 8].lower()
+        if re.match(r'\s+per\s', rest_long):
+            continue
         val = _clean_num(m.group(1))
         if val is not None and val >= 0:
             tokens.append((m.start(), m.end(), val))
@@ -412,6 +432,14 @@ def _try_parse_line(line):
                 qty = float(q_round)
                 unit_price_candidate = up
                 break
+
+    # Fallback: if only 2 price tokens (unit_price + total) and a leading integer was stripped,
+    # check if leading_int × unit_price ≈ total — if so, it was a qty, not a line number.
+    # (e.g. "6 FGAP300 Apricot Jam (300g) 47.94 287.64" → qty=6)
+    if qty == 1.0 and _saved_leading_int and _saved_leading_int > 1 and len(qty_tokens) == 2:
+        up = qty_tokens[0][2]
+        if up > 0 and abs(up * _saved_leading_int - total) / max(total, 0.01) < 0.02:
+            qty = float(_saved_leading_int)
 
     # Description = text before the first number token
     desc_end = tokens[0][0]
@@ -1124,7 +1152,7 @@ def _parse_invoice_pdf(content):
     seen = set()
     deduped = []
     for item in lines:
-        key = (item['description'][:30].lower(), item['total_price'])
+        key = (item['description'].lower(), item['total_price'])
         if key not in seen:
             seen.add(key)
             deduped.append(item)
