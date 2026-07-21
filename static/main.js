@@ -53,6 +53,7 @@ let _costCategories = [
   {name:'labour',label:'Labour',color:'#198754'},
   {name:'utilities',label:'Utilities',color:'#fd7e14'},
   {name:'packaging',label:'Packaging',color:'#6f42c1'},
+  {name:'vat',label:'VAT',color:'#dc3545'},
   {name:'other',label:'Other',color:'#6c757d'},
 ];
 async function _loadCostCategories() {
@@ -4995,14 +4996,19 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
     if (productSel) productSel.title = `Invoice: ${ln.description}`;
   });
 
-  // Sync shipping from invoice: replace existing shipping row (or remove if invoice has none)
+  // Sync overhead costs from invoice: replace shipping + VAT rows (or remove if invoice has none)
   const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
   if (prAddlWrap) {
     const existing = _readAdditionalCosts(prAddlWrap);
     const withoutShipping = existing.filter(c => c.type !== 'shipping');
-    const newCosts = (result.shipping && result.shipping > 0)
+    const afterShipping = (result.shipping && result.shipping > 0)
       ? [...withoutShipping, { label: 'Shipping / delivery', type: 'shipping', amount: result.shipping }]
       : withoutShipping;
+    // Auto-add VAT as additional cost when lines are ex-VAT (so VAT flows into COGS)
+    const withoutVat = afterShipping.filter(c => c.type !== 'vat');
+    const newCosts = (result.vat_total > 0 && result.vat_treatment === 'lines_excl_vat')
+      ? [...withoutVat, { label: `VAT (${_globalVatPct}%)`, type: 'vat', amount: result.vat_total }]
+      : withoutVat;
     _renderAdditionalCostsBlock(prAddlWrap, newCosts);
   }
 
@@ -5263,8 +5269,9 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     date: dateVal || todayISO(),
     additional_costs: prAddlCosts,
     ...(prInvoiceRef ? { invoice_ref: prInvoiceRef } : {}),
-    // VAT fields from scan — proportionally allocated to batches, retained for reporting
-    ...(_lastScanResult?.vat_total > 0 ? {
+    // VAT reporting fields — only sent when VAT is NOT already in additional_costs
+    // (lines_excl_vat → VAT added to additional_costs for COGS; no need to store separately)
+    ...(_lastScanResult?.vat_total > 0 && _lastScanResult?.vat_treatment !== 'lines_excl_vat' ? {
       vat_total:           _lastScanResult.vat_total,
       discount_total:      _lastScanResult.discount_total || 0,
       vat_treatment:       _lastScanResult.vat_treatment || 'unknown',
@@ -13065,7 +13072,7 @@ function _renderInvLines() {
       <td><input class="form-control form-control-sm" value="${line.name || ''}" data-inv-name="${i}"></td>
       <td><input type="number" step="any" min="0.001" class="form-control form-control-sm" value="${line.qty || 1}" data-inv-qty="${i}"></td>
       ${unitCell}
-      <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.0001" min="0" class="form-control" value="${line.unit_price != null ? +parseFloat(line.unit_price).toFixed(4) : ''}" data-inv-price="${i}"><button type="button" class="btn ${line._vat_applied ? 'btn-warning' : 'btn-outline-secondary'} btn-sm px-1" data-inv-vat="${i}" title="${line._vat_applied ? 'Remove VAT (÷' + (1 + _globalVatPct/100) + ')' : 'Add VAT (×' + (1 + _globalVatPct/100) + ')'}" style="font-size:11px;white-space:nowrap">${line._vat_applied ? '<i class="bi bi-dash-circle"></i> VAT' : '<i class="bi bi-plus-circle"></i> VAT'}</button></div></td>
+      <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.0001" min="0" class="form-control" value="${line.unit_price != null ? +parseFloat(line.unit_price).toFixed(4) : ''}" data-inv-price="${i}"><button type="button" class="btn btn-outline-secondary btn-sm px-1" data-inv-vat="${i}" title="Price includes VAT? Click to strip it (÷${(1 + _globalVatPct/100).toFixed(2)})" style="font-size:11px;white-space:nowrap"><i class="bi bi-dash-circle"></i> VAT</button></div></td>
       <td class="text-end align-middle fw-semibold" id="inv-line-sub-${i}">R${fmt(line.subtotal || 0)}</td>
       <td><button class="btn btn-outline-danger btn-sm" data-inv-remove="${i}"><i class="bi bi-x-lg"></i></button></td>`;
     body.appendChild(tr);
@@ -13114,15 +13121,10 @@ function _renderInvLines() {
     });
 
     tr.querySelector(`[data-inv-vat="${i}"]`).addEventListener('click', () => {
+      // Strip VAT from the unit price (use when you typed in a VAT-inclusive price)
       const factor = 1 + _globalVatPct / 100;
-      if (_invLines[i]._vat_applied) {
-        _invLines[i].unit_price  = parseFloat((_invLines[i].unit_price / factor).toFixed(4));
-        _invLines[i]._vat_applied = false;
-      } else {
-        _invLines[i].unit_price  = parseFloat((_invLines[i].unit_price * factor).toFixed(4));
-        _invLines[i]._vat_applied = true;
-      }
-      _invLines[i].subtotal = (_invLines[i].qty || 1) * _invLines[i].unit_price;
+      _invLines[i].unit_price = parseFloat((_invLines[i].unit_price / factor).toFixed(4));
+      _invLines[i].subtotal   = (_invLines[i].qty || 1) * _invLines[i].unit_price;
       _renderInvLines();
       _invRecalc();
     });

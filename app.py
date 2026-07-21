@@ -1883,11 +1883,18 @@ def _seed_cost_categories():
             CostCategory(name='labour',     label='Labour',     color='#198754', sort_order=2),
             CostCategory(name='utilities',  label='Utilities',  color='#fd7e14', sort_order=3),
             CostCategory(name='packaging',  label='Packaging',  color='#6f42c1', sort_order=4),
-            CostCategory(name='other',      label='Other',      color='#6c757d', sort_order=5),
+            CostCategory(name='vat',        label='VAT',        color='#dc3545', sort_order=5),
+            CostCategory(name='other',      label='Other',      color='#6c757d', sort_order=6),
         ]
         for d in defaults:
             db.session.add(d)
         db.session.commit()
+    else:
+        # Idempotent: ensure vat category exists in existing databases
+        if not CostCategory.query.filter_by(name='vat').first():
+            max_order = db.session.query(db.func.max(CostCategory.sort_order)).scalar() or 5
+            db.session.add(CostCategory(name='vat', label='VAT', color='#dc3545', sort_order=max_order + 1))
+            db.session.commit()
 
 
 def create_app():
