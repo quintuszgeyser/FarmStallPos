@@ -262,6 +262,7 @@ def api_stock_receive():
     batch = StockBatch(
         product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=qty_base,
         cost_per_base_unit=cost_per_base,
+        ownership_type='CONSIGNMENT' if getattr(p, 'is_consignment', False) else 'NORMAL',
         base_cost_total=base_cost_total,
         additional_costs=_json.dumps(addl_costs) if addl_costs else None,
         supplier_id=supplier_id, user_id=u.id if u else None,

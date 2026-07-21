@@ -1571,6 +1571,17 @@ def strong_migrate():
         )""")
         pg_try("CREATE INDEX IF NOT EXISTS ix_csl_settlement ON consignment_settlement_lines(settlement_id)")
 
+        # Backfill: batches for consignment products that were received before the
+        # ownership_type field was applied (stock receive path was missing the flag).
+        pg_try("""
+            UPDATE stock_batches sb
+            SET ownership_type = 'CONSIGNMENT'
+            FROM products p
+            WHERE sb.product_id = p.id
+              AND p.is_consignment = TRUE
+              AND sb.ownership_type = 'NORMAL'
+        """)
+
         # Return tracking: dedicated column instead of void_reason string pattern
         pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_sales_original_sale_id ON sales(original_sale_id)")
