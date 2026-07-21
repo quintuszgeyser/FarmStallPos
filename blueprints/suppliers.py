@@ -49,21 +49,24 @@ _SKIP_RE = re.compile(
     r'\b(?:total|subtotal|sub.total|balance\s+due|vat|tax\b|payment|paid|discount'
     r'|thank\s+you|powered\s+by|page\s+\d|terms|conditions|banking\s+details|account\s+holder'
     r'|branch\s+code|swift|bill\s+to|ship\s+to|sold\s+to|delivery\s+details'
-    r'|invoice\s+date|due\s+date|order\s+date|customer\s+order|customer\s+vat'
+    r'|invoice\s+date|due\s+date|order\s+date|customer\s+order|customer\s+vat|date\b'
     r'|signature|stock\s+controller|produced\s+by|postnet\s+suite|private\s+bag'
     r'|account\s+number|account\s+no|branch\s+name|account\s+type|account\s+name'
     r'|reg\s+number|registration\s+number|company\s+id|vat\s+reg|vat\s+no'
     r'|document\s+no|ref\s+no|purchase\s+order|bill\s+from|remit\s+to|prepared\s+by'
-    r'|south\s+africa|western\s+cape|gauteng|kwazulu'
+    r'|south\s+africa|western\s+cape|gauteng|kwazulu|somerset'
     r'|eikeboom|hermon|cape\s+town|durbanville|sandton|melrose|boston'
     r'|first\s+national\s+bank|nedbank|absa|standard\s+bank|capitec\s+bank|fnb'
     r'|account\s+holder|branch\s+name|universal\s+branch|account\s+no\b'
-    r'|\(pty\)|pty\s+ltd|postal\s+address|physical\s+address'
+    r'|pty\s+ltd|postal\s+address|physical\s+address'
     r'|waybill|tracking\s+no|tracking\s+number|box\s+\d+\s+of\s+\d+'
     r'|receiver|consignee|consignor|courier\s+ref)\b'
+    r'|\(pty\)'    # outside \b group — trailing \b fails after ")" (non-word char)
+    r'|\bbusiness\s+par'   # "Business Park", "Business Parl)" address fragments
     r'|\b\d{4,5}\b\s*$'    # lines ending with a postcode (SA 4-digit)
     # Non-word-boundary patterns (end in colon, period, or slash — \b fails after them)
-    r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by|sales\s+rep|name|additional\s+charges?)\s*:'
+    r'|(?:number|reference|document|invoice\s+no|contact|attn|attention|sold\s+by|sales\s+rep|name|additional\s+charges?|branch|account)\s*:'
+    r'|\b\d+\s+\w+\s+(?:street|road|avenue|drive|lane|close|crescent|way)\b'
     r'|(?:additional\s+charges?)'
     r'|(?:tel|fax|email|www)\s*[.:]'
     r'|p\.o\.|s\.o\.'
@@ -90,7 +93,8 @@ _SHIPPING_RE = re.compile(r'\b(shipping|courier|freight|transport|delivery|posta
 _CONTINUATION_SKIP_RE = re.compile(
     r'\b(?:tax\s+invoice|received\s+in|if\s+you\s+have|thank\s+you|your\s+order|banking\s+detail'
     r'|amount\s+due|order\s+total|subtotal|delivery\s+note|goods\s+received|good\s+order'
-    r'|this\s+invoice|please\s+pay|payment\s+due|enquiries|questions)\b'
+    r'|this\s+invoice|please\s+pay|payment\s+due|enquiries|questions|from\s+to'
+    r'|proforma\s+invoice|due\s*/\s*\(?credit\)?|statement\s+date)\b'
     r'|^\s*[#*─═]+\s*$',
     re.IGNORECASE,
 )
@@ -163,7 +167,26 @@ def _extract_from_tables(pdf):
             total_col = next((i for i, h in enumerate(header) if 'total' in h or 'amount' in h or 'nett' in h or h.startswith('ext')), None)
 
             if desc_col is None or total_col is None or desc_col == total_col:
-                continue
+                # Attempt fallback: detect columns from first data row (handles merged headers)
+                first_data = next((r for r in table[1:] if any(r)), None)
+                if first_data is None:
+                    continue
+                det_desc = det_qty = det_total = None
+                for ci, cell in enumerate(first_data):
+                    v = str(cell or '').strip()
+                    if not v:
+                        continue
+                    n = _clean_num(v)
+                    if n is None:
+                        if det_desc is None:
+                            det_desc = ci
+                    else:
+                        if n == round(n) and det_qty is None and det_desc is not None:
+                            det_qty = ci
+                        det_total = ci
+                if det_desc is None or det_total is None or det_desc == det_total:
+                    continue
+                desc_col, qty_col, total_col = det_desc, det_qty, det_total
 
             for row in table[1:]:
                 if not any(row):
@@ -382,6 +405,8 @@ def _try_parse_line(line):
     line = re.sub(r'^\d+\s+', '', line, count=1).strip()
     # Re-apply item code strip after line number removal (e.g. "1 SCCBM01 Product" → "Product")
     line = re.sub(r'^(?:[A-Z][A-Z0-9]{3,}\s*[-–]?\s*)+', '', line).strip()
+    # Strip PascalCase item codes: "SampleFDSD50", "SampleFDWC" (upper-start, lower-body, upper-suffix)
+    line = re.sub(r'^(?:[A-Z][a-z]+[A-Z]{2,}[A-Za-z0-9]*\s*[-–]?\s*)+', '', line).strip()
 
     if len(line) < 4:
         return None
@@ -424,9 +449,9 @@ def _try_parse_line(line):
         rest = line[m.end():m.end() + 4].lower()
         if re.match(r'(?:ml|kg|g(?!b)|l(?!b))\b', rest):
             continue
-        # Skip "N per <unit>" pack-count descriptors: "24 per packet", "25 per packet"
+        # Skip "N per <unit>" and "N/ packet" pack-count descriptors
         rest_long = line[m.end():m.end() + 8].lower()
-        if re.match(r'\s+per\s', rest_long):
+        if re.match(r'\s+per\s|/\s*pack', rest_long):
             continue
         val = _clean_num(m.group(1))
         if val is not None and val >= 0:
@@ -467,6 +492,15 @@ def _try_parse_line(line):
                 unit_price_candidate = up
                 break
 
+    # Fallback: if 2 tokens and first looks like space-thousands false-positive
+    # (e.g. "4 210.43" parsed as 4210.43 — decompose: qty=4, unit_price=210.43)
+    if len(qty_tokens) == 2 and qty == 1.0:
+        fv = qty_tokens[0][2]
+        q_c = int(fv / 1000)
+        p_c = round(fv - q_c * 1000, 2)
+        if q_c >= 2 and p_c > 0 and abs(q_c * p_c - total) < 0.02:
+            qty = float(q_c)
+
     # Fallback: if only 2 price tokens (unit_price + total) and a leading integer was stripped,
     # check if leading_int × unit_price ≈ total — if so, it was a qty, not a line number.
     # (e.g. "6 FGAP300 Apricot Jam (300g) 47.94 287.64" → qty=6)
@@ -484,6 +518,9 @@ def _try_parse_line(line):
         desc_end = tokens[1][0]
         desc = line[:desc_end].strip().strip('.,- ')
 
+    # Strip leading item-code suffixes that survive after description split
+    desc = re.sub(r'^\([A-Z0-9/]+\)\s*', '', desc).strip()   # "(GREEN)", "(GOLD)" remnants
+    desc = re.sub(r'^/[A-Z0-9/]+\s+', '', desc).strip()      # "/YEL" remnants
     # Remove trailing units/tags like "ea", "PACK", "Standard" that got left in desc
     desc = re.sub(r'\s+\b(ea|PACK|Pack|unit|Unit|Standard|STD|PK)\b\s*$', '', desc, flags=re.IGNORECASE).strip()
     # Remove trailing pack-size suffix like "x6", "x 6", "x" from product names
