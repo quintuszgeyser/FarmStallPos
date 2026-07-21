@@ -263,8 +263,53 @@ class SupplierInvoice(db.Model):
     notes                    = db.Column(db.Text, nullable=True)
     created_at               = db.Column(db.DateTime, nullable=True)
     created_by               = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    scan_raw_json            = db.Column(db.Text, nullable=True)            # original parser output for learning
     documents                = db.relationship('SupplierDocument', backref='invoice', lazy='dynamic',
                                                foreign_keys='SupplierDocument.invoice_id')
+
+
+class SupplierInvoiceTemplate(db.Model):
+    """Per-supplier document layout, VAT rules, and line classifier rules.
+    Learned from confirmed purchase runs. One active template per supplier."""
+    __tablename__ = 'supplier_invoice_templates'
+    id               = db.Column(db.Integer, primary_key=True)
+    supplier_id      = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False)
+    template_name    = db.Column(db.Text, nullable=True)
+    document_type    = db.Column(db.Text, nullable=False, default='unknown')
+    layout_type      = db.Column(db.Text, nullable=False, default='unknown')  # table | text | unknown
+    column_hints     = db.Column(db.Text, nullable=False, default='{}')        # JSON
+    totals_rules     = db.Column(db.Text, nullable=False, default='{}')        # JSON
+    vat_rules        = db.Column(db.Text, nullable=False, default='{}')        # JSON
+    line_classifier_rules = db.Column(db.Text, nullable=False, default='{}')  # JSON
+    confidence       = db.Column(Numeric(5, 4), nullable=False, default=0)
+    active           = db.Column(db.Boolean, nullable=False, default=True)
+    last_successful_parse_at = db.Column(db.DateTime, nullable=True)
+    last_failed_parse_at     = db.Column(db.DateTime, nullable=True)
+    created_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class SupplierProductMapping(db.Model):
+    """Per-supplier learned mapping: raw invoice description → internal product + pack_multiplier.
+    product_id is nullable — shipping, discount, and rounding lines are not products."""
+    __tablename__ = 'supplier_product_mappings'
+    id                         = db.Column(db.Integer, primary_key=True)
+    supplier_id                = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
+    supplier_sku               = db.Column(db.Text, nullable=True)
+    raw_description_original   = db.Column(db.Text, nullable=False)
+    raw_description_normalized = db.Column(db.Text, nullable=False)
+    raw_description_hash       = db.Column(db.Text, nullable=False)
+    product_id                 = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
+    line_type                  = db.Column(db.Text, nullable=False, default='STOCK_ITEM')
+    invoice_unit               = db.Column(db.Text, nullable=True)
+    stock_unit                 = db.Column(db.Text, nullable=True)
+    pack_multiplier            = db.Column(Numeric(12, 4), nullable=False, default=1)
+    allocation_method          = db.Column(db.Text, nullable=True)
+    correction_count           = db.Column(db.Integer, nullable=False, default=1)
+    confidence                 = db.Column(Numeric(5, 4), nullable=False, default=Decimal('0.6000'))
+    last_used_at               = db.Column(db.DateTime, nullable=True)
+    created_at                 = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_at                 = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class SupplierDocument(db.Model):

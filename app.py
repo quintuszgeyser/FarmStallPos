@@ -1429,6 +1429,53 @@ def strong_migrate():
         # Till sessions: track cash paid out for returns
         pg_try("ALTER TABLE till_sessions ADD COLUMN cash_refunds NUMERIC(10,2) DEFAULT 0")
 
+        # ── Supplier invoice learning tables ────────────────────────────────────
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS supplier_invoice_templates (
+              id               SERIAL PRIMARY KEY,
+              supplier_id      INTEGER NOT NULL REFERENCES suppliers(id),
+              template_name    TEXT,
+              document_type    TEXT NOT NULL DEFAULT 'unknown',
+              layout_type      TEXT NOT NULL DEFAULT 'unknown',
+              column_hints     TEXT NOT NULL DEFAULT '{}',
+              totals_rules     TEXT NOT NULL DEFAULT '{}',
+              vat_rules        TEXT NOT NULL DEFAULT '{}',
+              line_classifier_rules TEXT NOT NULL DEFAULT '{}',
+              confidence       NUMERIC(5,4) NOT NULL DEFAULT 0,
+              active           BOOLEAN NOT NULL DEFAULT TRUE,
+              last_successful_parse_at TIMESTAMP,
+              last_failed_parse_at     TIMESTAMP,
+              created_at       TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at       TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        pg_try("CREATE INDEX IF NOT EXISTS ix_sit_supplier ON supplier_invoice_templates (supplier_id)")
+        pg_try("""
+            CREATE TABLE IF NOT EXISTS supplier_product_mappings (
+              id                         SERIAL PRIMARY KEY,
+              supplier_id                INTEGER NOT NULL REFERENCES suppliers(id),
+              supplier_sku               TEXT,
+              raw_description_original   TEXT NOT NULL,
+              raw_description_normalized TEXT NOT NULL,
+              raw_description_hash       TEXT NOT NULL,
+              product_id                 INTEGER REFERENCES products(id),
+              line_type                  TEXT NOT NULL DEFAULT 'STOCK_ITEM',
+              invoice_unit               TEXT,
+              stock_unit                 TEXT,
+              pack_multiplier            NUMERIC(12,4) NOT NULL DEFAULT 1,
+              allocation_method          TEXT,
+              correction_count           INTEGER NOT NULL DEFAULT 1,
+              confidence                 NUMERIC(5,4) NOT NULL DEFAULT 0.6000,
+              last_used_at               TIMESTAMP,
+              created_at                 TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_at                 TIMESTAMP NOT NULL DEFAULT NOW(),
+              UNIQUE (supplier_id, raw_description_hash)
+            )
+        """)
+        pg_try("CREATE INDEX IF NOT EXISTS ix_spm_supplier ON supplier_product_mappings (supplier_id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_spm_hash ON supplier_product_mappings (supplier_id, raw_description_hash)")
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN scan_raw_json TEXT")
+
         # Return tracking: dedicated column instead of void_reason string pattern
         pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_sales_original_sale_id ON sales(original_sale_id)")

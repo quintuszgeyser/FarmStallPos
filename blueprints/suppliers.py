@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json as _json
 import os
@@ -10,7 +11,9 @@ from flask import Blueprint, jsonify, request, current_app, send_from_directory,
 from sqlalchemy import func
 
 from helpers import require_login, require_role, current_user, _gen_barcode
-from models import db, Supplier, StockBatch, StockConsumption, Purchase, Product, SupplierDocument, SupplierInvoice
+from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
+                    SupplierDocument, SupplierInvoice,
+                    SupplierInvoiceTemplate, SupplierProductMapping)
 
 bp = Blueprint('suppliers', __name__)
 
@@ -369,6 +372,278 @@ def _try_parse_line(line):
     }
 
 
+# ── Supplier learning helpers ─────────────────────────────────────────────────
+
+_DOC_TYPE_PATTERNS = [
+    (r'\btax\s+invoice\b',                   'tax_invoice'),
+    (r'\bproforma\b|\bpro[\s.\-]forma\b',    'proforma'),
+    (r'\bsales\s+order\b',                   'sales_order'),
+    (r'\bquotation\b|\bquote\b',             'quote'),
+    (r'\bcredit\s+note\b|\bcredit\s+memo\b', 'credit_note'),
+    (r'\bstatement\b',                       'statement'),
+    (r'\binvoice\b',                         'invoice'),
+]
+
+_CONFIDENT_MULT_RE = re.compile(
+    r'\b(\d+)\s*[xX]\s*\d',  # "12x60g", "12 x 60"
+    re.IGNORECASE,
+)
+_POSSIBLE_MULT_RE = re.compile(
+    r'\b(\d+)\s+per\s+(?:pack|packet|box|case|carton)\b'
+    r'|\b(?:case|carton|box)\s+of\s+(\d+)\b',
+    re.IGNORECASE,
+)
+
+
+def _detect_document_type(text):
+    sample = text[:3000]
+    for pattern, doc_type in _DOC_TYPE_PATTERNS:
+        if re.search(pattern, sample, re.IGNORECASE):
+            return doc_type
+    return 'unknown'
+
+
+def _normalize_desc(text):
+    """Lowercase, collapse whitespace, strip non-word chars for matching."""
+    if not text:
+        return ''
+    text = text.lower().strip()
+    text = re.sub(r'[^\w\s]', ' ', text)
+    return re.sub(r'\s+', ' ', text).strip()
+
+
+def _desc_hash(normalized):
+    return hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:32]
+
+
+def _token_similarity(a, b):
+    a_tok = set(_normalize_desc(a).split())
+    b_tok = set(_normalize_desc(b).split())
+    if not a_tok or not b_tok:
+        return 0.0
+    return len(a_tok & b_tok) / len(a_tok | b_tok)
+
+
+def _match_scan_rows(scan_lines, confirmed_lines):
+    """
+    Match confirmed purchase lines to original scan lines using composite score.
+    Score: 40% amount, 25% description similarity, 15% qty, 10% row order, 10% SKU.
+    Returns: [(confirmed_line, scan_line_or_None, score), ...]
+    """
+    n = len(scan_lines)
+    used = set()
+    matches = []
+
+    for ci_idx, ci in enumerate(confirmed_lines):
+        ci_total = float(ci.get('total_price', 0))
+        ci_qty   = float(ci.get('qty', 1))
+        ci_name  = ci.get('product_name', '')
+
+        best_score   = 0.0
+        best_si_idx  = None
+
+        for si_idx, si in enumerate(scan_lines):
+            if si_idx in used:
+                continue
+
+            si_total = float(si.get('total_price', 0))
+            si_qty   = float(si.get('qty', 1))
+            si_desc  = si.get('description', '')
+
+            score = 0.0
+
+            # 40% amount similarity
+            if si_total > 0:
+                diff_pct = abs(si_total - ci_total) / si_total
+                if diff_pct < 0.001:
+                    score += 0.40
+                elif diff_pct < 0.01:
+                    score += 0.28
+                elif diff_pct < 0.05:
+                    score += 0.12
+
+            # 25% description token overlap
+            score += _token_similarity(si_desc, ci_name) * 0.25
+
+            # 15% qty similarity (direct or via pack multiplier)
+            if abs(si_qty - ci_qty) < 0.01:
+                score += 0.15
+            elif si_qty > 0:
+                mult = round(ci_qty / si_qty)
+                if mult >= 2 and abs(si_qty * mult - ci_qty) < 0.01:
+                    score += 0.10
+
+            # 10% row order proximity
+            score += (1.0 - abs(si_idx - ci_idx) / max(n, 1)) * 0.10
+
+            # 10% SKU match
+            if si.get('sku') and ci.get('supplier_sku') and si['sku'] == ci['supplier_sku']:
+                score += 0.10
+
+            if score > best_score:
+                best_score  = score
+                best_si_idx = si_idx
+
+        if best_si_idx is not None and best_score >= 0.30:
+            matches.append((ci, scan_lines[best_si_idx], best_score))
+            used.add(best_si_idx)
+        else:
+            matches.append((ci, None, 0.0))
+
+    return matches
+
+
+def _detect_pack_multiplier(raw_desc, invoice_qty, stock_qty):
+    """Return (multiplier, confidence). Product size strings like '190g' are not multipliers."""
+    if abs(invoice_qty) < 0.001:
+        return 1, 1.0
+
+    ratio = stock_qty / invoice_qty
+    mult  = round(ratio)
+
+    if mult <= 1 or abs(ratio - mult) > 0.05:
+        return 1, 1.0
+
+    m = _CONFIDENT_MULT_RE.search(raw_desc)
+    if m and int(m.group(1)) == mult:
+        return mult, 0.95
+
+    m = _POSSIBLE_MULT_RE.search(raw_desc)
+    if m:
+        val = int(m.group(1) or m.group(2))
+        if val == mult:
+            return mult, 0.70
+
+    # Multiplier detected from qty difference but not validated in description
+    return mult, 0.50
+
+
+def _run_learning(sid, scan_result, confirmed_lines):
+    """
+    After a purchase run is confirmed/edited, compare confirmed lines to the
+    original scan result and update supplier_product_mappings.
+
+    confirmed_lines: [{product_id, product_name, qty, total_price, supplier_sku?}]
+    Returns list of learned-mapping dicts for UI display.
+    """
+    if not scan_result or not confirmed_lines:
+        return []
+
+    scan_lines = scan_result.get('lines') or []
+    if not scan_lines:
+        return []
+
+    matches = _match_scan_rows(scan_lines, confirmed_lines)
+    learned = []
+    now     = datetime.utcnow()
+
+    for ci, si, score in matches:
+        if si is None:
+            continue
+
+        raw_desc  = si.get('description', '')
+        if not raw_desc:
+            continue
+
+        norm_desc = _normalize_desc(raw_desc)
+        desc_hash = _desc_hash(norm_desc)
+
+        product_id  = ci.get('product_id')
+        stock_qty   = float(ci.get('qty', 1))
+        inv_qty     = float(si.get('qty', 1))
+
+        # Classify line type
+        if _SHIPPING_RE.search(raw_desc):
+            line_type  = 'SHIPPING'
+            product_id = None
+        elif product_id:
+            line_type = 'STOCK_ITEM'
+        else:
+            line_type = 'UNKNOWN'
+
+        pack_mult, mult_conf = _detect_pack_multiplier(raw_desc, inv_qty, stock_qty)
+
+        existing = SupplierProductMapping.query.filter_by(
+            supplier_id=sid, raw_description_hash=desc_hash,
+        ).first()
+
+        if existing:
+            prev_conf  = float(existing.confidence)
+            prod_changed = product_id and existing.product_id != product_id
+            mult_changed = abs(float(existing.pack_multiplier) - pack_mult) > 0.01
+
+            if prod_changed:
+                existing.product_id = product_id
+                prev_conf = max(0.10, prev_conf - 0.30)
+            if mult_changed:
+                existing.pack_multiplier = pack_mult
+                prev_conf = max(0.10, prev_conf - 0.20)
+            if not prod_changed and not mult_changed:
+                prev_conf = min(0.95, prev_conf + 0.10)
+
+            existing.line_type        = line_type
+            existing.confidence       = prev_conf
+            existing.correction_count += 1
+            existing.last_used_at     = now
+            existing.updated_at       = now
+
+            learned.append({
+                'action': 'updated', 'raw_description': raw_desc,
+                'product_id': existing.product_id, 'product_name': ci.get('product_name', ''),
+                'pack_multiplier': pack_mult, 'invoice_qty': inv_qty, 'stock_qty': stock_qty,
+                'line_type': line_type, 'confidence': float(existing.confidence),
+                'match_score': round(score, 2),
+            })
+        else:
+            init_conf = min(0.75, 0.50 + score * 0.30)
+            mapping = SupplierProductMapping(
+                supplier_id=sid,
+                raw_description_original=raw_desc,
+                raw_description_normalized=norm_desc,
+                raw_description_hash=desc_hash,
+                supplier_sku=si.get('sku') or None,
+                product_id=product_id if line_type == 'STOCK_ITEM' else None,
+                line_type=line_type,
+                pack_multiplier=pack_mult,
+                invoice_unit=si.get('unit', 'unit'),
+                correction_count=1,
+                confidence=init_conf,
+                last_used_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            db.session.add(mapping)
+
+            learned.append({
+                'action': 'created', 'raw_description': raw_desc,
+                'product_id': product_id, 'product_name': ci.get('product_name', ''),
+                'pack_multiplier': pack_mult, 'invoice_qty': inv_qty, 'stock_qty': stock_qty,
+                'line_type': line_type, 'confidence': init_conf,
+                'match_score': round(score, 2),
+            })
+
+    # Update/create supplier invoice template with detected document type
+    doc_type    = scan_result.get('document_type', 'unknown')
+    layout_type = scan_result.get('layout_type', 'unknown')
+    tmpl = SupplierInvoiceTemplate.query.filter_by(supplier_id=sid, active=True).first()
+    if not tmpl:
+        tmpl = SupplierInvoiceTemplate(
+            supplier_id=sid, document_type=doc_type, layout_type=layout_type,
+            column_hints='{}', totals_rules='{}', vat_rules='{}',
+            line_classifier_rules='{}', confidence=0.30,
+            created_at=now, updated_at=now,
+        )
+        db.session.add(tmpl)
+    else:
+        if doc_type != 'unknown':
+            tmpl.document_type = doc_type
+        tmpl.last_successful_parse_at = now
+        tmpl.updated_at = now
+
+    db.session.flush()
+    return learned
+
+
 def _parse_invoice_pdf(content):
     """Extract structured invoice data from PDF bytes using pdfplumber."""
     try:
@@ -395,6 +670,7 @@ def _parse_invoice_pdf(content):
 
     invoice_number = _extract_invoice_number(full_text)
     invoice_date   = _extract_date(full_text)
+    document_type  = _detect_document_type(full_text)
 
     # Prefer structured table extraction when it found items (handles merged cells)
     if table_results:
@@ -404,6 +680,8 @@ def _parse_invoice_pdf(content):
             'lines':          table_results,
             'shipping':       table_shipping if table_shipping > 0 else None,
             'raw_line_count': len(full_text.split('\n')),
+            'document_type':  document_type,
+            'layout_type':    'table',
         }
 
     # Fall back to line-by-line text parsing
@@ -440,6 +718,8 @@ def _parse_invoice_pdf(content):
         'lines':          deduped,
         'shipping':       shipping if shipping > 0 else None,
         'raw_line_count': len(full_text.split('\n')),
+        'document_type':  document_type,
+        'layout_type':    'text',
     }
 
 
@@ -643,6 +923,7 @@ def api_suppliers_purchase_run(sid):
     addl_costs_raw  = data.get('additional_costs', [])
     invoice_ref     = str(data.get('invoice_ref') or '').strip() or None
     invoice_addl_total = data.get('invoice_additional_total')
+    scan_result     = data.get('scan_result')   # original parser output — triggers learning
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
@@ -679,6 +960,7 @@ def api_suppliers_purchase_run(sid):
         notes=data.get('notes') or None,
         created_at=datetime.utcnow(),
         created_by=u.id if u else None,
+        scan_raw_json=_json.dumps(scan_result) if scan_result else None,
     )
     db.session.add(inv)
     db.session.flush()
@@ -795,6 +1077,35 @@ def api_suppliers_purchase_run(sid):
         run_level = [{'label': c['label'], 'type': c['type'], 'amount': float(Decimal(str(c['amount'])).quantize(Decimal('0.01')))} for c in addl_costs]
         s.last_run_costs = _json.dumps(run_level)
 
+    # Run learning step — compare confirmed lines to original scan result
+    # Build confirmed_lines list enriched with product names for description matching
+    confirmed_for_learning = []
+    for line in lines:
+        pid = line.get('product_id')
+        if pid:
+            try:
+                pid = int(pid)
+            except Exception:
+                pid = None
+        p_name = ''
+        if pid:
+            prod = db.session.get(Product, pid)
+            p_name = prod.name if prod else ''
+        confirmed_for_learning.append({
+            'product_id':   pid,
+            'product_name': p_name,
+            'qty':          line.get('qty', 1),
+            'total_price':  line.get('total_price', 0),
+            'supplier_sku': line.get('supplier_sku', ''),
+        })
+
+    learned = []
+    if scan_result:
+        try:
+            learned = _run_learning(sid, scan_result, confirmed_for_learning)
+        except Exception as _le:
+            current_app.logger.warning(f'Learning step failed for supplier {sid}: {_le}')
+
     db.session.commit()
     return jsonify({
         'ok': True,
@@ -802,7 +1113,49 @@ def api_suppliers_purchase_run(sid):
         'batches_created':  batches_created,
         'invoice_id':       run_id,
         'invoice_number':   invoice_ref,
+        'learned':          learned,
     })
+
+
+@bp.route('/api/suppliers/<int:sid>/product-mappings', methods=['GET'])
+def api_supplier_product_mappings(sid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if not db.session.get(Supplier, sid):
+        return jsonify({'error': 'Not found'}), 404
+    mappings = (SupplierProductMapping.query
+                .filter_by(supplier_id=sid)
+                .order_by(SupplierProductMapping.confidence.desc())
+                .all())
+    result = []
+    for m in mappings:
+        prod = db.session.get(Product, m.product_id) if m.product_id else None
+        result.append({
+            'id':                  m.id,
+            'raw_description':     m.raw_description_original,
+            'supplier_sku':        m.supplier_sku,
+            'product_id':          m.product_id,
+            'product_name':        prod.name if prod else None,
+            'line_type':           m.line_type,
+            'pack_multiplier':     float(m.pack_multiplier),
+            'invoice_unit':        m.invoice_unit,
+            'confidence':          float(m.confidence),
+            'correction_count':    m.correction_count,
+            'last_used_at':        m.last_used_at.date().isoformat() if m.last_used_at else None,
+        })
+    return jsonify(result)
+
+
+@bp.route('/api/suppliers/<int:sid>/product-mappings/<int:mid>', methods=['DELETE'])
+def api_supplier_product_mapping_delete(sid, mid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    m = SupplierProductMapping.query.filter_by(id=mid, supplier_id=sid).first()
+    if not m:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(m)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 _ALLOWED_DOC_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.doc', '.docx', '.xls', '.xlsx', '.csv', '.txt'}

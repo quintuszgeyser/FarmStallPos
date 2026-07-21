@@ -5154,6 +5154,8 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     date: dateVal || todayISO(),
     additional_costs: prAddlCosts,
     ...(prInvoiceRef ? { invoice_ref: prInvoiceRef } : {}),
+    // Include original scan result so backend can learn from corrections
+    ...(_lastScanResult ? { scan_result: _lastScanResult } : {}),
   };
 
   try {
@@ -5186,7 +5188,13 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
       : `Delivery saved: ${result.batches_created} batch${result.batches_created !== 1 ? 'es' : ''} created${result.created_products?.length > 0 ? `, ${result.created_products.length} new products` : ''}`;
     toast(msg, 'success', 5000);
 
+    // Show learning summary if anything was learned
+    if (result.learned?.length > 0) {
+      _showLearningSummary(result.learned, _currentSupplier.name);
+    }
+
     _editingInvoiceId = null;
+    _lastScanResult = null;
     hide(document.getElementById('purchase-run-panel'));
     _purchaseRunLines = [];
     const saveBtn = document.getElementById('btn-submit-purchase-run');
@@ -5200,6 +5208,64 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     toast(e.message, 'error');
   }
 });
+
+// ── Invoice learning summary modal ───────────────────────────────────────────
+
+function _showLearningSummary(learned, supplierName) {
+  const lineTypeLabel = { STOCK_ITEM: 'Stock item', SHIPPING: 'Shipping', UNKNOWN: 'Unknown', DISCOUNT: 'Discount' };
+  const confLabel = c => c >= 0.85 ? 'High' : c >= 0.60 ? 'Medium' : 'Low';
+  const confClass = c => c >= 0.85 ? 'success' : c >= 0.60 ? 'warning' : 'secondary';
+
+  const rows = learned.map(m => {
+    const mult = m.pack_multiplier > 1
+      ? `<span class="badge bg-info ms-1">${m.invoice_qty} → ${m.stock_qty} (×${m.pack_multiplier})</span>`
+      : `<span class="text-muted small">qty ${m.stock_qty}</span>`;
+    const prod = m.product_name
+      ? `<span class="text-success small">→ ${escapeHtml(m.product_name)}</span>`
+      : `<span class="text-muted small">${lineTypeLabel[m.line_type] || m.line_type}</span>`;
+    const badge = `<span class="badge bg-${confClass(m.confidence)} ms-1">${confLabel(m.confidence)} (${Math.round(m.confidence * 100)}%)</span>`;
+    return `<tr>
+      <td class="small">${escapeHtml(m.raw_description)}</td>
+      <td>${prod}</td>
+      <td>${mult}</td>
+      <td>${badge} <span class="badge bg-${m.action === 'created' ? 'primary' : 'secondary'} ms-1">${m.action}</span></td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+    <div class="modal fade" id="learningSummaryModal" tabindex="-1">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-mortarboard me-2"></i>Learned for ${escapeHtml(supplierName)}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-0">
+            <div class="alert alert-info m-3 py-2 small mb-0">
+              These mappings will be used to improve future invoice scans from this supplier.
+              High-confidence mappings apply automatically; medium requires review.
+            </div>
+            <table class="table table-sm table-hover mb-0">
+              <thead><tr><th>Invoice description</th><th>Mapped to</th><th>Qty</th><th>Confidence</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  // Remove stale modal if present
+  document.getElementById('learningSummaryModal')?.remove();
+  document.body.insertAdjacentHTML('beforeend', html);
+  const modal = new bootstrap.Modal(document.getElementById('learningSummaryModal'));
+  document.getElementById('learningSummaryModal').addEventListener('hidden.bs.modal', () => {
+    document.getElementById('learningSummaryModal')?.remove();
+  });
+  modal.show();
+}
 
 // Quick-add supplier from receive modal
 document.getElementById('btn-quick-add-supplier')?.addEventListener('click', () => {
