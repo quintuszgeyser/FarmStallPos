@@ -4283,7 +4283,7 @@ function _editInvoice(inv) {
 
   _purchaseRunLines = [];
   document.getElementById('purchase-run-lines').innerHTML = '';
-  show(document.getElementById('purchase-run-panel'));
+  _openPurchaseRunPanel();
 
   // Pre-fill invoice ref and addl costs
   const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
@@ -5030,6 +5030,12 @@ function _fuzzyMatchProduct(description) {
   return bestMatch;
 }
 
+function _openPurchaseRunPanel() {
+  const panel = document.getElementById('purchase-run-panel');
+  show(panel);
+  requestAnimationFrame(() => panel?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+}
+
 document.getElementById('btn-supplier-new-run')?.addEventListener('click', () => {
   _editingInvoiceId = null;
   const saveBtn = document.getElementById('btn-submit-purchase-run');
@@ -5046,7 +5052,7 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
   if (dateInput) dateInput.value = todayISO();
   _purchaseRunLines = [];
   document.getElementById('purchase-run-lines').innerHTML = '';
-  show(document.getElementById('purchase-run-panel'));
+  _openPurchaseRunPanel();
   addPurchaseLine();
   // Invoice header + pre-populated addl costs
   const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
@@ -5150,17 +5156,15 @@ function addPurchaseLine() {
   container.appendChild(line);
 
   const unitSel = line.querySelector('[data-unit]');
-  const UNIT_OPTIONS = {
-    weight: [['g','g'],['kg','kg']],
-    volume: [['ml','ml'],['L','L']],
-    count:  [['unit','unit']],
-  };
 
   function updateUnitsForProduct(pid) {
     const p = STATE.products.find(pr => pr.id === parseInt(pid));
-    const type = p ? (p.unit_type || 'count') : null;
-    const opts = UNIT_OPTIONS[type] || [['unit','unit'],['g','g'],['kg','kg'],['ml','ml'],['L','L']];
-    unitSel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    const opts = buildUnitOptions(p?.unit_type || 'count', p?.package_size || null, p?.package_unit || null);
+    if (opts.length) {
+      unitSel.innerHTML = opts.map(o => `<option value="${o.value}" data-conv="${o.conv}">${o.label}</option>`).join('');
+    } else {
+      unitSel.innerHTML = '<option value="unit">unit</option>';
+    }
   }
 
   function updateConsignmentField(pid) {

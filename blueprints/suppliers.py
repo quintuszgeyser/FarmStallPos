@@ -1423,7 +1423,11 @@ def api_suppliers_purchase_run(sid):
             return jsonify({'error': f'Product id {pid} not found'}), 404
 
         if p.product_type == 'stock_item':
-            conversion = _UNIT_CONVERSIONS.get(unit, 1)
+            # Package unit override: receiving in the product's named package unit
+            if unit and p.package_unit and unit == p.package_unit and p.package_size:
+                conversion = float(p.package_size)
+            else:
+                conversion = _UNIT_CONVERSIONS.get(unit, 1)
             qty_base   = qty * conversion
             if qty_base == 0:
                 return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
@@ -1908,7 +1912,10 @@ def api_supplier_invoice_update(sid, inv_id):
         p = db.session.get(Product, pid)
         if not p:
             return jsonify({'error': f'Product id {pid} not found'}), 404
-        conversion = _UNIT_CONVERSIONS.get(unit, 1)
+        if unit and p.package_unit and unit == p.package_unit and p.package_size:
+            conversion = float(p.package_size)
+        else:
+            conversion = _UNIT_CONVERSIONS.get(unit, 1)
         qty_base   = qty * conversion
         if qty_base == 0:
             return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
