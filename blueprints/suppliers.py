@@ -195,19 +195,45 @@ def _undouble_chars(line):
 
 def _deduplicate_description(desc):
     """Remove repeated phrase prefix from merged descriptions.
-    Handles word-level ('Foo Bar Foo Bar Baz' → 'Foo Bar Baz') and
-    char-level joins with no space ('Foo BarFoo Bar Baz' → 'Foo Bar Baz').
+    Handles three cases:
+    1. Word-level exact repeat: 'Foo Bar Foo Bar Baz' → 'Foo Bar Baz'
+    2. Char-level prefix repeat: 'Foo BarFoo Bar Baz' → 'Foo Bar Baz'
+    3. Suffix-prefix overlap: 'Superior One – VanillaVanilla - Whey...' → 'Superior One – Vanilla - Whey...'
     """
+    # Case 1: word-level exact duplicate prefix
     words = desc.split()
     n = len(words)
     for i in range(max(2, n // 5), n // 2 + 1):
         if words[:i] == words[i:2 * i]:
             return ' '.join(words[i:])
-    # Char-level: handles 'Milk Tart and White ChocolateMilk Tart and White Chocolate Layered...'
-    # Find longest prefix desc[:k] such that desc[k:] starts with desc[:k]
+
+    # Case 2: char-level — desc[:k] is a prefix of desc[k:]
     for k in range(max(4, len(desc) // 5), len(desc) // 2 + 1):
         if desc[k:].startswith(desc[:k]):
             return desc[k:]
+
+    # Case 3: suffix-prefix overlap — end of first cell repeated at start of second cell.
+    # E.g. "Superior One – VanillaVanilla - Whey Protein Powder - 480g Tub"
+    # Find the longest substring S (len ≥ 8, contains letters) where S is both a
+    # suffix of desc[:split] and a prefix of desc[split:].
+    dn = len(desc)
+    best = None
+    for split in range(dn // 5, 4 * dn // 5):
+        max_overlap = min(split, dn - split, 80)
+        for overlap in range(max_overlap, 7, -1):
+            candidate = desc[split:split + overlap]
+            if not re.search(r'[a-zA-Z]{4,}', candidate):
+                continue
+            if desc[split - overlap:split] == candidate:
+                if best is None or overlap > best[2]:
+                    best = (split, overlap, overlap)
+                break  # longest overlap found for this split
+    if best:
+        split, overlap, _ = best
+        left = desc[:split - overlap].rstrip()
+        right = desc[split:]
+        return (left + ' ' + right).strip() if left else right
+
     return desc
 
 
