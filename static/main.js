@@ -9368,11 +9368,13 @@ document.addEventListener('DOMContentLoaded', () => {
 // SETTINGS
 // ═══════════════════════════════════════════════════════
 let _globalMarkupPct = 40;  // default; overwritten by loadSettings
+let _globalVatPct    = 15;  // default; overwritten by loadSettings
 
 async function loadSettings() {
   try {
     const j = await api('/api/settings');
     _globalMarkupPct = parseFloat(j.markup_percent) || 40;
+    _globalVatPct    = parseFloat(j.vat_rate)        || 15;
     // Load receipt printer preference into STATE
     if (j.receipt_printer_id) {
       STATE._receiptPrinterId = parseInt(j.receipt_printer_id) || null;
@@ -11696,6 +11698,8 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     // Business
     _setSlider('set-markup-pct', 'set-markup-pct-val', s.markup_percent, v => Math.round(v) + '%');
     _bindSlider('set-markup-pct', 'set-markup-pct-val', v => Math.round(v) + '%');
+    const vatEl = document.getElementById('set-vat-pct');
+    if (vatEl) vatEl.value = s.vat_rate ?? 15;
 
     // Kiosk connection settings
     const apiKeyEl     = document.getElementById('kiosk-api-key');
@@ -11908,8 +11912,10 @@ document.getElementById('btn-save-business-settings')?.addEventListener('click',
   try {
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
       markup_percent: parseFloat(document.getElementById('set-markup-pct')?.value || 20),
+      vat_rate:       parseFloat(document.getElementById('set-vat-pct')?.value    || 15),
     })});
     _globalMarkupPct = parseFloat(document.getElementById('set-markup-pct')?.value || 20);
+    _globalVatPct    = parseFloat(document.getElementById('set-vat-pct')?.value    || 15);
     _flashSaved('business-settings-saved');
     toast('Business settings saved', 'success', 2000);
   } catch(e) { toast(e.message, 'error'); }
@@ -13059,7 +13065,7 @@ function _renderInvLines() {
       <td><input class="form-control form-control-sm" value="${line.name || ''}" data-inv-name="${i}"></td>
       <td><input type="number" step="any" min="0.001" class="form-control form-control-sm" value="${line.qty || 1}" data-inv-qty="${i}"></td>
       ${unitCell}
-      <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.0001" min="0" class="form-control" value="${line.unit_price != null ? +parseFloat(line.unit_price).toFixed(4) : ''}" data-inv-price="${i}"></div></td>
+      <td><div class="input-group input-group-sm"><span class="input-group-text">R</span><input type="number" step="0.0001" min="0" class="form-control" value="${line.unit_price != null ? +parseFloat(line.unit_price).toFixed(4) : ''}" data-inv-price="${i}"><button type="button" class="btn ${line._vat_applied ? 'btn-warning' : 'btn-outline-secondary'} btn-sm px-1" data-inv-vat="${i}" title="${line._vat_applied ? 'Remove VAT (÷' + (1 + _globalVatPct/100) + ')' : 'Add VAT (×' + (1 + _globalVatPct/100) + ')'}" style="font-size:11px;white-space:nowrap">${line._vat_applied ? '<i class="bi bi-dash-circle"></i> VAT' : '<i class="bi bi-plus-circle"></i> VAT'}</button></div></td>
       <td class="text-end align-middle fw-semibold" id="inv-line-sub-${i}">R${fmt(line.subtotal || 0)}</td>
       <td><button class="btn btn-outline-danger btn-sm" data-inv-remove="${i}"><i class="bi bi-x-lg"></i></button></td>`;
     body.appendChild(tr);
@@ -13104,6 +13110,20 @@ function _renderInvLines() {
       _invLines[i].unit_price = parseFloat(e.target.value) || 0;
       _invLines[i].subtotal   = (_invLines[i].qty || 1) * _invLines[i].unit_price;
       const sub = document.getElementById(`inv-line-sub-${i}`); if (sub) sub.textContent = `R${fmt(_invLines[i].subtotal)}`;
+      _invRecalc();
+    });
+
+    tr.querySelector(`[data-inv-vat="${i}"]`).addEventListener('click', () => {
+      const factor = 1 + _globalVatPct / 100;
+      if (_invLines[i]._vat_applied) {
+        _invLines[i].unit_price  = parseFloat((_invLines[i].unit_price / factor).toFixed(4));
+        _invLines[i]._vat_applied = false;
+      } else {
+        _invLines[i].unit_price  = parseFloat((_invLines[i].unit_price * factor).toFixed(4));
+        _invLines[i]._vat_applied = true;
+      }
+      _invLines[i].subtotal = (_invLines[i].qty || 1) * _invLines[i].unit_price;
+      _renderInvLines();
       _invRecalc();
     });
 
