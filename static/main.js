@@ -4891,19 +4891,15 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
     if (productSel) productSel.title = `Invoice: ${ln.description}`;
   });
 
-  // Add shipping as additional cost if present
-  if (result.shipping && result.shipping > 0) {
-    const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
-    if (prAddlWrap) {
-      const existing = _readAdditionalCosts(prAddlWrap);
-      const alreadyHas = existing.some(c => c.type === 'shipping');
-      if (!alreadyHas) {
-        _renderAdditionalCostsBlock(prAddlWrap, [
-          ...existing,
-          { label: 'Shipping / delivery', type: 'shipping', amount: result.shipping },
-        ]);
-      }
-    }
+  // Sync shipping from invoice: replace existing shipping row (or remove if invoice has none)
+  const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
+  if (prAddlWrap) {
+    const existing = _readAdditionalCosts(prAddlWrap);
+    const withoutShipping = existing.filter(c => c.type !== 'shipping');
+    const newCosts = (result.shipping && result.shipping > 0)
+      ? [...withoutShipping, { label: 'Shipping / delivery', type: 'shipping', amount: result.shipping }]
+      : withoutShipping;
+    _renderAdditionalCostsBlock(prAddlWrap, newCosts);
   }
 
   _updatePurchaseRunCostPreview();

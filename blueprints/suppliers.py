@@ -284,6 +284,10 @@ def _try_parse_line(line):
             raw_tok = m.group(1)
             if ' ' not in raw_tok and ',' not in raw_tok:
                 continue
+        # Skip numbers that are part of size descriptors: "125ml", "500g", "1.5kg", "250ml"
+        rest = line[m.end():m.end() + 4].lower()
+        if re.match(r'(?:ml|kg|g(?!b)|l(?!b))\b', rest):
+            continue
         val = _clean_num(m.group(1))
         if val is not None and val >= 0:
             tokens.append((m.start(), m.end(), val))
@@ -296,8 +300,14 @@ def _try_parse_line(line):
     if not non_num or re.match(r'^[\s%.,]+$', non_num):
         return None
 
-    # Last token = total price
+    # Last token = total price; detect VAT pair (last two tokens in 1.15 ratio → use excl-VAT)
     total = tokens[-1][2]
+    qty_tokens = tokens
+    if len(tokens) >= 2 and tokens[-2][2] > 0:
+        ratio = tokens[-1][2] / tokens[-2][2]
+        if abs(ratio - 1.15) < 0.006:  # SA 15% VAT
+            total = tokens[-2][2]
+            qty_tokens = tokens[:-1]
     if total <= 0:
         return None
 
@@ -305,11 +315,11 @@ def _try_parse_line(line):
     qty = 1.0
     unit_price_candidate = None
 
-    if len(tokens) >= 3:
+    if len(qty_tokens) >= 3:
         # Pattern: ... qty unit_price total
         # unit_price × qty ≈ total
-        for i in range(len(tokens) - 2, 0, -1):
-            up = tokens[i][2]
+        for i in range(len(qty_tokens) - 2, 0, -1):
+            up = qty_tokens[i][2]
             q_raw = total / up if up > 0 else 0
             q_round = round(q_raw)
             if up > 0 and 1 <= q_round <= 500 and abs(q_raw - q_round) < 0.05:
