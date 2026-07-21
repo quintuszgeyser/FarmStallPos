@@ -213,6 +213,15 @@ def api_products_post():
         batch_size = Decimal('1')
     stock_unit = (str(data.get('stock_unit') or '').strip() or None) if product_type == 'recipe' else None
 
+    is_consignment   = bool(data.get('is_consignment', False))
+    settlement_basis = str(data.get('settlement_basis') or 'FIXED_COST').strip()
+    if settlement_basis not in ('FIXED_COST', 'PCT_OF_SALE'):
+        settlement_basis = 'FIXED_COST'
+    try:
+        consignment_pct = Decimal(str(data['consignment_pct'])) if data.get('consignment_pct') not in (None, '') else None
+    except Exception:
+        consignment_pct = None
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -230,6 +239,8 @@ def api_products_post():
         scale_msg1=scale_msg1, scale_msg2=scale_msg2, scale_prohibit=scale_prohibit,
         stat_unit_size=stat_unit_size,
         is_produced=is_produced, batch_size=batch_size, stock_unit=stock_unit,
+        is_consignment=is_consignment, settlement_basis=settlement_basis,
+        consignment_pct=consignment_pct,
     )
     db.session.add(p)
     db.session.flush()
@@ -411,6 +422,18 @@ def api_products_update():
 
     if 'sell_packages' in data:
         sync_sell_packages(p.id, data['sell_packages'])
+
+    if 'is_consignment' in data:
+        p.is_consignment = bool(data['is_consignment'])
+    if 'settlement_basis' in data:
+        v = str(data['settlement_basis'] or 'FIXED_COST').strip()
+        p.settlement_basis = v if v in ('FIXED_COST', 'PCT_OF_SALE') else 'FIXED_COST'
+    if 'consignment_pct' in data:
+        raw_pct = data['consignment_pct']
+        try:
+            p.consignment_pct = Decimal(str(raw_pct)) if raw_pct not in (None, '') else None
+        except Exception:
+            pass
 
     db.session.commit()
     return jsonify({'ok': True})

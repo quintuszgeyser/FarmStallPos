@@ -1977,6 +1977,21 @@ function openProductEditor(p) {
   const _onlineEl = document.getElementById('p-is-available-online');
   if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
 
+  // Consignment
+  const _consEl = document.getElementById('p-is-consignment');
+  if (_consEl) {
+    _consEl.checked = !!p?.is_consignment;
+    _toggleConsignmentSettings(!!p?.is_consignment);
+  }
+  const _basisFixed = document.getElementById('p-basis-fixed');
+  const _basisPct   = document.getElementById('p-basis-pct');
+  const _basis      = p?.settlement_basis || 'FIXED_COST';
+  if (_basisFixed) _basisFixed.checked = (_basis === 'FIXED_COST');
+  if (_basisPct)   _basisPct.checked   = (_basis === 'PCT_OF_SALE');
+  _toggleConsignmentBasis(_basis);
+  const _pctEl = document.getElementById('p-consignment-pct');
+  if (_pctEl) _pctEl.value = p?.consignment_pct ?? '';
+
   // Description
   const descEl = document.getElementById('p-description');
   if (descEl) descEl.value = p?.description ?? '';
@@ -2133,6 +2148,21 @@ document.getElementById('p-type')?.addEventListener('change', (e) => {
 document.getElementById('p-unit-type')?.addEventListener('change', () => {
   updateProductTypeSections(document.getElementById('p-type').value);
   renderPackagesTable();
+});
+
+function _toggleConsignmentSettings(on) {
+  const box = document.getElementById('consignment-settings');
+  if (box) box.style.display = on ? '' : 'none';
+}
+function _toggleConsignmentBasis(basis) {
+  const pctRow = document.getElementById('consignment-pct-row');
+  if (pctRow) pctRow.style.display = (basis === 'PCT_OF_SALE') ? '' : 'none';
+}
+document.getElementById('p-is-consignment')?.addEventListener('change', (e) => {
+  _toggleConsignmentSettings(e.target.checked);
+});
+document.querySelectorAll('input[name="consignment-basis"]').forEach(r => {
+  r.addEventListener('change', (e) => _toggleConsignmentBasis(e.target.value));
 });
 
 document.getElementById('p-is-for-sale')?.addEventListener('change', (e) => {
@@ -2938,6 +2968,10 @@ function buildProductPayload() {
       batch_size:  parseInt(document.getElementById('p-batch-size')?.value || '1', 10) || 1,
       stock_unit:  document.getElementById('p-stock-unit')?.value.trim() || null,
     } : {}),
+    // Consignment
+    is_consignment:   document.getElementById('p-is-consignment')?.checked || false,
+    settlement_basis: document.querySelector('input[name="consignment-basis"]:checked')?.value || 'FIXED_COST',
+    consignment_pct:  (() => { const v = parseFloat(document.getElementById('p-consignment-pct')?.value || ''); return isNaN(v) ? null : v; })(),
   };
 }
 
@@ -5100,6 +5134,16 @@ function addPurchaseLine() {
       </div>
       <div class="col-4"><input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="Total R" data-price></div>
     </div>
+    <div class="row g-2 mt-1" data-consignment-cost-row style="display:none">
+      <div class="col-12">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">Consignment cost R</span>
+          <input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="Settlement cost per unit" data-consignment-unit-cost>
+          <span class="input-group-text text-muted small">per base unit</span>
+        </div>
+        <div class="form-text">Settlement cost paid to supplier per unit sold (separate from inventory cost above).</div>
+      </div>
+    </div>
     <div class="small mt-1" data-line-addl-preview></div>
   `;
 
@@ -5119,8 +5163,15 @@ function addPurchaseLine() {
     unitSel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
   }
 
+  function updateConsignmentField(pid) {
+    const p = STATE.products.find(pr => pr.id === parseInt(pid));
+    const row = line.querySelector('[data-consignment-cost-row]');
+    if (row) row.style.display = p?.is_consignment ? '' : 'none';
+  }
+
   line.querySelector('[data-product-select]')?.addEventListener('change', e => {
     updateUnitsForProduct(e.target.value);
+    updateConsignmentField(e.target.value);
   });
   line.querySelector('[data-price]')?.addEventListener('input', _updatePurchaseRunCostPreview);
 
@@ -5197,7 +5248,10 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     if (!productId) return toast('Please select a product for all lines', 'warning');
     if (qty <= 0)   return toast('Quantity must be greater than 0', 'warning');
     if (price < 0)  return toast('Price cannot be negative', 'warning');
-    lines.push({ product_id: productId, qty, unit, total_price: price });
+    const cucRaw = lineEl.querySelector('[data-consignment-unit-cost]')?.value;
+    const lineObj = { product_id: productId, qty, unit, total_price: price };
+    if (cucRaw && parseFloat(cucRaw) > 0) lineObj.consignment_unit_cost = parseFloat(cucRaw);
+    lines.push(lineObj);
   }
 
   if (lines.length === 0) return toast('Add at least one item', 'warning');
@@ -8386,6 +8440,7 @@ async function loadStats() {
 
     // Fire overhead stats in parallel — non-blocking
     loadOverheadStats(start, end, productId).catch(e => console.error('overhead stats', e));
+    loadConsignmentStats().catch(e => console.error('consignment stats', e));
 
   } catch (e) { console.error('loadStats', e); toast('Could not load stats', 'error'); }
 }
@@ -8476,6 +8531,120 @@ async function loadOverheadStats(start, end, productId) {
 
   wrap.innerHTML = html;
 }
+
+async function loadConsignmentStats() {
+  const wrap = document.getElementById('consignment-stats-body');
+  if (!wrap) return;
+
+  let j;
+  try { j = await api('/api/consignment/summary'); }
+  catch (e) {
+    wrap.innerHTML = `<div class="text-danger small">Could not load consignment data: ${e.message}</div>`;
+    return;
+  }
+
+  if (!j.suppliers.length && j.total_outstanding === 0) {
+    wrap.innerHTML = '<div class="text-muted small">No consignment items or liabilities recorded yet.</div>';
+    return;
+  }
+
+  let suppRows = '';
+  j.suppliers.forEach(s => {
+    suppRows += `<tr style="cursor:pointer" onclick="openConsignmentSupplierDrilldown(${s.supplier_id})">
+      <td>${escapeHtml(s.name)}</td>
+      <td class="text-end">${s.units.toFixed(2)}</td>
+      <td class="text-end fw-semibold text-danger">R${fmt(s.outstanding)}</td>
+    </tr>`;
+  });
+
+  wrap.innerHTML = `
+    <div class="d-flex gap-4 mb-3 flex-wrap">
+      <div><div class="small text-muted">Outstanding Liability</div><div class="fw-semibold text-danger fs-5">R${fmt(j.total_outstanding)}</div></div>
+      <div><div class="small text-muted">Units Pending Settlement</div><div class="fw-semibold">${j.total_units_pending}</div></div>
+      <div><div class="small text-muted">Unsold Consignment Stock</div><div class="fw-semibold text-warning">R${fmt(j.unsold_stock_value)}</div></div>
+      <div><div class="small text-muted">Settled This Month</div><div class="fw-semibold text-success">R${fmt(j.settled_this_month)}</div></div>
+    </div>
+    ${suppRows ? `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light"><tr>
+        <th>Supplier</th><th class="text-end">Units Sold</th><th class="text-end">Amount Owed</th>
+      </tr></thead>
+      <tbody>${suppRows}</tbody>
+    </table></div>
+    <div class="mt-2">
+      <select id="consignment-settle-supplier" class="form-select form-select-sm d-inline-block" style="width:auto">
+        <option value="">Select supplier to settle…</option>
+        ${j.suppliers.map(s => `<option value="${s.supplier_id}">${escapeHtml(s.name)} — R${fmt(s.outstanding)}</option>`).join('')}
+      </select>
+      <button class="btn btn-sm btn-outline-success ms-2" onclick="openConsignmentSettleModal()">
+        <i class="bi bi-check2-circle"></i> Settle
+      </button>
+    </div>` : ''}
+  `;
+}
+
+async function openConsignmentSupplierDrilldown(sid) {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));
+  document.getElementById('drilldown-title').textContent = 'Consignment — Supplier Detail';
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
+  modal.show();
+  try {
+    const j = await api(`/api/consignment/supplier/${sid}`);
+    let html = `<div class="mb-2 fw-semibold">${escapeHtml(j.name)} — Outstanding: <span class="text-danger">R${fmt(j.outstanding)}</span></div>`;
+    if (j.batches.length) {
+      html += `<div class="table-responsive mb-3"><table class="table table-sm align-middle mb-0">
+        <thead class="table-light"><tr>
+          <th>Product</th><th class="text-end">Received</th><th class="text-end">Remaining</th>
+          <th class="text-end">Sold</th><th class="text-end">Unit Cost</th><th class="text-end">Owed</th>
+        </tr></thead><tbody>`;
+      j.batches.forEach(b => {
+        html += `<tr>
+          <td>${escapeHtml(b.product_name)}</td>
+          <td class="text-end">${b.qty_received}</td>
+          <td class="text-end">${b.qty_remaining}</td>
+          <td class="text-end">${b.qty_sold.toFixed(2)}</td>
+          <td class="text-end">R${fmt(b.consignment_unit_cost)}</td>
+          <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    if (j.settlements.length) {
+      html += `<div class="small fw-semibold mb-1">Recent Settlements</div>
+        <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+          <thead class="table-light"><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead><tbody>`;
+      j.settlements.forEach(s => {
+        html += `<tr><td>${s.created_at}</td><td class="fw-semibold text-success">R${fmt(s.total_amount)}</td><td>${escapeHtml(s.note || '')}</td></tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+    document.getElementById('drilldown-body').innerHTML = html;
+  } catch (e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+function openConsignmentSettleModal() {
+  const sel = document.getElementById('consignment-settle-supplier');
+  const sid = sel ? parseInt(sel.value) : 0;
+  if (!sid) { toast('Select a supplier first', 'warning'); return; }
+  const label = sel.options[sel.selectedIndex]?.text || '';
+  document.getElementById('consignment-settle-supplier-name').textContent = label;
+  document.getElementById('consignment-settle-note').value = '';
+  document.getElementById('consignment-settle-sid').value = sid;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('consignmentSettleModal')).show();
+}
+
+document.getElementById('btn-consignment-settle-confirm')?.addEventListener('click', async () => {
+  const sid  = parseInt(document.getElementById('consignment-settle-sid')?.value || 0);
+  const note = document.getElementById('consignment-settle-note')?.value?.trim() || '';
+  if (!sid) return;
+  try {
+    const j = await api('/api/consignment/settle', { method: 'POST', body: JSON.stringify({ supplier_id: sid, note }) });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('consignmentSettleModal')).hide();
+    toast(`Settled R${fmt(j.total_amount)} for ${j.supplier_name} (${j.lines_settled} lines)`, 'success', 5000);
+    loadConsignmentStats().catch(() => {});
+  } catch (e) { toast(e.message, 'error'); }
+});
 
 async function openOverheadTypeDrilldown(type) {
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));

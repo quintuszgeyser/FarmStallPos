@@ -1492,6 +1492,14 @@
         </div>
       </div>
 
+      <!-- ── Consignment Summary ── -->
+      <div class="mt-3 border-top pt-3" id="stats-section-consignment">
+        <h6 class="mb-2"><i class="bi bi-tags me-1"></i>Consignment</h6>
+        <div id="consignment-stats-body">
+          <div class="text-muted small">Load stats to see consignment data.</div>
+        </div>
+      </div>
+
       <!-- ── Export ── -->
       <div class="mt-3 border-top pt-3">
         <h6 class="mb-1">Export <span class="text-muted fw-normal small" id="export-filter-label"></span></h6>
@@ -2626,6 +2634,37 @@
           <label class="form-check-label" for="p-is-available-online">
             Available on online shop <span class="text-muted small">(visible on Lady Coleen website)</span>
           </label>
+        </div>
+
+        <!-- ── Consignment flag ── -->
+        <div class="form-check mb-2">
+          <input class="form-check-input" type="checkbox" id="p-is-consignment">
+          <label class="form-check-label" for="p-is-consignment">
+            Consignment item <span class="text-muted small">(supplier is paid when item sells, not when received)</span>
+          </label>
+        </div>
+        <div id="consignment-settings" style="display:none" class="border rounded p-3 mb-3 bg-light">
+          <div class="mb-2">
+            <label class="form-label small fw-semibold mb-1">Settlement basis</label>
+            <div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="consignment-basis" id="p-basis-fixed" value="FIXED_COST" checked>
+                <label class="form-check-label small" for="p-basis-fixed">Fixed cost per unit</label>
+              </div>
+              <div class="form-check form-check-inline">
+                <input class="form-check-input" type="radio" name="consignment-basis" id="p-basis-pct" value="PCT_OF_SALE">
+                <label class="form-check-label small" for="p-basis-pct">% of sale price</label>
+              </div>
+            </div>
+          </div>
+          <div id="consignment-pct-row" style="display:none" class="mb-0">
+            <label class="form-label small mb-1">Supplier gets <span class="text-muted fw-normal">(% of selling price)</span></label>
+            <div class="input-group input-group-sm" style="max-width:140px">
+              <input type="number" class="form-control" id="p-consignment-pct" min="1" max="100" step="0.1" placeholder="e.g. 60">
+              <span class="input-group-text">%</span>
+            </div>
+          </div>
+          <div class="form-text mt-1">Settlement cost is set per batch at receive time. Supplier is owed when stock sells.</div>
         </div>
 
         <!-- ── Description ── -->
@@ -3775,6 +3814,32 @@
       </div>
 
     </div><!-- /modal-content -->
+  </div>
+</div>
+
+<!-- ── Consignment Settle Modal ── -->
+<div class="modal fade" id="consignmentSettleModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-check-circle me-2"></i>Settle Consignment</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="consignment-settle-sid">
+        <p class="mb-2">Settling all outstanding liabilities for: <strong id="consignment-settle-supplier-name"></strong></p>
+        <div class="mt-2">
+          <label class="form-label small fw-semibold mb-1">Settlement note <span class="text-muted fw-normal">(optional)</span></label>
+          <input type="text" class="form-control form-control-sm" id="consignment-settle-note" placeholder="e.g. July 2026 settlement">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-success btn-sm" id="btn-consignment-settle-confirm">
+          <i class="bi bi-check2-circle me-1"></i>Confirm Settlement
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 </body>

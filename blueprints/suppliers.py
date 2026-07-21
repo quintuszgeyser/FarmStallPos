@@ -1372,9 +1372,12 @@ def api_suppliers_purchase_run(sid):
             qty_base   = qty * conversion
             if qty_base == 0:
                 return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
+            consignment_unit_cost_raw = line.get('consignment_unit_cost')
             prepared_lines.append({
                 'pid': pid, 'qty_base': qty_base,
                 'base_cost_total': Decimal(str(total_price)),
+                'is_consignment': bool(getattr(p, 'is_consignment', False)),
+                'consignment_unit_cost': float(consignment_unit_cost_raw) if consignment_unit_cost_raw is not None else None,
             })
 
     # Step 1: proportional VAT allocation across product lines (ex-VAT base)
@@ -1414,11 +1417,15 @@ def api_suppliers_purchase_run(sid):
                                if e.get('type') == 'shipping') if batch_addl else Decimal('0')
         final_cost       = base_incl_vat + share
         cost_per_base    = final_cost / Decimal(str(pl['qty_base']))
+        _ownership  = 'CONSIGNMENT' if pl.get('is_consignment') else 'NORMAL'
+        _cuc        = pl.get('consignment_unit_cost')
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
             qty_remaining_base=pl['qty_base'],
             cost_per_base_unit=cost_per_base,
+            ownership_type=_ownership,
+            consignment_unit_cost=_cuc,
             base_cost_total=pl['base_cost_total'],
             vat_amount=float(vat_share.quantize(Decimal('0.0001'))) if vat_total > 0 else None,
             base_cost_incl_vat=float(base_incl_vat),

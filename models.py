@@ -62,6 +62,10 @@ class Product(db.Model):
     scale_msg1           = db.Column(db.String(80), nullable=True)         # extra message text
     scale_msg2           = db.Column(db.String(80), nullable=True)
     scale_prohibit       = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    # Consignment: supplier owes when item is sold, not when received
+    is_consignment       = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    settlement_basis     = db.Column(db.String(20), nullable=False, default='FIXED_COST', server_default="'FIXED_COST'")
+    consignment_pct      = db.Column(Numeric(5, 2), nullable=True)  # only for PCT_OF_SALE
     scale_last_synced_at = db.Column(db.DateTime(timezone=True), nullable=True)
     scale_last_sync_status = db.Column(db.String(20), nullable=True)     # ok / error / pending
     scale_last_sync_error  = db.Column(db.Text, nullable=True)
@@ -392,6 +396,10 @@ class StockBatch(db.Model):
     updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
     updated_by          = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     invoice_id          = db.Column(db.Integer, db.ForeignKey('supplier_invoices.id'), nullable=True, index=True)
+    # Consignment ownership — set at receive time, immutable; history is always correct even if product flag changes later
+    # Values: NORMAL | CONSIGNMENT | RETURNED
+    ownership_type        = db.Column(db.String(20), nullable=False, default='NORMAL', server_default="'NORMAL'")
+    consignment_unit_cost = db.Column(Numeric(10, 4), nullable=True)  # settlement contract cost, separate from FIFO cost
 
 
 class StockConsumption(db.Model):
@@ -686,4 +694,52 @@ class PlateDetection(db.Model):
     customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
     matched       = db.Column(db.Boolean,     nullable=False, default=False)
     snapshot_path = db.Column(db.Text,        nullable=True)
+
+
+# ── Consignment Inventory ─────────────────────────────────────────────────────
+# Rule: owe supplier on consumption (sale/write-off), not on receipt.
+
+class ConsignmentSettlement(db.Model):
+    """One settlement per supplier per pay run."""
+    __tablename__ = 'consignment_settlements'
+    id           = db.Column(db.Integer, primary_key=True)
+    supplier_id  = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
+    total_amount = db.Column(Numeric(10, 2), nullable=False)
+    note         = db.Column(db.Text, nullable=True)
+    created_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class ConsignmentLiability(db.Model):
+    """One row per FIFO batch consumption of a consignment item.
+    status: outstanding | settled | voided"""
+    __tablename__ = 'consignment_liabilities'
+    id                         = db.Column(db.Integer, primary_key=True)
+    supplier_id                = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
+    product_id                 = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    batch_id                   = db.Column(db.Integer, db.ForeignKey('stock_batches.id'), nullable=False)
+    sale_id                    = db.Column(db.String(64), nullable=True, index=True)  # NULL for write-offs
+    qty_consumed               = db.Column(Numeric(10, 4), nullable=False)
+    unit_cost                  = db.Column(Numeric(10, 6), nullable=False)   # consignment_unit_cost snapshot
+    amount_owed                = db.Column(Numeric(10, 2), nullable=False)
+    sale_price_at_time         = db.Column(Numeric(10, 2), nullable=True)   # for PCT_OF_SALE audit trail
+    settlement_percent_at_time = db.Column(Numeric(5, 2), nullable=True)    # for PCT_OF_SALE audit trail
+    status                     = db.Column(db.String(20), nullable=False, default='outstanding')
+    settlement_id              = db.Column(db.Integer, db.ForeignKey('consignment_settlements.id'), nullable=True)
+    created_at                 = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    settled_at                 = db.Column(db.DateTime, nullable=True)
+
+
+class ConsignmentSettlementLine(db.Model):
+    """Normalised snapshot line — one row per liability included in a settlement."""
+    __tablename__ = 'consignment_settlement_lines'
+    id            = db.Column(db.Integer, primary_key=True)
+    settlement_id = db.Column(db.Integer, db.ForeignKey('consignment_settlements.id'), nullable=False, index=True)
+    liability_id  = db.Column(db.Integer, db.ForeignKey('consignment_liabilities.id'), nullable=False)
+    supplier_id   = db.Column(db.Integer, nullable=False)
+    product_id    = db.Column(db.Integer, nullable=False)
+    batch_id      = db.Column(db.Integer, nullable=False)
+    qty           = db.Column(Numeric(10, 4), nullable=False)
+    unit_cost     = db.Column(Numeric(10, 6), nullable=False)
+    amount        = db.Column(Numeric(10, 2), nullable=False)
     camera_source = db.Column(db.String(20),  nullable=True)

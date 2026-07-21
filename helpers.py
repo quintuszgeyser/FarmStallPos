@@ -15,12 +15,15 @@ from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
 
+from decimal import ROUND_HALF_UP
+
 from models import (
     db,
     User, UserSession, Setting,
     Product, ProductImage, RecipeLine, Category,
     StockBatch, StockConsumption,
     Sale, Purchase,
+    ConsignmentLiability,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 
@@ -172,11 +175,13 @@ def get_online_user_id():
 # FIFO inventory helpers
 # ---------------------------------------------------------------------------
 
-def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0):
+def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_unit_price=None):
     """
     Consume qty_needed_base units of ingredient_id from FIFO batches.
     Recursive for compound ingredients (recipe within recipe).
     Returns total COGS as Decimal. Never raises - consumes what's available.
+
+    sale_unit_price: selling price per base unit — required for PCT_OF_SALE consignment products.
     """
     if _depth > 10:
         return Decimal('0')
@@ -224,6 +229,35 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0):
             cost_per_base_unit=batch.cost_per_base_unit,
             consumed_at=now
         ))
+
+        # Consignment liability: generate on every FIFO consumption of a consignment batch.
+        # Write-offs pass sale_id='wo-{uuid}' — still owed (shrinkage is supplier's risk too).
+        if getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT' and batch.supplier_id:
+            _prod = db.session.get(Product, ingredient_id)
+            _basis = getattr(_prod, 'settlement_basis', 'FIXED_COST') if _prod else 'FIXED_COST'
+            _sale_price_snap = None
+            _pct_snap = None
+            if _basis == 'PCT_OF_SALE' and sale_unit_price is not None and _prod:
+                _pct = Decimal(str(_prod.consignment_pct or 0)) / Decimal('100')
+                _unit_cost = (Decimal(str(sale_unit_price)) * _pct).quantize(Decimal('0.000001'))
+                _sale_price_snap = float(sale_unit_price)
+                _pct_snap = float(_prod.consignment_pct or 0)
+            else:
+                _cuc = getattr(batch, 'consignment_unit_cost', None)
+                _unit_cost = Decimal(str(_cuc)) if _cuc is not None else Decimal(str(batch.cost_per_base_unit))
+            _amount = (take * _unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            db.session.add(ConsignmentLiability(
+                supplier_id=batch.supplier_id,
+                product_id=ingredient_id,
+                batch_id=batch.id,
+                sale_id=sale_id,
+                qty_consumed=float(take),
+                unit_cost=float(_unit_cost),
+                amount_owed=float(_amount),
+                sale_price_at_time=_sale_price_snap,
+                settlement_percent_at_time=_pct_snap,
+            ))
+
         qty_to_consume -= take
 
     return total_cost
@@ -239,6 +273,19 @@ def reverse_fifo(sale_id):
                 Decimal(str(batch.qty_remaining_base)) + Decimal(str(r.qty_consumed_base))
             )
         db.session.delete(r)
+
+
+def reverse_consignment_liabilities(sale_id):
+    """Mark all outstanding consignment liabilities for this sale as voided.
+    Already-settled liabilities are left intact (financial audit trail)."""
+    from datetime import datetime as _dt
+    liabilities = ConsignmentLiability.query.filter_by(
+        sale_id=sale_id, status='outstanding'
+    ).all()
+    now = _dt.utcnow()
+    for lib in liabilities:
+        lib.status = 'voided'
+        lib.settled_at = now
 
 
 def get_stock_level(product_id):
@@ -481,6 +528,10 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'batch_size':              float(p.batch_size) if p.batch_size is not None else 1.0,
         'stock_unit':              p.stock_unit,
         'last_overhead_costs':     p.last_overhead_costs,
+        # Consignment fields
+        'is_consignment':    p.is_consignment,
+        'settlement_basis':  p.settlement_basis,
+        'consignment_pct':   float(p.consignment_pct) if p.consignment_pct is not None else None,
         'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
             'filename':      img.filename,

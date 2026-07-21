@@ -9,7 +9,7 @@ from sqlalchemy import func
 
 from helpers import (
     require_login, require_role, current_user,
-    consume_fifo, reverse_fifo, _parse_dt,
+    consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
 )
 from models import (
     db,
@@ -273,7 +273,7 @@ def api_transactions_post():
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
-            sale_row.cogs = consume_fifo(pid, qty, sale_uuid, now)
+            sale_row.cogs = consume_fifo(pid, qty, sale_uuid, now, sale_unit_price=unit_price)
         elif p.product_type == 'recipe':
             # Made-to-order: consume ingredients at point of sale
             line_cogs = Decimal('0')
@@ -591,6 +591,7 @@ def api_transaction_void(sale_id):
     for row in rows:
         row.voided = True; row.voided_by = u.id if u else None; row.voided_at = now; row.void_reason = reason
     reverse_fifo(sale_id)
+    reverse_consignment_liabilities(sale_id)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -616,6 +617,7 @@ def api_transaction_edit(sale_id):
         row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = now_wall
         row.void_reason = 'superseded by edit'
     reverse_fifo(sale_id)
+    reverse_consignment_liabilities(sale_id)
     for idx, item in enumerate(lines):
         pid       = int(item['product_id'])
         qty       = Decimal(str(item.get('qty', 1)))
@@ -641,7 +643,7 @@ def api_transaction_edit(sale_id):
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
-            sale_row.cogs = consume_fifo(pid, qty, sale_id, now_wall)
+            sale_row.cogs = consume_fifo(pid, qty, sale_id, now_wall, sale_unit_price=unit_price)
         elif p.product_type == 'recipe':
             line_cogs = Decimal('0')
             for rl in RecipeLine.query.filter_by(product_id=pid).all():

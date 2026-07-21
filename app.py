@@ -1525,6 +1525,52 @@ def strong_migrate():
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS allocated_shipping NUMERIC(18,4)")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS final_cost_incl_vat NUMERIC(18,4)")
 
+        # Consignment inventory — owe supplier on consumption, not receipt
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_consignment BOOLEAN NOT NULL DEFAULT FALSE")
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS settlement_basis TEXT NOT NULL DEFAULT 'FIXED_COST'")
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS consignment_pct NUMERIC(5,2)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS ownership_type TEXT NOT NULL DEFAULT 'NORMAL'")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS consignment_unit_cost NUMERIC(10,4)")
+        pg_try("""CREATE TABLE IF NOT EXISTS consignment_settlements (
+            id           SERIAL PRIMARY KEY,
+            supplier_id  INTEGER NOT NULL REFERENCES suppliers(id),
+            total_amount NUMERIC(10,2) NOT NULL,
+            note         TEXT,
+            created_by   INTEGER REFERENCES users(id),
+            created_at   TIMESTAMP NOT NULL DEFAULT NOW()
+        )""")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_cs_supplier ON consignment_settlements(supplier_id)")
+        pg_try("""CREATE TABLE IF NOT EXISTS consignment_liabilities (
+            id                         SERIAL PRIMARY KEY,
+            supplier_id                INTEGER NOT NULL REFERENCES suppliers(id),
+            product_id                 INTEGER NOT NULL REFERENCES products(id),
+            batch_id                   INTEGER NOT NULL REFERENCES stock_batches(id),
+            sale_id                    VARCHAR(64),
+            qty_consumed               NUMERIC(10,4) NOT NULL,
+            unit_cost                  NUMERIC(10,6) NOT NULL,
+            amount_owed                NUMERIC(10,2) NOT NULL,
+            sale_price_at_time         NUMERIC(10,2),
+            settlement_percent_at_time NUMERIC(5,2),
+            status                     TEXT NOT NULL DEFAULT 'outstanding',
+            settlement_id              INTEGER REFERENCES consignment_settlements(id),
+            created_at                 TIMESTAMP NOT NULL DEFAULT NOW(),
+            settled_at                 TIMESTAMP
+        )""")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_cl_supplier ON consignment_liabilities(supplier_id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_cl_sale ON consignment_liabilities(sale_id)")
+        pg_try("""CREATE TABLE IF NOT EXISTS consignment_settlement_lines (
+            id            SERIAL PRIMARY KEY,
+            settlement_id INTEGER NOT NULL REFERENCES consignment_settlements(id),
+            liability_id  INTEGER NOT NULL REFERENCES consignment_liabilities(id),
+            supplier_id   INTEGER NOT NULL,
+            product_id    INTEGER NOT NULL,
+            batch_id      INTEGER NOT NULL,
+            qty           NUMERIC(10,4) NOT NULL,
+            unit_cost     NUMERIC(10,6) NOT NULL,
+            amount        NUMERIC(10,2) NOT NULL
+        )""")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_csl_settlement ON consignment_settlement_lines(settlement_id)")
+
         # Return tracking: dedicated column instead of void_reason string pattern
         pg_try("ALTER TABLE sales ADD COLUMN original_sale_id VARCHAR(36)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_sales_original_sale_id ON sales(original_sale_id)")
@@ -2044,6 +2090,7 @@ def _register_routes(_app):
     from blueprints.labels          import bp as labels_bp
     from blueprints.bulk            import bp as bulk_bp
     from blueprints.cost_categories import bp as cost_categories_bp
+    from blueprints.consignment     import bp as consignment_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -2067,6 +2114,7 @@ def _register_routes(_app):
     _app.register_blueprint(labels_bp)
     _app.register_blueprint(bulk_bp)
     _app.register_blueprint(cost_categories_bp)
+    _app.register_blueprint(consignment_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:
