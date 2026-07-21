@@ -642,9 +642,12 @@ def _normalize_invoice_number(inv_num):
 
 def _check_cost_sanity(product_id, inv_qty, line_total, detected_multiplier):
     """Compare parsed unit cost against historical median from stock_batches.
-    Returns a warning dict when pack multiplier is likely missing, else None.
-    Requires ≥2 historical batches; only fires when detected_multiplier > 1."""
-    if not product_id or not detected_multiplier or detected_multiplier <= 1:
+    Returns a warning dict when cost looks anomalous, else None.
+    Requires ≥2 historical batches.
+    Two warning types:
+      'pack_multiplier' — cost is high but pack-adjusted matches history (multiplier > 1)
+      'price_anomaly'   — cost is >3× or <⅓ of historical median with no multiplier to explain it"""
+    if not product_id:
         return None
     if inv_qty <= 0 or line_total <= 0:
         return None
@@ -674,18 +677,31 @@ def _check_cost_sanity(product_id, inv_qty, line_total, detected_multiplier):
         return None
 
     current_cost = line_total / inv_qty
-    pack_cost    = line_total / (inv_qty * detected_multiplier)
 
-    # Flag when: current_cost is abnormally high (>3× hist) AND pack-adjusted is close (within 50%)
-    if (current_cost > hist_median * 3
-            and abs(pack_cost - hist_median) / hist_median < 0.50):
-        return {
-            'detected_multiplier': detected_multiplier,
-            'current_unit_cost':   round(current_cost, 2),
-            'pack_unit_cost':      round(pack_cost, 2),
-            'historical_median':   round(hist_median, 2),
-            'sample_count':        n,
-        }
+    if detected_multiplier and detected_multiplier > 1:
+        # Pack multiplier check: cost is high but pack-adjusted is close to history
+        pack_cost = line_total / (inv_qty * detected_multiplier)
+        if (current_cost > hist_median * 3
+                and abs(pack_cost - hist_median) / hist_median < 0.50):
+            return {
+                'type':                'pack_multiplier',
+                'detected_multiplier': detected_multiplier,
+                'current_unit_cost':   round(current_cost, 2),
+                'pack_unit_cost':      round(pack_cost, 2),
+                'historical_median':   round(hist_median, 2),
+                'sample_count':        n,
+            }
+    else:
+        # General price anomaly: cost is very different from history
+        ratio = current_cost / hist_median
+        if ratio > 3.0 or ratio < 0.33:
+            return {
+                'type':              'price_anomaly',
+                'current_unit_cost': round(current_cost, 2),
+                'historical_median': round(hist_median, 2),
+                'ratio':             round(ratio, 2),
+                'sample_count':      n,
+            }
     return None
 
 
@@ -767,17 +783,17 @@ def _apply_mappings(sid, lines, document_type='unknown'):
             enriched_line['suggested_product_name'] = prod.name if prod else ''
             enriched_line['pack_multiplier']        = float(mapping.pack_multiplier)
 
-            # Cost sanity: compare unit cost vs historical median (catches forgotten multiplier)
+            # Cost sanity: compare unit cost vs historical median
+            # Catches both forgotten pack multipliers AND general price anomalies
             pm = float(mapping.pack_multiplier)
-            if pm > 1:
-                cw = _check_cost_sanity(
-                    mapping.product_id,
-                    float(line.get('qty', 1)),
-                    float(line.get('total_price', 0)),
-                    pm,
-                )
-                if cw:
-                    enriched_line['cost_warning'] = cw
+            cw = _check_cost_sanity(
+                mapping.product_id,
+                float(line.get('qty', 1)),
+                float(line.get('total_price', 0)),
+                pm if pm > 1 else None,
+            )
+            if cw:
+                enriched_line['cost_warning'] = cw
 
         enriched.append(enriched_line)
 

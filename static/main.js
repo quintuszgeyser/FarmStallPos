@@ -4890,10 +4890,19 @@ document.getElementById('pr-scan-input')?.addEventListener('change', async funct
       : `<span class="text-muted">×${ln.qty}</span>`;
     const costWarnHtml = ln.cost_warning ? (() => {
       const cw = ln.cost_warning;
+      const hist = `historical median R${fmt(cw.historical_median)} from ${cw.sample_count} purchase${cw.sample_count !== 1 ? 's' : ''}`;
+      if (cw.type === 'price_anomaly') {
+        const dir = cw.ratio > 1 ? `${cw.ratio.toFixed(1)}× higher` : `${(1/cw.ratio).toFixed(1)}× lower`;
+        return `<div class="alert alert-danger py-1 px-2 small mt-1 mb-0">
+          <i class="bi bi-exclamation-triangle-fill me-1"></i>
+          Unit cost <strong>R${fmt(cw.current_unit_cost)}</strong> is ${dir} than expected
+          (${hist}). Check the invoice qty and price.
+        </div>`;
+      }
       return `<div class="alert alert-warning py-1 px-2 small mt-1 mb-0">
         <i class="bi bi-exclamation-triangle me-1"></i>
         Unit cost <strong>R${fmt(cw.current_unit_cost)}</strong> is abnormal
-        (historical median R${fmt(cw.historical_median)} from ${cw.sample_count} purchase${cw.sample_count !== 1 ? 's' : ''}).
+        (${hist}).
         Pack-adjusted R${fmt(cw.pack_unit_cost)} (÷${cw.detected_multiplier}) looks correct.
       </div>`;
     })() : '';
