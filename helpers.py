@@ -314,7 +314,7 @@ def _auto_price_products(product_ids):
     _log = _logging.getLogger('pos')
     if not product_ids:
         return
-    markup = _D(str(get_setting('markup_percent', 20) or 20))
+    global_markup = _D(str(get_setting('markup_percent', 20) or 20))
     changed = False
     for pid in product_ids:
         try:
@@ -328,6 +328,7 @@ def _auto_price_products(product_ids):
             if not latest or not latest.cost_per_base_unit:
                 continue
             cost = _D(str(latest.cost_per_base_unit))
+            markup = _D(str(p.margin_pct)) if p.margin_pct is not None else global_markup
             new_price = (cost * (1 + markup / 100)).quantize(_D('0.0001'))
             if p.sold_by_weight and p.unit_type in ('weight', 'volume'):
                 current = _D(str(p.price_per_unit or 0))
