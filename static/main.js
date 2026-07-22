@@ -831,11 +831,9 @@ function renderProductsCards() {
 
     const margins = calcProductMargins(p);
 
-    // Cost/markup/margin stats row — uses WAC from _productCostMap (same source as columns)
+    // Only show the inline stats row when there is a pending price to preview
     let statsHtml = '';
     if (margins) {
-      const _mkupCls = v => v >= 40 ? 'text-success' : v >= 20 ? 'text-warning' : 'text-danger';
-      let pendStr = '';
       const pendPrice = p.sold_by_weight ? p.pending_price_per_unit : p.pending_price;
       if (pendPrice != null && parseFloat(pendPrice) > 0) {
         const costPerBase = STATE._productCostMap?.[p.id];
@@ -846,17 +844,15 @@ function renderProductsCards() {
             : 1;
           const pendCost = costPerBase * pkgBase;
           if (pendCost > 0 && pp > 0) {
+            const _mkupCls = v => v >= 40 ? 'text-success' : v >= 20 ? 'text-warning' : 'text-danger';
             const pmu = ((pp - pendCost) / pendCost * 100).toFixed(1);
             const pmg = ((pp - pendCost) / pp * 100).toFixed(1);
-            pendStr = ` · After apply: <span class="${_mkupCls(parseFloat(pmu))}">${pmu}%</span> markup / <span class="${_mkupCls(parseFloat(pmg))}">${pmg}%</span> margin`;
+            statsHtml = `<small class="text-muted d-block" style="font-size:11px;line-height:1.4">` +
+              `After apply: <span class="${_mkupCls(parseFloat(pmu))}">${pmu}%</span> markup / ` +
+              `<span class="${_mkupCls(parseFloat(pmg))}">${pmg}%</span> margin</small>`;
           }
         }
       }
-      statsHtml = `<small class="text-muted d-block" style="font-size:11px;line-height:1.4">` +
-        `Cost ${escapeHtml(margins.costLabel)} · ` +
-        `Markup <span class="${_mkupCls(parseFloat(margins.markup))}">${margins.markup}%</span> · ` +
-        `Margin <span class="${_mkupCls(parseFloat(margins.margin))}">${margins.margin}%</span>` +
-        `${pendStr}</small>`;
     }
 
     const row = document.createElement('div');
