@@ -469,6 +469,96 @@ def _parse_addl_costs_p(raw, source='produce_run'):
     return result
 
 
+@bp.route('/api/products/pending-prices', methods=['GET'])
+def api_pending_prices():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    products = Product.query.filter(
+        Product.is_archived == False,
+        db.or_(
+            Product.pending_price.isnot(None),
+            Product.pending_price_per_unit.isnot(None),
+        )
+    ).order_by(Product.name).all()
+    result = []
+    for p in products:
+        if p.sold_by_weight and p.unit_type in ('weight', 'volume'):
+            current = float(p.price_per_unit or 0)
+            pending = float(p.pending_price_per_unit) if p.pending_price_per_unit is not None else None
+            unit_label = 'per g' if p.unit_type == 'weight' else 'per ml'
+        else:
+            current = float(p.price or 0)
+            pending = float(p.pending_price) if p.pending_price is not None else None
+            unit_label = 'each'
+        if pending is None:
+            continue
+        pct_change = round((pending - current) / current * 100, 1) if current > 0 else None
+        result.append({
+            'id':            p.id,
+            'name':          p.name,
+            'unit_label':    unit_label,
+            'sold_by_weight': p.sold_by_weight,
+            'current':       round(current, 4),
+            'pending':       round(pending, 4),
+            'pct_change':    pct_change,
+        })
+    return jsonify(result)
+
+
+@bp.route('/api/products/pending-prices/apply', methods=['POST'])
+def api_pending_prices_apply():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    ids  = data.get('ids')
+    q = Product.query.filter(
+        db.or_(
+            Product.pending_price.isnot(None),
+            Product.pending_price_per_unit.isnot(None),
+        )
+    )
+    if ids:
+        q = q.filter(Product.id.in_(ids))
+    products = q.all()
+    applied = []
+    for p in products:
+        if p.pending_price is not None:
+            p.price = p.pending_price
+            p.pending_price = None
+            applied.append(p.id)
+        if p.pending_price_per_unit is not None:
+            p.price_per_unit = p.pending_price_per_unit
+            p.pending_price_per_unit = None
+            if p.id not in applied:
+                applied.append(p.id)
+    db.session.commit()
+    return jsonify({'ok': True, 'applied': len(applied)})
+
+
+@bp.route('/api/products/pending-prices/dismiss', methods=['POST'])
+def api_pending_prices_dismiss():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    ids  = data.get('ids')
+    q = Product.query.filter(
+        db.or_(
+            Product.pending_price.isnot(None),
+            Product.pending_price_per_unit.isnot(None),
+        )
+    )
+    if ids:
+        q = q.filter(Product.id.in_(ids))
+    products = q.all()
+    dismissed = 0
+    for p in products:
+        p.pending_price = None
+        p.pending_price_per_unit = None
+        dismissed += 1
+    db.session.commit()
+    return jsonify({'ok': True, 'dismissed': dismissed})
+
+
 @bp.route('/api/products/<int:pid>/produce', methods=['POST'])
 def api_product_produce(pid):
     """Consume raw ingredients for N batches and create a StockBatch of finished units."""

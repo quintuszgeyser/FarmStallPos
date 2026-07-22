@@ -307,13 +307,15 @@ def get_fifo_cost_per_unit(product_id):
 
 
 def _auto_price_products(product_ids):
-    """Recalculate price for every product_id in the set that has auto_price=True.
-    Uses the most-recently-added batch's cost_per_base_unit as the replacement cost.
-    Non-fatal: errors are logged and the function continues."""
+    """Calculate auto-price for products with auto_price=True and store as pending_price.
+    The pending price must be explicitly applied by the user before the till uses it."""
     from decimal import Decimal as _D
     import logging as _logging
     _log = _logging.getLogger('pos')
-    markup = _D(str(get_setting('markup_percent', 20)))
+    if not product_ids:
+        return
+    markup = _D(str(get_setting('markup_percent', 20) or 20))
+    changed = False
     for pid in product_ids:
         try:
             p = db.session.get(Product, pid)
@@ -326,15 +328,25 @@ def _auto_price_products(product_ids):
             if not latest or not latest.cost_per_base_unit:
                 continue
             cost = _D(str(latest.cost_per_base_unit))
-            new_price = (cost * (1 + markup / 100)).quantize(_D('0.01'))
-            if p.sold_by_weight:
-                p.price_per_unit = float(new_price)
+            new_price = (cost * (1 + markup / 100)).quantize(_D('0.0001'))
+            if p.sold_by_weight and p.unit_type in ('weight', 'volume'):
+                current = _D(str(p.price_per_unit or 0))
+                if abs(new_price - current) > _D('0.0001'):
+                    p.pending_price_per_unit = new_price
+                    changed = True
             else:
-                p.price = float(new_price)
-            db.session.flush()
+                new_price_r = new_price.quantize(_D('0.01'))
+                current = _D(str(p.price or 0))
+                if abs(new_price_r - current) > _D('0.005'):
+                    p.pending_price = new_price_r
+                    changed = True
         except Exception as e:
             _log.warning(f'[auto_price] product {pid}: {e}')
-    db.session.commit()
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 # ---------------------------------------------------------------------------
@@ -564,6 +576,12 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'settlement_basis':  p.settlement_basis,
         'consignment_pct':   float(p.consignment_pct) if p.consignment_pct is not None else None,
         'auto_price':        p.auto_price if getattr(p, 'auto_price', None) is not None else True,
+        'pending_price':          float(p.pending_price) if getattr(p, 'pending_price', None) is not None else None,
+        'pending_price_per_unit': float(p.pending_price_per_unit) if getattr(p, 'pending_price_per_unit', None) is not None else None,
+        'cost_per_base_unit':     (lambda _b: float(_b.cost_per_base_unit) if _b and _b.cost_per_base_unit else None)(
+            StockBatch.query.filter_by(product_id=p.id)
+            .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).first()
+        ),
         'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
             'filename':      img.filename,

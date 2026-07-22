@@ -246,7 +246,9 @@ def strong_migrate():
                 ('image_url',   'TEXT'),
                 ('description', 'TEXT'),
                 ('category_id', 'INTEGER'),
-                ('auto_price',  'INTEGER NOT NULL DEFAULT 1'),
+                ('auto_price',          'INTEGER NOT NULL DEFAULT 1'),
+                ('pending_price',       'REAL'),
+                ('pending_price_per_unit', 'REAL'),
             ]:
                 if col not in existing_prod:
                     conn.exec_driver_sql(f"ALTER TABLE products ADD COLUMN {col} {defn}")
@@ -1616,6 +1618,8 @@ def strong_migrate():
         pg_try("ALTER TABLE suppliers ADD COLUMN last_run_costs TEXT")
         pg_try("ALTER TABLE products ADD COLUMN last_overhead_costs TEXT")
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS auto_price BOOLEAN NOT NULL DEFAULT TRUE")
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS pending_price NUMERIC(10,2)")
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS pending_price_per_unit NUMERIC(10,6)")
         # Rename purchase_runs → supplier_invoices if needed
         pg_try("ALTER TABLE purchase_runs RENAME TO supplier_invoices")
         pg_try("""CREATE TABLE IF NOT EXISTS supplier_invoices (

@@ -80,6 +80,8 @@ class Product(db.Model):
     stock_unit           = db.Column(db.String(30), nullable=True)
     last_overhead_costs  = db.Column(db.Text, nullable=True)   # JSON — pre-fills next produce run overhead
     auto_price           = db.Column(db.Boolean, nullable=False, default=True, server_default='TRUE')
+    pending_price          = db.Column(db.Numeric(10, 2), nullable=True)
+    pending_price_per_unit = db.Column(db.Numeric(10, 6), nullable=True)
 
 
 class Category(db.Model):

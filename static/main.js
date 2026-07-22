@@ -797,12 +797,19 @@ function renderProductsCards() {
 
     // Price
     let priceDisplay = '';
+    let pendingBadge = '';
     if (p.sold_by_weight && p.price_per_unit != null) {
       const bigUnit = p.unit_type === 'volume' ? 'L' : 'kg';
       const conv    = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
       priceDisplay  = `R${fmt(parseFloat(p.price_per_unit) * conv)}/${bigUnit}`;
+      if (p.pending_price_per_unit != null) {
+        pendingBadge = ` <span class="badge bg-warning text-dark ms-1" style="font-size:10px" title="Pending price change">New: R${fmt(parseFloat(p.pending_price_per_unit) * conv)}/${bigUnit}</span>`;
+      }
     } else if (p.price != null) {
       priceDisplay  = `R${fmt(p.price)}`;
+      if (p.pending_price != null) {
+        pendingBadge = ` <span class="badge bg-warning text-dark ms-1" style="font-size:10px" title="Pending price change">New: R${fmt(p.pending_price)}</span>`;
+      }
     }
 
     // Stock
@@ -824,6 +831,37 @@ function renderProductsCards() {
 
     const margins = calcProductMargins(p);
 
+    // Cost/markup/margin stats row (computed from serialised cost_per_base_unit)
+    let statsHtml = '';
+    {
+      const cost = p.cost_per_base_unit;
+      if (cost != null && cost > 0) {
+        const bigUnit  = p.unit_type === 'volume' ? 'L' : 'kg';
+        const conv     = (p.sold_by_weight && UNITS[p.unit_type]?.toBase[bigUnit]) || 1;
+        const costDisp = p.sold_by_weight
+          ? `R${fmt(cost * conv)}/${bigUnit}`
+          : `R${fmt(cost)}`;
+        const livePrice = p.sold_by_weight ? parseFloat(p.price_per_unit || 0) : parseFloat(p.price || 0);
+        const _mkupCls = v => v >= 40 ? 'text-success' : v >= 20 ? 'text-warning' : 'text-danger';
+        let muStr = '', mgStr = '';
+        if (livePrice > 0) {
+          const mu = ((livePrice - cost) / cost * 100).toFixed(1);
+          const mg = ((livePrice - cost) / livePrice * 100).toFixed(1);
+          muStr = ` · Markup <span class="${_mkupCls(parseFloat(mu))}">${mu}%</span>`;
+          mgStr = ` · Margin <span class="${_mkupCls(parseFloat(mg))}">${mg}%</span>`;
+        }
+        const pendPrice = p.sold_by_weight ? p.pending_price_per_unit : p.pending_price;
+        let pendStr = '';
+        if (pendPrice != null && parseFloat(pendPrice) > 0) {
+          const pp = parseFloat(pendPrice);
+          const pmu = ((pp - cost) / cost * 100).toFixed(1);
+          const pmg = ((pp - cost) / pp * 100).toFixed(1);
+          pendStr = ` · After apply: <span class="${_mkupCls(parseFloat(pmu))}">${pmu}%</span> / <span class="${_mkupCls(parseFloat(pmg))}">${pmg}%</span>`;
+        }
+        statsHtml = `<small class="text-muted d-block" style="font-size:11px;line-height:1.4">Cost ${costDisp}${muStr}${mgStr}${pendStr}</small>`;
+      }
+    }
+
     const row = document.createElement('div');
     const isSelected = STATE._selectedProductIds.has(p.id);
     row.className = `product-row${p.is_archived ? ' is-archived' : ''}${isSelected ? ' selected' : ''}`;
@@ -836,6 +874,7 @@ function renderProductsCards() {
         <div class="pr-name-block">
           <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
           ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
+          ${statsHtml}
           <div class="pr-mobile-meta">
             <div class="pr-mm-top">
               <div class="pr-mm-left">
@@ -852,7 +891,7 @@ function renderProductsCards() {
         </div>
       </div>
       <div class="pr-stock">${stockHtml}</div>
-      <div class="pr-price ${priceDisplay ? 'text-success' : 'text-muted'}">${priceDisplay || '—'}</div>
+      <div class="pr-price ${priceDisplay ? 'text-success' : 'text-muted'}">${priceDisplay || '—'}${pendingBadge}</div>
       <div class="pr-barcode">
         <span class="pr-barcode-num">${escapeHtml(p.barcode || '—')}</span>
         ${p.barcode ? `<svg id="bc-${p.id}" class="pr-barcode-svg"></svg>` : ''}
@@ -2846,6 +2885,115 @@ async function _uploadProductImagesIfSelected(pid) {
   }
 }
 
+// ── Pending prices ────────────────────────────────────────────────────────────
+
+async function loadPendingPricesBanner() {
+  const banner = document.getElementById('pending-prices-banner');
+  const text   = document.getElementById('pending-prices-banner-text');
+  if (!banner) return;
+  try {
+    const items = await api('/api/products/pending-prices');
+    if (items.length > 0) {
+      if (text) text.textContent = `${items.length} product${items.length > 1 ? 's have' : ' has'} price changes pending from the latest delivery.`;
+      banner.classList.remove('hidden');
+    } else {
+      banner.classList.add('hidden');
+    }
+  } catch (e) {
+    banner.classList.add('hidden');
+  }
+}
+
+async function openPendingPricesModal() {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('pendingPricesModal'));
+  const list  = document.getElementById('pending-prices-list');
+  if (list) list.innerHTML = '<div class="text-muted small">Loading…</div>';
+  modal.show();
+  try {
+    const items = await api('/api/products/pending-prices');
+    if (!items.length) {
+      if (list) list.innerHTML = '<div class="text-muted small">No pending price changes.</div>';
+      return;
+    }
+    let html = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr>
+        <th><input type="checkbox" id="pending-prices-select-all" checked onchange="document.querySelectorAll('.pending-price-cb').forEach(cb => cb.checked = this.checked)"></th>
+        <th>Product</th>
+        <th class="text-end">Current</th>
+        <th class="text-end">New Price</th>
+        <th class="text-end">Change</th>
+      </tr></thead><tbody>`;
+    items.forEach(r => {
+      const arrow   = r.pending > r.current ? '<i class="bi bi-arrow-up text-danger"></i>' : '<i class="bi bi-arrow-down text-success"></i>';
+      const pctText = r.pct_change != null ? `${r.pct_change > 0 ? '+' : ''}${r.pct_change}%` : '—';
+      const pctCls  = r.pending > r.current ? 'text-danger' : 'text-success';
+      const kgLabel = r.unit_label === 'per g' ? 'kg' : 'L';
+      const priceDisplay = r.sold_by_weight
+        ? `R${fmt(r.pending * 1000)}/<span class="text-muted" style="font-size:11px">${kgLabel}</span>`
+        : `R${fmt(r.pending)}`;
+      const currentDisplay = r.sold_by_weight
+        ? `R${fmt(r.current * 1000)}/<span class="text-muted" style="font-size:11px">${kgLabel}</span>`
+        : `R${fmt(r.current)}`;
+      html += `<tr>
+        <td><input type="checkbox" class="pending-price-cb" value="${r.id}" checked></td>
+        <td>${escapeHtml(r.name)}</td>
+        <td class="text-end text-muted">${currentDisplay}</td>
+        <td class="text-end fw-semibold">${arrow} ${priceDisplay}</td>
+        <td class="text-end ${pctCls} fw-semibold" style="font-size:12px">${pctText}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    if (list) list.innerHTML = html;
+  } catch (e) {
+    if (list) list.innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+function _getSelectedPendingIds() {
+  return [...document.querySelectorAll('.pending-price-cb:checked')].map(cb => parseInt(cb.value));
+}
+
+async function applySelectedPendingPrices() {
+  const ids = _getSelectedPendingIds();
+  if (!ids.length) { toast('No products selected', 'warning'); return; }
+  try {
+    const j = await api('/api/products/pending-prices/apply', { method: 'POST', body: JSON.stringify({ ids }) });
+    toast(`Applied ${j.applied} price${j.applied !== 1 ? 's' : ''}`, 'success');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('pendingPricesModal')).hide();
+    await loadPendingPricesBanner();
+    loadProducts();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function applyAllPendingPrices() {
+  try {
+    const j = await api('/api/products/pending-prices/apply', { method: 'POST', body: JSON.stringify({}) });
+    toast(`Applied ${j.applied} price${j.applied !== 1 ? 's' : ''}`, 'success');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('pendingPricesModal')).hide();
+    await loadPendingPricesBanner();
+    loadProducts();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function dismissSelectedPendingPrices() {
+  const ids = _getSelectedPendingIds();
+  if (!ids.length) { toast('No products selected', 'warning'); return; }
+  try {
+    await api('/api/products/pending-prices/dismiss', { method: 'POST', body: JSON.stringify({ ids }) });
+    toast('Dismissed', 'success');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('pendingPricesModal')).hide();
+    await loadPendingPricesBanner();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function dismissAllPendingPrices() {
+  try {
+    await api('/api/products/pending-prices/dismiss', { method: 'POST', body: JSON.stringify({}) });
+    toast('Dismissed all pending price changes', 'success');
+    document.getElementById('pending-prices-banner')?.classList.add('hidden');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // ── Save / Update / Delete ──
 document.getElementById('btn-add-product')?.addEventListener('click', async () => {
   const payload = buildProductPayload();
@@ -3866,6 +4014,7 @@ document.getElementById('btn-receive-confirm')?.addEventListener('click', async 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('receiveStockModal')).hide();
     await loadIngredients();
     await loadProducts();
+    loadPendingPricesBanner();
     if (_currentSupplier && supplier_id && _currentSupplier.id === supplier_id) loadSupplierInvoices(supplier_id);
   } catch (e) { toast(e.message, 'error'); }
 });
@@ -5749,6 +5898,7 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     if (saveBtn) saveBtn.textContent = 'Save Delivery';
 
     await loadProducts();
+    loadPendingPricesBanner();
     await loadSupplierProducts(_currentSupplier.id);
     await loadSupplierInvoices(_currentSupplier.id);
     loadSupplierDocs(_currentSupplier.id);
@@ -10299,6 +10449,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
 
   if (target === '#products') {
     if (STATE.products.length === 0) await loadProducts(); else renderProductsCards();
+    loadPendingPricesBanner();
     loadIngredients();  // populates Stock Overview (expanded by default) and cost map
     setTimeout(() => {
       const wrap = document.getElementById('products-card-list');

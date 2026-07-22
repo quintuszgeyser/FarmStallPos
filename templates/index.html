@@ -1023,6 +1023,16 @@
         <button class="btn btn-link btn-sm" id="btn-clear-sel"><i class="bi bi-x-lg me-1"></i>Clear</button>
       </div>
 
+      <!-- Pending price changes banner -->
+      <div id="pending-prices-banner" class="alert alert-warning d-flex align-items-center gap-2 mb-2 py-2 px-3 hidden">
+        <i class="bi bi-tag-fill"></i>
+        <span id="pending-prices-banner-text">Products have price changes pending from the latest delivery.</span>
+        <button class="btn btn-warning btn-sm ms-auto" onclick="openPendingPricesModal()">
+          <i class="bi bi-pencil me-1"></i>Review &amp; Apply
+        </button>
+        <button class="btn btn-outline-secondary btn-sm" onclick="dismissAllPendingPrices()">Dismiss all</button>
+      </div>
+
       <div id="products-card-list" class="mt-1"></div>
       <div id="products-list" class="list-group"></div>
 
@@ -3895,6 +3905,35 @@
         <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-success btn-sm" id="btn-consignment-settle-confirm">
           <i class="bi bi-check2-circle me-1"></i>Confirm Settlement
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Pending Prices Modal -->
+<div class="modal fade" id="pendingPricesModal" tabindex="-1" aria-labelledby="pendingPricesModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="pendingPricesModalLabel"><i class="bi bi-tag-fill me-2 text-warning"></i>Pending Price Changes</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">These prices were auto-calculated from your latest delivery using your markup %. Print new labels for any products you apply, then click Apply.</p>
+        <div id="pending-prices-list">
+          <div class="text-muted small">Loading&hellip;</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline-secondary btn-sm" onclick="dismissSelectedPendingPrices()">
+          <i class="bi bi-x-circle me-1"></i>Dismiss Selected
+        </button>
+        <button class="btn btn-warning btn-sm" onclick="applySelectedPendingPrices()">
+          <i class="bi bi-check2 me-1"></i>Apply Selected
+        </button>
+        <button class="btn btn-success btn-sm" onclick="applyAllPendingPrices()">
+          <i class="bi bi-check2-all me-1"></i>Apply All
         </button>
       </div>
     </div>
