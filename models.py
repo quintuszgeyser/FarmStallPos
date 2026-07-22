@@ -79,6 +79,7 @@ class Product(db.Model):
     batch_size           = db.Column(Numeric(10, 2), nullable=False, default=1, server_default='1')
     stock_unit           = db.Column(db.String(30), nullable=True)
     last_overhead_costs  = db.Column(db.Text, nullable=True)   # JSON — pre-fills next produce run overhead
+    auto_price           = db.Column(db.Boolean, nullable=False, default=True, server_default='TRUE')
 
 
 class Category(db.Model):

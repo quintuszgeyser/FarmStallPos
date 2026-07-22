@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, _gen_barcode
+from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
                     SupplierInvoiceTemplate, SupplierProductMapping,
@@ -1781,6 +1781,10 @@ def api_suppliers_purchase_run(sid):
             current_app.logger.warning(f'Learning step failed for supplier {sid}: {_le}')
 
     db.session.commit()
+    try:
+        _auto_price_products({pl['pid'] for pl in prepared_lines})
+    except Exception as _ape:
+        current_app.logger.warning(f'[purchase_run] auto_price failed: {_ape}')
     return jsonify({
         'ok': True,
         'created_products': created_products,

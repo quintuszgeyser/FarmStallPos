@@ -306,6 +306,37 @@ def get_fifo_cost_per_unit(product_id):
     return float(batch.cost_per_base_unit) if batch else 0.0
 
 
+def _auto_price_products(product_ids):
+    """Recalculate price for every product_id in the set that has auto_price=True.
+    Uses the most-recently-added batch's cost_per_base_unit as the replacement cost.
+    Non-fatal: errors are logged and the function continues."""
+    from decimal import Decimal as _D
+    import logging as _logging
+    _log = _logging.getLogger('pos')
+    markup = _D(str(get_setting('markup_percent', 20)))
+    for pid in product_ids:
+        try:
+            p = db.session.get(Product, pid)
+            if not p or not getattr(p, 'auto_price', True):
+                continue
+            latest = (StockBatch.query
+                      .filter_by(product_id=pid)
+                      .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
+                      .first())
+            if not latest or not latest.cost_per_base_unit:
+                continue
+            cost = _D(str(latest.cost_per_base_unit))
+            new_price = (cost * (1 + markup / 100)).quantize(_D('0.01'))
+            if p.sold_by_weight:
+                p.price_per_unit = float(new_price)
+            else:
+                p.price = float(new_price)
+            db.session.flush()
+        except Exception as e:
+            _log.warning(f'[auto_price] product {pid}: {e}')
+    db.session.commit()
+
+
 # ---------------------------------------------------------------------------
 # Product helpers
 # ---------------------------------------------------------------------------
@@ -532,6 +563,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'is_consignment':    p.is_consignment,
         'settlement_basis':  p.settlement_basis,
         'consignment_pct':   float(p.consignment_pct) if p.consignment_pct is not None else None,
+        'auto_price':        p.auto_price if getattr(p, 'auto_price', None) is not None else True,
         'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
             'filename':      img.filename,

@@ -24,6 +24,7 @@ _EDITABLE = {
     'is_available_online':  {'type': 'bool',     'label': 'Online'},
     'is_prepared':          {'type': 'bool',     'label': 'Prepared (kitchen)'},
     'sync_to_scale':        {'type': 'bool',     'label': 'Sync to scale'},
+    'auto_price':           {'type': 'bool',     'label': 'Auto-price (markup %)'},
     'scale_shelf_life':     {'type': 'int',      'label': 'Shelf life (days)'},
     'scale_tare':           {'type': 'float',    'label': 'Scale tare (g)'},
     'scale_msg1':           {'type': 'str',      'label': 'Scale message 1'},
@@ -46,6 +47,7 @@ _FILTERABLE = {
     'is_prepared':          {'type': 'bool',   'label': 'Prepared'},
     'is_archived':          {'type': 'bool',   'label': 'Archived'},
     'sync_to_scale':        {'type': 'bool',   'label': 'Sync to scale'},
+    'auto_price':           {'type': 'bool',   'label': 'Auto-price (markup %)'},
     'price':                {'type': 'float',  'label': 'Price (fixed)'},
     'price_per_unit':       {'type': 'float',  'label': 'Price per kg/L'},
     'margin_pct':           {'type': 'float',  'label': 'Margin %'},
@@ -140,6 +142,7 @@ def _serialize_match(p):
         'margin_pct':   float(p.margin_pct) if p.margin_pct is not None else None,
         'stat_unit_size': float(p.stat_unit_size) if p.stat_unit_size is not None else None,
         'sync_to_scale': p.sync_to_scale,
+        'auto_price':    getattr(p, 'auto_price', True),
         'scale_shelf_life': p.scale_shelf_life,
     }
 

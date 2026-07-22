@@ -222,6 +222,8 @@ def api_products_post():
     except Exception:
         consignment_pct = None
 
+    auto_price = bool(data.get('auto_price', True))
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -241,6 +243,7 @@ def api_products_post():
         is_produced=is_produced, batch_size=batch_size, stock_unit=stock_unit,
         is_consignment=is_consignment, settlement_basis=settlement_basis,
         consignment_pct=consignment_pct,
+        auto_price=auto_price,
     )
     db.session.add(p)
     db.session.flush()
@@ -314,6 +317,9 @@ def api_products_update():
     for field in ('sold_by_weight', 'is_for_sale', 'is_prepared', 'is_archived', 'is_available_online'):
         if field in data:
             setattr(p, field, bool(data[field]))
+
+    if 'auto_price' in data:
+        p.auto_price = bool(data['auto_price'])
 
     if 'description' in data:
         p.description = (data['description'] or '').strip() or None

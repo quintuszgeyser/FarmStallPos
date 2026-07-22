@@ -10,7 +10,7 @@ from sqlalchemy import func
 
 from helpers import (
     require_login, require_role, current_user,
-    get_stock_level, consume_fifo, reverse_fifo, _parse_dt,
+    get_stock_level, consume_fifo, reverse_fifo, _parse_dt, _auto_price_products,
 )
 from models import (
     db,
@@ -274,6 +274,10 @@ def api_stock_receive():
     )
     db.session.add(batch)
     db.session.commit()
+    try:
+        _auto_price_products([pid])
+    except Exception:
+        pass
     return jsonify({
         'ok': True, 'batch_id': batch.id,
         'qty_base': qty_base, 'base_unit': p.base_unit,
@@ -404,8 +408,14 @@ def api_stock_batch_edit(batch_id):
     u = current_user()
     batch.updated_at = datetime.utcnow()
     batch.updated_by = u.id if u else None
+    reprice_product = batch.product_id if (costs_changed or 'total_price' in data) else None
 
     db.session.commit()
+    if reprice_product:
+        try:
+            _auto_price_products([reprice_product])
+        except Exception:
+            pass
     return jsonify({'ok': True, 'updated_at': batch.updated_at.isoformat()})
 
 
@@ -498,7 +508,12 @@ def api_stock_batches_apply_costs():
             'new_cost_per_unit':  round(float(b.cost_per_base_unit), 6),
         })
 
+    reprice_ids = {b.product_id for b in batches}
     db.session.commit()
+    try:
+        _auto_price_products(reprice_ids)
+    except Exception:
+        pass
     return jsonify({'ok': True, 'results': results})
 
 

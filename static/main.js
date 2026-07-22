@@ -2021,6 +2021,10 @@ function openProductEditor(p) {
   const _onlineEl = document.getElementById('p-is-available-online');
   if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
 
+  // Auto-price
+  const _apEl = document.getElementById('p-auto-price');
+  if (_apEl) { _apEl.checked = p?.auto_price !== false; _updateAutoPriceState(); }
+
   // Consignment
   const _consEl = document.getElementById('p-is-consignment');
   if (_consEl) {
@@ -3016,8 +3020,26 @@ function buildProductPayload() {
     is_consignment:   document.getElementById('p-is-consignment')?.checked || false,
     settlement_basis: document.querySelector('input[name="consignment-basis"]:checked')?.value || 'FIXED_COST',
     consignment_pct:  (() => { const v = parseFloat(document.getElementById('p-consignment-pct')?.value || ''); return isNaN(v) ? null : v; })(),
+    // Auto-price
+    auto_price: document.getElementById('p-auto-price')?.checked ?? true,
   };
 }
+
+function _updateAutoPriceState() {
+  const autoOn     = document.getElementById('p-auto-price')?.checked ?? true;
+  const priceInput = document.getElementById('p-price');
+  const hint       = document.getElementById('auto-price-hint');
+  if (priceInput) {
+    priceInput.readOnly = autoOn;
+    priceInput.classList.toggle('bg-light', autoOn);
+  }
+  if (hint) {
+    hint.textContent = autoOn
+      ? `(${_globalMarkupPct ?? '?'}% markup — auto-calculated)`
+      : '(manual — auto-price off)';
+  }
+}
+document.getElementById('p-auto-price')?.addEventListener('change', _updateAutoPriceState);
 
 // ── Legacy purchase (simple products) ──
 async function loadPurchaseHistory(pid) {
