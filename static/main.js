@@ -8839,8 +8839,8 @@ async function loadStats() {
 
     // Fire overhead, VAT, discount, and consignment stats in parallel — non-blocking
     loadOverheadStats(start, end, productId).catch(e => console.error('overhead stats', e));
-    loadSupplierVatStats(start, end).catch(e => console.error('supplier vat stats', e));
-    loadSupplierDiscountStats(start, end).catch(e => console.error('supplier discount stats', e));
+    loadSupplierVatStats(start, end, productId).catch(e => console.error('supplier vat stats', e));
+    loadSupplierDiscountStats(start, end, productId).catch(e => console.error('supplier discount stats', e));
     loadConsignmentStats().catch(e => console.error('consignment stats', e));
 
   } catch (e) { console.error('loadStats', e); toast('Could not load stats', 'error'); }
@@ -8984,10 +8984,11 @@ async function loadConsignmentStats() {
   `;
 }
 
-async function loadSupplierVatStats(start, end) {
+async function loadSupplierVatStats(start, end, productId) {
   const wrap = document.getElementById('supplier-vat-stats-body');
   if (!wrap) return;
   const params = new URLSearchParams({ start, end });
+  if (productId) params.set('product_id', productId);
   let j;
   try { j = await api(`/api/stats/supplier-vat?${params}`); }
   catch (e) { wrap.innerHTML = `<div class="text-danger small">Could not load VAT data: ${e.message}</div>`; return; }
@@ -9010,10 +9011,11 @@ async function loadSupplierVatStats(start, end) {
   `;
 }
 
-async function loadSupplierDiscountStats(start, end) {
+async function loadSupplierDiscountStats(start, end, productId) {
   const wrap = document.getElementById('supplier-discounts-stats-body');
   if (!wrap) return;
   const params = new URLSearchParams({ start, end });
+  if (productId) params.set('product_id', productId);
   let j;
   try { j = await api(`/api/stats/supplier-discounts?${params}`); }
   catch (e) { wrap.innerHTML = `<div class="text-danger small">Could not load discount data: ${e.message}</div>`; return; }
@@ -9125,9 +9127,11 @@ async function openOverheadTypeDrilldown(type) {
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
   modal.show();
   try {
-    const start  = document.getElementById('stats-start')?.value || todayISO();
-    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const start     = document.getElementById('stats-start')?.value || todayISO();
+    const end       = document.getElementById('stats-end')?.value   || todayISO();
+    const productId = document.getElementById('stats-product-filter')?.value || '';
     const params = new URLSearchParams({ type, start, end });
+    if (productId) params.set('product_id', productId);
     const rows   = await api(`/api/stats/drilldown/overhead-type?${params}`);
     if (!rows.length) {
       document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">No records found.</div>';
@@ -9159,9 +9163,11 @@ async function openOverheadSupplierDrilldown(supplierId) {
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
   modal.show();
   try {
-    const start  = document.getElementById('stats-start')?.value || todayISO();
-    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const start     = document.getElementById('stats-start')?.value || todayISO();
+    const end       = document.getElementById('stats-end')?.value   || todayISO();
+    const productId = document.getElementById('stats-product-filter')?.value || '';
     const params = new URLSearchParams({ supplier_id: supplierId, start, end });
+    if (productId) params.set('product_id', productId);
     const j = await api(`/api/stats/drilldown/overhead-supplier?${params}`);
     document.getElementById('drilldown-title').textContent = `Supplier Overhead — ${j.supplier_name}`;
     if (!j.rows.length) {
@@ -9197,6 +9203,7 @@ async function openProductionOverheadDrilldown(productId) {
   try {
     const start  = document.getElementById('stats-start')?.value || todayISO();
     const end    = document.getElementById('stats-end')?.value   || todayISO();
+    // productId is the row's product — no additional product filter needed here
     const params = new URLSearchParams({ product_id: productId, start, end });
     const j = await api(`/api/stats/drilldown/production-overhead?${params}`);
     document.getElementById('drilldown-title').textContent = `Production Overhead — ${j.product_name}`;
@@ -9230,9 +9237,11 @@ async function openSupplierVatDrilldown(supplierId) {
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
   modal.show();
   try {
-    const start  = document.getElementById('stats-start')?.value || todayISO();
-    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const start     = document.getElementById('stats-start')?.value || todayISO();
+    const end       = document.getElementById('stats-end')?.value   || todayISO();
+    const productId = document.getElementById('stats-product-filter')?.value || '';
     const params = new URLSearchParams({ supplier_id: supplierId, start, end });
+    if (productId) params.set('product_id', productId);
     const j = await api(`/api/stats/drilldown/supplier-vat?${params}`);
     document.getElementById('drilldown-title').textContent = `VAT Paid — ${j.supplier_name}`;
     if (!j.rows.length) {
@@ -9264,9 +9273,11 @@ async function openSupplierDiscountDrilldown(supplierId) {
   document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
   modal.show();
   try {
-    const start  = document.getElementById('stats-start')?.value || todayISO();
-    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const start     = document.getElementById('stats-start')?.value || todayISO();
+    const end       = document.getElementById('stats-end')?.value   || todayISO();
+    const productId = document.getElementById('stats-product-filter')?.value || '';
     const params = new URLSearchParams({ supplier_id: supplierId, start, end });
+    if (productId) params.set('product_id', productId);
     const j = await api(`/api/stats/drilldown/supplier-discounts?${params}`);
     document.getElementById('drilldown-title').textContent = `Discounts Received — ${j.supplier_name}`;
     if (!j.rows.length) {

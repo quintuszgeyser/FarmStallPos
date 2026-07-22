@@ -1182,6 +1182,7 @@ def api_stats_drilldown_overhead_supplier():
     """Batch-level overhead detail for a specific supplier in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     supplier_id = request.args.get('supplier_id', type=int)
+    product_id_filter = request.args.get('product_id', type=int)
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
 
     bq = StockBatch.query.filter(
@@ -1193,6 +1194,8 @@ def api_stats_drilldown_overhead_supplier():
         bq = bq.filter(StockBatch.supplier_id == supplier_id)
     else:
         bq = bq.filter(StockBatch.supplier_id.is_(None))
+    if product_id_filter:
+        bq = bq.filter(StockBatch.product_id == product_id_filter)
     batches = bq.all()
 
     pids = {b.product_id for b in batches}
@@ -1273,6 +1276,7 @@ def api_stats_drilldown_supplier_vat():
     """Invoice-level VAT detail for a specific supplier in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     supplier_id = request.args.get('supplier_id', type=int)
+    product_id_filter = request.args.get('product_id', type=int)
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
 
     iq = SupplierInvoice.query.filter(
@@ -1284,6 +1288,12 @@ def api_stats_drilldown_supplier_vat():
         iq = iq.filter(SupplierInvoice.supplier_id == supplier_id)
     else:
         iq = iq.filter(SupplierInvoice.supplier_id.is_(None))
+    if product_id_filter:
+        inv_ids = db.session.query(StockBatch.invoice_id).filter(
+            StockBatch.product_id == product_id_filter,
+            StockBatch.invoice_id.isnot(None),
+        ).distinct()
+        iq = iq.filter(SupplierInvoice.id.in_(inv_ids))
     invoices = iq.all()
 
     sup_name = 'Unknown'
@@ -1313,6 +1323,7 @@ def api_stats_drilldown_supplier_discounts():
     """Invoice-level discount detail for a specific supplier in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     supplier_id = request.args.get('supplier_id', type=int)
+    product_id_filter = request.args.get('product_id', type=int)
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
 
     iq = SupplierInvoice.query.filter(
@@ -1324,6 +1335,12 @@ def api_stats_drilldown_supplier_discounts():
         iq = iq.filter(SupplierInvoice.supplier_id == supplier_id)
     else:
         iq = iq.filter(SupplierInvoice.supplier_id.is_(None))
+    if product_id_filter:
+        inv_ids = db.session.query(StockBatch.invoice_id).filter(
+            StockBatch.product_id == product_id_filter,
+            StockBatch.invoice_id.isnot(None),
+        ).distinct()
+        iq = iq.filter(SupplierInvoice.id.in_(inv_ids))
     invoices = iq.all()
 
     sup_name = 'Unknown'
@@ -1412,12 +1429,20 @@ def api_stats_supplier_vat():
     """Aggregate supplier VAT paid from invoices in the date range, grouped by supplier."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+    product_id_filter = request.args.get('product_id', type=int)
 
-    invoices = SupplierInvoice.query.filter(
+    iq = SupplierInvoice.query.filter(
         SupplierInvoice.date >= start_dt.date(),
         SupplierInvoice.date <= end_dt.date(),
         SupplierInvoice.vat_total.isnot(None),
-    ).all()
+    )
+    if product_id_filter:
+        inv_ids = db.session.query(StockBatch.invoice_id).filter(
+            StockBatch.product_id == product_id_filter,
+            StockBatch.invoice_id.isnot(None),
+        ).distinct()
+        iq = iq.filter(SupplierInvoice.id.in_(inv_ids))
+    invoices = iq.all()
 
     by_supplier = defaultdict(lambda: {'name': '', 'vat_total': Decimal('0'), 'invoice_count': 0})
     total_vat = Decimal('0')
@@ -1460,12 +1485,20 @@ def api_stats_supplier_discounts():
     """Aggregate supplier discounts received from invoices in the date range, grouped by supplier."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+    product_id_filter = request.args.get('product_id', type=int)
 
-    invoices = SupplierInvoice.query.filter(
+    iq = SupplierInvoice.query.filter(
         SupplierInvoice.date >= start_dt.date(),
         SupplierInvoice.date <= end_dt.date(),
         SupplierInvoice.discount_total.isnot(None),
-    ).all()
+    )
+    if product_id_filter:
+        inv_ids = db.session.query(StockBatch.invoice_id).filter(
+            StockBatch.product_id == product_id_filter,
+            StockBatch.invoice_id.isnot(None),
+        ).distinct()
+        iq = iq.filter(SupplierInvoice.id.in_(inv_ids))
+    invoices = iq.all()
 
     by_supplier = defaultdict(lambda: {'name': '', 'discount_total': Decimal('0'), 'invoice_count': 0, 'labels': defaultdict(lambda: Decimal('0'))})
     total_discounts = Decimal('0')
