@@ -72,8 +72,10 @@ function _readAdditionalCosts(wrapEl) {
     const type   = row.querySelector('[data-addl-type]')?.value || 'other';
     const amount = parseFloat(row.querySelector('[data-addl-amount]')?.value || '0');
     const ref    = row.querySelector('[data-addl-ref]')?.value?.trim() || null;
+    const vatOn = row.querySelector('[data-addl-vat-toggle]')?.dataset?.vatOn;
+    const vat_applicable = vatOn !== '0';
     if (!label || !amount) continue;
-    result.push({ label, type, amount, ...(ref ? { invoice_ref: ref } : {}) });
+    result.push({ label, type, amount, vat_applicable, ...(ref ? { invoice_ref: ref } : {}) });
   }
   return result;
 }
@@ -104,12 +106,13 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
   `;
   const rowsEl = wrapEl.querySelector('[data-addl-rows]');
 
-  const addRow = (label = '', type = 'shipping', amount = '', ref = '') => {
+  const addRow = (label = '', type = 'shipping', amount = '', ref = '', vatApplicable = true) => {
     const row = document.createElement('div');
-    row.className = 'd-flex gap-1 mb-1 align-items-center';
+    row.className = 'd-flex gap-1 mb-1 align-items-center flex-wrap';
     row.dataset.addlCostRow = '1';
+    const vatActive = vatApplicable !== false;
     row.innerHTML = `
-      <input type="text" class="form-control form-control-sm" style="flex:2" placeholder="Label e.g. Courier" data-addl-label value="${escapeHtml(String(label))}">
+      <input type="text" class="form-control form-control-sm" style="flex:2;min-width:100px" placeholder="Label e.g. Courier" data-addl-label value="${escapeHtml(String(label))}">
       <select class="form-select form-select-sm" style="flex:1;min-width:90px" data-addl-type>
         ${_buildCostTypeOpts(type)}
       </select>
@@ -117,9 +120,21 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
         <span class="input-group-text">R</span>
         <input type="number" step="0.01" class="form-control" placeholder="0.00" data-addl-amount value="${amount}">
       </div>
+      <button type="button" class="btn btn-sm ${vatActive ? 'btn-warning' : 'btn-outline-secondary'}" data-addl-vat-toggle title="${vatActive ? 'VAT applies to this fee — click to exclude' : 'VAT excluded from this fee — click to include'}">
+        <i class="bi bi-percent"></i>
+      </button>
       <input type="text" class="form-control form-control-sm" style="flex:1;min-width:70px" placeholder="Ref (opt)" data-addl-ref value="${escapeHtml(String(ref))}">
       <button type="button" class="btn btn-outline-danger btn-sm" data-addl-remove><i class="bi bi-trash3"></i></button>
     `;
+    const vatToggle = row.querySelector('[data-addl-vat-toggle]');
+    vatToggle.dataset.vatOn = vatActive ? '1' : '0';
+    vatToggle.addEventListener('click', () => {
+      const on = vatToggle.dataset.vatOn === '1';
+      vatToggle.dataset.vatOn = on ? '0' : '1';
+      vatToggle.className = `btn btn-sm ${on ? 'btn-outline-secondary' : 'btn-warning'}`;
+      vatToggle.title = on ? 'VAT excluded from this fee — click to include' : 'VAT applies to this fee — click to exclude';
+      _updatePurchaseRunSummary();
+    });
     const typeSel = row.querySelector('[data-addl-type]');
     typeSel.addEventListener('change', async () => {
       if (typeSel.value !== '__new__') return;
@@ -143,11 +158,12 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
         typeSel.value = type;
       }
     });
-    row.querySelector('[data-addl-remove]').onclick = () => row.remove();
+    row.querySelector('[data-addl-remove]').onclick = () => { row.remove(); _updatePurchaseRunSummary(); };
+    row.querySelector('[data-addl-amount]').addEventListener('input', _updatePurchaseRunSummary);
     rowsEl.appendChild(row);
   };
 
-  (existing || []).forEach(c => addRow(c.label, c.type, c.amount, c.invoice_ref || ''));
+  (existing || []).forEach(c => addRow(c.label, c.type, c.amount, c.invoice_ref || '', c.vat_applicable !== false));
   wrapEl.querySelector('[data-addl-add-row]').onclick = () => addRow();
 }
 
@@ -5094,20 +5110,22 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
     if (productSel) productSel.title = `Invoice: ${ln.description}`;
   });
 
-  // Sync overhead costs from invoice: replace shipping + VAT rows (or remove if invoice has none)
+  // Sync overhead costs from invoice — shipping only; VAT goes to the dedicated VAT section
   const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
   if (prAddlWrap) {
     const existing = _readAdditionalCosts(prAddlWrap);
-    const withoutShipping = existing.filter(c => c.type !== 'shipping');
-    const afterShipping = (result.shipping && result.shipping > 0)
+    const withoutShipping = existing.filter(c => c.type !== 'shipping' && c.type !== 'vat');
+    const newCosts = (result.shipping && result.shipping > 0)
       ? [...withoutShipping, { label: 'Shipping / delivery', type: 'shipping', amount: result.shipping }]
       : withoutShipping;
-    // Auto-add VAT as additional cost when lines are ex-VAT (so VAT flows into COGS)
-    const withoutVat = afterShipping.filter(c => c.type !== 'vat');
-    const newCosts = (result.vat_total > 0 && result.vat_treatment === 'lines_excl_vat')
-      ? [...withoutVat, { label: `VAT (${_globalVatPct}%)`, type: 'vat', amount: result.vat_total }]
-      : withoutVat;
     _renderAdditionalCostsBlock(prAddlWrap, newCosts);
+    prAddlWrap.addEventListener('input', _updatePurchaseRunSummary);
+  }
+
+  // Route scanned VAT to the dedicated VAT section (not additional costs)
+  if (result.vat_total > 0) {
+    const vatInp = document.getElementById('pr-vat-amount');
+    if (vatInp) { vatInp.value = parseFloat(result.vat_total).toFixed(2); }
   }
 
   _updatePurchaseRunSummary();
@@ -5421,21 +5439,30 @@ function _updatePurchaseRunCostPreview() {
 }
 
 // ── VAT section renderer ──────────────────────────────────────────────────────
+function _vatAutoCalcBase() {
+  const vatRate   = _globalVatPct != null ? _globalVatPct : 15;
+  const lines     = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
+  const linesTotal = lines.reduce((s, l) => s + (parseFloat(l.querySelector('[data-price]')?.value || 0)), 0);
+  const addlWrap  = document.getElementById('purchase-run-addl-costs-wrap');
+  const addlCosts = addlWrap ? _readAdditionalCosts(addlWrap) : [];
+  const vatAddl   = addlCosts.filter(c => c.vat_applicable !== false).reduce((s, c) => s + (c.amount || 0), 0);
+  return { base: linesTotal + vatAddl, linesTotal, vatAddl, vatRate };
+}
+
 function _renderPurchaseRunVatSection(vatWrap, existingVatAmount) {
   if (!vatWrap) return;
-  const vatRate = _globalVatPct != null ? _globalVatPct : 15;
-  const lines = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
-  const subtotal = lines.reduce((s, l) => s + (parseFloat(l.querySelector('[data-price]')?.value || 0)), 0);
-  const autoVat = parseFloat((subtotal * vatRate / 100).toFixed(2));
+  const { base, linesTotal, vatAddl, vatRate } = _vatAutoCalcBase();
+  const autoVat    = parseFloat((base * vatRate / 100).toFixed(2));
   const displayVal = existingVatAmount != null ? parseFloat(existingVatAmount).toFixed(2) : autoVat.toFixed(2);
+  const baseNote   = vatAddl > 0 ? `lines R${fmt(linesTotal)} + fees R${fmt(vatAddl)}` : `lines R${fmt(linesTotal)}`;
 
   vatWrap.innerHTML = `
     <div class="border rounded p-2 bg-light">
       <div class="d-flex align-items-center mb-2">
         <span class="small fw-semibold"><i class="bi bi-receipt-cutoff me-1"></i>VAT</span>
-        <span class="ms-2 small text-muted" id="pr-vat-auto-label">(${vatRate}% of lines = R${autoVat.toFixed(2)} auto-calc)</span>
+        <span class="ms-2 small text-muted" id="pr-vat-auto-label">(${vatRate}% of ${baseNote} = R${autoVat.toFixed(2)})</span>
         <button type="button" class="btn btn-link btn-sm p-0 ms-auto" style="font-size:11px" id="btn-pr-reset-vat">
-          Reset to auto-calc
+          Auto-calc
         </button>
       </div>
       <div class="d-flex gap-2 align-items-center">
@@ -5444,16 +5471,15 @@ function _renderPurchaseRunVatSection(vatWrap, existingVatAmount) {
           <span class="input-group-text">R</span>
           <input type="number" step="0.01" min="0" class="form-control" id="pr-vat-amount" value="${displayVal}" placeholder="0.00">
         </div>
-        <span class="small text-muted">Allocated proportionally to products</span>
+        <span class="small text-muted">Override with printed invoice VAT</span>
       </div>
     </div>
   `;
 
   vatWrap.querySelector('#pr-vat-amount')?.addEventListener('input', _updatePurchaseRunSummary);
   vatWrap.querySelector('#btn-pr-reset-vat')?.addEventListener('click', () => {
-    const linesNow = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
-    const st = linesNow.reduce((s, l) => s + (parseFloat(l.querySelector('[data-price]')?.value || 0)), 0);
-    const av = parseFloat((st * vatRate / 100).toFixed(2));
+    const { base: b, vatRate: r } = _vatAutoCalcBase();
+    const av  = parseFloat((b * r / 100).toFixed(2));
     const inp = vatWrap.querySelector('#pr-vat-amount');
     if (inp) { inp.value = av.toFixed(2); _updatePurchaseRunSummary(); }
   });
