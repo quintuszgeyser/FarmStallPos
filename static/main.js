@@ -831,35 +831,32 @@ function renderProductsCards() {
 
     const margins = calcProductMargins(p);
 
-    // Cost/markup/margin stats row (computed from serialised cost_per_base_unit)
+    // Cost/markup/margin stats row — uses WAC from _productCostMap (same source as columns)
     let statsHtml = '';
-    {
-      const cost = p.cost_per_base_unit;
-      if (cost != null && cost > 0) {
-        const bigUnit  = p.unit_type === 'volume' ? 'L' : 'kg';
-        const conv     = (p.sold_by_weight && UNITS[p.unit_type]?.toBase[bigUnit]) || 1;
-        const costDisp = p.sold_by_weight
-          ? `R${fmt(cost * conv)}/${bigUnit}`
-          : `R${fmt(cost)}`;
-        const livePrice = p.sold_by_weight ? parseFloat(p.price_per_unit || 0) : parseFloat(p.price || 0);
-        const _mkupCls = v => v >= 40 ? 'text-success' : v >= 20 ? 'text-warning' : 'text-danger';
-        let muStr = '', mgStr = '';
-        if (livePrice > 0) {
-          const mu = ((livePrice - cost) / cost * 100).toFixed(1);
-          const mg = ((livePrice - cost) / livePrice * 100).toFixed(1);
-          muStr = ` · Markup <span class="${_mkupCls(parseFloat(mu))}">${mu}%</span>`;
-          mgStr = ` · Margin <span class="${_mkupCls(parseFloat(mg))}">${mg}%</span>`;
-        }
-        const pendPrice = p.sold_by_weight ? p.pending_price_per_unit : p.pending_price;
-        let pendStr = '';
-        if (pendPrice != null && parseFloat(pendPrice) > 0) {
+    if (margins) {
+      const _mkupCls = v => v >= 40 ? 'text-success' : v >= 20 ? 'text-warning' : 'text-danger';
+      let pendStr = '';
+      const pendPrice = p.sold_by_weight ? p.pending_price_per_unit : p.pending_price;
+      if (pendPrice != null && parseFloat(pendPrice) > 0) {
+        const costPerBase = STATE._productCostMap?.[p.id];
+        if (costPerBase != null && costPerBase > 0) {
           const pp = parseFloat(pendPrice);
-          const pmu = ((pp - cost) / cost * 100).toFixed(1);
-          const pmg = ((pp - cost) / pp * 100).toFixed(1);
-          pendStr = ` · After apply: <span class="${_mkupCls(parseFloat(pmu))}">${pmu}%</span> / <span class="${_mkupCls(parseFloat(pmg))}">${pmg}%</span>`;
+          const pkgBase = (p.product_type === 'stock_item' && !p.sold_by_weight)
+            ? (p.unit_type === 'count' ? 1 : (parseFloat(p.package_size) || 1))
+            : 1;
+          const pendCost = costPerBase * pkgBase;
+          if (pendCost > 0 && pp > 0) {
+            const pmu = ((pp - pendCost) / pendCost * 100).toFixed(1);
+            const pmg = ((pp - pendCost) / pp * 100).toFixed(1);
+            pendStr = ` · After apply: <span class="${_mkupCls(parseFloat(pmu))}">${pmu}%</span> markup / <span class="${_mkupCls(parseFloat(pmg))}">${pmg}%</span> margin`;
+          }
         }
-        statsHtml = `<small class="text-muted d-block" style="font-size:11px;line-height:1.4">Cost ${costDisp}${muStr}${mgStr}${pendStr}</small>`;
       }
+      statsHtml = `<small class="text-muted d-block" style="font-size:11px;line-height:1.4">` +
+        `Cost ${escapeHtml(margins.costLabel)} · ` +
+        `Markup <span class="${_mkupCls(parseFloat(margins.markup))}">${margins.markup}%</span> · ` +
+        `Margin <span class="${_mkupCls(parseFloat(margins.margin))}">${margins.margin}%</span>` +
+        `${pendStr}</small>`;
     }
 
     const row = document.createElement('div');
@@ -2453,13 +2450,13 @@ function updateProductTypeSections(type) {
 
 // ── Recipe Lines ──
 // Recursively calculate the cost for any product (stock_item or recipe) × qty
-// Uses STATE._stockCostMap (FIFO cost per base unit) for stock items
+// Uses STATE._productCostMap (WAC of remaining stock) for stock items
 function getIngredientCost(productId, qty, _depth = 0) {
   if (_depth > 10 || !productId) return 0;
   const p = STATE.products.find(x => x.id === productId);
   if (!p) return 0;
   if (p.product_type === 'stock_item') {
-    return parseFloat(qty) * (STATE._stockCostMap?.[productId] || 0);
+    return parseFloat(qty) * (STATE._productCostMap?.[productId] || 0);
   }
   if (p.product_type === 'recipe') {
     const perUnit = p.is_produced ? (p.batch_size || 1) : 1;
@@ -2477,7 +2474,7 @@ function calcProductMargins(p) {
   let price = null;
 
   if (p.product_type === 'stock_item') {
-    const costPerBase = STATE._stockCostMap?.[p.id];
+    const costPerBase = STATE._productCostMap?.[p.id];
     if (costPerBase == null) return null;
     if (p.sold_by_weight) {
       // Both cost and price are per base unit
@@ -3183,7 +3180,7 @@ function _updateAutoPriceState() {
   }
   if (hint) {
     hint.textContent = autoOn
-      ? `(${_globalMarkupPct ?? '?'}% markup — auto-calculated)`
+      ? `(${parseFloat(document.getElementById('calc-markup')?.value || '') || _globalMarkupPct}% markup — auto-calculated)`
       : '(manual — auto-price off)';
   }
 }
@@ -3261,16 +3258,17 @@ async function loadIngredients() {
   if (!isAdmin()) return;
   try {
     const data = await api('/api/stock/ingredients');
-    STATE._stockCostMap      = {};
+    STATE._productCostMap    = {};
     STATE._stockItems        = {};
     STATE._productSupplierMap = {};
     data.forEach(item => {
       STATE._stockItems[item.id] = item;
-      const oldestWithStock = item.batches
-        .slice()
-        .sort((a, b) => new Date(a.purchased_at) - new Date(b.purchased_at))
-        .find(b => b.qty_remaining_base > 0);
-      if (oldestWithStock) STATE._stockCostMap[item.id] = oldestWithStock.cost_per_base_unit;
+      const remaining = item.batches.filter(b => parseFloat(b.qty_remaining_base) > 0);
+      if (remaining.length > 0) {
+        const totalQty  = remaining.reduce((s, b) => s + parseFloat(b.qty_remaining_base), 0);
+        const totalCost = remaining.reduce((s, b) => s + parseFloat(b.qty_remaining_base) * parseFloat(b.cost_per_base_unit), 0);
+        if (totalQty > 0) STATE._productCostMap[item.id] = totalCost / totalQty;
+      }
       // Build supplier name index for teller search
       const names = [...new Set(item.batches.map(b => b.supplier_name).filter(Boolean))];
       if (names.length) STATE._productSupplierMap[item.id] = names.join(' ').toLowerCase();
@@ -11091,13 +11089,13 @@ function updateSubsPriceDelta() {
     if (ing.removed) return;
     if (ing.replaced_by_id && ing.replaced_by_id !== ing.ingredient_id) {
       // Default ingredient cost at the original qty_base
-      const defaultCost = (STATE._stockCostMap?.[ing.ingredient_id] || 0) * (ing.qty_base || 0);
+      const defaultCost = (STATE._productCostMap?.[ing.ingredient_id] || 0) * (ing.qty_base || 0);
       // Swap ingredient cost - use edited qty if provided, else original qty_base
       const rep         = _subsAlts.find(a => a.id === ing.replaced_by_id);
       const swapQtyBase = (ing.qty_display !== undefined)
         ? _qtyBaseFromDisplay(ing.qty_display, ing.unit || rep?.base_unit, rep?.unit_type)
         : (ing.qty_base || 0);
-      const swapCost    = (STATE._stockCostMap?.[ing.replaced_by_id] || 0) * swapQtyBase;
+      const swapCost    = (STATE._productCostMap?.[ing.replaced_by_id] || 0) * swapQtyBase;
       delta += Math.max(0, swapCost - defaultCost);
     }
   });
@@ -11105,7 +11103,7 @@ function updateSubsPriceDelta() {
     if (ex.ingredient_id && (ex.qty_display > 0 || ex.qty_base > 0)) {
       const alt      = _subsAlts.find(a => a.id === ex.ingredient_id);
       const qtyBase  = _qtyBaseFromDisplay(ex.qty_display ?? ex.qty_base ?? 0, ex.unit || alt?.base_unit, alt?.unit_type);
-      delta += (STATE._stockCostMap?.[ex.ingredient_id] || 0) * qtyBase;
+      delta += (STATE._productCostMap?.[ex.ingredient_id] || 0) * qtyBase;
     }
   });
 

@@ -321,13 +321,17 @@ def _auto_price_products(product_ids):
             p = db.session.get(Product, pid)
             if not p or not getattr(p, 'auto_price', True):
                 continue
-            latest = (StockBatch.query
-                      .filter_by(product_id=pid)
-                      .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
-                      .first())
-            if not latest or not latest.cost_per_base_unit:
+            batches = (StockBatch.query
+                       .filter_by(product_id=pid)
+                       .filter(StockBatch.qty_remaining_base > 0)
+                       .all())
+            if not batches:
                 continue
-            cost = _D(str(latest.cost_per_base_unit))
+            total_qty  = sum(_D(str(b.qty_remaining_base)) for b in batches)
+            total_cost = sum(_D(str(b.qty_remaining_base)) * _D(str(b.cost_per_base_unit)) for b in batches)
+            if total_qty <= 0:
+                continue
+            cost = total_cost / total_qty  # WAC — full Decimal precision
             markup = _D(str(p.margin_pct)) if p.margin_pct is not None else global_markup
             new_price = (cost * (1 + markup / 100)).quantize(_D('0.0001'))
             if p.sold_by_weight and p.unit_type in ('weight', 'volume'):
