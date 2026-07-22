@@ -803,12 +803,12 @@ function renderProductsCards() {
       const conv    = UNITS[p.unit_type]?.toBase[bigUnit] || 1;
       priceDisplay  = `R${fmt(parseFloat(p.price_per_unit) * conv)}/${bigUnit}`;
       if (p.pending_price_per_unit != null) {
-        pendingBadge = ` <span class="badge bg-warning text-dark ms-1" style="font-size:10px" title="Pending price change">New: R${fmt(parseFloat(p.pending_price_per_unit) * conv)}/${bigUnit}</span>`;
+        pendingBadge = `<span class="badge bg-warning text-dark d-block mt-1" style="font-size:10px" title="Pending price change">New: R${fmt(parseFloat(p.pending_price_per_unit) * conv)}/${bigUnit}</span>`;
       }
     } else if (p.price != null) {
       priceDisplay  = `R${fmt(p.price)}`;
       if (p.pending_price != null) {
-        pendingBadge = ` <span class="badge bg-warning text-dark ms-1" style="font-size:10px" title="Pending price change">New: R${fmt(p.pending_price)}</span>`;
+        pendingBadge = `<span class="badge bg-warning text-dark d-block mt-1" style="font-size:10px" title="Pending price change">New: R${fmt(p.pending_price)}</span>`;
       }
     }
 
