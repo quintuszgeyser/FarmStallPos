@@ -370,6 +370,8 @@ def strong_migrate():
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN updated_by INTEGER")
             if 'purchase_run_id' not in existing_sb:
                 conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN purchase_run_id INTEGER")
+            if 'allocated_discount' not in existing_sb:
+                conn.exec_driver_sql("ALTER TABLE stock_batches ADD COLUMN allocated_discount REAL")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_product ON stock_batches (product_id)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_stock_batches_run ON stock_batches (purchase_run_id)")
             # SQLite: add last_run_costs/last_overhead_costs if missing
@@ -406,6 +408,11 @@ def strong_migrate():
                 ('invoice_number', 'TEXT'), ('subtotal', 'NUMERIC'),
                 ('additional_costs_json', 'TEXT'), ('additional_costs_total', 'NUMERIC'),
                 ('total', 'NUMERIC'), ('status', "TEXT NOT NULL DEFAULT 'posted'"), ('source', 'TEXT'),
+                ('vat_total', 'NUMERIC'), ('discount_total', 'NUMERIC'),
+                ('discounts_json', 'TEXT'), ('supplier_invoice_total', 'NUMERIC'),
+                ('reconciliation_difference', 'NUMERIC'),
+                ('vat_treatment', 'TEXT'), ('accounting_balanced', 'INTEGER'),
+                ('scan_raw_json', 'TEXT'),
             ]:
                 if col not in existing_si:
                     conn.exec_driver_sql(f"ALTER TABLE supplier_invoices ADD COLUMN {col} {defn}")
@@ -1517,13 +1524,17 @@ def strong_migrate():
         # Phase 2f: VAT tracking — retained per-batch and per-invoice for reporting
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS vat_total NUMERIC(18,4)")
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS discount_total NUMERIC(18,4)")
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS discounts_json TEXT")
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS supplier_invoice_total NUMERIC(18,4)")
+        pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS reconciliation_difference NUMERIC(18,4)")
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS vat_treatment TEXT")
         pg_try("ALTER TABLE supplier_invoices ADD COLUMN IF NOT EXISTS accounting_balanced BOOLEAN")
-        # Per-batch VAT costing columns (allocation order: ex_vat → +vat → incl_vat → +overheads → final)
+        # Per-batch VAT costing columns (allocation order: ex_vat → +vat → incl_vat → +overheads → -discount → final)
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS vat_amount NUMERIC(10,4)")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS base_cost_incl_vat NUMERIC(18,4)")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS allocated_shipping NUMERIC(18,4)")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS final_cost_incl_vat NUMERIC(18,4)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS allocated_discount NUMERIC(18,4)")
 
         # Consignment inventory — owe supplier on consumption, not receipt
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_consignment BOOLEAN NOT NULL DEFAULT FALSE")

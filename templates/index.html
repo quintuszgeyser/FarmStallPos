@@ -1099,19 +1099,25 @@
 
     <!-- ═══════════════ SUPPLIERS ═══════════════ -->
     <div class="tab-pane fade" id="suppliers">
-      <div class="row g-3">
-        <!-- Left: supplier list - always visible -->
-        <div class="col-12 col-lg-4">
+      <div class="supplier-page-layout d-flex gap-3" style="height:calc(100vh - 120px);overflow:hidden">
+
+        <!-- Left pane: supplier list + search (independently scrollable) -->
+        <div class="supplier-list-pane flex-shrink-0" style="width:280px;overflow-y:auto;overflow-x:hidden">
           <div class="d-flex align-items-center gap-2 mb-2">
             <h5 class="mb-0">Suppliers</h5>
-            <button id="btn-new-supplier"     class="btn btn-success btn-sm ms-auto">+ New</button>
-            <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm">↺ Refresh</button>
+            <button id="btn-new-supplier"      class="btn btn-success btn-sm ms-auto">+ New</button>
+            <button id="btn-refresh-suppliers" class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+          <div class="input-group input-group-sm mb-2">
+            <span class="input-group-text"><i class="bi bi-search"></i></span>
+            <input type="text" id="supplier-search-input" class="form-control" placeholder="Search suppliers, products, invoices…">
+            <button class="btn btn-outline-secondary" id="btn-supplier-search-clear" title="Clear search"><i class="bi bi-x-lg"></i></button>
           </div>
           <div id="suppliers-list" class="list-group"></div>
         </div>
 
-        <!-- Right: detail + form side-by-side, always visible -->
-        <div class="col-12 col-lg-8">
+        <!-- Right pane: detail + forms (independently scrollable) -->
+        <div class="supplier-detail-pane flex-grow-1" style="overflow-y:auto;overflow-x:hidden">
 
           <!-- Add/Edit form - shown when adding new or editing -->
           <div id="supplier-edit-panel" class="card mb-3">
@@ -1145,6 +1151,63 @@
                   <button id="btn-supplier-new-run" class="btn btn-success btn-sm"><i class="bi bi-truck me-1"></i>New Delivery</button>
                 </div>
                 <div id="supplier-detail-contact" class="small text-muted"></div>
+              </div>
+            </div>
+
+            <!-- New Delivery / Purchase run form — appears directly below header card -->
+            <div id="purchase-run-panel" class="card mb-3 hidden">
+              <div class="card-header py-2 d-flex align-items-center">
+                <span class="fw-bold small"><i class="bi bi-truck me-1"></i>New Delivery</span>
+                <input type="date" id="purchase-run-date" class="form-control form-control-sm ms-3" style="width:150px">
+              </div>
+              <div class="card-body p-2">
+                <!-- Step 1: optional invoice document upload -->
+                <div class="border rounded p-2 mb-3 bg-light">
+                  <div class="small fw-semibold mb-1"><i class="bi bi-paperclip me-1"></i>Invoice document <span class="text-muted fw-normal">(optional — filename becomes reference)</span></div>
+                  <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer">
+                      <i class="bi bi-upload me-1"></i>Choose file
+                      <input type="file" id="pr-doc-upload-input" class="d-none" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt">
+                    </label>
+                    <button id="btn-scan-invoice" class="btn btn-primary btn-sm mb-0" title="Scan PDF and auto-fill this delivery form">
+                      <i class="bi bi-magic me-1"></i>Scan &amp; Auto-fill
+                    </button>
+                    <input type="file" id="pr-scan-input" class="d-none" accept=".pdf">
+                    <span id="pr-doc-filename" class="small text-muted">No file chosen</span>
+                    <button id="pr-doc-clear" class="btn btn-outline-danger btn-sm py-0 px-1 hidden" title="Remove"><i class="bi bi-x-lg"></i></button>
+                  </div>
+                  <!-- Scan result panel -->
+                  <div id="pr-scan-result" class="hidden mt-2">
+                    <div id="pr-scan-status" class="small text-muted"></div>
+                    <div id="pr-scan-preview" class="hidden mt-1">
+                      <div class="small fw-semibold mb-1">Extracted from invoice — review before applying:</div>
+                      <div id="pr-scan-items" class="border rounded p-1 bg-white" style="font-size:12px;max-height:200px;overflow-y:auto"></div>
+                      <div class="d-flex gap-2 mt-2">
+                        <button id="btn-scan-apply" class="btn btn-success btn-sm"><i class="bi bi-check-lg me-1"></i>Apply to form</button>
+                        <button id="btn-scan-discard" class="btn btn-outline-secondary btn-sm">Discard</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <!-- Product lines -->
+                <div id="purchase-run-lines"></div>
+                <button id="btn-add-purchase-line" class="btn btn-outline-secondary btn-sm mt-2">
+                  <i class="bi bi-plus-lg me-1"></i>Add Item
+                </button>
+                <!-- Additional costs block -->
+                <div id="purchase-run-addl-costs-wrap" class="mt-3"></div>
+                <!-- VAT section -->
+                <div id="purchase-run-vat-wrap" class="mt-3"></div>
+                <!-- Discounts section -->
+                <div id="purchase-run-discounts-wrap" class="mt-3"></div>
+                <!-- Invoice reconciliation summary -->
+                <div id="purchase-run-summary-wrap" class="mt-3"></div>
+              </div>
+              <div class="card-footer d-flex flex-wrap gap-2 align-items-center">
+                <button id="btn-submit-purchase-run" class="btn btn-success">
+                  <i class="bi bi-check-lg me-1"></i>Save Delivery
+                </button>
+                <button id="btn-cancel-purchase-run" class="btn btn-outline-secondary">Cancel</button>
               </div>
             </div>
 
@@ -1189,53 +1252,9 @@
               </div>
             </div>
 
-            <!-- New Delivery / Purchase run form -->
-            <div id="purchase-run-panel" class="card hidden">
-              <div class="card-header py-2 d-flex align-items-center">
-                <span class="fw-bold small"><i class="bi bi-truck me-1"></i>New Delivery</span>
-                <input type="date" id="purchase-run-date" class="form-control form-control-sm ms-3" style="width:150px">
-              </div>
-              <div class="card-body p-2">
-                <!-- Step 1: optional invoice document upload -->
-                <div class="border rounded p-2 mb-3 bg-light">
-                  <div class="small fw-semibold mb-1"><i class="bi bi-paperclip me-1"></i>Invoice document <span class="text-muted fw-normal">(optional — filename becomes reference)</span></div>
-                  <div class="d-flex align-items-center gap-2 flex-wrap">
-                    <label class="btn btn-outline-secondary btn-sm mb-0" style="cursor:pointer">
-                      <i class="bi bi-upload me-1"></i>Choose file
-                      <input type="file" id="pr-doc-upload-input" class="d-none" accept=".pdf,.png,.jpg,.jpeg,.gif,.doc,.docx,.xls,.xlsx,.csv,.txt">
-                    </label>
-                    <button id="btn-scan-invoice" class="btn btn-primary btn-sm mb-0" title="Scan PDF and auto-fill this delivery form">
-                      <i class="bi bi-magic me-1"></i>Scan &amp; Auto-fill
-                    </button>
-                    <input type="file" id="pr-scan-input" class="d-none" accept=".pdf">
-                    <span id="pr-doc-filename" class="small text-muted">No file chosen</span>
-                    <button id="pr-doc-clear" class="btn btn-outline-danger btn-sm py-0 px-1 hidden" title="Remove"><i class="bi bi-x-lg"></i></button>
-                  </div>
-                  <!-- Scan result panel -->
-                  <div id="pr-scan-result" class="hidden mt-2">
-                    <div id="pr-scan-status" class="small text-muted"></div>
-                    <div id="pr-scan-preview" class="hidden mt-1">
-                      <div class="small fw-semibold mb-1">Extracted from invoice — review before applying:</div>
-                      <div id="pr-scan-items" class="border rounded p-1 bg-white" style="font-size:12px;max-height:200px;overflow-y:auto"></div>
-                      <div class="d-flex gap-2 mt-2">
-                        <button id="btn-scan-apply" class="btn btn-success btn-sm"><i class="bi bi-check-lg me-1"></i>Apply to form</button>
-                        <button id="btn-scan-discard" class="btn btn-outline-secondary btn-sm">Discard</button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div id="purchase-run-lines"></div>
-                <button id="btn-add-purchase-line" class="btn btn-outline-secondary btn-sm mt-2">+ Add Item</button>
-                <div id="purchase-run-addl-costs-wrap" class="mt-2"></div>
-              </div>
-              <div class="card-footer d-flex gap-2">
-                <button id="btn-submit-purchase-run" class="btn btn-success">Save Delivery</button>
-                <button id="btn-cancel-purchase-run" class="btn btn-outline-secondary">Cancel</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+          </div><!-- /supplier-detail-panel -->
+        </div><!-- /supplier-detail-pane -->
+      </div><!-- /supplier-page-layout -->
     </div>
 
     <!-- ═══════════════ STATS ═══════════════ -->
@@ -1489,6 +1508,22 @@
         <h6 class="mb-2"><i class="bi bi-boxes me-1"></i>Overhead Costs</h6>
         <div id="overhead-stats-body">
           <div class="text-muted small">Load stats to see overhead data.</div>
+        </div>
+      </div>
+
+      <!-- ── Supplier VAT Paid ── -->
+      <div class="mt-3 border-top pt-3" id="stats-section-supplier-vat">
+        <h6 class="mb-2"><i class="bi bi-receipt-cutoff me-1"></i>Supplier VAT Paid</h6>
+        <div id="supplier-vat-stats-body">
+          <div class="text-muted small">Load stats to see supplier VAT data.</div>
+        </div>
+      </div>
+
+      <!-- ── Supplier Discounts Received ── -->
+      <div class="mt-3 border-top pt-3" id="stats-section-supplier-discounts">
+        <h6 class="mb-2"><i class="bi bi-tag me-1"></i>Supplier Discounts Received</h6>
+        <div id="supplier-discounts-stats-body">
+          <div class="text-muted small">Load stats to see supplier discount data.</div>
         </div>
       </div>
 

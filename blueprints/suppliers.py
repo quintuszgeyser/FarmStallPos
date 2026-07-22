@@ -1468,13 +1468,15 @@ def api_suppliers_purchase_run(sid):
     invoice_addl_total = data.get('invoice_additional_total')
     scan_result        = data.get('scan_result')   # original parser output — triggers learning
     bypass_dup         = bool(data.get('bypass_duplicate_check', False))
-    # VAT fields from invoice scan — retained for reporting, VAT included in COGS
+    # VAT field — from manual entry or scan; allocated to batches proportionally
     vat_total_req      = data.get('vat_total')
     vat_total          = Decimal(str(vat_total_req)) if vat_total_req is not None else Decimal('0')
-    discount_total_req = data.get('discount_total')
-    discount_total_inv = Decimal(str(discount_total_req)) if discount_total_req is not None else Decimal('0')
     vat_treatment      = str(data.get('vat_treatment') or 'unknown')
     accounting_balanced = bool(data.get('accounting_balanced', False))
+    # Supplier invoice total for reconciliation
+    supplier_inv_total = data.get('supplier_invoice_total')
+    # Discounts — separate from additional costs; reduce COGS proportionally
+    discounts_raw = data.get('discounts', [])
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
@@ -1509,6 +1511,23 @@ def api_suppliers_purchase_run(sid):
         addl_costs = _parse_addl_costs(addl_costs_raw, source='supplier_run')
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+
+    # Parse and validate discounts (separate from additional costs)
+    discounts      = []
+    discount_total = Decimal('0')
+    for i, d in enumerate(discounts_raw or []):
+        dlabel  = str(d.get('label') or '').strip()
+        damount = d.get('amount')
+        if not dlabel:
+            return jsonify({'error': f'discounts[{i}].label is required'}), 400
+        try:
+            damt = Decimal(str(damount)).quantize(Decimal('0.01'))
+            if damt < Decimal('0'):
+                return jsonify({'error': f'discounts[{i}].amount must be positive'}), 400
+        except (InvalidOperation, TypeError):
+            return jsonify({'error': f'discounts[{i}].amount is invalid'}), 400
+        discounts.append({'label': dlabel, 'amount': float(damt)})
+        discount_total += damt
 
     u = current_user()
     created_products = []
@@ -1591,16 +1610,28 @@ def api_suppliers_purchase_run(sid):
             if qty_base == 0:
                 return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
             consignment_unit_cost_raw = line.get('consignment_unit_cost')
+            line_discount      = line.get('line_discount')
+            ld_label           = str(line_discount.get('label', '') or '').strip() if line_discount else ''
+            ld_amount          = Decimal('0')
+            if line_discount and ld_label:
+                try:
+                    ld_amount = Decimal(str(line_discount.get('amount', 0))).quantize(Decimal('0.01'))
+                    if ld_amount < Decimal('0'):
+                        ld_amount = Decimal('0')
+                except Exception:
+                    ld_amount = Decimal('0')
             prepared_lines.append({
                 'pid': pid, 'qty_base': qty_base,
                 'base_cost_total': Decimal(str(total_price)),
                 'is_consignment': bool(getattr(p, 'is_consignment', False)),
                 'consignment_unit_cost': float(consignment_unit_cost_raw) if consignment_unit_cost_raw is not None else None,
+                'line_discount_label':  ld_label if ld_amount > Decimal('0') else None,
+                'line_discount_amount': ld_amount,
             })
 
     # Step 1: proportional VAT allocation across product lines (ex-VAT base)
     # VAT is allocated to products only (not shipping); retained per-batch for reporting.
-    # COGS = base_ex_vat + vat_amount + overhead_share  (VAT is included in inventory value)
+    # COGS = base_ex_vat + vat_amount + overhead_share - discount_share
     subtotal = sum(pl['base_cost_total'] for pl in prepared_lines)
     vat_shares = _split_costs([l['base_cost_total'] for l in prepared_lines], vat_total)
 
@@ -1610,9 +1641,20 @@ def api_suppliers_purchase_run(sid):
     incl_vat_bases = [pl['base_cost_total'] + vat_shares[i] for i, pl in enumerate(prepared_lines)]
     shares = _split_costs(incl_vat_bases, total_addl)
 
+    # Step 3: proportional discount allocation across lines (by ex-VAT base)
+    # Per-line discounts are applied directly; invoice-level discount is split proportionally
+    discount_shares = _split_costs([l['base_cost_total'] for l in prepared_lines], discount_total)
+    total_line_discounts = sum(pl.get('line_discount_amount', Decimal('0')) for pl in prepared_lines)
+    discount_total += total_line_discounts
+    combined_discount_shares = [
+        discount_shares[i] + pl.get('line_discount_amount', Decimal('0'))
+        for i, pl in enumerate(prepared_lines)
+    ]
+
     for i, pl in enumerate(prepared_lines):
         vat_share  = vat_shares[i]
         share      = shares[i]
+        disc_share = combined_discount_shares[i]
         batch_addl = []
         if share != Decimal('0') and addl_costs:
             if len(addl_costs) == 1:
@@ -1629,11 +1671,19 @@ def api_suppliers_purchase_run(sid):
                             running += entry_share
                         batch_addl.append({**ac, 'amount': float(entry_share)})
 
-        # Allocation: ex_vat + vat = incl_vat → + overheads = final_cost
+        # Append per-line discount to batch_addl for audit trail
+        if pl.get('line_discount_amount', Decimal('0')) > Decimal('0'):
+            batch_addl.append({
+                'label': pl['line_discount_label'] or 'Line discount',
+                'type': 'discount',
+                'amount': -float(pl['line_discount_amount'].quantize(Decimal('0.01'))),
+            })
+
+        # Allocation: ex_vat + vat = incl_vat → + overheads - discount = final_cost
         base_incl_vat    = pl['base_cost_total'] + vat_share
         shipping_alloc   = sum(Decimal(str(e['amount'])) for e in batch_addl
                                if e.get('type') == 'shipping') if batch_addl else Decimal('0')
-        final_cost       = base_incl_vat + share
+        final_cost       = base_incl_vat + share - disc_share
         cost_per_base    = final_cost / Decimal(str(pl['qty_base']))
         _ownership  = 'CONSIGNMENT' if pl.get('is_consignment') else 'NORMAL'
         _cuc        = pl.get('consignment_unit_cost')
@@ -1651,6 +1701,7 @@ def api_suppliers_purchase_run(sid):
             base_cost_incl_vat=float(base_incl_vat),
             allocated_shipping=float(shipping_alloc) if shipping_alloc > 0 else None,
             final_cost_incl_vat=float(final_cost),
+            allocated_discount=float(disc_share.quantize(Decimal('0.0001'))) if disc_share > 0 else None,
             additional_costs=_json.dumps(batch_addl) if batch_addl else None,
             supplier_id=sid,
             user_id=u.id if u else None,
@@ -1664,10 +1715,18 @@ def api_suppliers_purchase_run(sid):
     inv.additional_costs_json  = _json.dumps([{'label': c['label'], 'type': c['type'], 'amount': c['amount']} for c in addl_costs]) if addl_costs else None
     inv.additional_costs_total = float(total_addl)
     inv.vat_total              = float(vat_total) if vat_total > 0 else None
-    inv.discount_total         = float(discount_total_inv) if discount_total_inv > 0 else None
+    inv.discounts_json         = _json.dumps([{'label': d['label'], 'amount': d['amount']} for d in discounts]) if discounts else None
+    inv.discount_total         = float(discount_total) if discount_total > 0 else None
     inv.vat_treatment          = vat_treatment
     inv.accounting_balanced    = accounting_balanced
-    inv.total                  = float(subtotal + vat_total + total_addl)
+    inv.total                  = float(subtotal + vat_total + total_addl - discount_total)
+    if supplier_inv_total is not None:
+        try:
+            sit = Decimal(str(supplier_inv_total))
+            inv.supplier_invoice_total    = float(sit)
+            inv.reconciliation_difference = float((subtotal + vat_total + total_addl - discount_total) - sit)
+        except Exception:
+            pass
 
     # VAT reconciliation check — warn if float storage drifts from computed Decimal totals
     if vat_total > 0 and prepared_lines:
@@ -1934,6 +1993,7 @@ def api_supplier_invoices(sid):
             'cost_per_base_unit': float(b.cost_per_base_unit),
             'base_cost_total':    float(b.base_cost_total) if b.base_cost_total is not None else None,
             'additional_costs':   b.additional_costs,
+            'allocated_discount': float(b.allocated_discount) if getattr(b, 'allocated_discount', None) is not None else None,
             'updated_at':         b.updated_at.isoformat() if b.updated_at else None,
         }
 
@@ -1973,6 +2033,9 @@ def api_supplier_invoices(sid):
             'additional_costs_total': float(inv.additional_costs_total) if inv.additional_costs_total is not None else None,
             'vat_total':              float(inv.vat_total) if getattr(inv, 'vat_total', None) is not None else None,
             'discount_total':         float(inv.discount_total) if getattr(inv, 'discount_total', None) is not None else None,
+            'discounts_json':         getattr(inv, 'discounts_json', None),
+            'supplier_invoice_total': float(inv.supplier_invoice_total) if getattr(inv, 'supplier_invoice_total', None) is not None else None,
+            'reconciliation_difference': float(inv.reconciliation_difference) if getattr(inv, 'reconciliation_difference', None) is not None else None,
             'vat_treatment':          getattr(inv, 'vat_treatment', None),
             'accounting_balanced':    getattr(inv, 'accounting_balanced', None),
             'total':                  float(inv.total) if inv.total is not None else None,
@@ -2027,6 +2090,8 @@ def api_supplier_invoice_update(sid, inv_id):
     vat_total_upd  = Decimal(str(vat_total_req)) if vat_total_req is not None else Decimal('0')
     vat_treatment_upd    = str(data.get('vat_treatment') or getattr(inv, 'vat_treatment', 'unknown') or 'unknown')
     accounting_bal_upd   = bool(data.get('accounting_balanced', getattr(inv, 'accounting_balanced', False) or False))
+    supplier_inv_total_upd = data.get('supplier_invoice_total')
+    discounts_raw_upd      = data.get('discounts', [])
 
     if not lines:
         return jsonify({'error': 'No lines provided'}), 400
@@ -2046,6 +2111,23 @@ def api_supplier_invoice_update(sid, inv_id):
         addl_costs = _parse_addl_costs(addl_costs_raw, source='supplier_run')
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
+
+    # Parse discounts for PUT handler
+    discounts_upd      = []
+    discount_total_upd = Decimal('0')
+    for i, d in enumerate(discounts_raw_upd or []):
+        dlabel  = str(d.get('label') or '').strip()
+        damount = d.get('amount')
+        if not dlabel:
+            return jsonify({'error': f'discounts[{i}].label is required'}), 400
+        try:
+            damt = Decimal(str(damount)).quantize(Decimal('0.01'))
+            if damt < Decimal('0'):
+                return jsonify({'error': f'discounts[{i}].amount must be positive'}), 400
+        except (InvalidOperation, TypeError):
+            return jsonify({'error': f'discounts[{i}].amount is invalid'}), 400
+        discounts_upd.append({'label': dlabel, 'amount': float(damt)})
+        discount_total_upd += damt
 
     u = current_user()
 
@@ -2080,18 +2162,41 @@ def api_supplier_invoice_update(sid, inv_id):
         qty_base   = qty * conversion
         if qty_base == 0:
             return jsonify({'error': f'qty converts to 0 base units for product {pid}'}), 400
-        prepared_lines.append({'pid': pid, 'qty_base': qty_base, 'base_cost_total': Decimal(str(total_price))})
+        line_discount_upd = line.get('line_discount')
+        ld_label_upd      = str(line_discount_upd.get('label', '') or '').strip() if line_discount_upd else ''
+        ld_amount_upd     = Decimal('0')
+        if line_discount_upd and ld_label_upd:
+            try:
+                ld_amount_upd = Decimal(str(line_discount_upd.get('amount', 0))).quantize(Decimal('0.01'))
+                if ld_amount_upd < Decimal('0'):
+                    ld_amount_upd = Decimal('0')
+            except Exception:
+                ld_amount_upd = Decimal('0')
+        prepared_lines.append({
+            'pid': pid, 'qty_base': qty_base,
+            'base_cost_total': Decimal(str(total_price)),
+            'line_discount_label':  ld_label_upd if ld_amount_upd > Decimal('0') else None,
+            'line_discount_amount': ld_amount_upd,
+        })
 
     subtotal_upd = sum(pl['base_cost_total'] for pl in prepared_lines)
     vat_shares_upd   = _split_costs([l['base_cost_total'] for l in prepared_lines], vat_total_upd)
     total_addl       = sum(Decimal(str(c['amount'])) for c in addl_costs)
     incl_vat_bases   = [pl['base_cost_total'] + vat_shares_upd[i] for i, pl in enumerate(prepared_lines)]
     shares           = _split_costs(incl_vat_bases, total_addl)
+    discount_shares_upd = _split_costs([l['base_cost_total'] for l in prepared_lines], discount_total_upd)
+    total_line_discounts_upd = sum(pl.get('line_discount_amount', Decimal('0')) for pl in prepared_lines)
+    discount_total_upd += total_line_discounts_upd
+    combined_discount_shares_upd = [
+        discount_shares_upd[i] + pl.get('line_discount_amount', Decimal('0'))
+        for i, pl in enumerate(prepared_lines)
+    ]
     batches_created  = 0
 
     for i, pl in enumerate(prepared_lines):
-        vat_share  = vat_shares_upd[i]
-        share      = shares[i]
+        vat_share      = vat_shares_upd[i]
+        share          = shares[i]
+        disc_share_upd = combined_discount_shares_upd[i]
         batch_addl = []
         if share != Decimal('0') and addl_costs:
             if len(addl_costs) == 1:
@@ -2106,10 +2211,18 @@ def api_supplier_invoice_update(sid, inv_id):
                             entry_share = (Decimal(str(ac['amount'])) / total_addl * share).quantize(Decimal('0.01'))
                             running += entry_share
                         batch_addl.append({**ac, 'amount': float(entry_share)})
+
+        if pl.get('line_discount_amount', Decimal('0')) > Decimal('0'):
+            batch_addl.append({
+                'label': pl['line_discount_label'] or 'Line discount',
+                'type': 'discount',
+                'amount': -float(pl['line_discount_amount'].quantize(Decimal('0.01'))),
+            })
+
         base_incl_vat_upd   = pl['base_cost_total'] + vat_share
         shipping_alloc_upd  = sum(Decimal(str(e['amount'])) for e in batch_addl
                                   if e.get('type') == 'shipping') if batch_addl else Decimal('0')
-        final_cost_upd      = base_incl_vat_upd + share
+        final_cost_upd      = base_incl_vat_upd + share - disc_share_upd
         cost_per_base       = final_cost_upd / Decimal(str(pl['qty_base']))
         db.session.add(StockBatch(
             product_id=pl['pid'],
@@ -2121,6 +2234,7 @@ def api_supplier_invoice_update(sid, inv_id):
             base_cost_incl_vat=float(base_incl_vat_upd),
             allocated_shipping=float(shipping_alloc_upd) if shipping_alloc_upd > 0 else None,
             final_cost_incl_vat=float(final_cost_upd),
+            allocated_discount=float(disc_share_upd.quantize(Decimal('0.0001'))) if disc_share_upd > 0 else None,
             additional_costs=_json.dumps(batch_addl) if batch_addl else None,
             supplier_id=sid,
             user_id=u.id if u else None,
@@ -2133,9 +2247,18 @@ def api_supplier_invoice_update(sid, inv_id):
     inv.additional_costs_json  = _json.dumps([{'label': c['label'], 'type': c['type'], 'amount': c['amount']} for c in addl_costs]) if addl_costs else None
     inv.additional_costs_total = float(total_addl)
     inv.vat_total              = float(vat_total_upd) if vat_total_upd > 0 else None
+    inv.discounts_json         = _json.dumps([{'label': d['label'], 'amount': d['amount']} for d in discounts_upd]) if discounts_upd else None
+    inv.discount_total         = float(discount_total_upd) if discount_total_upd > 0 else None
     inv.vat_treatment          = vat_treatment_upd
     inv.accounting_balanced    = accounting_bal_upd
-    inv.total                  = float(subtotal_upd + vat_total_upd + total_addl)
+    inv.total                  = float(subtotal_upd + vat_total_upd + total_addl - discount_total_upd)
+    if supplier_inv_total_upd is not None:
+        try:
+            sit_upd = Decimal(str(supplier_inv_total_upd))
+            inv.supplier_invoice_total    = float(sit_upd)
+            inv.reconciliation_difference = float((subtotal_upd + vat_total_upd + total_addl - discount_total_upd) - sit_upd)
+        except Exception:
+            pass
 
     db.session.commit()
     return jsonify({'ok': True, 'batches_created': batches_created, 'invoice_id': inv_id, 'invoice_number': invoice_ref})
@@ -2203,3 +2326,49 @@ def api_supplier_batches(sid):
             'invoice_id': b.invoice_id,
         })
     return jsonify(result)
+
+
+@bp.route('/api/suppliers/search')
+def api_suppliers_search():
+    """Search suppliers by name, linked product name, or invoice number/ref.
+    Returns matching supplier IDs and any matching invoice IDs."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    q = str(request.args.get('q') or '').strip().lower()
+    if not q:
+        all_suppliers = Supplier.query.order_by(Supplier.name).all()
+        return jsonify({
+            'supplier_ids': [s.id for s in all_suppliers],
+            'invoice_ids': [],
+            'query': '',
+        })
+
+    # Match suppliers by name
+    matched_sids = set()
+    for s in Supplier.query.all():
+        if q in (s.name or '').lower():
+            matched_sids.add(s.id)
+
+    # Match suppliers via product names linked through batches
+    matching_products = Product.query.filter(func.lower(Product.name).contains(q)).all()
+    if matching_products:
+        pids = [p.id for p in matching_products]
+        batches = StockBatch.query.filter(StockBatch.product_id.in_(pids), StockBatch.supplier_id.isnot(None)).all()
+        for b in batches:
+            matched_sids.add(b.supplier_id)
+
+    # Match invoices by invoice_number or notes
+    matched_invoice_ids = []
+    inv_q = SupplierInvoice.query.all()
+    for inv in inv_q:
+        if q in (inv.invoice_number or '').lower():
+            matched_invoice_ids.append(inv.id)
+            if inv.supplier_id:
+                matched_sids.add(inv.supplier_id)
+
+    return jsonify({
+        'supplier_ids': sorted(matched_sids),
+        'invoice_ids': matched_invoice_ids,
+        'query': q,
+    })

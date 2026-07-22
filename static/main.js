@@ -82,10 +82,15 @@ function _addlCostsTotal(costs) {
   return costs.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
 }
 
+function _buildCostTypeOpts(selectedType) {
+  const base = _costCategories
+    .map(c => `<option value="${escapeHtml(c.name)}" ${c.name === selectedType ? 'selected' : ''}>${escapeHtml(c.label)}</option>`)
+    .join('');
+  return base + `<option value="__new__">New category…</option>`;
+}
+
 function _renderAdditionalCostsBlock(wrapEl, existing) {
   if (!wrapEl) return;
-  const typeOpts = _costCategories
-    .map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.label)}</option>`).join('');
   wrapEl.innerHTML = `
     <div class="border rounded p-2">
       <div class="d-flex align-items-center mb-2">
@@ -106,7 +111,7 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
     row.innerHTML = `
       <input type="text" class="form-control form-control-sm" style="flex:2" placeholder="Label e.g. Courier" data-addl-label value="${escapeHtml(String(label))}">
       <select class="form-select form-select-sm" style="flex:1;min-width:90px" data-addl-type>
-        ${typeOpts}
+        ${_buildCostTypeOpts(type)}
       </select>
       <div class="input-group input-group-sm" style="flex:1;min-width:80px">
         <span class="input-group-text">R</span>
@@ -115,7 +120,29 @@ function _renderAdditionalCostsBlock(wrapEl, existing) {
       <input type="text" class="form-control form-control-sm" style="flex:1;min-width:70px" placeholder="Ref (opt)" data-addl-ref value="${escapeHtml(String(ref))}">
       <button type="button" class="btn btn-outline-danger btn-sm" data-addl-remove><i class="bi bi-trash3"></i></button>
     `;
-    row.querySelector('[data-addl-type]').value = type;
+    const typeSel = row.querySelector('[data-addl-type]');
+    typeSel.addEventListener('change', async () => {
+      if (typeSel.value !== '__new__') return;
+      const name = prompt('New cost category name (e.g. "cold-storage"):')?.trim().toLowerCase();
+      if (!name) { typeSel.value = type; return; }
+      const label = prompt('Display label (e.g. "Cold Storage"):')?.trim();
+      if (!label) { typeSel.value = type; return; }
+      try {
+        await api('/api/cost-categories', { method: 'POST', body: JSON.stringify({ name, label }) });
+        const updated = await api('/api/cost-categories');
+        _costCategories = updated;
+        // Rebuild all category selects in all open addl-cost rows
+        document.querySelectorAll('[data-addl-type]').forEach(sel => {
+          const cur = sel.value === '__new__' ? name : sel.value;
+          sel.innerHTML = _buildCostTypeOpts(cur);
+        });
+        typeSel.value = name;
+        toast(`Category "${label}" created`, 'success');
+      } catch (e) {
+        toast(e.message || 'Failed to create category', 'error');
+        typeSel.value = type;
+      }
+    });
     row.querySelector('[data-addl-remove]').onclick = () => row.remove();
     rowsEl.appendChild(row);
   };
@@ -4300,8 +4327,20 @@ function _editInvoice(inv) {
       ? (() => { try { return JSON.parse(inv.additional_costs_json); } catch { return []; } })()
       : [];
     _renderAdditionalCostsBlock(prAddlWrap, existing);
-    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunCostPreview(); });
+    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunSummary(); });
   }
+
+  // Pre-fill VAT section
+  const prVatWrap = document.getElementById('purchase-run-vat-wrap');
+  _renderPurchaseRunVatSection(prVatWrap, inv.vat_total);
+
+  // Pre-fill discounts section
+  const prDiscWrap = document.getElementById('purchase-run-discounts-wrap');
+  const existingDiscs = inv.discounts_json
+    ? (() => { try { return JSON.parse(inv.discounts_json); } catch { return []; } })()
+    : [];
+  // Existing stored discounts have resolved amounts — pre-fill as fixed amount mode
+  _renderDiscountsBlock(prDiscWrap, existingDiscs.map(d => ({ ...d, mode: 'amt' })));
 
   // Pre-fill lines from batches
   const container = document.getElementById('purchase-run-lines');
@@ -4331,13 +4370,32 @@ function _editInvoice(inv) {
     if (qtyInput)   qtyInput.value   = dispQty;
     if (unitSel)    unitSel.value    = dispUnit;
     if (priceInput) priceInput.value = b.base_cost_total != null ? parseFloat(b.base_cost_total).toFixed(2) : '';
+
+    // Pre-fill per-line discount from batch additional_costs
+    const batchAddl = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
+    const lineDisc  = batchAddl.find(a => a.type === 'discount' && a.amount < 0);
+    if (lineDisc) {
+      const discWrap    = lineEl.querySelector('[data-line-disc-wrap]');
+      const discLabel   = lineEl.querySelector('[data-line-disc-label]');
+      const discValue   = lineEl.querySelector('[data-line-disc-value]');
+      const discModeBtn = lineEl.querySelector('[data-line-disc-mode]');
+      if (discWrap && discLabel && discValue) {
+        discWrap.style.display = '';
+        discLabel.value  = lineDisc.label || 'Line discount';
+        discValue.value  = Math.abs(lineDisc.amount).toFixed(2);
+        // Switch to fixed amount mode since stored value is already resolved
+        if (discModeBtn) { discModeBtn.dataset.mode = 'amt'; discModeBtn.textContent = 'R'; }
+        const preview = lineEl.querySelector('[data-line-disc-preview]');
+        if (preview) { preview.textContent = `-R${Math.abs(lineDisc.amount).toFixed(2)}`; preview.style.display = ''; }
+      }
+    }
   });
 
   // Update save button label
   const saveBtn = document.getElementById('btn-submit-purchase-run');
   if (saveBtn) saveBtn.textContent = 'Update Delivery';
 
-  _updatePurchaseRunCostPreview();
+  _updatePurchaseRunSummary();
 }
 
 async function loadSupplierDocs(sid) {
@@ -4704,6 +4762,46 @@ function clearSupplierForm() {
 
 document.getElementById('btn-clear-supplier')?.addEventListener('click', clearSupplierForm);
 document.getElementById('btn-refresh-suppliers')?.addEventListener('click', loadSuppliers);
+
+// Supplier search
+let _supplierSearchTimer = null;
+function _renderFilteredSuppliersList(filtered) {
+  const host = document.getElementById('suppliers-list');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!filtered.length) {
+    host.innerHTML = '<div class="list-group-item text-muted small">No matching suppliers.</div>';
+    return;
+  }
+  filtered.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'list-group-item list-group-item-action';
+    item.dataset.supplierId = s.id;
+    item.style.cursor = 'pointer';
+    item.innerHTML = `<strong>${escapeHtml(s.name)}</strong>`;
+    if (_currentSupplier && s.id === _currentSupplier.id) item.classList.add('active');
+    item.addEventListener('click', () => openSupplierDetail(s));
+    host.appendChild(item);
+  });
+}
+document.getElementById('supplier-search-input')?.addEventListener('input', function() {
+  clearTimeout(_supplierSearchTimer);
+  _supplierSearchTimer = setTimeout(async () => {
+    const q = this.value.trim();
+    if (!q) { renderSuppliersList(); return; }
+    try {
+      const res = await api(`/api/suppliers/search?q=${encodeURIComponent(q)}`);
+      const matchIds = new Set(res.supplier_ids || []);
+      const filtered = _suppliers.filter(s => matchIds.has(s.id));
+      _renderFilteredSuppliersList(filtered);
+    } catch (e) { console.error('Supplier search failed', e); }
+  }, 250);
+});
+document.getElementById('btn-supplier-search-clear')?.addEventListener('click', () => {
+  const inp = document.getElementById('supplier-search-input');
+  if (inp) inp.value = '';
+  renderSuppliersList();
+});
 document.getElementById('btn-new-supplier')?.addEventListener('click', () => {
   clearSupplierForm();
   hide(document.getElementById('supplier-detail-panel'));
@@ -5012,7 +5110,7 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
     _renderAdditionalCostsBlock(prAddlWrap, newCosts);
   }
 
-  _updatePurchaseRunCostPreview();
+  _updatePurchaseRunSummary();
   _hideScanResult();
   toast(`Applied ${(result.lines || []).length} items from invoice scan`, 'success', 3000);
 });
@@ -5084,8 +5182,16 @@ document.getElementById('btn-supplier-new-run')?.addEventListener('click', () =>
       </div>
     `);
     _renderAdditionalCostsBlock(prAddlWrap, existing);
-    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunCostPreview(); });
+    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunSummary(); });
   }
+  // VAT section
+  const prVatWrap = document.getElementById('purchase-run-vat-wrap');
+  _renderPurchaseRunVatSection(prVatWrap, null);
+  // Discounts section
+  const prDiscWrap = document.getElementById('purchase-run-discounts-wrap');
+  _renderDiscountsBlock(prDiscWrap, []);
+  // Summary
+  _updatePurchaseRunSummary();
 });
 
 document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', () => {
@@ -5153,7 +5259,33 @@ function addPurchaseLine() {
           <option value="L">L</option>
         </select>
       </div>
-      <div class="col-4"><input type="number" step="0.01" min="0" class="form-control form-control-sm" placeholder="Total R" data-price></div>
+      <div class="col-4">
+        <div class="input-group input-group-sm">
+          <span class="input-group-text">R</span>
+          <input type="number" step="0.01" min="0" class="form-control" placeholder="0.00 excl. VAT" data-price>
+        </div>
+      </div>
+    </div>
+    <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
+      <button type="button" class="btn btn-link btn-sm p-0" style="font-size:11px" data-convert-vat-btn title="Divide price by (1 + VAT rate) to get excl. VAT amount">
+        <i class="bi bi-calculator me-1"></i>Convert incl. VAT to excl. VAT
+      </button>
+    </div>
+    <div class="mt-1 d-flex align-items-center gap-2">
+      <button type="button" class="btn btn-link btn-sm p-0" style="font-size:11px" data-toggle-line-disc>
+        <i class="bi bi-tag me-1"></i>Add line discount
+      </button>
+      <span class="small text-success" data-line-disc-preview style="display:none"></span>
+    </div>
+    <div data-line-disc-wrap style="display:none" class="mt-1">
+      <div class="d-flex gap-1 align-items-center">
+        <input type="text" class="form-control form-control-sm" style="flex:2" placeholder="Discount label" data-line-disc-label>
+        <div class="input-group input-group-sm" style="flex:1;min-width:110px">
+          <input type="number" step="0.01" min="0" class="form-control" placeholder="e.g. 10" data-line-disc-value>
+          <button type="button" class="btn btn-outline-secondary" data-line-disc-mode title="Toggle % / R">%</button>
+        </div>
+        <button type="button" class="btn btn-outline-danger btn-sm" data-clear-line-disc><i class="bi bi-x-lg"></i></button>
+      </div>
     </div>
     <div class="small mt-1" data-line-addl-preview></div>
   `;
@@ -5175,7 +5307,56 @@ function addPurchaseLine() {
   line.querySelector('[data-product-select]')?.addEventListener('change', e => {
     updateUnitsForProduct(e.target.value);
   });
-  line.querySelector('[data-price]')?.addEventListener('input', _updatePurchaseRunCostPreview);
+  line.querySelector('[data-price]')?.addEventListener('input', _updatePurchaseRunSummary);
+
+  // Convert incl. VAT to excl. VAT
+  line.querySelector('[data-convert-vat-btn]')?.addEventListener('click', () => {
+    const priceInput = line.querySelector('[data-price]');
+    const val = parseFloat(priceInput?.value || 0);
+    if (!val) return;
+    const vatRate = _globalVatPct != null ? _globalVatPct : 15;
+    priceInput.value = (val / (1 + vatRate / 100)).toFixed(2);
+    _updatePurchaseRunSummary();
+  });
+
+  // Per-line discount toggle
+  line.querySelector('[data-toggle-line-disc]')?.addEventListener('click', () => {
+    const discWrap = line.querySelector('[data-line-disc-wrap]');
+    const isHidden = discWrap.style.display === 'none';
+    discWrap.style.display = isHidden ? '' : 'none';
+    if (!isHidden) {
+      line.querySelector('[data-line-disc-label]').value = '';
+      line.querySelector('[data-line-disc-value]').value = '';
+      line.querySelector('[data-line-disc-preview]').style.display = 'none';
+      _updatePurchaseRunSummary();
+    }
+  });
+  const lineModeBtn = line.querySelector('[data-line-disc-mode]');
+  lineModeBtn.dataset.mode = 'pct';
+  lineModeBtn?.addEventListener('click', () => {
+    lineModeBtn.dataset.mode = lineModeBtn.dataset.mode === 'pct' ? 'amt' : 'pct';
+    lineModeBtn.textContent  = lineModeBtn.dataset.mode === 'pct' ? '%' : 'R';
+    line.querySelector('[data-line-disc-value]').placeholder = lineModeBtn.dataset.mode === 'pct' ? 'e.g. 10' : '0.00';
+    _updatePurchaseRunSummary();
+  });
+  line.querySelector('[data-line-disc-value]')?.addEventListener('input', () => {
+    const amt     = _resolveLineDiscAmount(line);
+    const mode    = lineModeBtn?.dataset?.mode || 'pct';
+    const rawVal  = parseFloat(line.querySelector('[data-line-disc-value]')?.value || '0') || 0;
+    const preview = line.querySelector('[data-line-disc-preview]');
+    if (amt > 0) {
+      preview.textContent = mode === 'pct' ? `-${rawVal}% (−R${amt.toFixed(2)})` : `-R${amt.toFixed(2)}`;
+      preview.style.display = '';
+    } else { preview.style.display = 'none'; }
+    _updatePurchaseRunSummary();
+  });
+  line.querySelector('[data-clear-line-disc]')?.addEventListener('click', () => {
+    line.querySelector('[data-line-disc-label]').value = '';
+    line.querySelector('[data-line-disc-value]').value = '';
+    line.querySelector('[data-line-disc-wrap]').style.display = 'none';
+    line.querySelector('[data-line-disc-preview]').style.display = 'none';
+    _updatePurchaseRunSummary();
+  });
 
   // "Create New Product" - open the full product editor modal and come back
   line.querySelector('[data-create-product-btn]')?.addEventListener('click', () => {
@@ -5183,7 +5364,7 @@ function addPurchaseLine() {
     openProductEditor(null);
   });
 
-  line.querySelector('[data-remove-line]')?.addEventListener('click', () => { line.remove(); _updatePurchaseRunCostPreview(); });
+  line.querySelector('[data-remove-line]')?.addEventListener('click', () => { line.remove(); _updatePurchaseRunSummary(); });
 
   // Toggle between supplier-only products and all products
   const toggleLink = line.querySelector('[data-toggle-all-products]');
@@ -5199,6 +5380,14 @@ function addPurchaseLine() {
   });
 
   return line;
+}
+
+function _resolveLineDiscAmount(lineEl) {
+  const val   = parseFloat(lineEl.querySelector('[data-line-disc-value]')?.value || '0') || 0;
+  const mode  = lineEl.querySelector('[data-line-disc-mode]')?.dataset?.mode || 'pct';
+  const price = parseFloat(lineEl.querySelector('[data-price]')?.value || '0') || 0;
+  if (mode === 'pct') return price > 0 && val > 0 ? parseFloat((price * val / 100).toFixed(2)) : 0;
+  return val;
 }
 
 function _updatePurchaseRunCostPreview() {
@@ -5233,6 +5422,164 @@ function _updatePurchaseRunCostPreview() {
   });
 }
 
+// ── VAT section renderer ──────────────────────────────────────────────────────
+function _renderPurchaseRunVatSection(vatWrap, existingVatAmount) {
+  if (!vatWrap) return;
+  const vatRate = _globalVatPct != null ? _globalVatPct : 15;
+  const lines = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
+  const subtotal = lines.reduce((s, l) => s + (parseFloat(l.querySelector('[data-price]')?.value || 0)), 0);
+  const autoVat = parseFloat((subtotal * vatRate / 100).toFixed(2));
+  const displayVal = existingVatAmount != null ? parseFloat(existingVatAmount).toFixed(2) : autoVat.toFixed(2);
+
+  vatWrap.innerHTML = `
+    <div class="border rounded p-2 bg-light">
+      <div class="d-flex align-items-center mb-2">
+        <span class="small fw-semibold"><i class="bi bi-receipt-cutoff me-1"></i>VAT</span>
+        <span class="ms-2 small text-muted" id="pr-vat-auto-label">(${vatRate}% of lines = R${autoVat.toFixed(2)} auto-calc)</span>
+        <button type="button" class="btn btn-link btn-sm p-0 ms-auto" style="font-size:11px" id="btn-pr-reset-vat">
+          Reset to auto-calc
+        </button>
+      </div>
+      <div class="d-flex gap-2 align-items-center">
+        <label class="small mb-0" style="white-space:nowrap">VAT amount (R)</label>
+        <div class="input-group input-group-sm" style="max-width:160px">
+          <span class="input-group-text">R</span>
+          <input type="number" step="0.01" min="0" class="form-control" id="pr-vat-amount" value="${displayVal}" placeholder="0.00">
+        </div>
+        <span class="small text-muted">Allocated proportionally to products</span>
+      </div>
+    </div>
+  `;
+
+  vatWrap.querySelector('#pr-vat-amount')?.addEventListener('input', _updatePurchaseRunSummary);
+  vatWrap.querySelector('#btn-pr-reset-vat')?.addEventListener('click', () => {
+    const linesNow = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
+    const st = linesNow.reduce((s, l) => s + (parseFloat(l.querySelector('[data-price]')?.value || 0)), 0);
+    const av = parseFloat((st * vatRate / 100).toFixed(2));
+    const inp = vatWrap.querySelector('#pr-vat-amount');
+    if (inp) { inp.value = av.toFixed(2); _updatePurchaseRunSummary(); }
+  });
+}
+
+// ── Discounts section renderer ────────────────────────────────────────────────
+function _renderDiscountsBlock(discWrap, existingDiscounts) {
+  if (!discWrap) return;
+  discWrap.innerHTML = `
+    <div class="border rounded p-2">
+      <div class="d-flex align-items-center mb-2">
+        <span class="small fw-semibold"><i class="bi bi-tag me-1"></i>Invoice Discounts</span>
+        <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" style="font-size:11px" data-disc-add-row>
+          <i class="bi bi-plus-lg"></i> Add Discount
+        </button>
+      </div>
+      <div data-disc-rows></div>
+    </div>
+  `;
+  const rowsEl = discWrap.querySelector('[data-disc-rows]');
+
+  const addDiscRow = (label = '', amount = '', mode = 'pct') => {
+    const row = document.createElement('div');
+    row.className = 'd-flex gap-1 mb-1 align-items-center';
+    row.dataset.discRow = '1';
+    row.innerHTML = `
+      <input type="text" class="form-control form-control-sm" style="flex:2" placeholder="e.g. Early payment discount" data-disc-label value="${escapeHtml(String(label))}">
+      <div class="input-group input-group-sm" style="flex:1;min-width:110px">
+        <input type="number" step="0.01" min="0" class="form-control" placeholder="${mode === 'pct' ? 'e.g. 5' : '0.00'}" data-disc-value value="${amount}">
+        <button type="button" class="btn btn-outline-secondary" data-disc-mode title="Toggle % / R">${mode === 'pct' ? '%' : 'R'}</button>
+      </div>
+      <button type="button" class="btn btn-outline-danger btn-sm" data-disc-remove><i class="bi bi-trash3"></i></button>
+    `;
+    const modeBtn = row.querySelector('[data-disc-mode]');
+    modeBtn.dataset.mode = mode;
+    modeBtn.addEventListener('click', () => {
+      modeBtn.dataset.mode = modeBtn.dataset.mode === 'pct' ? 'amt' : 'pct';
+      modeBtn.textContent  = modeBtn.dataset.mode === 'pct' ? '%' : 'R';
+      row.querySelector('[data-disc-value]').placeholder = modeBtn.dataset.mode === 'pct' ? 'e.g. 5' : '0.00';
+      _updatePurchaseRunSummary();
+    });
+    row.querySelector('[data-disc-value]')?.addEventListener('input', _updatePurchaseRunSummary);
+    row.querySelector('[data-disc-remove]').onclick = () => { row.remove(); _updatePurchaseRunSummary(); };
+    rowsEl.appendChild(row);
+  };
+
+  (existingDiscounts || []).forEach(d => addDiscRow(d.label, d.amount, d.mode || 'amt'));
+  discWrap.querySelector('[data-disc-add-row]').onclick = () => addDiscRow();
+}
+
+function _readDiscounts(discWrap) {
+  if (!discWrap) return [];
+  const rows = discWrap.querySelectorAll('[data-disc-row]');
+  const lines      = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
+  const linesTotal = lines.reduce((s, l) => s + (parseFloat(l.querySelector('[data-price]')?.value) || 0), 0);
+  const result = [];
+  for (const row of rows) {
+    const label  = row.querySelector('[data-disc-label]')?.value?.trim() || '';
+    const rawVal = parseFloat(row.querySelector('[data-disc-value]')?.value || '0') || 0;
+    const mode   = row.querySelector('[data-disc-mode]')?.dataset?.mode || 'pct';
+    const amount = mode === 'pct' ? parseFloat((linesTotal * rawVal / 100).toFixed(2)) : rawVal;
+    const pct    = mode === 'pct' ? rawVal : null;
+    if (!label || !amount || amount <= 0) continue;
+    result.push({ label, amount, pct, mode });
+  }
+  return result;
+}
+
+// ── Invoice reconciliation summary ────────────────────────────────────────────
+function _updatePurchaseRunSummary() {
+  _updatePurchaseRunCostPreview();
+
+  const summaryWrap = document.getElementById('purchase-run-summary-wrap');
+  if (!summaryWrap) return;
+
+  const lines = [...document.querySelectorAll('#purchase-run-lines [data-line-id]')];
+  const linesTotal = lines.reduce((s, l) => s + (parseFloat(l.querySelector('[data-price]')?.value || 0)), 0);
+
+  const addlWrap  = document.getElementById('purchase-run-addl-costs-wrap');
+  const addlCosts = addlWrap ? _readAdditionalCosts(addlWrap) : [];
+  const addlTotal = _addlCostsTotal(addlCosts);
+
+  const vatAmt = parseFloat(document.getElementById('pr-vat-amount')?.value || 0) || 0;
+
+  const discWrap = document.getElementById('purchase-run-discounts-wrap');
+  const discounts = discWrap ? _readDiscounts(discWrap) : [];
+  const lineDiscTotal = lines.reduce((s, l) => s + _resolveLineDiscAmount(l), 0);
+  const discTotal = discounts.reduce((s, d) => s + d.amount, 0) + lineDiscTotal;
+
+  const calculatedTotal = linesTotal + addlTotal + vatAmt - discTotal;
+
+  const supplierInvInput = document.getElementById('pr-supplier-invoice-total');
+  const supplierInvTotal = supplierInvInput ? (parseFloat(supplierInvInput.value || '') || null) : null;
+
+  const diff = supplierInvTotal != null ? calculatedTotal - supplierInvTotal : null;
+  const diffClass = diff == null ? '' : Math.abs(diff) < 0.02 ? 'text-success' : 'text-danger';
+  const diffText  = diff == null ? '' : (Math.abs(diff) < 0.02
+    ? '<i class="bi bi-check-circle me-1"></i>Balanced'
+    : `<i class="bi bi-exclamation-triangle me-1"></i>Difference: R${fmt(Math.abs(diff))} ${diff > 0 ? '(calculated higher)' : '(supplier higher)'}`);
+
+  summaryWrap.innerHTML = `
+    <div class="border rounded p-2 bg-light">
+      <div class="small fw-semibold mb-2"><i class="bi bi-calculator me-1"></i>Invoice Summary</div>
+      <table class="table table-sm table-borderless mb-2" style="font-size:12px">
+        <tr><td class="ps-0">Products (excl. VAT)</td><td class="text-end pe-0">R${fmt(linesTotal)}</td></tr>
+        ${addlTotal > 0 ? `<tr><td class="ps-0">Additional costs</td><td class="text-end pe-0">+R${fmt(addlTotal)}</td></tr>` : ''}
+        ${vatAmt > 0 ? `<tr><td class="ps-0">VAT</td><td class="text-end pe-0">+R${fmt(vatAmt)}</td></tr>` : ''}
+        ${discTotal > 0 ? `<tr><td class="ps-0 text-success">Discounts</td><td class="text-end pe-0 text-success">-R${fmt(discTotal)}</td></tr>` : ''}
+        <tr class="fw-semibold border-top"><td class="ps-0">Calculated total</td><td class="text-end pe-0">R${fmt(calculatedTotal)}</td></tr>
+      </table>
+      <div class="d-flex align-items-center gap-2">
+        <label class="small mb-0" style="white-space:nowrap">Supplier invoice total (optional)</label>
+        <div class="input-group input-group-sm" style="max-width:140px">
+          <span class="input-group-text">R</span>
+          <input type="number" step="0.01" min="0" class="form-control" id="pr-supplier-invoice-total" placeholder="0.00"${supplierInvTotal != null ? ` value="${supplierInvTotal.toFixed(2)}"` : ''}>
+        </div>
+        ${diff != null ? `<span class="small ${diffClass} fw-semibold">${diffText}</span>` : ''}
+      </div>
+    </div>
+  `;
+
+  summaryWrap.querySelector('#pr-supplier-invoice-total')?.addEventListener('input', _updatePurchaseRunSummary);
+}
+
 
 document.getElementById('btn-submit-purchase-run')?.addEventListener('click', async () => {
   if (!_currentSupplier) return toast('No supplier selected', 'error');
@@ -5251,6 +5598,13 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     if (qty <= 0)   return toast('Quantity must be greater than 0', 'warning');
     if (price < 0)  return toast('Price cannot be negative', 'warning');
     const lineObj = { product_id: productId, qty, unit, total_price: price };
+    // Per-line discount
+    const lineDiscAmt   = _resolveLineDiscAmount(lineEl);
+    const lineDiscLabel = lineEl.querySelector('[data-line-disc-label]')?.value?.trim() || '';
+    const lineDiscPct   = lineEl.querySelector('[data-line-disc-mode]')?.dataset?.mode === 'pct'
+      ? (parseFloat(lineEl.querySelector('[data-line-disc-value]')?.value || '0') || 0)
+      : null;
+    if (lineDiscAmt > 0 && lineDiscLabel) lineObj.line_discount = { label: lineDiscLabel, amount: lineDiscAmt, pct: lineDiscPct };
     lines.push(lineObj);
   }
 
@@ -5264,14 +5618,26 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     _checkOverheadWarning(_addlCostsTotal(prAddlCosts), baseTotal);
   }
   const prInvoiceRef = document.getElementById('pr-invoice-ref')?.value?.trim() || null;
+
+  // VAT from the VAT section
+  const vatAmt = parseFloat(document.getElementById('pr-vat-amount')?.value || 0) || 0;
+  // Invoice-level discounts
+  const prDiscWrap = document.getElementById('purchase-run-discounts-wrap');
+  const discounts  = prDiscWrap ? _readDiscounts(prDiscWrap) : [];
+  // Supplier invoice total for reconciliation
+  const supplierInvTotalRaw = document.getElementById('pr-supplier-invoice-total')?.value;
+  const supplierInvTotal = supplierInvTotalRaw ? parseFloat(supplierInvTotalRaw) || null : null;
+
   const body = {
     lines,
     date: dateVal || todayISO(),
     additional_costs: prAddlCosts,
     ...(prInvoiceRef ? { invoice_ref: prInvoiceRef } : {}),
-    // VAT reporting fields — only sent when VAT is NOT already in additional_costs
-    // (lines_excl_vat → VAT added to additional_costs for COGS; no need to store separately)
-    ...(_lastScanResult?.vat_total > 0 && _lastScanResult?.vat_treatment !== 'lines_excl_vat' ? {
+    ...(vatAmt > 0 ? { vat_total: vatAmt, vat_treatment: 'manual' } : {}),
+    ...(discounts.length > 0 ? { discounts } : {}),
+    ...(supplierInvTotal != null ? { supplier_invoice_total: supplierInvTotal } : {}),
+    // VAT from scan result when scan was used and not already applied
+    ...(_lastScanResult?.vat_total > 0 && _lastScanResult?.vat_treatment !== 'lines_excl_vat' && !(vatAmt > 0) ? {
       vat_total:           _lastScanResult.vat_total,
       discount_total:      _lastScanResult.discount_total || 0,
       vat_treatment:       _lastScanResult.vat_treatment || 'unknown',
@@ -8439,8 +8805,10 @@ async function loadStats() {
       }
     }
 
-    // Fire overhead stats in parallel — non-blocking
+    // Fire overhead, VAT, discount, and consignment stats in parallel — non-blocking
     loadOverheadStats(start, end, productId).catch(e => console.error('overhead stats', e));
+    loadSupplierVatStats(start, end).catch(e => console.error('supplier vat stats', e));
+    loadSupplierDiscountStats(start, end).catch(e => console.error('supplier discount stats', e));
     loadConsignmentStats().catch(e => console.error('consignment stats', e));
 
   } catch (e) { console.error('loadStats', e); toast('Could not load stats', 'error'); }
@@ -8580,6 +8948,61 @@ async function loadConsignmentStats() {
         <i class="bi bi-check2-circle"></i> Settle
       </button>
     </div>` : ''}
+  `;
+}
+
+async function loadSupplierVatStats(start, end) {
+  const wrap = document.getElementById('supplier-vat-stats-body');
+  if (!wrap) return;
+  const params = new URLSearchParams({ start, end });
+  let j;
+  try { j = await api(`/api/stats/supplier-vat?${params}`); }
+  catch (e) { wrap.innerHTML = `<div class="text-danger small">Could not load VAT data: ${e.message}</div>`; return; }
+
+  if (!j.total_vat || !j.by_supplier?.length) {
+    wrap.innerHTML = '<div class="text-muted small">No supplier VAT recorded in this period.</div>';
+    return;
+  }
+
+  const rows = j.by_supplier.map(s =>
+    `<tr><td>${escapeHtml(s.supplier)}</td><td class="text-end">${s.invoice_count}</td><td class="text-end fw-semibold">R${fmt(s.vat_total)}</td></tr>`
+  ).join('');
+
+  wrap.innerHTML = `
+    <div class="mb-2"><span class="small text-muted">Total VAT paid: </span><span class="fw-semibold">R${fmt(j.total_vat)}</span></div>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light"><tr><th>Supplier</th><th class="text-end">Invoices</th><th class="text-end">VAT Total</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+  `;
+}
+
+async function loadSupplierDiscountStats(start, end) {
+  const wrap = document.getElementById('supplier-discounts-stats-body');
+  if (!wrap) return;
+  const params = new URLSearchParams({ start, end });
+  let j;
+  try { j = await api(`/api/stats/supplier-discounts?${params}`); }
+  catch (e) { wrap.innerHTML = `<div class="text-danger small">Could not load discount data: ${e.message}</div>`; return; }
+
+  if (!j.total_discounts || !j.by_supplier?.length) {
+    wrap.innerHTML = '<div class="text-muted small">No supplier discounts recorded in this period.</div>';
+    return;
+  }
+
+  const rows = j.by_supplier.map(s => {
+    const breakdown = s.by_label?.length
+      ? `<div class="small text-muted">${s.by_label.map(l => `${escapeHtml(l.label)}: R${fmt(l.amount)}`).join(' · ')}</div>`
+      : '';
+    return `<tr><td>${escapeHtml(s.supplier)}${breakdown}</td><td class="text-end">${s.invoice_count}</td><td class="text-end fw-semibold text-success">R${fmt(s.discount_total)}</td></tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div class="mb-2"><span class="small text-muted">Total discounts received: </span><span class="fw-semibold text-success">R${fmt(j.total_discounts)}</span></div>
+    <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light"><tr><th>Supplier</th><th class="text-end">Invoices</th><th class="text-end">Total Saved</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
   `;
 }
 

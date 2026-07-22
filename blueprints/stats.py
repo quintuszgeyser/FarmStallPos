@@ -13,6 +13,7 @@ from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment,
     Sale, KitchenOrder, User, UserSession, Supplier, Customer, TillSession, Category,
+    SupplierInvoice,
 )
 
 bp = Blueprint('stats', __name__)
@@ -1224,3 +1225,112 @@ def api_stats_drilldown_customer_list():
         })
     customers.sort(key=lambda x: x['revenue'], reverse=True)
     return jsonify({'customers': customers, 'type': ctype})
+
+
+@bp.route('/api/stats/supplier-vat')
+def api_stats_supplier_vat():
+    """Aggregate supplier VAT paid from invoices in the date range, grouped by supplier."""
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+
+    invoices = SupplierInvoice.query.filter(
+        SupplierInvoice.date >= start_dt.date(),
+        SupplierInvoice.date <= end_dt.date(),
+        SupplierInvoice.vat_total.isnot(None),
+    ).all()
+
+    by_supplier = defaultdict(lambda: {'name': '', 'vat_total': Decimal('0'), 'invoice_count': 0})
+    total_vat = Decimal('0')
+
+    sids = {inv.supplier_id for inv in invoices if inv.supplier_id}
+    sup_map = {s.id: s for s in Supplier.query.filter(Supplier.id.in_(sids)).all()} if sids else {}
+
+    for inv in invoices:
+        try:
+            vat = Decimal(str(inv.vat_total))
+        except Exception:
+            continue
+        sup_key = inv.supplier_id if inv.supplier_id else 0
+        sup_obj = sup_map.get(inv.supplier_id) if inv.supplier_id else None
+        by_supplier[sup_key]['name'] = sup_obj.name if sup_obj else 'Unknown'
+        by_supplier[sup_key]['vat_total'] += vat
+        by_supplier[sup_key]['invoice_count'] += 1
+        total_vat += vat
+
+    rows = [
+        {
+            'supplier': d['name'],
+            'vat_total': round(float(d['vat_total']), 2),
+            'invoice_count': d['invoice_count'],
+        }
+        for _, d in sorted(by_supplier.items(), key=lambda x: x[1]['vat_total'], reverse=True)
+    ]
+
+    return jsonify({
+        'start': start_dt.isoformat(),
+        'end': end_dt.isoformat(),
+        'total_vat': round(float(total_vat), 2),
+        'by_supplier': rows,
+    })
+
+
+@bp.route('/api/stats/supplier-discounts')
+def api_stats_supplier_discounts():
+    """Aggregate supplier discounts received from invoices in the date range, grouped by supplier."""
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+
+    invoices = SupplierInvoice.query.filter(
+        SupplierInvoice.date >= start_dt.date(),
+        SupplierInvoice.date <= end_dt.date(),
+        SupplierInvoice.discount_total.isnot(None),
+    ).all()
+
+    by_supplier = defaultdict(lambda: {'name': '', 'discount_total': Decimal('0'), 'invoice_count': 0, 'labels': defaultdict(lambda: Decimal('0'))})
+    total_discounts = Decimal('0')
+
+    sids = {inv.supplier_id for inv in invoices if inv.supplier_id}
+    sup_map = {s.id: s for s in Supplier.query.filter(Supplier.id.in_(sids)).all()} if sids else {}
+
+    for inv in invoices:
+        try:
+            disc = Decimal(str(inv.discount_total))
+        except Exception:
+            continue
+        sup_key = inv.supplier_id if inv.supplier_id else 0
+        sup_obj = sup_map.get(inv.supplier_id) if inv.supplier_id else None
+        by_supplier[sup_key]['name'] = sup_obj.name if sup_obj else 'Unknown'
+        by_supplier[sup_key]['discount_total'] += disc
+        by_supplier[sup_key]['invoice_count'] += 1
+        total_discounts += disc
+        try:
+            entries = _json.loads(inv.discounts_json) if inv.discounts_json else []
+        except Exception:
+            entries = []
+        for e in entries:
+            lbl = str(e.get('label') or 'General discount')
+            try:
+                amt = Decimal(str(e.get('amount', 0)))
+            except Exception:
+                amt = Decimal('0')
+            by_supplier[sup_key]['labels'][lbl] += amt
+
+    rows = []
+    for _, d in sorted(by_supplier.items(), key=lambda x: x[1]['discount_total'], reverse=True):
+        label_breakdown = [
+            {'label': lbl, 'amount': round(float(amt), 2)}
+            for lbl, amt in sorted(d['labels'].items(), key=lambda x: x[1], reverse=True)
+        ]
+        rows.append({
+            'supplier': d['name'],
+            'discount_total': round(float(d['discount_total']), 2),
+            'invoice_count': d['invoice_count'],
+            'by_label': label_breakdown,
+        })
+
+    return jsonify({
+        'start': start_dt.isoformat(),
+        'end': end_dt.isoformat(),
+        'total_discounts': round(float(total_discounts), 2),
+        'by_supplier': rows,
+    })

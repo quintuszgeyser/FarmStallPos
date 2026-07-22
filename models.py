@@ -261,11 +261,14 @@ class SupplierInvoice(db.Model):
     subtotal                 = db.Column(db.Numeric(18, 4), nullable=True)  # sum of product lines excl VAT
     additional_costs_json    = db.Column(db.Text, nullable=True)            # [{label,type,amount}] — shipping/overhead only
     additional_costs_total   = db.Column(db.Numeric(18, 4), nullable=True)
-    vat_total                = db.Column(db.Numeric(18, 4), nullable=True)  # VAT on invoice — never allocated to batches
-    discount_total           = db.Column(db.Numeric(18, 4), nullable=True)  # total discount on invoice
+    vat_total                = db.Column(db.Numeric(18, 4), nullable=True)  # VAT on invoice — allocated to batches proportionally
+    discount_total           = db.Column(db.Numeric(18, 4), nullable=True)  # total discount on invoice — allocated to batches proportionally
+    discounts_json           = db.Column(db.Text, nullable=True)              # [{label,amount}] structured discount entries
+    supplier_invoice_total   = db.Column(db.Numeric(18, 4), nullable=True)   # total printed on supplier invoice
+    reconciliation_difference = db.Column(db.Numeric(18, 4), nullable=True)  # calculated_total - supplier_invoice_total
     vat_treatment            = db.Column(db.Text, nullable=True)            # lines_excl_vat | lines_incl_vat | unknown
     accounting_balanced      = db.Column(db.Boolean, nullable=True)         # lines + overheads + VAT ≈ invoice total
-    total                    = db.Column(db.Numeric(18, 4), nullable=True)  # subtotal + additional_costs_total + vat_total
+    total                    = db.Column(db.Numeric(18, 4), nullable=True)  # subtotal + additional_costs_total + vat_total - discount_total
     status                   = db.Column(db.String(20), nullable=False, default='posted')  # draft | posted
     source                   = db.Column(db.String(30), nullable=True)      # purchase_run | single_receive | bulk_receive
     notes                    = db.Column(db.Text, nullable=True)
@@ -384,13 +387,14 @@ class StockBatch(db.Model):
     produce_cost        = db.Column(Numeric(10, 4), nullable=True)   # total ingredient cost stamped at produce time
     # VAT-aware costing columns — all stamped at creation time, never derived at query time.
     # Allocation order: base_cost_total (ex-VAT) → +vat_amount → base_cost_incl_vat
-    #                   → +overheads → final_cost_incl_vat  (= cost_per_base_unit × qty_base)
+    #                   → +overheads → -allocated_discount → final_cost_incl_vat  (= cost_per_base_unit × qty_base)
     # Future: add vat_rate per line when mixed-rate (0%/15%) invoices are needed.
     vat_amount           = db.Column(Numeric(10, 4), nullable=True)  # proportional VAT share
     base_cost_total      = db.Column(Numeric(18, 4), nullable=True)  # product line cost ex-VAT
     base_cost_incl_vat   = db.Column(Numeric(18, 4), nullable=True)  # base_cost_total + vat_amount
     allocated_shipping   = db.Column(Numeric(18, 4), nullable=True)  # shipping overhead share only
-    final_cost_incl_vat  = db.Column(Numeric(18, 4), nullable=True)  # base_incl_vat + all overheads
+    final_cost_incl_vat  = db.Column(Numeric(18, 4), nullable=True)  # base_incl_vat + all overheads - allocated_discount
+    allocated_discount   = db.Column(Numeric(18, 4), nullable=True)  # proportional discount share for this batch
     additional_costs     = db.Column(db.Text, nullable=True)         # JSON {label,type,amount,source,source_id}
     cost_adjustment_reason = db.Column(db.Text, nullable=True)     # optional free-text reason for a post-creation edit
     updated_at          = db.Column(db.DateTime, nullable=True)     # stamped on explicit batch edits
