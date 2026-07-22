@@ -1094,6 +1094,7 @@ def api_stats_overhead():
     ]
     supplier_rows = [
         {
+            'supplier_id': sup_key,
             'supplier': d['name'],
             'base_cost': round(float(d['base']), 2),
             'overhead': round(float(d['overhead']), 2),
@@ -1174,6 +1175,185 @@ def api_stats_drilldown_overhead_type():
 
 
 # Future optimization: store overhead_total as denormalized value for reporting performance at scale
+
+
+@bp.route('/api/stats/drilldown/overhead-supplier')
+def api_stats_drilldown_overhead_supplier():
+    """Batch-level overhead detail for a specific supplier in the date range."""
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    supplier_id = request.args.get('supplier_id', type=int)
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+
+    bq = StockBatch.query.filter(
+        StockBatch.purchased_at >= start_dt,
+        StockBatch.purchased_at <= end_dt,
+        StockBatch.additional_costs.isnot(None),
+    )
+    if supplier_id:
+        bq = bq.filter(StockBatch.supplier_id == supplier_id)
+    else:
+        bq = bq.filter(StockBatch.supplier_id.is_(None))
+    batches = bq.all()
+
+    pids = {b.product_id for b in batches}
+    prod_map = {p.id: p.name for p in Product.query.filter(Product.id.in_(pids)).all()} if pids else {}
+
+    sup_name = 'Unknown'
+    if supplier_id:
+        sup = Supplier.query.get(supplier_id)
+        if sup:
+            sup_name = sup.name
+
+    rows = []
+    for b in batches:
+        try:
+            entries = _json.loads(b.additional_costs) if b.additional_costs else []
+        except Exception:
+            entries = []
+        overhead = sum(float(e.get('amount', 0)) for e in entries)
+        if not overhead:
+            continue
+        rows.append({
+            'date': b.purchased_at.date().isoformat(),
+            'product_name': prod_map.get(b.product_id, str(b.product_id)),
+            'base_cost': round(float(b.base_cost_total or 0), 2),
+            'overhead': round(overhead, 2),
+            'cost_items': [
+                {'label': e.get('label') or e.get('type', ''), 'amount': round(float(e.get('amount', 0)), 2)}
+                for e in entries
+            ],
+        })
+    rows.sort(key=lambda x: x['date'], reverse=True)
+    return jsonify({'supplier_name': sup_name, 'rows': rows})
+
+
+@bp.route('/api/stats/drilldown/production-overhead')
+def api_stats_drilldown_production_overhead():
+    """Batch-level overhead detail for a specific produced product in the date range."""
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    product_id = request.args.get('product_id', type=int)
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+
+    bq = StockBatch.query.filter(
+        StockBatch.purchased_at >= start_dt,
+        StockBatch.purchased_at <= end_dt,
+        StockBatch.produce_ref.isnot(None),
+    )
+    if product_id:
+        bq = bq.filter(StockBatch.product_id == product_id)
+    batches = bq.all()
+
+    prod_name = 'Unknown'
+    if product_id:
+        p = Product.query.get(product_id)
+        if p:
+            prod_name = p.name
+
+    rows = []
+    for b in batches:
+        try:
+            entries = _json.loads(b.additional_costs) if b.additional_costs else []
+        except Exception:
+            entries = []
+        overhead = sum(float(e.get('amount', 0)) for e in entries)
+        base = float(b.base_cost_total or 0)
+        rows.append({
+            'date': b.purchased_at.date().isoformat(),
+            'produce_ref': b.produce_ref or '',
+            'ingredient_cost': round(base, 2),
+            'overhead': round(overhead, 2),
+            'total': round(base + overhead, 2),
+        })
+    rows.sort(key=lambda x: x['date'], reverse=True)
+    return jsonify({'product_name': prod_name, 'rows': rows})
+
+
+@bp.route('/api/stats/drilldown/supplier-vat')
+def api_stats_drilldown_supplier_vat():
+    """Invoice-level VAT detail for a specific supplier in the date range."""
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    supplier_id = request.args.get('supplier_id', type=int)
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+
+    iq = SupplierInvoice.query.filter(
+        SupplierInvoice.date >= start_dt.date(),
+        SupplierInvoice.date <= end_dt.date(),
+        SupplierInvoice.vat_total.isnot(None),
+    )
+    if supplier_id:
+        iq = iq.filter(SupplierInvoice.supplier_id == supplier_id)
+    else:
+        iq = iq.filter(SupplierInvoice.supplier_id.is_(None))
+    invoices = iq.all()
+
+    sup_name = 'Unknown'
+    if supplier_id:
+        sup = Supplier.query.get(supplier_id)
+        if sup:
+            sup_name = sup.name
+
+    rows = []
+    for inv in invoices:
+        try:
+            vat = float(inv.vat_total)
+        except Exception:
+            continue
+        rows.append({
+            'date': inv.date.isoformat() if inv.date else '',
+            'invoice_ref': inv.invoice_number or f'#{inv.id}',
+            'subtotal': round(float(inv.subtotal or 0), 2),
+            'vat_total': round(vat, 2),
+        })
+    rows.sort(key=lambda x: x['date'], reverse=True)
+    return jsonify({'supplier_name': sup_name, 'rows': rows})
+
+
+@bp.route('/api/stats/drilldown/supplier-discounts')
+def api_stats_drilldown_supplier_discounts():
+    """Invoice-level discount detail for a specific supplier in the date range."""
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    supplier_id = request.args.get('supplier_id', type=int)
+    start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
+
+    iq = SupplierInvoice.query.filter(
+        SupplierInvoice.date >= start_dt.date(),
+        SupplierInvoice.date <= end_dt.date(),
+        SupplierInvoice.discount_total.isnot(None),
+    )
+    if supplier_id:
+        iq = iq.filter(SupplierInvoice.supplier_id == supplier_id)
+    else:
+        iq = iq.filter(SupplierInvoice.supplier_id.is_(None))
+    invoices = iq.all()
+
+    sup_name = 'Unknown'
+    if supplier_id:
+        sup = Supplier.query.get(supplier_id)
+        if sup:
+            sup_name = sup.name
+
+    rows = []
+    for inv in invoices:
+        try:
+            disc = float(inv.discount_total)
+        except Exception:
+            continue
+        try:
+            discounts = _json.loads(inv.discounts_json) if inv.discounts_json else []
+        except Exception:
+            discounts = []
+        rows.append({
+            'date': inv.date.isoformat() if inv.date else '',
+            'invoice_ref': inv.invoice_number or f'#{inv.id}',
+            'subtotal': round(float(inv.subtotal or 0), 2),
+            'discount_total': round(disc, 2),
+            'discounts': [
+                {'label': d.get('label', ''), 'amount': round(float(d.get('amount', 0)), 2)}
+                for d in discounts
+            ],
+        })
+    rows.sort(key=lambda x: x['date'], reverse=True)
+    return jsonify({'supplier_name': sup_name, 'rows': rows})
 
 
 @bp.route('/api/stats/drilldown/customer-list')
@@ -1259,11 +1439,12 @@ def api_stats_supplier_vat():
 
     rows = [
         {
+            'supplier_id': sup_key,
             'supplier': d['name'],
             'vat_total': round(float(d['vat_total']), 2),
             'invoice_count': d['invoice_count'],
         }
-        for _, d in sorted(by_supplier.items(), key=lambda x: x[1]['vat_total'], reverse=True)
+        for sup_key, d in sorted(by_supplier.items(), key=lambda x: x[1]['vat_total'], reverse=True)
     ]
 
     return jsonify({
@@ -1316,12 +1497,13 @@ def api_stats_supplier_discounts():
             by_supplier[sup_key]['labels'][lbl] += amt
 
     rows = []
-    for _, d in sorted(by_supplier.items(), key=lambda x: x[1]['discount_total'], reverse=True):
+    for sup_key, d in sorted(by_supplier.items(), key=lambda x: x[1]['discount_total'], reverse=True):
         label_breakdown = [
             {'label': lbl, 'amount': round(float(amt), 2)}
             for lbl, amt in sorted(d['labels'].items(), key=lambda x: x[1], reverse=True)
         ]
         rows.append({
+            'supplier_id': sup_key,
             'supplier': d['name'],
             'discount_total': round(float(d['discount_total']), 2),
             'invoice_count': d['invoice_count'],

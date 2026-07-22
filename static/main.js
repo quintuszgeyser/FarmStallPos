@@ -5728,8 +5728,16 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
 
     await loadProducts();
     await loadSupplierProducts(_currentSupplier.id);
-    loadSupplierInvoices(_currentSupplier.id);
+    await loadSupplierInvoices(_currentSupplier.id);
     loadSupplierDocs(_currentSupplier.id);
+    // Ensure the Invoices & Deliveries section is expanded so the new entry is visible
+    const invCollapse = document.getElementById('supplier-invoices-collapse');
+    const invChevron  = document.getElementById('supplier-invoices-chevron');
+    if (invCollapse?.classList.contains('hidden')) {
+      invCollapse.classList.remove('hidden');
+      if (invChevron) invChevron.textContent = '▼';
+    }
+    requestAnimationFrame(() => invCollapse?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }));
   } catch (e) {
     toast(e.message, 'error');
   }
@@ -8889,12 +8897,13 @@ async function loadOverheadStats(start, end, productId) {
 
   if (bySup.length) {
     html += `<div class="mb-3"><div class="small fw-semibold mb-1">Supplier / Receiving Overhead</div>
-      <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
         <thead class="table-light"><tr>
           <th>Supplier</th><th class="text-end">Base Cost</th><th class="text-end">Overhead</th><th class="text-end">Uplift %</th>
         </tr></thead><tbody>`;
     bySup.forEach(r => {
-      html += `<tr>
+      const sid = r.supplier_id || 0;
+      html += `<tr style="cursor:pointer" onclick="openOverheadSupplierDrilldown(${sid})">
         <td>${escapeHtml(r.supplier || 'Unknown')}</td>
         <td class="text-end">R${fmt(r.base_cost)}</td>
         <td class="text-end text-warning fw-semibold">R${fmt(r.overhead)}</td>
@@ -8906,12 +8915,12 @@ async function loadOverheadStats(start, end, productId) {
 
   if (byProd.length) {
     html += `<div class="mb-3"><div class="small fw-semibold mb-1">Production Overhead (batch totals)</div>
-      <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
         <thead class="table-light"><tr>
           <th>Product</th><th class="text-end">Ingredient Cost</th><th class="text-end">Overhead</th><th class="text-end">Total</th><th class="text-end">Overhead %</th>
         </tr></thead><tbody>`;
     byProd.forEach(r => {
-      html += `<tr>
+      html += `<tr style="cursor:pointer" onclick="openProductionOverheadDrilldown(${r.product_id})">
         <td>${escapeHtml(r.product_name)}</td>
         <td class="text-end">R${fmt(r.ingredient_cost)}</td>
         <td class="text-end text-warning">R${fmt(r.overhead)}</td>
@@ -8989,7 +8998,7 @@ async function loadSupplierVatStats(start, end) {
   }
 
   const rows = j.by_supplier.map(s =>
-    `<tr><td>${escapeHtml(s.supplier)}</td><td class="text-end">${s.invoice_count}</td><td class="text-end fw-semibold">R${fmt(s.vat_total)}</td></tr>`
+    `<tr style="cursor:pointer" onclick="openSupplierVatDrilldown(${s.supplier_id || 0})"><td>${escapeHtml(s.supplier)}</td><td class="text-end">${s.invoice_count}</td><td class="text-end fw-semibold">R${fmt(s.vat_total)}</td></tr>`
   ).join('');
 
   wrap.innerHTML = `
@@ -9018,7 +9027,7 @@ async function loadSupplierDiscountStats(start, end) {
     const breakdown = s.by_label?.length
       ? `<div class="small text-muted">${s.by_label.map(l => `${escapeHtml(l.label)}: R${fmt(l.amount)}`).join(' · ')}</div>`
       : '';
-    return `<tr><td>${escapeHtml(s.supplier)}${breakdown}</td><td class="text-end">${s.invoice_count}</td><td class="text-end fw-semibold text-success">R${fmt(s.discount_total)}</td></tr>`;
+    return `<tr style="cursor:pointer" onclick="openSupplierDiscountDrilldown(${s.supplier_id || 0})"><td>${escapeHtml(s.supplier)}${breakdown}</td><td class="text-end">${s.invoice_count}</td><td class="text-end fw-semibold text-success">R${fmt(s.discount_total)}</td></tr>`;
   }).join('');
 
   wrap.innerHTML = `
@@ -9135,6 +9144,149 @@ async function openOverheadTypeDrilldown(type) {
         <td>${escapeHtml(r.supplier_name || '-')}</td>
         <td class="text-muted" style="font-size:12px">${escapeHtml(r.label || '')}</td>
         <td class="text-end fw-semibold">R${fmt(r.amount)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    document.getElementById('drilldown-body').innerHTML = html;
+  } catch (e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+async function openOverheadSupplierDrilldown(supplierId) {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));
+  document.getElementById('drilldown-title').textContent = 'Supplier Overhead — Loading…';
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
+  modal.show();
+  try {
+    const start  = document.getElementById('stats-start')?.value || todayISO();
+    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const params = new URLSearchParams({ supplier_id: supplierId, start, end });
+    const j = await api(`/api/stats/drilldown/overhead-supplier?${params}`);
+    document.getElementById('drilldown-title').textContent = `Supplier Overhead — ${j.supplier_name}`;
+    if (!j.rows.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">No overhead records found.</div>';
+      return;
+    }
+    let html = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr>
+        <th>Date</th><th>Product</th><th class="text-end">Base Cost</th><th class="text-end">Overhead</th><th>Breakdown</th>
+      </tr></thead><tbody>`;
+    j.rows.forEach(r => {
+      const breakdown = r.cost_items.map(c => `${escapeHtml(c.label)}: R${fmt(c.amount)}`).join(', ');
+      html += `<tr>
+        <td style="white-space:nowrap;font-size:12px">${r.date}</td>
+        <td>${escapeHtml(r.product_name)}</td>
+        <td class="text-end">R${fmt(r.base_cost)}</td>
+        <td class="text-end text-warning fw-semibold">R${fmt(r.overhead)}</td>
+        <td class="text-muted" style="font-size:12px">${escapeHtml(breakdown)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    document.getElementById('drilldown-body').innerHTML = html;
+  } catch (e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+async function openProductionOverheadDrilldown(productId) {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));
+  document.getElementById('drilldown-title').textContent = 'Production Overhead — Loading…';
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
+  modal.show();
+  try {
+    const start  = document.getElementById('stats-start')?.value || todayISO();
+    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const params = new URLSearchParams({ product_id: productId, start, end });
+    const j = await api(`/api/stats/drilldown/production-overhead?${params}`);
+    document.getElementById('drilldown-title').textContent = `Production Overhead — ${j.product_name}`;
+    if (!j.rows.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">No production records found.</div>';
+      return;
+    }
+    let html = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr>
+        <th>Date</th><th>Ref</th><th class="text-end">Ingredient Cost</th><th class="text-end">Overhead</th><th class="text-end">Total</th>
+      </tr></thead><tbody>`;
+    j.rows.forEach(r => {
+      html += `<tr>
+        <td style="white-space:nowrap;font-size:12px">${r.date}</td>
+        <td class="text-muted" style="font-size:12px">${escapeHtml(r.produce_ref || '-')}</td>
+        <td class="text-end">R${fmt(r.ingredient_cost)}</td>
+        <td class="text-end text-warning">R${fmt(r.overhead)}</td>
+        <td class="text-end fw-semibold">R${fmt(r.total)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    document.getElementById('drilldown-body').innerHTML = html;
+  } catch (e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+async function openSupplierVatDrilldown(supplierId) {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));
+  document.getElementById('drilldown-title').textContent = 'Supplier VAT — Loading…';
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
+  modal.show();
+  try {
+    const start  = document.getElementById('stats-start')?.value || todayISO();
+    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const params = new URLSearchParams({ supplier_id: supplierId, start, end });
+    const j = await api(`/api/stats/drilldown/supplier-vat?${params}`);
+    document.getElementById('drilldown-title').textContent = `VAT Paid — ${j.supplier_name}`;
+    if (!j.rows.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">No VAT invoices found.</div>';
+      return;
+    }
+    let html = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr>
+        <th>Date</th><th>Invoice Ref</th><th class="text-end">Subtotal excl. VAT</th><th class="text-end">VAT</th>
+      </tr></thead><tbody>`;
+    j.rows.forEach(r => {
+      html += `<tr>
+        <td style="white-space:nowrap;font-size:12px">${r.date}</td>
+        <td>${escapeHtml(r.invoice_ref)}</td>
+        <td class="text-end">R${fmt(r.subtotal)}</td>
+        <td class="text-end fw-semibold text-warning">R${fmt(r.vat_total)}</td>
+      </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    document.getElementById('drilldown-body').innerHTML = html;
+  } catch (e) {
+    document.getElementById('drilldown-body').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+async function openSupplierDiscountDrilldown(supplierId) {
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal'));
+  document.getElementById('drilldown-title').textContent = 'Supplier Discounts — Loading…';
+  document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">Loading…</div>';
+  modal.show();
+  try {
+    const start  = document.getElementById('stats-start')?.value || todayISO();
+    const end    = document.getElementById('stats-end')?.value   || todayISO();
+    const params = new URLSearchParams({ supplier_id: supplierId, start, end });
+    const j = await api(`/api/stats/drilldown/supplier-discounts?${params}`);
+    document.getElementById('drilldown-title').textContent = `Discounts Received — ${j.supplier_name}`;
+    if (!j.rows.length) {
+      document.getElementById('drilldown-body').innerHTML = '<div class="text-muted small">No discount invoices found.</div>';
+      return;
+    }
+    let html = `<div class="table-responsive"><table class="table table-sm align-middle mb-0">
+      <thead class="table-light"><tr>
+        <th>Date</th><th>Invoice Ref</th><th class="text-end">Subtotal</th><th class="text-end">Discount</th><th>Breakdown</th>
+      </tr></thead><tbody>`;
+    j.rows.forEach(r => {
+      const breakdown = r.discounts?.length
+        ? r.discounts.map(d => `${escapeHtml(d.label)}: R${fmt(d.amount)}`).join(', ')
+        : '';
+      html += `<tr>
+        <td style="white-space:nowrap;font-size:12px">${r.date}</td>
+        <td>${escapeHtml(r.invoice_ref)}</td>
+        <td class="text-end">R${fmt(r.subtotal)}</td>
+        <td class="text-end fw-semibold text-success">R${fmt(r.discount_total)}</td>
+        <td class="text-muted" style="font-size:12px">${escapeHtml(breakdown)}</td>
       </tr>`;
     });
     html += `</tbody></table></div>`;
