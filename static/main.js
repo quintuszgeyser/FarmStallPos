@@ -831,29 +831,6 @@ function renderProductsCards() {
 
     const margins = calcProductMargins(p);
 
-    // Only show the inline stats row when there is a pending price to preview
-    let statsHtml = '';
-    if (margins) {
-      const pendPrice = p.sold_by_weight ? p.pending_price_per_unit : p.pending_price;
-      if (pendPrice != null && parseFloat(pendPrice) > 0) {
-        const costPerBase = STATE._productCostMap?.[p.id];
-        if (costPerBase != null && costPerBase > 0) {
-          const pp = parseFloat(pendPrice);
-          const pkgBase = (p.product_type === 'stock_item' && !p.sold_by_weight)
-            ? (p.unit_type === 'count' ? 1 : (parseFloat(p.package_size) || 1))
-            : 1;
-          const pendCost = costPerBase * pkgBase;
-          if (pendCost > 0 && pp > 0) {
-            const _mkupCls = v => v >= 40 ? 'text-success' : v >= 20 ? 'text-warning' : 'text-danger';
-            const pmu = ((pp - pendCost) / pendCost * 100).toFixed(1);
-            const pmg = ((pp - pendCost) / pp * 100).toFixed(1);
-            statsHtml = `<small class="text-muted d-block" style="font-size:11px;line-height:1.4">` +
-              `After apply: <span class="${_mkupCls(parseFloat(pmu))}">${pmu}%</span> markup / ` +
-              `<span class="${_mkupCls(parseFloat(pmg))}">${pmg}%</span> margin</small>`;
-          }
-        }
-      }
-    }
 
     const row = document.createElement('div');
     const isSelected = STATE._selectedProductIds.has(p.id);
@@ -867,7 +844,7 @@ function renderProductsCards() {
         <div class="pr-name-block">
           <span class="pr-name-text" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
           ${typeLabel ? `<span class="text-muted ms-1" style="font-size:11px">${typeLabel}</span>` : ''}
-          ${statsHtml}
+
           <div class="pr-mobile-meta">
             <div class="pr-mm-top">
               <div class="pr-mm-left">
