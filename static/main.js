@@ -5267,11 +5267,9 @@ function addPurchaseLine() {
       </div>
     </div>
     <div class="mt-1 d-flex align-items-center gap-2 flex-wrap">
-      <button type="button" class="btn btn-link btn-sm p-0" style="font-size:11px" data-convert-vat-btn title="Divide price by (1 + VAT rate) to get excl. VAT amount">
-        <i class="bi bi-calculator me-1"></i>Convert incl. VAT to excl. VAT
+      <button type="button" class="btn btn-outline-warning btn-sm" data-convert-vat-btn title="Divide entered price by (1 + VAT%) to strip VAT out">
+        <i class="bi bi-calculator me-1"></i>÷ VAT (incl → excl)
       </button>
-    </div>
-    <div class="mt-1 d-flex align-items-center gap-2">
       <button type="button" class="btn btn-link btn-sm p-0" style="font-size:11px" data-toggle-line-disc>
         <i class="bi bi-tag me-1"></i>Add line discount
       </button>
