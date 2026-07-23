@@ -2864,7 +2864,7 @@ async function loadPendingPricesBanner() {
   try {
     const items = await api('/api/products/pending-prices');
     if (items.length > 0) {
-      if (text) text.textContent = `${items.length} product${items.length > 1 ? 's have' : ' has'} price changes pending from the latest delivery.`;
+      if (text) text.textContent = `${items.length} product${items.length > 1 ? 's have' : ' has'} a suggested price change — markup has drifted from target.`;
       banner.classList.remove('hidden');
     } else {
       banner.classList.add('hidden');
@@ -2891,7 +2891,9 @@ async function openPendingPricesModal() {
         <th>Product</th>
         <th class="text-end">Current</th>
         <th class="text-end">New Price</th>
-        <th class="text-end">Change</th>
+        <th class="text-end">Price Change</th>
+        <th class="text-end">Markup Now</th>
+        <th class="text-end">Target</th>
       </tr></thead><tbody>`;
     items.forEach(r => {
       const arrow   = r.pending > r.current ? '<i class="bi bi-arrow-up text-danger"></i>' : '<i class="bi bi-arrow-down text-success"></i>';
@@ -2904,12 +2906,16 @@ async function openPendingPricesModal() {
       const currentDisplay = r.sold_by_weight
         ? `R${fmt(r.current * 1000)}/<span class="text-muted" style="font-size:11px">${kgLabel}</span>`
         : `R${fmt(r.current)}`;
+      const markupNow = r.actual_markup != null ? `${r.actual_markup}%` : '—';
+      const markupNowCls = (r.actual_markup != null && r.target_markup != null && r.actual_markup < r.target_markup - 1) ? 'text-danger fw-semibold' : 'text-muted';
       html += `<tr>
         <td><input type="checkbox" class="pending-price-cb" value="${r.id}" checked></td>
         <td>${escapeHtml(r.name)}</td>
         <td class="text-end text-muted">${currentDisplay}</td>
         <td class="text-end fw-semibold">${arrow} ${priceDisplay}</td>
         <td class="text-end ${pctCls} fw-semibold" style="font-size:12px">${pctText}</td>
+        <td class="text-end ${markupNowCls}" style="font-size:12px">${markupNow}</td>
+        <td class="text-end text-muted" style="font-size:12px">${r.target_markup != null ? r.target_markup + '%' : '—'}</td>
       </tr>`;
     });
     html += `</tbody></table></div>`;
@@ -2962,6 +2968,20 @@ async function dismissAllPendingPrices() {
     toast('Dismissed all pending price changes', 'success');
     document.getElementById('pending-prices-banner')?.classList.add('hidden');
   } catch (e) { toast(e.message, 'error'); }
+}
+
+async function runMarkupDriftCheck() {
+  const btn = document.getElementById('btn-run-markup-check');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>Checking…'; }
+  try {
+    const j = await api('/api/products/check-markup-drift', { method: 'POST', body: '{}' });
+    toast(`Markup check done — ${j.pending_count} product${j.pending_count !== 1 ? 's' : ''} with suggested price changes`, 'success', 4000);
+    await loadPendingPricesBanner();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>Check markup drift now'; }
+  }
 }
 
 // ── Save / Update / Delete ──
@@ -12457,10 +12477,10 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     const s = await api('/api/settings');
 
     // Business
-    _setSlider('set-markup-pct', 'set-markup-pct-val', s.markup_percent, v => Math.round(v) + '%');
-    _bindSlider('set-markup-pct', 'set-markup-pct-val', v => Math.round(v) + '%');
     const vatEl = document.getElementById('set-vat-pct');
     if (vatEl) vatEl.value = s.vat_rate ?? 15;
+    const driftEl = document.getElementById('set-markup-drift-pct');
+    if (driftEl) driftEl.value = s.markup_drift_pct ?? 5;
 
     // Kiosk connection settings
     const apiKeyEl     = document.getElementById('kiosk-api-key');
@@ -12672,11 +12692,10 @@ document.getElementById('brand-logo-file')?.addEventListener('change', async (e)
 document.getElementById('btn-save-business-settings')?.addEventListener('click', async () => {
   try {
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
-      markup_percent: parseFloat(document.getElementById('set-markup-pct')?.value || 20),
-      vat_rate:       parseFloat(document.getElementById('set-vat-pct')?.value    || 15),
+      vat_rate:         parseFloat(document.getElementById('set-vat-pct')?.value          || 15),
+      markup_drift_pct: parseFloat(document.getElementById('set-markup-drift-pct')?.value || 5),
     })});
-    _globalMarkupPct = parseFloat(document.getElementById('set-markup-pct')?.value || 20);
-    _globalVatPct    = parseFloat(document.getElementById('set-vat-pct')?.value    || 15);
+    _globalVatPct = parseFloat(document.getElementById('set-vat-pct')?.value || 15);
     _flashSaved('business-settings-saved');
     toast('Business settings saved', 'success', 2000);
   } catch(e) { toast(e.message, 'error'); }

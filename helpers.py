@@ -306,9 +306,11 @@ def get_fifo_cost_per_unit(product_id):
     return float(batch.cost_per_base_unit) if batch else 0.0
 
 
-def _auto_price_products(product_ids):
+def _auto_price_products(product_ids, min_drift_pct=0):
     """Calculate auto-price for products with auto_price=True and store as pending_price.
-    The pending price must be explicitly applied by the user before the till uses it."""
+    The pending price must be explicitly applied by the user before the till uses it.
+    min_drift_pct: only flag when actual markup has drifted more than this many pct
+    points from the target markup. 0 = flag any price change (original behaviour)."""
     from decimal import Decimal as _D
     import logging as _logging
     _log = _logging.getLogger('pos')
@@ -336,12 +338,20 @@ def _auto_price_products(product_ids):
             new_price = (cost * (1 + markup / 100)).quantize(_D('0.0001'))
             if p.sold_by_weight and p.unit_type in ('weight', 'volume'):
                 current = _D(str(p.price_per_unit or 0))
+                if min_drift_pct > 0 and cost > 0 and current > 0:
+                    actual_markup = (current / cost - 1) * 100
+                    if abs(actual_markup - markup) <= _D(str(min_drift_pct)):
+                        continue
                 if abs(new_price - current) > _D('0.0001'):
                     p.pending_price_per_unit = new_price
                     changed = True
             else:
                 new_price_r = new_price.quantize(_D('0.01'))
                 current = _D(str(p.price or 0))
+                if min_drift_pct > 0 and cost > 0 and current > 0:
+                    actual_markup = (current / cost - 1) * 100
+                    if abs(actual_markup - markup) <= _D(str(min_drift_pct)):
+                        continue
                 if abs(new_price_r - current) > _D('0.005'):
                     p.pending_price = new_price_r
                     changed = True
@@ -352,6 +362,55 @@ def _auto_price_products(product_ids):
             db.session.commit()
         except Exception:
             db.session.rollback()
+
+
+def _run_markup_drift_check(min_drift_pct=None):
+    """Scan all active auto_price=True products and flag those whose actual markup
+    has drifted more than min_drift_pct points from their target markup.
+    min_drift_pct defaults to the 'markup_drift_pct' setting (fallback 5)."""
+    import logging as _logging
+    _log = _logging.getLogger('pos')
+    try:
+        if min_drift_pct is None:
+            min_drift_pct = float(get_setting('markup_drift_pct', 5) or 5)
+        ids = [
+            p.id for p in Product.query.filter(
+                Product.is_archived == False,
+                Product.auto_price == True,
+            ).all()
+        ]
+        if ids:
+            _auto_price_products(ids, min_drift_pct=min_drift_pct)
+            _log.info(f'[markup_drift] scanned {len(ids)} products (threshold {min_drift_pct}%)')
+    except Exception as e:
+        _log.warning(f'[markup_drift] scan failed: {e}')
+
+
+_markup_scheduler_started = False
+
+
+def _start_markup_drift_scheduler(app):
+    """Start hourly background markup-drift check. Call once from create_app()."""
+    global _markup_scheduler_started
+    if _markup_scheduler_started:
+        return
+    _markup_scheduler_started = True
+
+    import threading
+    import time
+
+    def _loop():
+        time.sleep(300)  # 5-min warm-up delay
+        while True:
+            try:
+                with app.app_context():
+                    _run_markup_drift_check()
+            except Exception as e:
+                app.logger.warning(f'[markup_drift] scheduler error: {e}')
+            time.sleep(3600)  # check every hour
+
+    t = threading.Thread(target=_loop, daemon=True, name='markup-drift-check')
+    t.start()
 
 
 # ---------------------------------------------------------------------------

@@ -62,6 +62,7 @@ def api_settings():
     if request.method == 'GET':
         return jsonify({
             'markup_percent':        float(get_setting('markup_percent', 20) or 20),
+            'markup_drift_pct':      float(get_setting('markup_drift_pct', 5) or 5),
             'vat_registered':        get_setting('vat_registered', 'false') == 'true',
             'vat_number':            str(get_setting('vat_number', '') or ''),
             'vat_rate':              float(get_setting('vat_rate', 15) or 15),
@@ -85,7 +86,7 @@ def api_settings():
     data  = request.json or {}
     saved = {}
     for key, cast in [
-        ('markup_percent', float), ('vat_rate', float),
+        ('markup_percent', float), ('markup_drift_pct', float), ('vat_rate', float),
         ('face_threshold', float),
         ('link_threshold', float), ('face_quality_min', float),
         ('merge_suggest_min_sim', float), ('auto_merge_min_sim', float),

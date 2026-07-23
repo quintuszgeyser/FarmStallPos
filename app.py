@@ -2184,6 +2184,10 @@ def _register_routes(_app):
         from blueprints.deploy_schedule import _start_scheduler
         _start_scheduler(_app)
 
+    # Start hourly markup-drift check (all environments)
+    from helpers import _start_markup_drift_scheduler
+    _start_markup_drift_scheduler(_app)
+
 
 # Module-level app instance - used by gunicorn (`app:app`) and @app.route decorators.
 # Must be defined AFTER strong_migrate (below) and BEFORE the route definitions.

@@ -13,7 +13,7 @@ from helpers import (
     get_setting, get_stock_level, get_fifo_cost_per_unit,
     sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code,
     _serialize_product, validate_product_code, current_user,
-    consume_fifo, get_or_create_category,
+    consume_fifo, get_or_create_category, _run_markup_drift_check,
 )
 from models import (
     db,
@@ -473,6 +473,8 @@ def _parse_addl_costs_p(raw, source='produce_run'):
 def api_pending_prices():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
+    from models import StockBatch
+    global_markup = float(get_setting('markup_percent', 20) or 20)
     products = Product.query.filter(
         Product.is_archived == False,
         db.or_(
@@ -493,16 +495,50 @@ def api_pending_prices():
         if pending is None:
             continue
         pct_change = round((pending - current) / current * 100, 1) if current > 0 else None
+        # Compute WAC for markup context columns
+        target_markup = float(p.margin_pct) if p.margin_pct is not None else global_markup
+        actual_markup = None
+        batches = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).all()
+        if batches:
+            total_qty  = sum(float(b.qty_remaining_base) for b in batches)
+            total_cost = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches)
+            if total_qty > 0 and total_cost > 0:
+                wac = total_cost / total_qty
+                if current > 0:
+                    actual_markup = round((current / wac - 1) * 100, 1)
         result.append({
-            'id':            p.id,
-            'name':          p.name,
-            'unit_label':    unit_label,
+            'id':             p.id,
+            'name':           p.name,
+            'unit_label':     unit_label,
             'sold_by_weight': p.sold_by_weight,
-            'current':       round(current, 4),
-            'pending':       round(pending, 4),
-            'pct_change':    pct_change,
+            'current':        round(current, 4),
+            'pending':        round(pending, 4),
+            'pct_change':     pct_change,
+            'target_markup':  round(target_markup, 1),
+            'actual_markup':  actual_markup,
         })
     return jsonify(result)
+
+
+@bp.route('/api/products/check-markup-drift', methods=['POST'])
+def api_check_markup_drift():
+    """Manually trigger the markup-drift scan. Returns count of products flagged."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        _run_markup_drift_check()
+        from models import StockBatch
+        count = Product.query.filter(
+            Product.is_archived == False,
+            db.or_(
+                Product.pending_price.isnot(None),
+                Product.pending_price_per_unit.isnot(None),
+            )
+        ).count()
+        return jsonify({'ok': True, 'pending_count': count})
+    except Exception as e:
+        current_app.logger.error(f'[check_markup_drift] {e}')
+        return jsonify({'error': str(e)}), 500
 
 
 @bp.route('/api/products/pending-prices/apply', methods=['POST'])
