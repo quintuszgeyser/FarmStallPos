@@ -15536,31 +15536,67 @@ async function loadCostCategoriesSettings() {
       list.innerHTML = '<div class="text-muted small">No categories yet.</div>';
       return;
     }
-    list.innerHTML = cats.map(c => `
-      <div class="d-flex align-items-center gap-2 py-2 border-bottom" data-cat-row="${c.id}">
-        <span class="rounded-circle d-inline-block" style="width:12px;height:12px;background:${c.color||'#6c757d'};flex-shrink:0"></span>
-        <span class="flex-fill small fw-semibold">${escapeHtml(c.label)}</span>
-        <span class="text-muted small">${escapeHtml(c.name)}</span>
-        ${!c.is_active ? '<span class="badge bg-secondary" style="font-size:10px">inactive</span>' : ''}
-        <button class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:11px"
-          onclick="_editCostCategory(${c.id}, ${JSON.stringify(c.label)}, ${JSON.stringify(c.color||'')}, ${c.is_active})">
-          Edit
-        </button>
-        ${c.is_active ? `<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:11px"
-          onclick="_toggleCostCategory(${c.id}, false)">Hide</button>` : `<button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:11px"
-          onclick="_toggleCostCategory(${c.id}, true)">Show</button>`}
-      </div>
-    `).join('');
+    list.innerHTML = cats.map(c => _renderCostCategoryRow(c)).join('');
   } catch (e) { list.innerHTML = `<div class="text-danger small">${escapeHtml(e.message)}</div>`; }
 }
 
-async function _editCostCategory(id, label, color, isActive) {
-  const newLabel = prompt('Category label:', label);
-  if (!newLabel || newLabel.trim() === label) return;
+function _renderCostCategoryRow(c) {
+  return `<div class="d-flex align-items-center gap-2 py-2 border-bottom" data-cat-row="${c.id}">
+    <span class="rounded-circle d-inline-block flex-shrink-0" style="width:14px;height:14px;background:${c.color||'#6c757d'}"></span>
+    <span class="flex-fill small fw-semibold">${escapeHtml(c.label)}</span>
+    <span class="text-muted small">${escapeHtml(c.name)}</span>
+    ${!c.is_active ? '<span class="badge bg-secondary ms-1" style="font-size:10px">hidden</span>' : ''}
+    <button class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:11px"
+      onclick="_openCostCategoryEdit(${c.id})"><i class="bi bi-pencil"></i> Edit</button>
+    ${c.is_active
+      ? `<button class="btn btn-sm btn-outline-danger py-0 px-2" style="font-size:11px" onclick="_toggleCostCategory(${c.id}, false)">Hide</button>`
+      : `<button class="btn btn-sm btn-outline-success py-0 px-2" style="font-size:11px" onclick="_toggleCostCategory(${c.id}, true)">Show</button>`}
+  </div>`;
+}
+
+function _openCostCategoryEdit(id) {
+  const row = document.querySelector(`[data-cat-row="${id}"]`);
+  if (!row) return;
+  // Read current values from the rendered row
+  const label = row.querySelector('.fw-semibold')?.textContent?.trim() || '';
+  const swatch = row.querySelector('.rounded-circle');
+  const color  = swatch ? (swatch.style.background || '#6c757d') : '#6c757d';
+  row.innerHTML = `
+    <input type="color" class="form-control form-control-color p-0 border-0 flex-shrink-0" id="cc-color-${id}"
+      value="${_colorToHex(color)}" style="width:28px;height:28px;cursor:pointer">
+    <input type="text" class="form-control form-control-sm flex-fill" id="cc-label-${id}"
+      value="${escapeHtml(label)}" maxlength="40" placeholder="Display label">
+    <button class="btn btn-sm btn-primary py-0 px-2" style="font-size:11px"
+      onclick="_saveCostCategory(${id})"><i class="bi bi-check-lg"></i> Save</button>
+    <button class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:11px"
+      onclick="loadCostCategoriesSettings()">Cancel</button>`;
+  document.getElementById(`cc-label-${id}`)?.focus();
+}
+
+function _colorToHex(color) {
+  // Convert any CSS color string to #rrggbb for the color input
+  if (!color || color === 'none') return '#6c757d';
+  if (/^#[0-9a-fA-F]{6}$/.test(color)) return color;
+  if (/^#[0-9a-fA-F]{3}$/.test(color)) {
+    const [,r,g,b] = color.match(/^#(.)(.)(.)$/);
+    return `#${r+r}${g+g}${b+b}`;
+  }
+  // For rgb(...) values, use a canvas trick
   try {
-    await api(`/api/cost-categories/${id}`, { method: 'PATCH', body: JSON.stringify({ label: newLabel.trim() }) });
+    const ctx = document.createElement('canvas').getContext('2d');
+    ctx.fillStyle = color;
+    return ctx.fillStyle; // browser normalises to #rrggbb
+  } catch { return '#6c757d'; }
+}
+
+async function _saveCostCategory(id) {
+  const label = document.getElementById(`cc-label-${id}`)?.value?.trim();
+  const color = document.getElementById(`cc-color-${id}`)?.value;
+  if (!label) { toast('Label cannot be empty', 'warning'); return; }
+  try {
+    await api(`/api/cost-categories/${id}`, { method: 'PATCH', body: JSON.stringify({ label, color }) });
     await _loadCostCategories();
-    loadCostCategoriesSettings();
+    await loadCostCategoriesSettings();
     toast('Category updated', 'success');
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -15573,16 +15609,38 @@ async function _toggleCostCategory(id, isActive) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-document.getElementById('btn-add-cost-category')?.addEventListener('click', async () => {
-  const label = prompt('New category name (e.g. "Cold Storage", "Transport", "Customs"):');
-  if (!label || !label.trim()) return;
-  try {
-    await api('/api/cost-categories', { method: 'POST', body: JSON.stringify({ label: label.trim() }) });
-    await _loadCostCategories();
-    loadCostCategoriesSettings();
-    toast(`Category "${label.trim()}" added`, 'success');
-  } catch (e) { toast(e.message, 'error'); }
+document.getElementById('btn-add-cost-category')?.addEventListener('click', () => {
+  const list = document.getElementById('cost-categories-list');
+  if (!list) return;
+  // Don't add a second new-row if one is already open
+  if (list.querySelector('#cc-new-row')) return;
+  const row = document.createElement('div');
+  row.id = 'cc-new-row';
+  row.className = 'd-flex align-items-center gap-2 py-2 border-bottom';
+  row.innerHTML = `
+    <input type="color" class="form-control form-control-color p-0 border-0 flex-shrink-0" id="cc-new-color"
+      value="#6c757d" style="width:28px;height:28px;cursor:pointer">
+    <input type="text" class="form-control form-control-sm flex-fill" id="cc-new-label"
+      placeholder="Category name (e.g. Cold Storage)" maxlength="40">
+    <button class="btn btn-sm btn-primary py-0 px-2" style="font-size:11px"
+      onclick="_addCostCategory()"><i class="bi bi-check-lg"></i> Add</button>
+    <button class="btn btn-sm btn-outline-secondary py-0 px-2" style="font-size:11px"
+      onclick="document.getElementById('cc-new-row')?.remove()">Cancel</button>`;
+  list.appendChild(row);
+  document.getElementById('cc-new-label')?.focus();
 });
+
+async function _addCostCategory() {
+  const label = document.getElementById('cc-new-label')?.value?.trim();
+  const color = document.getElementById('cc-new-color')?.value;
+  if (!label) { toast('Enter a category name', 'warning'); return; }
+  try {
+    await api('/api/cost-categories', { method: 'POST', body: JSON.stringify({ label, color }) });
+    await _loadCostCategories();
+    await loadCostCategoriesSettings();
+    toast(`Category "${label}" added`, 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
 
 // Load when the Configuration tab is shown
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', () => {
