@@ -684,8 +684,8 @@ function _productSortKey(p, col) {
     case 'price':   return parseFloat(p.price || p.price_per_unit || 0);
     case 'barcode': return (p.barcode || '').toLowerCase();
     case 'flags': {
-      const fl = [p.is_produced, p.is_prepared, p.sync_to_scale, p.is_for_sale, p.is_available_online];
-      const bitmask = fl.reduce((acc, f, i) => acc + (f ? (1 << (4 - i)) : 0), 0);
+      const fl = [p.is_produced, p.is_prepared, p.sync_to_scale, p.is_for_sale, p.is_available_online, p.auto_price, p.is_consignment, p.scale_open_price, p.scale_prohibit];
+      const bitmask = fl.reduce((acc, f, i) => acc | (f ? (1 << i) : 0), 0);
       return fl.filter(Boolean).length * 32 + bitmask; // same combo → same key, count drives ordering
     }
     case 'cogs': case 'markup': case 'margin': {
@@ -870,11 +870,15 @@ function renderProductsCards() {
       <div class="pr-markup">${margins ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-margin">${margins ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-flags">
-        ${p.is_produced        ? `<i class="bi bi-fire pf-icon text-warning"      title="Batch produced"></i>`          : ''}
-        ${p.is_prepared        ? `<i class="bi bi-clock pf-icon text-danger"       title="Made to order (kitchen)"></i>` : ''}
-        ${p.sync_to_scale      ? `<i class="bi bi-speedometer2 pf-icon text-info"  title="Synced to scale"></i>`         : ''}
-        ${p.is_for_sale        ? `<i class="bi bi-shop pf-icon text-primary"       title="Available at till"></i>`       : ''}
-        ${p.is_available_online ? `<i class="bi bi-globe pf-icon text-success"     title="Available online"></i>`        : ''}
+        ${p.is_produced         ? `<i class="bi bi-fire pf-icon text-warning"        title="Batch produced"></i>`             : ''}
+        ${p.is_prepared         ? `<i class="bi bi-clock pf-icon text-danger"         title="Made to order (kitchen)"></i>`    : ''}
+        ${p.sync_to_scale       ? `<i class="bi bi-speedometer2 pf-icon text-info"    title="Synced to scale"></i>`            : ''}
+        ${p.is_for_sale         ? `<i class="bi bi-shop pf-icon text-primary"         title="Available at till"></i>`          : ''}
+        ${p.is_available_online ? `<i class="bi bi-globe pf-icon text-success"        title="Available online"></i>`           : ''}
+        ${p.auto_price          ? `<i class="bi bi-percent pf-icon text-info"         title="Auto-price from markup"></i>`     : ''}
+        ${p.is_consignment      ? `<i class="bi bi-handshake pf-icon text-secondary"  title="Consignment item"></i>`           : ''}
+        ${p.scale_open_price    ? `<i class="bi bi-pencil-square pf-icon text-warning" title="Scale: open price"></i>`         : ''}
+        ${p.scale_prohibit      ? `<i class="bi bi-slash-circle pf-icon text-danger"  title="Scale: prohibited"></i>`          : ''}
       </div>
       <div class="pr-more-wrap">
         <button class="pr-more-btn" title="Actions">⋮</button>
