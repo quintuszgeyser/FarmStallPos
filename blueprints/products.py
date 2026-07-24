@@ -17,12 +17,30 @@ from helpers import (
 )
 from models import (
     db,
-    Product, ProductImage, RecipeLine, Category,
+    Product, ProductImage, RecipeLine, Category, SubCategory,
     StockBatch, StockAdjustment, Purchase, Sale, ScalePluLog,
 )
 
 bp = Blueprint('products', __name__)
 logger = logging.getLogger('pos')
+
+
+def _resolve_sub_category(category_id, sub_category_id, sub_category_name):
+    """Return a SubCategory id (existing or newly created), or None."""
+    if not category_id:
+        return None
+    if sub_category_id:
+        return sub_category_id
+    if sub_category_name:
+        name = sub_category_name.strip()
+        norm = name.lower()
+        sub = SubCategory.query.filter_by(category_id=category_id, name_norm=norm).first()
+        if not sub:
+            sub = SubCategory(category_id=category_id, name=name, name_norm=norm)
+            db.session.add(sub)
+            db.session.flush()
+        return sub.id
+    return None
 
 _IMG_MAX_BYTES  = 10 * 1024 * 1024
 _IMG_MAX_PIXELS = 20_000_000
@@ -223,7 +241,11 @@ def api_products_post():
 
     auto_price = bool(data.get('auto_price', True))
 
-    sub_category_id   = data.get('sub_category_id') or None
+    sub_category_id   = _resolve_sub_category(
+        category_id,
+        data.get('sub_category_id') or None,
+        data.get('sub_category_name') or None,
+    )
     product_family_id = data.get('product_family_id') or None
     is_default_variant = bool(data.get('is_default_variant', False))
 
@@ -344,8 +366,16 @@ def api_products_update():
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
 
-    if 'sub_category_id' in data:
-        p.sub_category_id = data['sub_category_id'] or None
+    if 'sub_category_id' in data or 'sub_category_name' in data:
+        # category_id may be updated in the same request; read resolved value first
+        resolved_cat = data.get('category_id') or p.category_id
+        if 'category' in data and not resolved_cat:
+            pass  # will be resolved later; sub-cat stays as-is
+        p.sub_category_id = _resolve_sub_category(
+            resolved_cat,
+            data.get('sub_category_id') or None,
+            data.get('sub_category_name') or None,
+        )
     if 'product_family_id' in data:
         p.product_family_id = data['product_family_id'] or None
     if 'is_default_variant' in data:

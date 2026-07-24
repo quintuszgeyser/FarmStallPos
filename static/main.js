@@ -1416,15 +1416,93 @@ function hideCategorySuggestions() {
   if (box) { box.style.display = 'none'; box.innerHTML = ''; }
 }
 
+// ── Sub-category autocomplete (mirrors category autocomplete) ─────────────────
+// Tracks which sub-category the editor currently has set (by id + name)
+let _currentSubCatId   = null;
+let _currentSubCatName = '';
+let _subCatCategoryId  = null;  // which category we're scoped to
+
+function hideSubCategorySuggestions() {
+  const box = document.getElementById('p-sub-category-suggestions');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
+
 function _populateSubCategorySelect(categoryId, selectedSubId) {
-  const row    = document.getElementById('row-sub-category');
-  const select = document.getElementById('p-sub-category');
-  if (!row || !select) return;
-  const subs = (STATE.subcategories || []).filter(s => s.category_id === categoryId);
-  if (!categoryId || !subs.length) { row.style.display = 'none'; return; }
-  select.innerHTML = `<option value="">— No sub-category —</option>` +
-    subs.map(s => `<option value="${s.id}"${s.id === selectedSubId ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+  const row   = document.getElementById('row-sub-category');
+  const input = document.getElementById('p-sub-category');
+  if (!row || !input) return;
+
+  _subCatCategoryId = categoryId || null;
+  _currentSubCatId  = selectedSubId || null;
+
+  if (!categoryId) {
+    row.style.display = 'none';
+    _currentSubCatName = '';
+    return;
+  }
+
+  // Show the row regardless — let user add sub-cat even if none exist yet
   row.style.display = '';
+
+  // Set input text from current selection
+  if (selectedSubId) {
+    const sub = (STATE.subcategories || []).find(s => s.id === selectedSubId);
+    _currentSubCatName = sub ? sub.name : '';
+  } else {
+    _currentSubCatName = '';
+  }
+  input.value = _currentSubCatName;
+  hideSubCategorySuggestions();
+
+  // Wire autocomplete once
+  if (!input._subCatBound) {
+    input.addEventListener('input', renderSubCategorySuggestions);
+    input.addEventListener('focus', renderSubCategorySuggestions);
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        hideSubCategorySuggestions();
+        // If user cleared the field, clear the selection
+        if (!input.value.trim()) { _currentSubCatId = null; _currentSubCatName = ''; }
+      }, 150);
+    });
+    input._subCatBound = true;
+  }
+}
+
+function renderSubCategorySuggestions() {
+  const input = document.getElementById('p-sub-category');
+  const box   = document.getElementById('p-sub-category-suggestions');
+  if (!input || !box || !_subCatCategoryId) return;
+
+  const val   = input.value.trim();
+  const subs  = (STATE.subcategories || []).filter(s => s.category_id === _subCatCategoryId);
+  const lower = val.toLowerCase();
+  const matches = val
+    ? subs.filter(s => s.name.toLowerCase().includes(lower))
+    : subs;
+  const exact = subs.some(s => s.name.toLowerCase() === lower);
+
+  let html = matches.map(s =>
+    `<button type="button" class="list-group-item list-group-item-action py-1" data-subcat-pick="${s.id}" data-subcat-name="${escapeHtml(s.name)}">
+       ${escapeHtml(s.name)}
+     </button>`).join('');
+  if (val && !exact) {
+    html += `<button type="button" class="list-group-item list-group-item-action py-1 text-success" data-subcat-pick="new" data-subcat-name="${escapeHtml(val)}">
+       + Create "${escapeHtml(val)}"
+     </button>`;
+  }
+  if (!html) { hideSubCategorySuggestions(); return; }
+  box.innerHTML = html;
+  box.style.display = '';
+  box.querySelectorAll('[data-subcat-pick]').forEach(btn => {
+    btn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      input.value = btn.dataset.subcatName;
+      _currentSubCatName = btn.dataset.subcatName;
+      _currentSubCatId   = btn.dataset.subcatPick === 'new' ? 'new' : parseInt(btn.dataset.subcatPick, 10);
+      hideSubCategorySuggestions();
+    });
+  });
 }
 
 function _populateFamilySelect(selectedFamilyId) {
@@ -3565,8 +3643,9 @@ function buildProductPayload() {
     consignment_pct:  (() => { const v = parseFloat(document.getElementById('p-consignment-pct')?.value || ''); return isNaN(v) ? null : v; })(),
     // Auto-price
     auto_price: document.getElementById('p-auto-price')?.checked ?? true,
-    // Sub-category & family
-    sub_category_id:    parseInt(document.getElementById('p-sub-category')?.value || '0', 10) || null,
+    // Sub-category — send id if existing, name if new (backend resolves)
+    sub_category_id:   (typeof _currentSubCatId === 'number') ? _currentSubCatId : null,
+    sub_category_name: (_currentSubCatId === 'new' ? _currentSubCatName : null),
     product_family_id:  parseInt(document.getElementById('p-family')?.value || '0', 10) || null,
     is_default_variant: document.getElementById('p-is-default-variant')?.checked || false,
   };
