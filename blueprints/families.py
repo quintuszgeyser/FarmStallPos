@@ -137,6 +137,7 @@ def api_family_variants(fid):
             'is_default_variant': p.is_default_variant,
             'is_for_sale':       p.is_for_sale,
             'is_available_online': p.is_available_online,
+            'category_id':       p.category_id,
             'attributes':        _variant_attrs(p.id),
         } for p in products],
     })

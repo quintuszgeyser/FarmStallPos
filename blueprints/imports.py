@@ -23,7 +23,7 @@ from helpers import (
 
 # Unit conversion (grams/ml base)
 _UNIT_CONV = {'g': 1, 'kg': 1000, 'ml': 1, 'L': 1000, 'unit': 1}
-from models import db, Product, ProductImportRun, SubCategory
+from models import db, Product, ProductImportRun, SubCategory, ProductFamily
 
 bp = Blueprint('imports', __name__)
 
@@ -55,6 +55,8 @@ ALL_COLS = [
     # ── Classification ────────────────────────────────────────────────────────
     'category',
     'sub_category',
+    'family_name',
+    'is_default_variant',
     # ── Online shop & kitchen ─────────────────────────────────────────────────
     'is_available_online',
     'is_prepared',
@@ -108,6 +110,32 @@ def _parse_int(val):
 def _normalize_name(name):
     """Collapse whitespace, preserve original case."""
     return ' '.join(name.split())
+
+
+def _resolve_family_import(name):
+    """Find or create a ProductFamily by name. Returns the family id, or None if name is blank.
+    Does NOT commit — caller owns the transaction."""
+    import re
+    name = ' '.join(name.split())  # normalize whitespace
+    if not name:
+        return None
+    slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+    fam = ProductFamily.query.filter_by(slug=slug).first()
+    if not fam:
+        # Also try exact name match in case slug collides with a differently-named family
+        fam = ProductFamily.query.filter(
+            db.func.lower(ProductFamily.name) == name.lower()
+        ).first()
+    if fam:
+        return fam.id
+    # Ensure slug is unique
+    base, n = slug, 2
+    while ProductFamily.query.filter_by(slug=slug).first():
+        slug = f'{base}-{n}'; n += 1
+    fam = ProductFamily(name=name, slug=slug)
+    db.session.add(fam)
+    db.session.flush()
+    return fam.id
 
 
 def _validate_row(row, idx):
@@ -193,6 +221,10 @@ def _validate_row(row, idx):
     if sub_name and not cat_name:
         warnings.append('sub_category set but category is blank — sub_category will be ignored')
 
+    fam_name = (row.get('family_name') or '').strip()
+    if fam_name and not row.get('is_default_variant'):
+        warnings.append('family_name set but is_default_variant is blank — defaulting to false')
+
     return errors, warnings
 
 
@@ -274,6 +306,12 @@ def api_import_template():
         '#   category           Category name. Created automatically if it does not exist.',
         '#   sub_category       Sub-category name (requires category to also be filled in).',
         '#                      Created automatically if it does not exist.',
+        '#   family_name        Product family name (groups variants like colours/sizes).',
+        '#                      Created automatically if it does not exist.',
+        '#                      All variants in a family should share the same category.',
+        '#   is_default_variant true/false  [default: false]',
+        '#                      The family member shown on the website listing page.',
+        '#                      Exactly one variant per family should be true.',
         '#   is_available_online  true/false  [default: false]  — list on Lady Coleen website',
         '#   is_prepared        true/false  [default: false]  — sends to kitchen queue on sale',
         '#   sync_to_scale      true/false  [default: true for weight/volume, false otherwise]',
@@ -303,31 +341,32 @@ def api_import_template():
 
     # Col order: name,product_type,unit_type,price,price_per_unit,product_code,barcode,
     #            stock_qty,is_for_sale,low_stock_threshold,description,margin_pct,
-    #            category,sub_category,is_available_online,is_prepared,
+    #            category,sub_category,family_name,is_default_variant,
+    #            is_available_online,is_prepared,
     #            sync_to_scale,scale_tare,scale_shelf_life,scale_open_price,scale_msg1,scale_msg2,
     #            is_consignment,settlement_basis,consignment_pct,
     #            package_size,package_size_unit,package_unit
 
     ex_weight = row(
         'Springbok Biltong', 'stock_item', 'weight',
-        '', '0.68',                 # price blank, price_per_unit
-        '', '',                     # product_code blank, barcode blank
-        '', 'true', '50',           # stock_qty, is_for_sale, low_stock_threshold
-        'Springbok biltong from the farm', '40',  # description, margin_pct
-        'Biltong', 'Springbok',     # category, sub_category
-        'true', 'false',            # is_available_online, is_prepared
-        'true', '10', '14', 'false', 'Keep refrigerated', '',  # scale fields
-        'false', '', '',            # consignment
-        '', '', '',                 # packaging
+        '', '0.68',
+        '', '',
+        '', 'true', '50',
+        'Springbok biltong from the farm', '40',
+        'Biltong', 'Springbok', '', '',          # category, sub_category, family_name, is_default_variant
+        'true', 'false',
+        'true', '10', '14', 'false', 'Keep refrigerated', '',
+        'false', '', '',
+        '', '', '',
     )
 
     ex_fixed = row(
         'Biltong Sampler', 'stock_item', 'count',
-        '89.99', '',                # price, price_per_unit blank
+        '89.99', '',
         '', '',
         '', 'true', '',
         'Gift pack of assorted biltong', '35',
-        'Gift Packs', '',
+        'Gift Packs', '', '', '',
         'true', 'false',
         'false', '', '', 'false', '', '',
         'false', '', '',
@@ -340,7 +379,7 @@ def api_import_template():
         '', '',
         '', 'true', '1000',
         'Fresh farm milk', '40',
-        'Dairy', '',
+        'Dairy', '', '', '',
         'true', 'false',
         'true', '0', '3', 'false', '', '',
         'false', '', '',
@@ -353,11 +392,37 @@ def api_import_template():
         '', '',
         '', 'true', '2',
         'Local artisan honey 500g jar', '20',
-        'Honey & Preserves', 'Honey',
+        'Honey & Preserves', 'Honey', '', '',
         'true', 'false',
         'false', '', '', 'false', '', '',
         'true', 'PCT_OF_SALE', '60',
         '500', 'g', '500g jar',
+    )
+
+    # Example showing two family variants (Apron Red = default, Apron Blue = non-default)
+    ex_variant_default = row(
+        'Lady Coleen Apron Red', 'stock_item', 'count',
+        '350.00', '',
+        '', '',
+        '', 'true', '5',
+        'Lady Coleen branded apron — red', '45',
+        'Merchandise', 'Aprons', 'Lady Coleen Apron', 'true',
+        'true', 'false',
+        'false', '', '', 'false', '', '',
+        'false', '', '',
+        '', '', '',
+    )
+    ex_variant_other = row(
+        'Lady Coleen Apron Blue', 'stock_item', 'count',
+        '350.00', '',
+        '', '',
+        '', 'true', '5',
+        'Lady Coleen branded apron — blue', '45',
+        'Merchandise', 'Aprons', 'Lady Coleen Apron', 'false',
+        'true', 'false',
+        'false', '', '', 'false', '', '',
+        'false', '', '',
+        '', '', '',
     )
 
     lines = guide + [
@@ -368,6 +433,10 @@ def api_import_template():
         f'# {ex_volume}',
         '# Example 4: Consignment product — supplier paid 60% of each sale',
         f'# {ex_consignment}',
+        '# Example 5a: Family variant — default (shown on website listing)',
+        f'# {ex_variant_default}',
+        '# Example 5b: Family variant — non-default (reachable via options selector on detail page)',
+        f'# {ex_variant_other}',
         '#',
         header,
     ]
@@ -577,6 +646,13 @@ def _process_row(raw, existing, idx, warnings, mode):
             if old_str != new_str:
                 changes[field] = f'{old_str} → {new_str}'
 
+    # Family change detection (no DB lookup needed for preview)
+    fam_name = (raw.get('family_name') or '').strip()
+    if fam_name:
+        old_fam = (existing.family.name.strip() if existing and existing.family else '') if existing else ''
+        if fam_name.lower() != old_fam.lower():
+            changes['family_name'] = f'{old_fam or "(none)"} → {fam_name}'
+
     # Category / sub_category change detection (no DB lookup needed for preview)
     cat_name = (raw.get('category') or '').strip()
     if cat_name:
@@ -627,6 +703,9 @@ def _build_product_fields(raw, sold_by_weight, utype, ptype, existing=None):
     msg2 = (raw.get('scale_msg2') or '').strip()[:20]
     fields['scale_msg1'] = msg1 or None
     fields['scale_msg2'] = msg2 or None
+
+    # Family / variants
+    fields['is_default_variant'] = _parse_bool(raw.get('is_default_variant'), False)
 
     # Online shop / kitchen
     fields['is_available_online'] = _parse_bool(raw.get('is_available_online'), False)
@@ -714,6 +793,17 @@ def _do_import_strict(results, raw_rows, allow_name_match):
         _write_row(result, raw, allow_name_match)
 
 
+def _apply_family(p, raw):
+    """Resolve family_name from raw CSV row and set product_family_id on p.
+    Blank family_name = leave existing value unchanged."""
+    fam_name = (raw.get('family_name') or '').strip()
+    if not fam_name:
+        return
+    fam_id = _resolve_family_import(fam_name)
+    if fam_id:
+        p.product_family_id = fam_id
+
+
 def _apply_category(p, raw):
     """Resolve category / sub_category from raw CSV row and set on product p.
     Only writes when the CSV cell is non-empty; blank = leave existing value unchanged."""
@@ -759,6 +849,7 @@ def _write_row(result, raw, allow_name_match):
     if result['action'] == 'create':
         p = P()
         _apply_fields(p, fields, is_new=True, raw=raw)
+        _apply_family(p, raw)
         _apply_category(p, raw)
         db.session.add(p)
         db.session.flush()
@@ -776,6 +867,7 @@ def _write_row(result, raw, allow_name_match):
             return
         old_fields = {k: getattr(p, k, None) for k in fields}
         _apply_fields(p, fields, is_new=False, raw=raw)
+        _apply_family(p, raw)
         _apply_category(p, raw)
         # Check if scale-relevant fields changed
         scale_changed = any(fields.get(f) != old_fields.get(f) for f in SCALE_RELEVANT)

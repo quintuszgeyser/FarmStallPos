@@ -1517,6 +1517,65 @@ function hideFamilySuggestions() {
 function _setFamilyVariantPanel(hasFamily) {
   const varPanel = document.getElementById('p-variant-attrs');
   if (varPanel) varPanel.style.display = hasFamily ? '' : 'none';
+  if (!hasFamily) _renderFamilyWarnings([]);
+}
+
+async function _checkFamilyWarnings() {
+  const warnEl = document.getElementById('p-family-warnings');
+  if (!warnEl) return;
+  if (typeof _currentFamilyId !== 'number') { _renderFamilyWarnings([]); return; }
+
+  let variants = [];
+  try {
+    const fam = await api(`/api/families/${_currentFamilyId}/variants`);
+    variants = fam.variants || [];
+  } catch (_) { return; }
+
+  const warnings = [];
+  const onlineVariants = variants.filter(v => v.is_available_online);
+  const defaults = variants.filter(v => v.is_default_variant);
+  const isDefaultChecked = document.getElementById('p-is-default-variant')?.checked;
+
+  if (defaults.length === 0 && !isDefaultChecked) {
+    warnings.push({ icon: 'bi-exclamation-triangle', cls: 'text-warning', msg: 'No default variant set — the website listing will not know which card to show.' });
+  }
+  if (defaults.length >= 1 && isDefaultChecked && defaults.some(v => v.id !== _editingProductId)) {
+    warnings.push({ icon: 'bi-exclamation-triangle', cls: 'text-warning', msg: `Another variant is already marked as default (${defaults.find(v => v.id !== _editingProductId)?.name}). Only one default per family.` });
+  }
+  if (onlineVariants.length > 0 && onlineVariants.every(v => !v.attributes || v.attributes.length === 0)) {
+    warnings.push({ icon: 'bi-info-circle', cls: 'text-info', msg: 'Online variants have no attributes set — customers won\'t be able to tell them apart on the detail page.' });
+  }
+  const onlineDefault = variants.find(v => v.is_default_variant);
+  if (onlineDefault && !onlineDefault.is_available_online && onlineDefault.id !== _editingProductId) {
+    warnings.push({ icon: 'bi-exclamation-triangle', cls: 'text-warning', msg: `Default variant "${onlineDefault.name}" is not set as available online — it won't appear on the website.` });
+  }
+  // Check for duplicate attribute combinations among online variants
+  const combos = onlineVariants.map(v =>
+    (v.attributes || []).map(a => `${a.attribute}:${a.value}`).sort().join('|')
+  ).filter(c => c);
+  const dupes = combos.filter((c, i) => combos.indexOf(c) !== i);
+  if (dupes.length > 0) {
+    warnings.push({ icon: 'bi-x-circle', cls: 'text-danger', msg: 'Two or more online variants have identical attribute combinations — customers won\'t be able to distinguish them.' });
+  }
+  // Check for mixed categories
+  const catIds = [...new Set(variants.map(v => v.category_id).filter(Boolean))];
+  if (catIds.length > 1) {
+    warnings.push({ icon: 'bi-exclamation-triangle', cls: 'text-warning', msg: 'Variants in this family have different categories — the website sub-category filter may behave unexpectedly.' });
+  }
+
+  _renderFamilyWarnings(warnings);
+}
+
+function _renderFamilyWarnings(warnings) {
+  const el = document.getElementById('p-family-warnings');
+  if (!el) return;
+  if (!warnings.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = warnings.map(w =>
+    `<div class="small ${w.cls} d-flex align-items-start gap-1 mb-1">
+       <i class="bi ${w.icon} flex-shrink-0 mt-1"></i><span>${escapeHtml(w.msg)}</span>
+     </div>`
+  ).join('');
+  el.style.display = '';
 }
 
 function _populateFamilySelect(selectedFamilyId) {
@@ -1578,6 +1637,7 @@ function renderFamilySuggestions() {
       _currentFamilyId   = btn.dataset.famPick === 'new' ? 'new' : parseInt(btn.dataset.famPick, 10);
       hideFamilySuggestions();
       _setFamilyVariantPanel(true);
+      _checkFamilyWarnings();
     });
   });
 }
@@ -1701,6 +1761,7 @@ async function _showAttrPicker(attrs) {
     if (!vid) { toast('Pick a value first', 'warning'); return; }
     if (!_variantAttrValues.includes(vid)) _variantAttrValues.push(vid);
     _renderVariantAttrList();
+    _checkFamilyWarnings();
     div.remove();
   });
 
@@ -1725,6 +1786,7 @@ async function _showAttrPicker(attrs) {
       await loadCategories();  // refresh STATE.attributes
       if (!_variantAttrValues.includes(newVal.id)) _variantAttrValues.push(newVal.id);
       _renderVariantAttrList();
+      _checkFamilyWarnings();
       div.remove();
     } catch (e) { toast(e?.message || 'Failed', 'danger'); }
   });
@@ -2352,10 +2414,14 @@ function openProductEditor(p) {
   // Product Family
   _populateFamilySelect(p?.product_family_id || null);
   const _defVar = document.getElementById('p-is-default-variant');
-  if (_defVar) _defVar.checked = !!p?.is_default_variant;
+  if (_defVar) {
+    _defVar.checked = !!p?.is_default_variant;
+    _defVar.onchange = _checkFamilyWarnings;
+  }
   _currentFamilyId   = p?.product_family_id || null;
   _currentFamilyName = p?.family_name || '';
   _loadVariantAttrs(p?.id || null, p?.product_family_id || null);
+  _checkFamilyWarnings();
 
   // Multi-image list
   const _fileInp = document.getElementById('p-image-files');
