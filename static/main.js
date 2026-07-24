@@ -1627,9 +1627,7 @@ function _renderVariantAttrList() {
 
 document.getElementById('btn-add-variant-attr')?.addEventListener('click', () => {
   const attrs = STATE.attributes || [];
-  if (!attrs.length) { toast('No attributes defined. Go to Products → Families to create attributes.', 'info'); return; }
-  const hasUnassigned = attrs.some(a => a.values.some(v => !_variantAttrValues.includes(v.id)));
-  if (!hasUnassigned) { toast('All attribute values already assigned.', 'info'); return; }
+  // Even with no existing attrs, open the picker so the user can create one inline
   _showAttrPicker(attrs);
 });
 
