@@ -1038,14 +1038,17 @@ def api_suggested_price(pid):
     p = db.session.get(Product, pid)
     if not p:
         return jsonify({'error': 'Not found'}), 404
-    rows      = Purchase.query.filter_by(product_id=pid).all()
-    total_qty = sum(r.qty_added for r in rows)
-    wac = (sum(r.qty_added * r.purchase_price for r in rows) / float(total_qty)) if total_qty > 0 else float(p.price or 0)
     try:
         markup_param = request.args.get('markup')
         markup = float(markup_param) if markup_param else float(get_setting('markup_percent', 20) or 20)
     except Exception:
         markup = 20.0
+    batches   = StockBatch.query.filter_by(product_id=pid).filter(StockBatch.qty_remaining_base > 0).all()
+    total_qty = sum(float(b.qty_remaining_base) for b in batches)
+    if total_qty > 0:
+        wac = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches) / total_qty
+    else:
+        wac = 0.0
     return jsonify({'product_id': pid, 'wac': round(wac, 4), 'markup_percent': markup, 'suggested_price': round(wac * (1 + markup / 100.0), 2)})
 
 
