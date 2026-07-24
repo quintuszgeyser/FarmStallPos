@@ -42,41 +42,53 @@
         <!-- Product image (links to detail page) -->
         <a href="/farmshop/products/{{ item.id }}" class="text-decoration-none d-block">
           {% if item.image_url %}
-          <div style="height:160px;overflow:hidden;background:#f5efe0">
+          <div style="height:160px;overflow:hidden;background:#f5efe0;position:relative">
             <img src="/product_images/{{ item.image_url | replace('.jpg','_small.jpg') }}"
                  alt="{{ item.name }}"
                  loading="lazy"
                  decoding="async"
                  width="300" height="300"
                  style="width:100%;height:100%;object-fit:cover">
+            {% if item.is_family_card and item.variant_count > 1 %}
+            <span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;font-size:.7rem;padding:2px 8px;border-radius:99px">{{ item.variant_count }} options</span>
+            {% endif %}
           </div>
           {% else %}
-          <div style="height:100px;background:linear-gradient(135deg,var(--dd-paper),var(--lc-gold-light));display:flex;align-items:center;justify-content:center">
+          <div style="height:100px;background:linear-gradient(135deg,var(--dd-paper),var(--lc-gold-light));display:flex;align-items:center;justify-content:center;position:relative">
             <img src="/static/img/product_placeholder.svg" alt="" style="height:60px;opacity:.4">
+            {% if item.is_family_card and item.variant_count > 1 %}
+            <span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;font-size:.7rem;padding:2px 8px;border-radius:99px">{{ item.variant_count }} options</span>
+            {% endif %}
           </div>
           {% endif %}
         </a>
 
         <div class="p-3 d-flex flex-column flex-grow-1">
-          <!-- Stock message -->
-          {% if item.stock_status == 'out_of_stock' %}
-          <p class="text-danger small mb-1" style="font-size:.75rem">Out of stock - available on order (longer lead time)</p>
-          {% elif item.stock_status == 'low_stock' %}
-          <p class="text-danger small mb-1" style="font-size:.75rem">Only {{ item.available_qty | round(1) }} left - longer lead time if exceeded</p>
+          <!-- Stock message (only for standalone products) -->
+          {% if not item.is_family_card %}
+            {% if item.stock_status == 'out_of_stock' %}
+            <p class="text-danger small mb-1" style="font-size:.75rem">Out of stock - available on order (longer lead time)</p>
+            {% elif item.stock_status == 'low_stock' %}
+            <p class="text-danger small mb-1" style="font-size:.75rem">Only {{ item.available_qty | round(1) }} left - longer lead time if exceeded</p>
+            {% endif %}
           {% endif %}
 
           <h6 class="fw-bold mb-1">
             <a href="/farmshop/products/{{ item.id }}" class="text-decoration-none" style="color:var(--dd-text)">{{ item.name }}</a>
           </h6>
           <p class="text-muted small mb-2">
-            {% if item.sold_by_weight %}
+            {% if item.is_family_card and item.variant_count > 1 and item.min_price != item.max_price %}
+              From R{{ "%.2f"|format(item.min_price) }}
+            {% elif item.sold_by_weight %}
               R{{ "%.2f"|format(item.price_per_unit or item.price) }}/{{ item.base_unit }}
             {% else %}
               R{{ "%.2f"|format(item.price) }}
             {% endif %}
           </p>
           <div class="mt-auto">
-            {% if item.sold_by_weight %}
+            {% if item.is_family_card %}
+            <a href="/farmshop/products/{{ item.id }}" class="btn btn-sm lc-btn-primary w-100">View Options</a>
+            {% elif item.sold_by_weight %}
             <div class="input-group input-group-sm">
               <input type="number" class="form-control lc-input" placeholder="{{ item.base_unit }}"
                      id="weight-{{ item.id }}" min="0" step="100">

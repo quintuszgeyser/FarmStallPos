@@ -25,9 +25,7 @@ def landing():
 def products():
     search = (request.args.get("q") or "").strip()
 
-    # category_id / sub_category_id only exists once the POS app has migrated the shared DB.
-    # Detect it so the shop still renders during a deploy window where the
-    # column/table is not yet present.
+    # Detect optional columns/tables so the shop still renders during a deploy window
     has_categories = db.session.execute(text(
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'products' AND column_name = 'category_id'"
@@ -35,12 +33,20 @@ def products():
     has_subcategories = db.session.execute(text(
         "SELECT 1 FROM information_schema.tables WHERE table_name = 'sub_categories'"
     )).first() is not None
+    has_families = db.session.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'products' AND column_name = 'product_family_id'"
+    )).first() is not None
 
-    cat_col = "category_id" if has_categories else "NULL AS category_id"
-    sub_col = "sub_category_id" if has_subcategories else "NULL AS sub_category_id"
+    cat_col  = "category_id" if has_categories else "NULL AS category_id"
+    sub_col  = "sub_category_id" if has_subcategories else "NULL AS sub_category_id"
+    fam_cols = "product_family_id, is_default_variant" if has_families else \
+               "NULL::integer AS product_family_id, false AS is_default_variant"
+
     sql = f"""
         SELECT id, name, COALESCE(price, 0) AS price, product_type, unit_type, base_unit,
-               sold_by_weight, price_per_unit, stock_qty, image_url, description, {cat_col}, {sub_col}
+               sold_by_weight, price_per_unit, stock_qty, image_url, description,
+               {cat_col}, {sub_col}, {fam_cols}
         FROM products
         WHERE is_for_sale = true AND is_available_online = true AND is_archived = false
     """
@@ -53,24 +59,61 @@ def products():
     rows = db.session.execute(text(sql), params).fetchall()
 
     from services.stock import get_available_qty
-    items = []
+    from collections import defaultdict
+
+    raw_items = []
     for r in rows:
         avail = get_available_qty(db, r.id, r.product_type)
-        items.append({
-            "id":               r.id,
-            "name":             r.name,
-            "price":            float(r.price),
-            "product_type":     r.product_type,
-            "unit_type":        r.unit_type,
-            "base_unit":        r.base_unit,
-            "sold_by_weight":   r.sold_by_weight,
-            "price_per_unit":   float(r.price_per_unit) if r.price_per_unit else None,
-            "available_qty":    avail,
-            "stock_status":     _stock_status(avail, r.product_type),
-            "image_url":        r.image_url,
-            "category_id":      r.category_id,
-            "sub_category_id":  r.sub_category_id,
+        raw_items.append({
+            "id":                 r.id,
+            "name":               r.name,
+            "price":              float(r.price),
+            "product_type":       r.product_type,
+            "unit_type":          r.unit_type,
+            "base_unit":          r.base_unit,
+            "sold_by_weight":     r.sold_by_weight,
+            "price_per_unit":     float(r.price_per_unit) if r.price_per_unit else None,
+            "available_qty":      avail,
+            "stock_status":       _stock_status(avail, r.product_type),
+            "image_url":          r.image_url,
+            "category_id":        r.category_id,
+            "sub_category_id":    r.sub_category_id,
+            "product_family_id":  r.product_family_id,
+            "is_default_variant": r.is_default_variant,
         })
+
+    # Deduplicate — one card per product family, standalone products pass through
+    family_groups = defaultdict(list)
+    items = []
+    for item in raw_items:
+        if item["product_family_id"]:
+            family_groups[item["product_family_id"]].append(item)
+        else:
+            item.update({"variant_count": 0, "is_family_card": False,
+                         "min_price": item["price"], "max_price": item["price"]})
+            items.append(item)
+
+    for fid, variants in family_groups.items():
+        in_stock         = [v for v in variants if v["stock_status"] != "out_of_stock"]
+        in_stock_default = [v for v in in_stock if v["is_default_variant"]]
+        defaults         = [v for v in variants if v["is_default_variant"]]
+        if in_stock_default:
+            display = min(in_stock_default, key=lambda v: v["id"])
+        elif in_stock:
+            display = min(in_stock, key=lambda v: v["id"])
+        elif defaults:
+            display = min(defaults, key=lambda v: v["id"])
+        else:
+            display = min(variants, key=lambda v: v["id"])
+        prices = [v["price"] for v in variants if not v["sold_by_weight"] and v["price"]]
+        display = dict(display)
+        display["variant_count"] = len(variants)
+        display["is_family_card"] = True
+        display["min_price"] = min(prices) if prices else display["price"]
+        display["max_price"] = max(prices) if prices else display["price"]
+        items.append(display)
+
+    items.sort(key=lambda x: x["name"])
 
     # Categories that actually have a visible product (for the filter bar)
     categories = []
@@ -125,10 +168,16 @@ def checkout():
 
 @farmshop_bp.route("/farmshop/products/<int:product_id>")
 def product_detail(product_id):
-    product = db.session.execute(text("""
+    has_families = db.session.execute(text(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_name = 'products' AND column_name = 'product_family_id'"
+    )).first() is not None
+    fam_cols = ", p.product_family_id, p.is_default_variant" if has_families else ""
+
+    product = db.session.execute(text(f"""
         SELECT p.id, p.name, COALESCE(p.price,0) AS price, p.product_type,
                p.unit_type, p.base_unit, p.sold_by_weight, p.price_per_unit,
-               p.stock_qty, p.image_url, p.description
+               p.stock_qty, p.image_url, p.description{fam_cols}
         FROM products p
         WHERE p.id = :id AND p.is_for_sale = true
           AND p.is_available_online = true AND p.is_archived = false
@@ -156,8 +205,75 @@ def product_detail(product_id):
     from services.stock import get_available_qty
     avail = get_available_qty(db, product.id, product.product_type)
 
+    # Family variant selector
+    family_variants = []
+    family_attrs = []
+    family_name = None
+    current_variant_attrs = {}
+
+    fam_id = getattr(product, 'product_family_id', None)
+    if has_families and fam_id:
+        fam_row = db.session.execute(
+            text("SELECT name FROM product_families WHERE id = :id"), {"id": fam_id}
+        ).fetchone()
+        family_name = fam_row.name if fam_row else None
+
+        v_rows = db.session.execute(text("""
+            SELECT p.id, p.name, COALESCE(p.price,0) AS price, p.price_per_unit,
+                   p.base_unit, p.sold_by_weight, p.image_url, p.is_default_variant,
+                   p.stock_qty, p.product_type
+            FROM products p
+            WHERE p.product_family_id = :fid
+              AND p.is_available_online = true AND p.is_archived = false
+              AND p.is_for_sale = true
+            ORDER BY p.is_default_variant DESC, p.id ASC
+        """), {"fid": fam_id}).fetchall()
+
+        from collections import OrderedDict
+        attr_dims = OrderedDict()
+
+        for vr in v_rows:
+            v_avail = float(get_available_qty(db, vr.id, vr.product_type))
+            a_rows = db.session.execute(text("""
+                SELECT a.name AS attr_name, av.value AS attr_value, av.id AS val_id
+                FROM product_variant_attributes pva
+                JOIN attribute_values av ON av.id = pva.attribute_value_id
+                JOIN attributes a ON a.id = av.attribute_id
+                WHERE pva.product_id = :pid
+                ORDER BY a.name ASC, av.value ASC
+            """), {"pid": vr.id}).fetchall()
+            attr_list = [{"attr_name": a.attr_name, "val_id": a.val_id, "attr_value": a.attr_value}
+                         for a in a_rows]
+            family_variants.append({
+                "id":                 vr.id,
+                "name":               vr.name,
+                "price":              float(vr.price),
+                "price_per_unit":     float(vr.price_per_unit) if vr.price_per_unit else None,
+                "base_unit":          vr.base_unit,
+                "sold_by_weight":     vr.sold_by_weight,
+                "image_url":          vr.image_url,
+                "is_default_variant": vr.is_default_variant,
+                "available_qty":      v_avail,
+                "stock_status":       _stock_status(v_avail, vr.product_type),
+                "attributes":         attr_list,
+            })
+            for a in attr_list:
+                if a["attr_name"] not in attr_dims:
+                    attr_dims[a["attr_name"]] = []
+                if not any(x["val_id"] == a["val_id"] for x in attr_dims[a["attr_name"]]):
+                    attr_dims[a["attr_name"]].append(
+                        {"val_id": a["val_id"], "attr_value": a["attr_value"]}
+                    )
+
+        family_attrs = [{"name": k, "values": v} for k, v in attr_dims.items()]
+        cur = next((v for v in family_variants if v["id"] == product.id), None)
+        if cur:
+            current_variant_attrs = {a["attr_name"]: a["val_id"] for a in cur["attributes"]}
+
     return render_template("farmshop/product_detail.html",
-                           product=product, images=images, available_qty=avail)
+                           product=product, images=images, available_qty=avail,
+                           family_variants=family_variants, family_attrs=family_attrs,
+                           family_name=family_name, current_variant_attrs=current_variant_attrs)
 
 
 @farmshop_bp.route("/farmshop/orders/<reference>")
@@ -211,6 +327,47 @@ def api_products():
             "category_id":    r.category_id,
         })
     return jsonify(products=result)
+
+
+@farmshop_bp.route("/api/farmshop/families/<int:fid>/variants")
+def api_family_variants_public(fid):
+    from services.stock import get_available_qty
+    v_rows = db.session.execute(text("""
+        SELECT p.id, p.name, COALESCE(p.price,0) AS price, p.price_per_unit,
+               p.base_unit, p.sold_by_weight, p.image_url, p.is_default_variant,
+               p.product_type
+        FROM products p
+        WHERE p.product_family_id = :fid
+          AND p.is_available_online = true AND p.is_archived = false
+          AND p.is_for_sale = true
+        ORDER BY p.is_default_variant DESC, p.id ASC
+    """), {"fid": fid}).fetchall()
+    result = []
+    for vr in v_rows:
+        avail = float(get_available_qty(db, vr.id, vr.product_type))
+        a_rows = db.session.execute(text("""
+            SELECT a.name AS attr_name, av.value AS attr_value, av.id AS val_id
+            FROM product_variant_attributes pva
+            JOIN attribute_values av ON av.id = pva.attribute_value_id
+            JOIN attributes a ON a.id = av.attribute_id
+            WHERE pva.product_id = :pid
+            ORDER BY a.name ASC, av.value ASC
+        """), {"pid": vr.id}).fetchall()
+        result.append({
+            "id":                 vr.id,
+            "name":               vr.name,
+            "price":              float(vr.price),
+            "price_per_unit":     float(vr.price_per_unit) if vr.price_per_unit else None,
+            "base_unit":          vr.base_unit,
+            "sold_by_weight":     vr.sold_by_weight,
+            "image_url":          vr.image_url,
+            "is_default_variant": vr.is_default_variant,
+            "available_qty":      avail,
+            "stock_status":       _stock_status(avail, vr.product_type),
+            "attributes":         [{"attr_name": a.attr_name, "val_id": a.val_id,
+                                    "attr_value": a.attr_value} for a in a_rows],
+        })
+    return jsonify(variants=result)
 
 
 def process_payment(amount: float) -> dict:

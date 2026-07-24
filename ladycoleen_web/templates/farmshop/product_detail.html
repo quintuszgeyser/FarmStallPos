@@ -1,8 +1,11 @@
 {% extends "base.html" %}
-{% block title %}{{ product.name }} - Lady Coleen Farm Shop{% endblock %}
+{% block title %}{{ family_name or product.name }} - Lady Coleen Farm Shop{% endblock %}
+
+{% set has_variants = family_attrs | length > 0 %}
+{% set multi_variant = family_variants | length > 1 %}
 
 {% block head %}
-{% if images | length > 1 %}
+{% if images | length > 1 and not multi_variant %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css">
 {% endif %}
 <style>
@@ -11,6 +14,7 @@
 .swiper-thumb .swiper-slide-thumb-active { opacity:1; outline:2px solid var(--lc-gold) }
 .swiper-button-next, .swiper-button-prev { color: var(--lc-gold) }
 .swiper-pagination-bullet-active { background: var(--lc-gold) }
+.vpill:disabled { opacity:.35; cursor:not-allowed }
 </style>
 {% endblock %}
 
@@ -21,7 +25,7 @@
   <nav aria-label="breadcrumb" class="mb-3">
     <ol class="breadcrumb small">
       <li class="breadcrumb-item"><a href="/farmshop/products" class="text-decoration-none" style="color:var(--lc-gold)">Farm Shop</a></li>
-      <li class="breadcrumb-item active">{{ product.name }}</li>
+      <li class="breadcrumb-item active">{{ family_name or product.name }}</li>
     </ol>
   </nav>
 
@@ -30,7 +34,21 @@
     <!-- ── Image column ── -->
     <div class="col-md-6">
 
-      {% if not images %}
+      {% if multi_variant %}
+        <!-- Single swappable image for multi-variant family products -->
+        {% if images %}
+        <img id="v-main-img"
+             src="/product_images/{{ images[0].filename }}"
+             alt="{{ product.name }}"
+             class="product-main-img">
+        {% else %}
+        <img id="v-main-img"
+             src="/static/img/product_placeholder.svg"
+             alt="{{ product.name }}"
+             class="product-main-img" style="opacity:.5">
+        {% endif %}
+
+      {% elif not images %}
         <!-- No images -->
         <img src="/static/img/product_placeholder.svg" alt="{{ product.name }}"
              class="product-main-img" style="opacity:.5">
@@ -41,7 +59,7 @@
              alt="{{ product.name }}" class="product-main-img">
 
       {% else %}
-        <!-- Multi-image Swiper carousel -->
+        <!-- Multi-image Swiper carousel (standalone products only) -->
         <div class="swiper swiper-main mb-2" id="swiperMain">
           <div class="swiper-wrapper">
             {% for img in images %}
@@ -57,8 +75,6 @@
           <div class="swiper-button-next"></div>
           <div class="swiper-pagination"></div>
         </div>
-
-        <!-- Thumbnail strip -->
         <div class="swiper swiper-thumb" id="swiperThumb" style="height:76px">
           <div class="swiper-wrapper">
             {% for img in images %}
@@ -77,9 +93,15 @@
 
     <!-- ── Info column ── -->
     <div class="col-md-6">
-      <h1 class="lc-heading fw-bold fs-3 mb-1">{{ product.name }}</h1>
 
-      <p class="fs-4 fw-bold mb-3" style="color:var(--lc-gold)">
+      {% if family_name %}
+      <h1 class="lc-heading fw-bold fs-3 mb-1">{{ family_name }}</h1>
+      <p class="text-muted mb-1" id="v-name">{{ product.name }}</p>
+      {% else %}
+      <h1 class="lc-heading fw-bold fs-3 mb-1" id="v-name">{{ product.name }}</h1>
+      {% endif %}
+
+      <p class="fs-4 fw-bold mb-3" style="color:var(--lc-gold)" id="v-price">
         {% if product.sold_by_weight and product.price_per_unit %}
           R{{ "%.2f"|format(product.price_per_unit) }}/{{ product.base_unit }}
         {% else %}
@@ -87,19 +109,40 @@
         {% endif %}
       </p>
 
+      <!-- Variant picker (shown when family has defined attributes) -->
+      {% if has_variants %}
+      <div class="mb-3" id="v-picker">
+        {% for dim in family_attrs %}
+        <div class="mb-2">
+          <div class="text-muted small fw-semibold mb-1">{{ dim.name }}</div>
+          <div class="d-flex flex-wrap gap-2">
+            {% for val in dim.values %}
+            <button type="button"
+                    id="vpill-{{ dim.name }}-{{ val.val_id }}"
+                    class="btn btn-sm vpill {% if current_variant_attrs.get(dim.name) == val.val_id %}lc-btn-primary{% else %}btn-outline-secondary{% endif %}"
+                    onclick="_selectPill({{ dim.name | tojson }}, {{ val.val_id }})">
+              {{ val.attr_value }}
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
       {% if product.description %}
       <p class="text-muted mb-4" style="white-space:pre-line">{{ product.description }}</p>
       {% endif %}
 
       <!-- Stock info -->
-      {% if available_qty > 0 %}
+      {% if available_qty > 0 and not multi_variant %}
       <p class="small text-muted mb-2">{{ available_qty | round(1) }} in stock</p>
       {% endif %}
 
       <!-- Dynamic stock warning (JS-controlled) -->
       <p id="detail-stock-warning" class="small text-danger mb-2" style="display:none"></p>
 
-      <!-- Add to cart - always shown, no hard block -->
+      <!-- Add to cart -->
       {% if product.sold_by_weight %}
       <div class="input-group mb-3" style="max-width:300px">
         <input type="number" class="form-control lc-input" id="detail-weight"
@@ -131,10 +174,9 @@
 {% endblock %}
 
 {% block scripts %}
-{% if images | length > 1 %}
+{% if images | length > 1 and not multi_variant %}
 <script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
 <script>
-  // Only init if images > 1
   const thumbSwiper = new Swiper('#swiperThumb', {
     spaceBetween: 8,
     slidesPerView: 'auto',
@@ -151,27 +193,28 @@
 {% endif %}
 
 <script>
-const _detailProduct = {
-  id:            {{ product.id }},
-  name:          {{ product.name | tojson }},
-  price:         {{ product.price }},
+let _detailProduct = {
+  id:             {{ product.id }},
+  name:           {{ product.name | tojson }},
+  price:          {{ product.price }},
   price_per_unit: {{ product.price_per_unit or 'null' }},
-  base_unit:     {{ product.base_unit | tojson if product.base_unit else 'null' }},
+  base_unit:      {{ product.base_unit | tojson if product.base_unit else 'null' }},
   sold_by_weight: {{ 'true' if product.sold_by_weight else 'false' }},
-  image_url:     {{ (images[0].filename if images else None) | tojson }},
-  available_qty: {{ available_qty }},
+  image_url:      {{ (images[0].filename if images else None) | tojson }},
+  available_qty:  {{ available_qty }},
+  variant_attrs:  null,
 };
 
-function updateDetailStockWarning(val) {
+function updateDetailStockWarning(val, overrideAvail) {
   const qty   = parseFloat(val) || 0;
-  const avail = _detailProduct.available_qty;
+  const avail = (overrideAvail !== undefined) ? overrideAvail : _detailProduct.available_qty;
   const el    = document.getElementById('detail-stock-warning');
   if (!el) return;
   if (avail <= 0) {
     el.textContent = 'Out of stock - available on order (longer lead time)';
     el.style.display = '';
   } else if (qty > avail) {
-    const extra = (qty - avail).toFixed(_detailProduct.sold_by_weight ? 0 : 0);
+    const extra = (qty - avail).toFixed(0);
     el.textContent = `Only ${avail} in stock - ${extra} will be ordered (longer lead time)`;
     el.style.display = '';
   } else {
@@ -179,7 +222,6 @@ function updateDetailStockWarning(val) {
   }
 }
 
-// Show warning immediately on page load if out of stock
 document.addEventListener('DOMContentLoaded', () => updateDetailStockWarning(1));
 
 function _showToast(msg) {
@@ -194,10 +236,20 @@ function addItemDetail() {
   if (qty < 1) return;
   const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
   const existing = cart.find(i => i.id === _detailProduct.id && !i.sold_by_weight);
-  if (existing) { existing.qty += qty; }
-  else { cart.push({id: _detailProduct.id, name: _detailProduct.name, price: _detailProduct.price,
-                    qty, sold_by_weight: false, image_url: _detailProduct.image_url,
-                    available_qty: _detailProduct.available_qty}); }
+  if (existing) {
+    existing.qty += qty;
+  } else {
+    cart.push({
+      id: _detailProduct.id,
+      name: _detailProduct.name,
+      price: _detailProduct.price,
+      qty,
+      sold_by_weight: false,
+      image_url: _detailProduct.image_url,
+      available_qty: _detailProduct.available_qty,
+      variant_attrs: _detailProduct.variant_attrs || null,
+    });
+  }
   localStorage.setItem('lc_cart', JSON.stringify(cart));
   if (window._updateCartBadge) window._updateCartBadge();
   _showToast(`${_detailProduct.name} added to cart`);
@@ -217,15 +269,126 @@ function addWeightItemDetail() {
   if (!grams || grams <= 0) { alert('Enter a quantity'); return; }
   const price = (grams * _detailProduct.price_per_unit) / (_detailProduct.base_unit === 'kg' ? 1000 : 1);
   const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
-  cart.push({id: _detailProduct.id, name: _detailProduct.name,
-             price: parseFloat(price.toFixed(2)), qty: grams,
-             sold_by_weight: true, base_unit: _detailProduct.base_unit,
-             display: `${grams}${_detailProduct.base_unit}`,
-             image_url: _detailProduct.image_url,
-             available_qty: _detailProduct.available_qty});
+  cart.push({
+    id: _detailProduct.id,
+    name: _detailProduct.name,
+    price: parseFloat(price.toFixed(2)),
+    qty: grams,
+    sold_by_weight: true,
+    base_unit: _detailProduct.base_unit,
+    display: `${grams}${_detailProduct.base_unit}`,
+    image_url: _detailProduct.image_url,
+    available_qty: _detailProduct.available_qty,
+    variant_attrs: _detailProduct.variant_attrs || null,
+  });
   localStorage.setItem('lc_cart', JSON.stringify(cart));
   if (input) input.value = '';
+  if (window._updateCartBadge) window._updateCartBadge();
   _showToast(`${grams}${_detailProduct.base_unit} ${_detailProduct.name} added`);
 }
+
+{% if family_variants %}
+// ── Variant picker ────────────────────────────────────────────────────────────
+const _fVariants = {{ family_variants | tojson }};
+const _fAttrs    = {{ family_attrs | tojson }};
+let _selectedVals = {{ current_variant_attrs | tojson }};
+
+function _getVariantForSel(sel) {
+  return _fVariants.find(v =>
+    Object.entries(sel).every(([dim, vid]) =>
+      v.attributes.some(a => a.attr_name === dim && a.val_id === vid)
+    )
+  );
+}
+
+function _isPossible(dimName, valId) {
+  const test = Object.assign({}, _selectedVals, {[dimName]: valId});
+  return !!_getVariantForSel(test);
+}
+
+function _selectPill(dimName, valId) {
+  _selectedVals[dimName] = valId;
+  let variant = _getVariantForSel(_selectedVals);
+  if (!variant) {
+    // Nearest valid: fix this dimension, take the first variant that has it
+    variant = _fVariants.find(v => v.attributes.some(a => a.attr_name === dimName && a.val_id === valId));
+    if (variant) {
+      variant.attributes.forEach(a => { _selectedVals[a.attr_name] = a.val_id; });
+    }
+  }
+  if (variant) _applyVariant(variant);
+  _updatePills();
+}
+
+function _applyVariant(variant) {
+  // Build variant_attrs display string
+  const vaStr = Object.entries(_selectedVals).map(([dim, vid]) => {
+    const d = _fAttrs.find(x => x.name === dim);
+    const v = d?.values.find(x => x.val_id === vid);
+    return dim + ': ' + (v?.attr_value || vid);
+  }).join(', ');
+
+  // Update _detailProduct so addItemDetail / addWeightItemDetail use new data
+  _detailProduct = {
+    id:             variant.id,
+    name:           variant.name,
+    price:          variant.price,
+    price_per_unit: variant.price_per_unit,
+    base_unit:      variant.base_unit,
+    sold_by_weight: variant.sold_by_weight,
+    image_url:      variant.image_url,
+    available_qty:  variant.available_qty,
+    variant_attrs:  vaStr || null,
+  };
+
+  // Image
+  const imgEl = document.getElementById('v-main-img');
+  if (imgEl && variant.image_url) imgEl.src = '/product_images/' + variant.image_url;
+
+  // Variant subtitle (shown when family_name heading is displayed)
+  const nameEl = document.getElementById('v-name');
+  if (nameEl) nameEl.textContent = variant.name;
+
+  // Price
+  const priceEl = document.getElementById('v-price');
+  if (priceEl) {
+    priceEl.textContent = (variant.sold_by_weight && variant.price_per_unit)
+      ? 'R' + variant.price_per_unit.toFixed(2) + '/' + variant.base_unit
+      : 'R' + variant.price.toFixed(2);
+  }
+
+  // Stock warning
+  const qtyVal = variant.sold_by_weight
+    ? (parseFloat(document.getElementById('detail-weight')?.value) || 0)
+    : (parseInt(document.getElementById('detail-qty')?.value) || 1);
+  updateDetailStockWarning(qtyVal, variant.available_qty);
+
+  history.replaceState({}, '', '/farmshop/products/' + variant.id);
+}
+
+function _updatePills() {
+  _fAttrs.forEach(dim => {
+    dim.values.forEach(val => {
+      const btn = document.getElementById('vpill-' + dim.name + '-' + val.val_id);
+      if (!btn) return;
+      const possible = _isPossible(dim.name, val.val_id);
+      const selected = _selectedVals[dim.name] === val.val_id;
+      btn.disabled = !possible;
+      btn.className = 'btn btn-sm vpill ' + (selected ? 'lc-btn-primary' : possible ? 'btn-outline-secondary' : 'btn-secondary');
+    });
+  });
+}
+
+// Init: set variant_attrs on _detailProduct for the currently displayed variant
+(function () {
+  const vaStr = Object.entries(_selectedVals).map(([dim, vid]) => {
+    const d = _fAttrs.find(x => x.name === dim);
+    const v = d?.values.find(x => x.val_id === vid);
+    return dim + ': ' + (v?.attr_value || vid);
+  }).join(', ');
+  if (vaStr) _detailProduct.variant_attrs = vaStr;
+  _updatePills();
+})();
+{% endif %}
 </script>
 {% endblock %}

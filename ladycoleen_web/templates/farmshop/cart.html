@@ -63,6 +63,7 @@ function renderCart() {
       ${imgHtml}
       <div class="flex-grow-1">
         <div class="fw-semibold">${item.name}</div>
+        ${item.variant_attrs ? `<div class="text-muted" style="font-size:.75rem">${item.variant_attrs}</div>` : ''}
         <div class="text-muted small">${item.sold_by_weight ? item.display || item.qty+item.base_unit : 'x'+item.qty} - R${item.price.toFixed(2)}</div>
         ${stockWarning}
       </div>
