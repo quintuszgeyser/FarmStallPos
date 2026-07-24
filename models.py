@@ -61,7 +61,6 @@ class Product(db.Model):
     scale_open_price     = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     scale_msg1           = db.Column(db.String(80), nullable=True)         # extra message text
     scale_msg2           = db.Column(db.String(80), nullable=True)
-    scale_prohibit       = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     # Consignment: supplier owes when item is sold, not when received
     is_consignment       = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     settlement_basis     = db.Column(db.String(20), nullable=False, default='FIXED_COST', server_default="'FIXED_COST'")

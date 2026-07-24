@@ -197,7 +197,6 @@ def api_products_post():
     except Exception:
         return jsonify({'error': 'Invalid scale field value'}), 400
     scale_open_price = bool(data.get('scale_open_price', False))
-    scale_prohibit   = bool(data.get('scale_prohibit', False))
 
     try:
         stat_unit_size = float(data['stat_unit_size']) if data.get('stat_unit_size') not in (None, '') else None
@@ -238,7 +237,7 @@ def api_products_post():
         sync_to_scale=sync_to_scale,
         scale_tare=scale_tare, scale_shelf_life=scale_shelf_life,
         scale_pack_qty=scale_pack_qty, scale_open_price=scale_open_price,
-        scale_msg1=scale_msg1, scale_msg2=scale_msg2, scale_prohibit=scale_prohibit,
+        scale_msg1=scale_msg1, scale_msg2=scale_msg2,
         stat_unit_size=stat_unit_size,
         is_produced=is_produced, batch_size=batch_size, stock_unit=stock_unit,
         is_consignment=is_consignment, settlement_basis=settlement_basis,
@@ -388,8 +387,6 @@ def api_products_update():
         p.sync_to_scale = new_sync
     if 'scale_open_price' in data:
         p.scale_open_price = bool(data['scale_open_price'])
-    if 'scale_prohibit' in data:
-        p.scale_prohibit = bool(data['scale_prohibit'])
     for sf in ('scale_tare', 'scale_shelf_life', 'scale_msg1', 'scale_msg2'):
         if sf in data:
             try:
@@ -407,7 +404,7 @@ def api_products_update():
     # Any scale field change invalidates the hash so sync service picks it up
     if any(sf in data for sf in ('sync_to_scale','scale_tare','scale_shelf_life',
                                   'scale_pack_qty','scale_open_price','scale_msg1',
-                                  'scale_msg2','scale_prohibit','name','price','price_per_unit')):
+                                  'scale_msg2','name','price','price_per_unit')):
         p.scale_hash = None  # force resync
 
     if 'recipe_lines' in data:

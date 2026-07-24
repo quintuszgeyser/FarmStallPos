@@ -96,7 +96,6 @@ def _compute_hash(p) -> str:
         str(1 if p.scale_open_price else 0),
         str((p.scale_msg1 or '').strip()[:20]),
         str((p.scale_msg2 or '').strip()[:20]),
-        str(1 if p.scale_prohibit else 0),
     ]
     return hashlib.sha256('|'.join(parts).encode()).hexdigest()
 
@@ -132,7 +131,6 @@ def _build_product_status(p) -> dict:
         'scale_tare':    float(p.scale_tare) if p.scale_tare else 0,
         'scale_shelf_life': p.scale_shelf_life or 0,
         'scale_open_price': p.scale_open_price,
-        'scale_prohibit': p.scale_prohibit,
         'scale_msg1':    p.scale_msg1 or '',
         'scale_msg2':    p.scale_msg2 or '',
         'last_synced_at':   p.scale_last_synced_at.isoformat() if p.scale_last_synced_at else None,

@@ -629,7 +629,6 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'scale_open_price':        p.scale_open_price,
         'scale_msg1':              p.scale_msg1 or '',
         'scale_msg2':              p.scale_msg2 or '',
-        'scale_prohibit':          p.scale_prohibit,
         # Barcode config - used by POS scanner to decode scale labels
         'scale_barcode_prefix':    20,    # scale always uses prefix 20
         'scale_barcode_format':    'price_cents',  # VVVVVV = total price in cents

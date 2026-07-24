@@ -1286,7 +1286,7 @@ def strong_migrate():
         # Migrate existing integer msg fields to varchar if needed
         pg_try("ALTER TABLE products ALTER COLUMN scale_msg1 TYPE VARCHAR(80) USING scale_msg1::VARCHAR")
         pg_try("ALTER TABLE products ALTER COLUMN scale_msg2 TYPE VARCHAR(80) USING scale_msg2::VARCHAR")
-        pg_try("ALTER TABLE products ADD COLUMN scale_prohibit BOOLEAN NOT NULL DEFAULT FALSE")
+        pg_try("ALTER TABLE products DROP COLUMN IF EXISTS scale_prohibit")
         pg_try("ALTER TABLE products ADD COLUMN scale_last_synced_at TIMESTAMPTZ")
         pg_try("ALTER TABLE products ADD COLUMN scale_last_sync_status VARCHAR(20)")
         pg_try("ALTER TABLE products ADD COLUMN scale_last_sync_error TEXT")

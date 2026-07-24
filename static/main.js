@@ -684,7 +684,7 @@ function _productSortKey(p, col) {
     case 'price':   return parseFloat(p.price || p.price_per_unit || 0);
     case 'barcode': return (p.barcode || '').toLowerCase();
     case 'flags': {
-      const fl = [p.is_produced, p.is_prepared, p.sync_to_scale, p.is_for_sale, p.is_available_online, p.auto_price, p.is_consignment, p.scale_open_price, p.scale_prohibit];
+      const fl = [p.is_produced, p.is_prepared, p.sync_to_scale, p.is_for_sale, p.is_available_online, p.auto_price, p.is_consignment, p.scale_open_price];
       const bitmask = fl.reduce((acc, f, i) => acc | (f ? (1 << i) : 0), 0);
       return fl.filter(Boolean).length * 32 + bitmask; // same combo → same key, count drives ordering
     }
@@ -878,7 +878,6 @@ function renderProductsCards() {
         ${p.auto_price          ? `<i class="bi bi-percent pf-icon text-info"         title="Auto-price from markup"></i>`     : ''}
         ${p.is_consignment      ? `<i class="bi bi-handshake pf-icon text-secondary"  title="Consignment item"></i>`           : ''}
         ${p.scale_open_price    ? `<i class="bi bi-pencil-square pf-icon text-warning" title="Scale: open price"></i>`         : ''}
-        ${p.scale_prohibit      ? `<i class="bi bi-slash-circle pf-icon text-danger"  title="Scale: prohibited"></i>`          : ''}
       </div>
       <div class="pr-more-wrap">
         <button class="pr-more-btn" title="Actions">⋮</button>
@@ -2013,7 +2012,6 @@ function openProductEditor(p) {
   const _sm1 = document.getElementById('p-scale-msg1'); if (_sm1) _sm1.value = p?.scale_msg1 || '';
   const _sm2 = document.getElementById('p-scale-msg2'); if (_sm2) _sm2.value = p?.scale_msg2 || '';
   if (document.getElementById('p-scale-open-price')) document.getElementById('p-scale-open-price').checked = !!p?.scale_open_price;
-  if (document.getElementById('p-scale-prohibit')) document.getElementById('p-scale-prohibit').checked = !!p?.scale_prohibit;
   // Show sync status if editing
   const statusRow = document.getElementById('scale-sync-status-row');
   if (statusRow && p) {
@@ -3125,7 +3123,6 @@ function buildProductPayload() {
     scale_msg1:        scaleMsg1Raw || null,
     scale_msg2:        scaleMsg2Raw || null,
     scale_open_price:  document.getElementById('p-scale-open-price')?.checked || false,
-    scale_prohibit:    document.getElementById('p-scale-prohibit')?.checked || false,
     // Batch-produce (recipe only)
     ...(type === 'recipe' ? {
       is_produced:  document.getElementById('p-is-produced')?.checked || false,

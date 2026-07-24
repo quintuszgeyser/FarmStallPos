@@ -38,7 +38,7 @@ ALL_COLS = [
 ]
 
 SCALE_RELEVANT = {'name', 'price', 'price_per_unit', 'scale_tare', 'scale_shelf_life',
-                  'scale_open_price', 'scale_msg1', 'scale_msg2', 'scale_prohibit', 'sold_by_weight'}
+                  'scale_open_price', 'scale_msg1', 'scale_msg2', 'sold_by_weight'}
 
 
 def _parse_bool(val, default=True):
