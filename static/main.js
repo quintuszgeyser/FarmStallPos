@@ -2110,7 +2110,11 @@ function openProductEditor(p) {
 
   document.getElementById('productEditorTitle').textContent = p ? `Edit - ${p.name}` : 'New Product';
   // Reset calculator
-  hide(document.getElementById('calc-result'));
+  _lastCalcWac = 0;
+  const _wacStatusEl = document.getElementById('calc-wac-status');
+  const _wacCostEl   = document.getElementById('calc-avg-cost');
+  if (_wacStatusEl) _wacStatusEl.textContent = '';
+  if (_wacCostEl)   _wacCostEl.textContent   = '—';
   initCalcMarkup(p);
   updateProductTypeSections(p?.product_type ?? 'stock_item');
   // Sync batch-size visibility after type sections are built
@@ -2145,6 +2149,23 @@ function openProductEditor(p) {
   // Calculator only makes sense when editing - needs existing stock batches to compute cost
   const calcSection = document.getElementById('section-calc');
   if (calcSection) calcSection.style.display = isEdit ? '' : 'none';
+  // Auto-fetch WAC for live price↔markup linking
+  if (p?.id) {
+    const _markup = parseFloat(document.getElementById('calc-markup')?.value || '') || _globalMarkupPct;
+    const _statusEl = document.getElementById('calc-wac-status');
+    const _costEl   = document.getElementById('calc-avg-cost');
+    if (_statusEl) _statusEl.textContent = 'loading…';
+    api(`/api/products/${p.id}/suggested_price?markup=${_markup}`)
+      .then(j => {
+        _lastCalcWac = j.wac || 0;
+        if (_costEl)   _costEl.textContent   = _lastCalcWac > 0 ? `R${_lastCalcWac.toFixed(4)}` : '—';
+        if (_statusEl) _statusEl.textContent = '';
+      })
+      .catch(() => {
+        _lastCalcWac = 0;
+        if (_statusEl) _statusEl.textContent = '(no stock)';
+      });
+  }
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal'));
   modal.show();
   // Re-apply barcode after modal show so scanner input during open doesn't stick
@@ -2649,6 +2670,9 @@ document.getElementById('p-is-produced')?.addEventListener('change', () => {
   on ? show(document.getElementById('section-unit-type-early')) : hide(document.getElementById('section-unit-type-early'));
 });
 
+let _lastCalcWac = 0;         // WAC (per base unit) fetched when product editor opens
+let _syncingPriceMarkup = false; // guard against ping-pong between price ↔ markup inputs
+
 // Pre-fill calc markup from settings when modal opens
 function initCalcMarkup(product) {
   const calcMarkup = document.getElementById('calc-markup');
@@ -2661,104 +2685,45 @@ function initCalcMarkup(product) {
   }
 }
 
-document.getElementById('btn-calc-price')?.addEventListener('click', async () => {
-  const id     = parseInt(document.getElementById('p-id').value || '0', 10);
-  const type   = document.getElementById('p-type').value;
-  const markup = parseFloat(document.getElementById('calc-markup').value || '40') || 40;
-
-  const resultEl     = document.getElementById('calc-result');
-  const avgCostEl    = document.getElementById('calc-avg-cost');
-  const suggestedEl  = document.getElementById('calc-suggested');
-  const breakdownEl  = document.getElementById('calc-breakdown-table');
-  const suggestionsEl= document.getElementById('calc-suggestions-row');
-
-  // If not saved yet, calculate live from current recipe lines in the editor
-  if (!id) {
-    const lines = getRecipeLinesForSubmit();
-    if (lines.length === 0) return toast('Add at least one ingredient first', 'warning');
-    let totalCost = 0;
-    const breakdown = [];
-    lines.forEach(ln => {
-      const ingr = STATE.products.find(p => p.id === ln.ingredient_id);
-      const cost = getIngredientCost(ln.ingredient_id, ln.qty_base);
-      totalCost += cost;
-      breakdown.push({ label: ingr?.name || `#${ln.ingredient_id}`, line_cost: cost });
-    });
-    if (totalCost === 0) return toast('No stock prices found - receive stock for ingredients first', 'warning');
-    const suggestedPrice = totalCost * (1 + markup / 100);
-    show(resultEl);
-    avgCostEl.textContent   = `R${totalCost.toFixed(4)}`;
-    suggestedEl.textContent = `→ R${fmt(suggestedPrice)} at ${markup}% markup`;
-    document.getElementById('btn-calc-apply').dataset.price = suggestedPrice.toFixed(2);
-    breakdownEl.innerHTML = '';
-    breakdown.forEach(l => {
-      const tr = document.createElement('tr');
-      tr.innerHTML = `<td class="text-muted small">${l.label}</td><td class="text-end small">R${l.line_cost.toFixed(4)}</td>`;
-      breakdownEl.appendChild(tr);
-    });
-    const sEl = document.getElementById('calc-suggestions-row');
-    if (sEl) sEl.innerHTML = [20,30,40,50,60,70,100,150,200].map(pct => {
-      const p = totalCost * (1 + pct/100);
-      return `<button class="btn btn-outline-secondary btn-sm me-1 mb-1" data-apply-price="${p.toFixed(2)}">${pct}% → R${fmt(p)}</button>`;
-    }).join('');
-    sEl?.querySelectorAll('[data-apply-price]').forEach(btn => {
-      btn.addEventListener('click', () => applyCalculatedPrice(parseFloat(btn.dataset.applyPrice)));
-    });
-    return;
-  }
-
-  try {
-    const j = await api(`/api/products/${id}/fifo_price?markup=${markup}`);
-
-    if (j.warning) { toast(j.warning, 'warning', 4000); return; }
-
-    show(resultEl);
-    avgCostEl.textContent   = `R${j.avg_cost.toFixed(4)}`;
-    suggestedEl.textContent = `→ R${fmt(j.suggested_price)} at ${markup}% markup`;
-    document.getElementById('btn-calc-apply').dataset.price = j.suggested_price;
-
-    // Breakdown table
-    breakdownEl.innerHTML = '';
-    j.lines.forEach(l => {
-      const tr = document.createElement('tr');
-      const detail = l.line_cost != null
-        ? `${l.qty_per_sale}${l.base_unit} × R${l.avg_cost_per_unit.toFixed(4)} = R${l.line_cost.toFixed(4)}`
-        : `avg R${l.avg_cost_per_unit.toFixed(4)}/${l.base_unit || 'unit'} (${l.total_qty} available)`;
-      tr.innerHTML = `<td class="text-muted small">${l.label}</td><td class="text-end small">${detail}</td>`;
-      breakdownEl.appendChild(tr);
-    });
-
-    // Save the margin on the product immediately
-    await api('/api/products/update', {
-      method: 'POST',
-      body: JSON.stringify({ id, margin_pct: markup })
-    });
-
-  } catch (e) { toast(e.message, 'error'); }
-});
-
-function applyCalculatedPrice(price) {
-  const productType      = document.getElementById('p-type')?.value;
-  const unitType         = document.getElementById('p-unit-type')?.value || 'weight';
-  const isWeightOrVolume = productType === 'stock_item' && (unitType === 'weight' || unitType === 'volume');
-  const el = document.getElementById('p-price');
-  if (!el) return;
-
-  if (isWeightOrVolume) {
-    const priceUnit    = document.getElementById('p-price-unit')?.value || UNITS[unitType]?.base || 'unit';
-    const conv         = UNITS[unitType]?.toBase[priceUnit] || 1;
-    const displayPrice = price * conv;
-    el.value = displayPrice.toFixed(4);
-    toast(`Selling price set to R${displayPrice.toFixed(4)} per ${priceUnit}`, 'success', 2000);
-  } else {
-    el.value = price.toFixed(2);
-    toast(`Selling price set to R${price.toFixed(2)}`, 'success', 2000);
-  }
+// ── Price ↔ Markup live link ─────────────────────────────────────────────────
+// Shared helper: returns the unit conversion factor (base→display) for p-price.
+// For weight/volume: e.g. base=g, display=kg → conv=1000 (R0.4/g displayed as R400/kg).
+// For unit products: conv=1.
+function _priceConv() {
+  const productType = document.getElementById('p-type')?.value;
+  const unitType    = document.getElementById('p-unit-type')?.value || 'weight';
+  if (productType !== 'stock_item' || (unitType !== 'weight' && unitType !== 'volume')) return 1;
+  const priceUnit = document.getElementById('p-price-unit')?.value || UNITS[unitType]?.base || 'unit';
+  return UNITS[unitType]?.toBase[priceUnit] || 1;
 }
 
-document.getElementById('btn-calc-apply')?.addEventListener('click', (e) => {
-  const price = parseFloat(e.currentTarget.dataset.price || '0');
-  if (price > 0) applyCalculatedPrice(price);
+
+// Markup % → Price (fires when user types in calc-markup)
+document.getElementById('calc-markup')?.addEventListener('input', () => {
+  if (_syncingPriceMarkup || _lastCalcWac <= 0) return;
+  const markup = parseFloat(document.getElementById('calc-markup').value || '');
+  if (isNaN(markup)) return;
+  const priceBase    = _lastCalcWac * (1 + markup / 100);
+  const priceDisplay = priceBase * _priceConv();
+  const priceEl = document.getElementById('p-price');
+  if (!priceEl) return;
+  _syncingPriceMarkup = true;
+  priceEl.value = priceDisplay.toFixed(priceDisplay < 1 ? 4 : 2);
+  _syncingPriceMarkup = false;
+});
+
+// Price → Markup % (fires when user types in p-price)
+document.getElementById('p-price')?.addEventListener('input', () => {
+  if (_syncingPriceMarkup || _lastCalcWac <= 0) return;
+  const priceDisplay = parseFloat(document.getElementById('p-price').value || '');
+  if (isNaN(priceDisplay) || priceDisplay <= 0) return;
+  const priceBase = priceDisplay / _priceConv();
+  const markup    = (priceBase / _lastCalcWac - 1) * 100;
+  const markupEl  = document.getElementById('calc-markup');
+  if (!markupEl) return;
+  _syncingPriceMarkup = true;
+  markupEl.value = markup.toFixed(1);
+  _syncingPriceMarkup = false;
 });
 
 // ── Sell Packages ──

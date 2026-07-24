@@ -286,6 +286,7 @@ def api_products_update():
     if 'price' in data and data['price'] is not None:
         try: p.price = float(data['price'])
         except Exception: return jsonify({'error': 'Invalid price'}), 400
+        p.pending_price = None
 
     if 'stock_qty' in data and data['stock_qty'] is not None:
         try: p.stock_qty = int(data['stock_qty'])
@@ -302,6 +303,8 @@ def api_products_update():
         if field in data:
             try: setattr(p, field, float(data[field]) if data[field] is not None else None)
             except Exception: return jsonify({'error': f'Invalid {field}'}), 400
+    if 'price_per_unit' in data and data['price_per_unit'] is not None:
+        p.pending_price_per_unit = None
 
     if 'package_size' in data:
         try:

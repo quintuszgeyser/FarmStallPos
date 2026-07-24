@@ -341,6 +341,9 @@ def _auto_price_products(product_ids, min_drift_pct=0):
                 if min_drift_pct > 0 and cost > 0 and current > 0:
                     actual_markup = (current / cost - 1) * 100
                     if abs(actual_markup - markup) <= _D(str(min_drift_pct)):
+                        if p.pending_price_per_unit is not None:
+                            p.pending_price_per_unit = None
+                            changed = True
                         continue
                 if abs(new_price - current) > _D('0.0001'):
                     p.pending_price_per_unit = new_price
@@ -351,6 +354,9 @@ def _auto_price_products(product_ids, min_drift_pct=0):
                 if min_drift_pct > 0 and cost > 0 and current > 0:
                     actual_markup = (current / cost - 1) * 100
                     if abs(actual_markup - markup) <= _D(str(min_drift_pct)):
+                        if p.pending_price is not None:
+                            p.pending_price = None
+                            changed = True
                         continue
                 if abs(new_price_r - current) > _D('0.005'):
                     p.pending_price = new_price_r

@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request
 
 from helpers import require_role, current_user, get_or_create_category
-from models import db, Product, Category, ProductBulkEditRun
+from models import db, Product, Category, ProductBulkEditRun, StockBatch
 
 bp = Blueprint('bulk', __name__)
 logger = logging.getLogger('pos')
@@ -294,6 +294,45 @@ def api_bulk_preview():
                         'field': field, 'label': info.get('label', field),
                         'op': 'replace', 'old': old_val, 'new': new_val,
                     })
+        # Show derived price/markup changes in preview
+        action_fields = {a.get('field') for a in actions if a.get('op') == 'set'}
+        setting_price  = bool(action_fields & {'price', 'price_per_unit'})
+        setting_markup = 'margin_pct' in action_fields
+        if (setting_price and not setting_markup) or (setting_markup and not setting_price):
+            batches = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).all()
+            if batches:
+                total_qty  = sum(float(b.qty_remaining_base) for b in batches)
+                total_cost = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches)
+                if total_qty > 0 and total_cost > 0:
+                    wac = total_cost / total_qty
+                    if setting_price and not setting_markup:
+                        if p.sold_by_weight and p.price_per_unit is not None and wac > 0:
+                            new_ppu = next((a.get('value') for a in actions if a.get('field') == 'price_per_unit'), None)
+                            px = float(new_ppu) if new_ppu is not None else float(p.price_per_unit or 0)
+                            new_m = round((px / wac - 1) * 100, 2) if wac > 0 else None
+                        else:
+                            new_p = next((a.get('value') for a in actions if a.get('field') == 'price'), None)
+                            px = float(new_p) if new_p is not None else float(p.price or 0)
+                            new_m = round((px / wac - 1) * 100, 2) if wac > 0 else None
+                        if new_m is not None and new_m != float(p.margin_pct or 0):
+                            product_changes.append({
+                                'field': 'margin_pct', 'label': 'Markup % (derived)',
+                                'op': 'set', 'old': float(p.margin_pct) if p.margin_pct else None, 'new': new_m,
+                            })
+                    elif setting_markup and not setting_price:
+                        new_m = next((a.get('value') for a in actions if a.get('field') == 'margin_pct'), None)
+                        if new_m is not None:
+                            markup = float(new_m)
+                            np = round(wac * (1 + markup / 100), 4)
+                            field_key = 'price_per_unit' if (p.sold_by_weight and p.unit_type in ('weight', 'volume')) else 'price'
+                            old_px = float(getattr(p, field_key) or 0)
+                            if abs(np - old_px) > 0.005:
+                                lbl = 'Price per kg/L (derived)' if field_key == 'price_per_unit' else 'Price (derived)'
+                                product_changes.append({
+                                    'field': field_key, 'label': lbl,
+                                    'op': 'set', 'old': old_px, 'new': round(np, 2),
+                                })
+
         if product_changes:
             changes.append({
                 'id': p.id, 'name': p.name,
@@ -343,12 +382,51 @@ def api_bulk_apply():
             else:
                 before[str(p.id)][field] = getattr(p, field, None)
 
+    # Determine which price/markup fields are explicitly being set
+    action_fields = {a.get('field') for a in actions if a.get('op') == 'set'}
+    setting_price    = bool(action_fields & {'price', 'price_per_unit'})
+    setting_markup   = 'margin_pct' in action_fields
+    derive_markup    = setting_price and not setting_markup
+    derive_price     = setting_markup and not setting_price
+
     changed_count = 0
     for p in matched:
         changed = False
         for action in actions:
             if _apply_action(p, action):
                 changed = True
+
+        # Derive the paired field from WAC when only one side is set
+        if derive_markup or derive_price:
+            batches = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).all()
+            if batches:
+                total_qty  = sum(float(b.qty_remaining_base) for b in batches)
+                total_cost = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches)
+                if total_qty > 0 and total_cost > 0:
+                    wac = total_cost / total_qty
+                    if derive_markup:
+                        # price was set — compute the implied markup from WAC
+                        if p.sold_by_weight and p.price_per_unit is not None and wac > 0:
+                            p.margin_pct = round((float(p.price_per_unit) / wac - 1) * 100, 2)
+                            changed = True
+                        elif p.price is not None and wac > 0:
+                            p.margin_pct = round((float(p.price) / wac - 1) * 100, 2)
+                            changed = True
+                    elif derive_price and p.margin_pct is not None:
+                        # margin_pct was set — compute the price from WAC
+                        markup = float(p.margin_pct)
+                        new_price = wac * (1 + markup / 100)
+                        if p.sold_by_weight and p.unit_type in ('weight', 'volume'):
+                            p.price_per_unit = round(new_price, 4)
+                        else:
+                            p.price = round(new_price, 2)
+                        changed = True
+
+        # Always clear pending price when price is explicitly set
+        if setting_price:
+            p.pending_price = None
+            p.pending_price_per_unit = None
+
         if changed:
             changed_count += 1
 
