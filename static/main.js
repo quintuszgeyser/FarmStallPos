@@ -2992,6 +2992,7 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
     await _uploadProductImagesIfSelected(id);
     await loadProducts();
     loadIngredients();
+    loadPendingPricesBanner();
     let msg = 'Product updated.';
     if (wasForSale && !nowForSale)  msg = `"${payload.name}" moved to the Ingredients tab.`;
     if (!wasForSale && nowForSale)  msg = `"${payload.name}" moved back to For Sale.`;
