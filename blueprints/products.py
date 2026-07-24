@@ -17,12 +17,33 @@ from helpers import (
 )
 from models import (
     db,
-    Product, ProductImage, RecipeLine, Category, SubCategory,
+    Product, ProductImage, RecipeLine, Category, SubCategory, ProductFamily,
     StockBatch, StockAdjustment, Purchase, Sale, ScalePluLog,
 )
 
 bp = Blueprint('products', __name__)
 logger = logging.getLogger('pos')
+
+
+def _resolve_family(family_id, family_name):
+    """Return a ProductFamily id (existing or newly created), or None."""
+    if family_id:
+        return family_id
+    if family_name:
+        import re
+        name = family_name.strip()
+        slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        fam = ProductFamily.query.filter_by(slug=slug).first()
+        if not fam:
+            # ensure slug uniqueness
+            base, n = slug, 2
+            while ProductFamily.query.filter_by(slug=slug).first():
+                slug = f'{base}-{n}'; n += 1
+            fam = ProductFamily(name=name, slug=slug)
+            db.session.add(fam)
+            db.session.flush()
+        return fam.id
+    return None
 
 
 def _resolve_sub_category(category_id, sub_category_id, sub_category_name):
@@ -246,7 +267,10 @@ def api_products_post():
         data.get('sub_category_id') or None,
         data.get('sub_category_name') or None,
     )
-    product_family_id = data.get('product_family_id') or None
+    product_family_id = _resolve_family(
+        data.get('product_family_id') or None,
+        data.get('product_family_name') or None,
+    )
     is_default_variant = bool(data.get('is_default_variant', False))
 
     p = Product(
@@ -366,8 +390,11 @@ def api_products_update():
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
 
-    if 'product_family_id' in data:
-        p.product_family_id = data['product_family_id'] or None
+    if 'product_family_id' in data or 'product_family_name' in data:
+        p.product_family_id = _resolve_family(
+            data.get('product_family_id') or None,
+            data.get('product_family_name') or None,
+        )
     if 'is_default_variant' in data:
         p.is_default_variant = bool(data['is_default_variant'])
 

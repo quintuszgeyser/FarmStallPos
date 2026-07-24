@@ -146,7 +146,7 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2000);
 }
 
-// ── Category + Sub-category filter (multi-select, client-side) ──
+// ── Category + Sub-category filter (single-select, client-side) ──
 (function () {
   const bar    = document.getElementById('category-filter');
   const subBar = document.getElementById('subcategory-filter');
@@ -156,8 +156,8 @@ function showToast(msg) {
   const subPills = subBar ? Array.from(subBar.querySelectorAll('.lc-subcat-pill')) : [];
   const cols     = Array.from(document.querySelectorAll('.lc-product-col'));
   const emptyMsg = document.getElementById('no-category-msg');
-  const selected    = new Set();  // category ids
-  let   selectedSub = null;       // sub-category id or null
+  let   selectedCat = null;   // category id or null (single-select)
+  let   selectedSub = null;   // sub-category id or null
 
   const setActive = (pill, on) => {
     pill.classList.toggle('lc-btn-primary', on);
@@ -165,15 +165,13 @@ function showToast(msg) {
   };
 
   function apply() {
-    // Show/hide sub-category bar — only when exactly one cat selected and it has sub-cats
+    // Show/hide sub-category bar — only when a category is selected and it has sub-cats
     if (subBar) {
-      if (selected.size === 1) {
-        const catId = [...selected][0];
-        const hasSubs = subPills.some(p => parseInt(p.dataset.subcatCat || '0', 10) === catId);
+      if (selectedCat !== null) {
+        const hasSubs = subPills.some(p => parseInt(p.dataset.subcatCat || '0', 10) === selectedCat);
         subBar.style.display = hasSubs ? '' : 'none';
-        // Hide pills from other categories
         subPills.forEach(p => {
-          p.style.display = parseInt(p.dataset.subcatCat || '0', 10) === catId || p.dataset.subcat === 'all' ? '' : 'none';
+          p.style.display = parseInt(p.dataset.subcatCat || '0', 10) === selectedCat || p.dataset.subcat === 'all' ? '' : 'none';
         });
       } else {
         subBar.style.display = 'none';
@@ -184,33 +182,33 @@ function showToast(msg) {
     }
 
     const allPill = bar.querySelector('[data-cat="all"]');
-    setActive(allPill, selected.size === 0);
+    setActive(allPill, selectedCat === null);
+    pills.forEach(p => { if (p.dataset.cat !== 'all') setActive(p, parseInt(p.dataset.cat, 10) === selectedCat); });
+
     let shown = 0;
     cols.forEach(col => {
       const cid  = parseInt(col.dataset.categoryId || '0', 10);
       const scid = parseInt(col.dataset.subCategoryId || '0', 10);
-      const catOk = selected.size === 0 || selected.has(cid);
+      const catOk = selectedCat === null || cid === selectedCat;
       const subOk = !selectedSub || scid === selectedSub;
       const show = catOk && subOk;
       col.style.display = show ? '' : 'none';
       if (show) shown++;
     });
-    if (emptyMsg) emptyMsg.style.display = (shown === 0 && (selected.size > 0 || selectedSub)) ? '' : 'none';
+    if (emptyMsg) emptyMsg.style.display = (shown === 0 && (selectedCat !== null || selectedSub)) ? '' : 'none';
   }
 
   pills.forEach(pill => {
     pill.addEventListener('click', () => {
       const v = pill.dataset.cat;
       if (v === 'all') {
-        selected.clear();
-        selectedSub = null;
-        pills.forEach(p => { if (p.dataset.cat !== 'all') setActive(p, false); });
+        selectedCat = null;
       } else {
         const id = parseInt(v, 10);
-        if (selected.has(id)) { selected.delete(id); setActive(pill, false); }
-        else { selected.add(id); setActive(pill, true); }
-        selectedSub = null;
+        // Single-select: clicking active category deselects it; clicking another selects it
+        selectedCat = (selectedCat === id) ? null : id;
       }
+      selectedSub = null;
       apply();
     });
   });
@@ -236,8 +234,8 @@ function showToast(msg) {
 
   // Pre-select from ?category=<id>&subcategory=<id>
   {% if sel_category %}
-  const pre = bar.querySelector('[data-cat="{{ sel_category }}"]');
-  if (pre) pre.click();
+  selectedCat = {{ sel_category }};
+  apply();
   {% endif %}
   {% if sel_subcategory %}
   const preSub = subBar && subBar.querySelector('[data-subcat="{{ sel_subcategory }}"]');

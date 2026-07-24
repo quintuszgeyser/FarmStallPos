@@ -1505,18 +1505,81 @@ function renderSubCategorySuggestions() {
   });
 }
 
-function _populateFamilySelect(selectedFamilyId) {
-  const select = document.getElementById('p-family');
-  if (!select) return;
-  const fams = STATE.families || [];
-  select.innerHTML = `<option value="">— No family (standalone) —</option>` +
-    fams.map(f => `<option value="${f.id}"${f.id === selectedFamilyId ? ' selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
+// ── Family autocomplete (mirrors category/sub-category pattern) ──────────────
+let _currentFamilyId   = null;  // null | number | 'new'
+let _currentFamilyName = '';
+
+function hideFamilySuggestions() {
+  const box = document.getElementById('p-family-suggestions');
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
+
+function _setFamilyVariantPanel(hasFamily) {
   const varPanel = document.getElementById('p-variant-attrs');
-  if (varPanel) varPanel.style.display = selectedFamilyId ? '' : 'none';
-  select.onchange = () => {
-    const hasFamily = !!select.value;
-    if (varPanel) varPanel.style.display = hasFamily ? '' : 'none';
-  };
+  if (varPanel) varPanel.style.display = hasFamily ? '' : 'none';
+}
+
+function _populateFamilySelect(selectedFamilyId) {
+  const input = document.getElementById('p-family');
+  if (!input) return;
+
+  _currentFamilyId = selectedFamilyId || null;
+  if (selectedFamilyId) {
+    const fam = (STATE.families || []).find(f => f.id === selectedFamilyId);
+    _currentFamilyName = fam ? fam.name : '';
+  } else {
+    _currentFamilyName = '';
+  }
+  input.value = _currentFamilyName;
+  hideFamilySuggestions();
+  _setFamilyVariantPanel(!!_currentFamilyId);
+
+  if (!input._familyBound) {
+    input.addEventListener('input', renderFamilySuggestions);
+    input.addEventListener('focus', renderFamilySuggestions);
+    input.addEventListener('blur', () => {
+      setTimeout(() => {
+        hideFamilySuggestions();
+        if (!input.value.trim()) { _currentFamilyId = null; _currentFamilyName = ''; _setFamilyVariantPanel(false); }
+      }, 150);
+    });
+    input._familyBound = true;
+  }
+}
+
+function renderFamilySuggestions() {
+  const input = document.getElementById('p-family');
+  const box   = document.getElementById('p-family-suggestions');
+  if (!input || !box) return;
+
+  const val   = input.value.trim();
+  const fams  = STATE.families || [];
+  const lower = val.toLowerCase();
+  const matches = val ? fams.filter(f => f.name.toLowerCase().includes(lower)) : fams.slice(0, 8);
+  const exact = fams.some(f => f.name.toLowerCase() === lower);
+
+  let html = matches.map(f =>
+    `<button type="button" class="list-group-item list-group-item-action py-1" data-fam-pick="${f.id}" data-fam-name="${escapeHtml(f.name)}">
+       ${escapeHtml(f.name)} <span class="text-muted small">${f.variant_count ? `(${f.variant_count} variant${f.variant_count !== 1 ? 's' : ''})` : ''}</span>
+     </button>`).join('');
+  if (val && !exact) {
+    html += `<button type="button" class="list-group-item list-group-item-action py-1 text-success" data-fam-pick="new" data-fam-name="${escapeHtml(val)}">
+       + Create family "${escapeHtml(val)}"
+     </button>`;
+  }
+  if (!html) { hideFamilySuggestions(); return; }
+  box.innerHTML = html;
+  box.style.display = '';
+  box.querySelectorAll('[data-fam-pick]').forEach(btn => {
+    btn.addEventListener('mousedown', e => {
+      e.preventDefault();
+      input.value = btn.dataset.famName;
+      _currentFamilyName = btn.dataset.famName;
+      _currentFamilyId   = btn.dataset.famPick === 'new' ? 'new' : parseInt(btn.dataset.famPick, 10);
+      hideFamilySuggestions();
+      _setFamilyVariantPanel(true);
+    });
+  });
 }
 
 let _variantAttrValues = [];  // current per-product attribute value ids
@@ -1643,7 +1706,18 @@ function renderCategorySuggestions() {
   if (!input || input._catBound) return;
   input.addEventListener('input', renderCategorySuggestions);
   input.addEventListener('focus', renderCategorySuggestions);
-  input.addEventListener('blur', () => setTimeout(hideCategorySuggestions, 150));
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      hideCategorySuggestions();
+      // Show sub-cat row if the typed value matches an existing category
+      const val = input.value.trim().toLowerCase();
+      const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === val);
+      const newCatId = cat?.id || null;
+      if (newCatId !== _subCatCategoryId) {
+        _populateSubCategorySelect(newCatId, null);
+      }
+    }, 150);
+  });
   input._catBound = true;
 })();
 
@@ -2548,6 +2622,8 @@ function openProductEditor(p) {
   _populateFamilySelect(p?.product_family_id || null);
   const _defVar = document.getElementById('p-is-default-variant');
   if (_defVar) _defVar.checked = !!p?.is_default_variant;
+  _currentFamilyId   = p?.product_family_id || null;
+  _currentFamilyName = p?.family_name || '';
   _loadVariantAttrs(p?.id || null, p?.product_family_id || null);
 
   // Multi-image list
@@ -3636,7 +3712,9 @@ function buildProductPayload() {
     // Sub-category — send id if existing, name if new (backend resolves)
     sub_category_id:   (typeof _currentSubCatId === 'number') ? _currentSubCatId : null,
     sub_category_name: (_currentSubCatId === 'new' ? _currentSubCatName : null),
-    product_family_id:  parseInt(document.getElementById('p-family')?.value || '0', 10) || null,
+    // Family — send id if existing, name if new (backend resolves)
+    product_family_id:   (typeof _currentFamilyId === 'number') ? _currentFamilyId : null,
+    product_family_name: (_currentFamilyId === 'new' ? _currentFamilyName : null),
     is_default_variant: document.getElementById('p-is-default-variant')?.checked || false,
   };
 }

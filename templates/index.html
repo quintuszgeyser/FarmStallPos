@@ -2695,9 +2695,10 @@
             <span class="text-muted small">(groups variants like colours/sizes)</span>
           </div>
           <div class="d-flex gap-2 align-items-center flex-wrap">
-            <select id="p-family" class="form-select form-select-sm" style="width:240px">
-              <option value="">— No family (standalone) —</option>
-            </select>
+            <div class="position-relative" style="width:240px">
+              <input id="p-family" class="form-control form-control-sm" placeholder="Family name (optional)" autocomplete="off">
+              <div id="p-family-suggestions" class="list-group position-absolute w-100" style="z-index:1062;top:100%;display:none"></div>
+            </div>
             <div class="form-check mb-0">
               <input class="form-check-input" type="checkbox" id="p-is-default-variant">
               <label class="form-check-label small" for="p-is-default-variant">Default variant</label>
