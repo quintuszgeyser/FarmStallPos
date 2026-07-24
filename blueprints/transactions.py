@@ -63,7 +63,7 @@ def api_transactions_get():
         # Tellers see only their own last 5 transactions
         q = q.filter(Sale.user_id == u.id)
 
-    if u.role == 'admin':
+    if u.has_role('admin'):
         today = date.today()
         if start_param or end_param:
             start_dt = _parse_dt(start_param) or datetime(today.year, today.month, today.day)
@@ -93,7 +93,7 @@ def api_transactions_get():
             except Exception: pass
 
     sale_ids     = list(grouped.keys())
-    is_admin_req = (u.role == 'admin')
+    is_admin_req = u.has_role('admin')
 
     # Track per-ingredient COGS in a single pass (used for sale total and per-line attribution).
     # New rows have Sale.cogs stamped at checkout; old rows fall back to StockConsumption.
@@ -246,7 +246,7 @@ def api_transactions_post():
         # Admin-authorized discounts: trust the client's discounted unit_price.
         # Capped at the server price so it can only go down, never up.
         has_disc = item.get('item_discount') or item.get('special_name') or cart_discount
-        if u and u.role == 'admin' and has_disc and item.get('unit_price') is not None:
+        if u and u.has_role('admin') and has_disc and item.get('unit_price') is not None:
             try:
                 client_price = Decimal(str(item['unit_price']))
                 if Decimal('0') <= client_price <= unit_price:
