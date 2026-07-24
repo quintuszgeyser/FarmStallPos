@@ -2115,6 +2115,8 @@ function openProductEditor(p) {
   document.getElementById('productEditorTitle').textContent = p ? `Edit - ${p.name}` : 'New Product';
   // Reset calculator
   _lastCalcWac = 0;
+  _markupUserEdited = false;
+  _originalMarginPct = p?.margin_pct ?? null;
   const _wacStatusEl = document.getElementById('calc-wac-status');
   const _wacCostEl   = document.getElementById('calc-avg-cost');
   if (_wacStatusEl) _wacStatusEl.textContent = '';
@@ -2163,7 +2165,7 @@ function openProductEditor(p) {
       .then(j => {
         _lastCalcWac = j.wac || 0;
         if (_costEl)   _costEl.textContent   = _lastCalcWac > 0 ? `R${_lastCalcWac.toFixed(4)}` : '—';
-        if (_statusEl) _statusEl.textContent = '';
+        if (_statusEl) _statusEl.textContent = _lastCalcWac <= 0 ? '(no stock)' : '';
       })
       .catch(() => {
         _lastCalcWac = 0;
@@ -2676,6 +2678,8 @@ document.getElementById('p-is-produced')?.addEventListener('change', () => {
 
 let _lastCalcWac = 0;         // WAC (per base unit) fetched when product editor opens
 let _syncingPriceMarkup = false; // guard against ping-pong between price ↔ markup inputs
+let _markupUserEdited = false;   // true when user or price-link changed calc-markup this session
+let _originalMarginPct = null;   // margin_pct saved when editor opened (null = follow global)
 
 // Pre-fill calc markup from settings when modal opens
 function initCalcMarkup(product) {
@@ -2704,6 +2708,7 @@ function _priceConv() {
 
 // Markup % → Price (fires when user types in calc-markup)
 document.getElementById('calc-markup')?.addEventListener('input', () => {
+  _markupUserEdited = true;
   if (_syncingPriceMarkup || _lastCalcWac <= 0) return;
   const markup = parseFloat(document.getElementById('calc-markup').value || '');
   if (isNaN(markup)) return;
@@ -2727,6 +2732,7 @@ document.getElementById('p-price')?.addEventListener('input', () => {
   if (!markupEl) return;
   _syncingPriceMarkup = true;
   markupEl.value = markup.toFixed(1);
+  _markupUserEdited = true;
   _syncingPriceMarkup = false;
 });
 
@@ -3093,7 +3099,9 @@ function buildProductPayload() {
     package_size:      pkgSize ? parseFloat(pkgSize) : null,
     package_size_unit: pkgSizeUnit,
     package_unit:      pkgUnit,
-    margin_pct:    document.getElementById('calc-markup')?.value ? parseFloat(document.getElementById('calc-markup').value) : null,
+    margin_pct:    _markupUserEdited
+      ? (document.getElementById('calc-markup')?.value ? parseFloat(document.getElementById('calc-markup').value) : null)
+      : _originalMarginPct,
     is_prepared:   document.getElementById('p-is-prepared')?.checked || false,
     description:   document.getElementById('p-description')?.value?.trim() || null,
     // Category name - backend resolves/auto-creates; '' clears the category
