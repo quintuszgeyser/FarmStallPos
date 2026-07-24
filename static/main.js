@@ -3133,8 +3133,8 @@ function _updateAutoPriceState() {
   const priceInput = document.getElementById('p-price');
   const hint       = document.getElementById('auto-price-hint');
   if (priceInput) {
-    priceInput.readOnly = autoOn;
-    priceInput.classList.toggle('bg-light', autoOn);
+    priceInput.readOnly = false;
+    priceInput.classList.remove('bg-light');
   }
   if (hint) {
     hint.textContent = autoOn
