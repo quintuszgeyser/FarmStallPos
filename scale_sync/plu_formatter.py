@@ -108,7 +108,6 @@ def compute_scale_hash(product: dict) -> str:
         str(1 if product.get('scale_open_price') else 0),
         str((product.get('scale_msg1') or '').strip()[:20]),
         str((product.get('scale_msg2') or '').strip()[:20]),
-        str(1 if product.get('scale_prohibit') else 0),
     ]
     return hashlib.sha256('|'.join(parts).encode()).hexdigest()
 
