@@ -901,20 +901,22 @@ function renderProductsCards() {
       <div class="pr-more-wrap">
         <button class="pr-more-btn" title="Actions">⋮</button>
         <div class="pr-more-menu">
-          <button data-menu="edit"><i class="bi bi-pencil me-1"></i>Edit</button>
-          <button data-menu="label"><i class="bi bi-tag me-1"></i>Print Label</button>
-          ${isStockItem ? `
-            <button data-menu="stocktake"><i class="bi bi-clipboard-check me-1"></i>Stocktake</button>
-            <button data-menu="writeoff"><i class="bi bi-trash3 me-1"></i>Write Off</button>
-            <button data-menu="batch-history"><i class="bi bi-clock-history me-1"></i>Batch History</button>
-          ` : ''}
-          ${p.product_type === 'recipe' && p.is_produced ? `
-            <button data-menu="produce"><i class="bi bi-fire me-1 text-warning"></i>Produce batch</button>
-            <button data-menu="writeoff-produced"><i class="bi bi-trash3 me-1"></i>Write Off</button>
-          ` : ''}
-          ${p.is_archived
-            ? `<button data-menu="restore"><i class="bi bi-arrow-clockwise me-1"></i>Restore</button>`
-            : `<button data-menu="archive"><i class="bi bi-archive me-1"></i>Archive</button>`}
+          ${p.is_archived ? `
+            <button data-menu="restore"><i class="bi bi-arrow-clockwise me-1"></i>Restore</button>
+          ` : `
+            <button data-menu="edit"><i class="bi bi-pencil me-1"></i>Edit</button>
+            <button data-menu="label"><i class="bi bi-tag me-1"></i>Print Label</button>
+            ${isStockItem ? `
+              <button data-menu="stocktake"><i class="bi bi-clipboard-check me-1"></i>Stocktake</button>
+              <button data-menu="writeoff"><i class="bi bi-trash3 me-1"></i>Write Off</button>
+              <button data-menu="batch-history"><i class="bi bi-clock-history me-1"></i>Batch History</button>
+            ` : ''}
+            ${p.product_type === 'recipe' && p.is_produced ? `
+              <button data-menu="produce"><i class="bi bi-fire me-1 text-warning"></i>Produce batch</button>
+              <button data-menu="writeoff-produced"><i class="bi bi-trash3 me-1"></i>Write Off</button>
+            ` : ''}
+            <button data-menu="archive"><i class="bi bi-archive me-1"></i>Archive</button>
+          `}
         </div>
       </div>
       <div class="pr-body"></div>
