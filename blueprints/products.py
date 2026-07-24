@@ -25,6 +25,26 @@ bp = Blueprint('products', __name__)
 logger = logging.getLogger('pos')
 
 
+def _cleanup_empty_taxonomies(old_category_id=None, old_sub_category_id=None, old_family_id=None):
+    """Delete category/sub-category/family if they now have zero active (non-archived) products."""
+    if old_sub_category_id:
+        if not Product.query.filter_by(sub_category_id=old_sub_category_id, is_archived=False).count():
+            sub = db.session.get(SubCategory, old_sub_category_id)
+            if sub:
+                db.session.delete(sub)
+    if old_category_id:
+        if not Product.query.filter_by(category_id=old_category_id, is_archived=False).count():
+            cat = db.session.get(Category, old_category_id)
+            if cat:
+                db.session.delete(cat)
+    if old_family_id:
+        if not Product.query.filter_by(product_family_id=old_family_id, is_archived=False).count():
+            fam = db.session.get(ProductFamily, old_family_id)
+            if fam:
+                db.session.delete(fam)
+    db.session.commit()
+
+
 def _resolve_family(family_id, family_name):
     """Return a ProductFamily id (existing or newly created), or None."""
     if family_id:
@@ -323,6 +343,11 @@ def api_products_update():
     if not p:
         return jsonify({'error': 'Product not found'}), 404
 
+    # Capture before mutation so cleanup knows what was vacated
+    _old_cat_id    = p.category_id
+    _old_sub_id    = p.sub_category_id
+    _old_family_id = p.product_family_id
+
     if 'name' in data:
         name = data['name'].strip()
         if Product.query.filter(Product.id != p.id, Product.name == name).first():
@@ -511,6 +536,12 @@ def api_products_update():
             pass
 
     db.session.commit()
+    # Clean up any taxonomy entries that are now empty after this change
+    _cleanup_empty_taxonomies(
+        old_category_id=_old_cat_id    if _old_cat_id    != p.category_id         else None,
+        old_sub_category_id=_old_sub_id    if _old_sub_id    != p.sub_category_id     else None,
+        old_family_id=_old_family_id if _old_family_id != p.product_family_id    else None,
+    )
     return jsonify({'ok': True})
 
 
@@ -893,6 +924,9 @@ def api_product_archive(pid):
     p    = db.session.get(Product, pid)
     if not p:
         return jsonify({'error': 'Not found'}), 404
+    _arch_cat_id    = p.category_id
+    _arch_sub_id    = p.sub_category_id
+    _arch_family_id = p.product_family_id
     replacements   = data.get('replacements', {})
     affected_recipes = []
     for rl in RecipeLine.query.filter_by(ingredient_id=pid).all():
@@ -931,6 +965,11 @@ def api_product_archive(pid):
                 adjusted_at=now, user_id=u.id if u else None,
             ))
     db.session.commit()
+    _cleanup_empty_taxonomies(
+        old_category_id=_arch_cat_id,
+        old_sub_category_id=_arch_sub_id,
+        old_family_id=_arch_family_id,
+    )
     cascaded = [r.id for r in affected_recipes if r.is_archived and r.archived_reason == 'cascade']
     return jsonify({'ok': True, 'cascaded_recipe_ids': cascaded})
 
@@ -994,6 +1033,9 @@ def api_products_delete(name):
     p = Product.query.filter_by(name=name).first()
     if not p:
         return jsonify({'error': 'Product not found'}), 404
+    _del_cat_id    = p.category_id
+    _del_sub_id    = p.sub_category_id
+    _del_family_id = p.product_family_id
     if Sale.query.filter_by(product_id=p.id).count() or Purchase.query.filter_by(product_id=p.id).count() or StockBatch.query.filter_by(product_id=p.id).count():
         return jsonify({'error': 'Product has historical references - disable instead of deleting.', 'hint': 'Set is_for_sale=false to hide from teller without losing history.'}), 409
     RecipeLine.query.filter_by(product_id=p.id).delete()
@@ -1004,6 +1046,11 @@ def api_products_delete(name):
             db.session.delete(child)
     db.session.delete(p)
     db.session.commit()
+    _cleanup_empty_taxonomies(
+        old_category_id=_del_cat_id,
+        old_sub_category_id=_del_sub_id,
+        old_family_id=_del_family_id,
+    )
     return jsonify({'ok': True})
 
 

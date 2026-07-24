@@ -1631,12 +1631,34 @@ document.getElementById('btn-add-variant-attr')?.addEventListener('click', () =>
   _showAttrPicker(attrs);
 });
 
-function _showAttrPicker(attrs) {
+async function _showAttrPicker(attrs) {
   const existing = document.getElementById('_attr-picker-overlay');
   if (existing) existing.remove();
   const div = document.createElement('div');
   div.id = '_attr-picker-overlay';
   div.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+
+  // Load family variants if a family is selected
+  let familyVariantsHtml = '';
+  if (typeof _currentFamilyId === 'number') {
+    try {
+      const fam = await api(`/api/families/${_currentFamilyId}/variants`);
+      const variants = (fam.variants || []).filter(v => v.id !== _editingProductId);
+      if (variants.length) {
+        const rows = variants.map(v => {
+          const attrs = (v.attributes || []).map(a => `<span class="badge bg-secondary me-1">${escapeHtml(a.attribute)}: ${escapeHtml(a.value)}</span>`).join('');
+          return `<div class="d-flex align-items-center gap-2 py-1 border-bottom">
+            <span class="small fw-semibold" style="min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(v.name)}</span>
+            <div class="d-flex flex-wrap gap-1">${attrs || '<span class="text-muted small">no attrs</span>'}</div>
+          </div>`;
+        }).join('');
+        familyVariantsHtml = `<div class="mb-3">
+          <label class="form-label small mb-1 fw-semibold text-muted">Other variants in this family</label>
+          <div style="max-height:120px;overflow-y:auto;font-size:.8rem">${rows}</div>
+        </div>`;
+      }
+    } catch (_) { /* non-fatal */ }
+  }
 
   const existingHtml = attrs.length ? `
     <div class="mb-2">
@@ -1648,8 +1670,9 @@ function _showAttrPicker(attrs) {
     </div>
     <div class="text-center text-muted small mb-2">— or —</div>` : '';
 
-  div.innerHTML = `<div class="bg-white rounded p-3 shadow" style="min-width:300px;max-width:360px">
+  div.innerHTML = `<div class="bg-white rounded p-3 shadow" style="min-width:300px;max-width:400px">
     <h6 class="mb-3">Variant attribute</h6>
+    ${familyVariantsHtml}
     ${existingHtml}
     <div class="mb-2">
       <label class="form-label small mb-1 fw-semibold">Create new</label>
