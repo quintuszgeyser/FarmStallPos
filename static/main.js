@@ -1565,18 +1565,8 @@ function _renderVariantAttrList() {
 document.getElementById('btn-add-variant-attr')?.addEventListener('click', () => {
   const attrs = STATE.attributes || [];
   if (!attrs.length) { toast('No attributes defined. Go to Products → Families to create attributes.', 'info'); return; }
-  // Show a quick picker modal
-  const opts = attrs.map(a =>
-    a.values.filter(v => !_variantAttrValues.includes(v.id))
-      .map(v => `<option value="${v.id}">[${escapeHtml(a.name)}] ${escapeHtml(v.value)}</option>`)
-  ).flat().join('');
-  if (!opts) { toast('All attribute values already assigned.', 'info'); return; }
-  const sel = document.createElement('select');
-  sel.className = 'form-select form-select-sm';
-  sel.innerHTML = `<option value="">Pick a value…</option>` + opts;
-  const added = confirm('Use the browser prompt to pick an attribute, or close this and use the Families tab to manage attributes.\n\nThis will open a select. Press OK to continue.');
-  if (!added) return;
-  // Inline picker using a temporary overlay
+  const hasUnassigned = attrs.some(a => a.values.some(v => !_variantAttrValues.includes(v.id)));
+  if (!hasUnassigned) { toast('All attribute values already assigned.', 'info'); return; }
   _showAttrPicker(attrs);
 });
 

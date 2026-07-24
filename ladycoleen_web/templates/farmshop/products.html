@@ -24,7 +24,7 @@
   </div>
   <!-- Sub-category filter — shown by JS when exactly one category selected -->
   {% if subcategories %}
-  <div class="mb-3 d-flex flex-wrap gap-2 align-items-center ps-2 border-start border-2" id="subcategory-filter" style="display:none!important">
+  <div class="mb-3 d-flex flex-wrap gap-2 align-items-center ps-2 border-start border-2" id="subcategory-filter" style="display:none">
     <span class="text-muted small me-1">Filter:</span>
     <button type="button" class="btn btn-sm lc-subcat-pill lc-btn-primary" data-subcat="all">All</button>
     {% for s in subcategories %}

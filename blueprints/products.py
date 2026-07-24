@@ -366,16 +366,6 @@ def api_products_update():
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
 
-    if 'sub_category_id' in data or 'sub_category_name' in data:
-        # category_id may be updated in the same request; read resolved value first
-        resolved_cat = data.get('category_id') or p.category_id
-        if 'category' in data and not resolved_cat:
-            pass  # will be resolved later; sub-cat stays as-is
-        p.sub_category_id = _resolve_sub_category(
-            resolved_cat,
-            data.get('sub_category_id') or None,
-            data.get('sub_category_name') or None,
-        )
     if 'product_family_id' in data:
         p.product_family_id = data['product_family_id'] or None
     if 'is_default_variant' in data:
@@ -387,6 +377,14 @@ def api_products_update():
             p.category_id = _resolve_category_id(data)
         else:
             p.category_id = None
+
+    # Sub-category — resolved AFTER category so p.category_id is already updated
+    if 'sub_category_id' in data or 'sub_category_name' in data:
+        p.sub_category_id = _resolve_sub_category(
+            p.category_id,
+            data.get('sub_category_id') or None,
+            data.get('sub_category_name') or None,
+        )
 
     # PLU (product_code) change - requires lifecycle management
     if 'product_code' in data and data['product_code'] is not None:
