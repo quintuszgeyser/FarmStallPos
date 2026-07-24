@@ -1689,7 +1689,10 @@ async function _showAttrPicker(attrs) {
       <button class="btn btn-success btn-sm" id="_attr-pick-new-ok">Create &amp; add</button>
     </div>
   </div>`;
-  document.body.appendChild(div);
+  // Append inside the product editor modal so Bootstrap's focus trap allows input.
+  // Fall back to document.body if the modal is not open.
+  const modalContent = document.querySelector('#productEditorModal .modal-content') || document.body;
+  modalContent.appendChild(div);
 
   div.querySelector('#_attr-pick-cancel').onclick = () => div.remove();
 
