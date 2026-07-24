@@ -1887,6 +1887,42 @@ def strong_migrate():
                 JOIN transactions t ON tl.transaction_id = t.id
                 """)
 
+        # Sub-categories, product families, and variant attributes
+        pg_try("""CREATE TABLE IF NOT EXISTS sub_categories (
+            id SERIAL PRIMARY KEY,
+            category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+            name VARCHAR(100) NOT NULL,
+            name_norm VARCHAR(100) NOT NULL,
+            sort_order INTEGER NOT NULL DEFAULT 0,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )""")
+        pg_try("CREATE UNIQUE INDEX IF NOT EXISTS uq_sub_categories_cat_name ON sub_categories(category_id, name_norm)")
+        pg_try("""CREATE TABLE IF NOT EXISTS product_families (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(200) NOT NULL,
+            description TEXT,
+            slug VARCHAR(220) UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ
+        )""")
+        pg_try("""CREATE TABLE IF NOT EXISTS attributes (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE
+        )""")
+        pg_try("""CREATE TABLE IF NOT EXISTS attribute_values (
+            id SERIAL PRIMARY KEY,
+            attribute_id INTEGER NOT NULL REFERENCES attributes(id) ON DELETE CASCADE,
+            value VARCHAR(100) NOT NULL
+        )""")
+        pg_try("""CREATE TABLE IF NOT EXISTS product_variant_attributes (
+            product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+            attribute_value_id INTEGER NOT NULL REFERENCES attribute_values(id) ON DELETE CASCADE,
+            PRIMARY KEY (product_id, attribute_value_id)
+        )""")
+        pg_try("ALTER TABLE products ADD COLUMN sub_category_id INTEGER REFERENCES sub_categories(id) ON DELETE SET NULL")
+        pg_try("ALTER TABLE products ADD COLUMN product_family_id INTEGER REFERENCES product_families(id) ON DELETE SET NULL")
+        pg_try("ALTER TABLE products ADD COLUMN is_default_variant BOOLEAN NOT NULL DEFAULT FALSE")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 
@@ -2154,6 +2190,8 @@ def _register_routes(_app):
     from blueprints.bulk            import bp as bulk_bp
     from blueprints.cost_categories import bp as cost_categories_bp
     from blueprints.consignment     import bp as consignment_bp
+    from blueprints.subcategories   import bp as subcategories_bp
+    from blueprints.families        import bp as families_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -2178,6 +2216,8 @@ def _register_routes(_app):
     _app.register_blueprint(bulk_bp)
     _app.register_blueprint(cost_categories_bp)
     _app.register_blueprint(consignment_bp)
+    _app.register_blueprint(subcategories_bp)
+    _app.register_blueprint(families_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

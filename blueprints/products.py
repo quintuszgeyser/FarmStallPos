@@ -223,6 +223,10 @@ def api_products_post():
 
     auto_price = bool(data.get('auto_price', True))
 
+    sub_category_id   = data.get('sub_category_id') or None
+    product_family_id = data.get('product_family_id') or None
+    is_default_variant = bool(data.get('is_default_variant', False))
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -243,6 +247,9 @@ def api_products_post():
         is_consignment=is_consignment, settlement_basis=settlement_basis,
         consignment_pct=consignment_pct,
         auto_price=auto_price,
+        sub_category_id=sub_category_id,
+        product_family_id=product_family_id,
+        is_default_variant=is_default_variant,
     )
     db.session.add(p)
     db.session.flush()
@@ -336,6 +343,13 @@ def api_products_update():
 
     if 'archived_reason' in data:
         p.archived_reason = data['archived_reason'] or None
+
+    if 'sub_category_id' in data:
+        p.sub_category_id = data['sub_category_id'] or None
+    if 'product_family_id' in data:
+        p.product_family_id = data['product_family_id'] or None
+    if 'is_default_variant' in data:
+        p.is_default_variant = bool(data['is_default_variant'])
 
     # Category - explicit id, a name (auto-created), or cleared when both blank
     if 'category_id' in data or 'category' in data:

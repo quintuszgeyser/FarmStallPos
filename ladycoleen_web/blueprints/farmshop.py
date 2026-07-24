@@ -25,18 +25,22 @@ def landing():
 def products():
     search = (request.args.get("q") or "").strip()
 
-    # category_id only exists once the POS app has migrated the shared DB.
+    # category_id / sub_category_id only exists once the POS app has migrated the shared DB.
     # Detect it so the shop still renders during a deploy window where the
     # column/table is not yet present.
     has_categories = db.session.execute(text(
         "SELECT 1 FROM information_schema.columns "
         "WHERE table_name = 'products' AND column_name = 'category_id'"
     )).first() is not None
+    has_subcategories = db.session.execute(text(
+        "SELECT 1 FROM information_schema.tables WHERE table_name = 'sub_categories'"
+    )).first() is not None
 
     cat_col = "category_id" if has_categories else "NULL AS category_id"
+    sub_col = "sub_category_id" if has_subcategories else "NULL AS sub_category_id"
     sql = f"""
         SELECT id, name, COALESCE(price, 0) AS price, product_type, unit_type, base_unit,
-               sold_by_weight, price_per_unit, stock_qty, image_url, description, {cat_col}
+               sold_by_weight, price_per_unit, stock_qty, image_url, description, {cat_col}, {sub_col}
         FROM products
         WHERE is_for_sale = true AND is_available_online = true AND is_archived = false
     """
@@ -53,22 +57,24 @@ def products():
     for r in rows:
         avail = get_available_qty(db, r.id, r.product_type)
         items.append({
-            "id":             r.id,
-            "name":           r.name,
-            "price":          float(r.price),
-            "product_type":   r.product_type,
-            "unit_type":      r.unit_type,
-            "base_unit":      r.base_unit,
-            "sold_by_weight": r.sold_by_weight,
-            "price_per_unit": float(r.price_per_unit) if r.price_per_unit else None,
-            "available_qty":  avail,
-            "stock_status":   _stock_status(avail, r.product_type),
-            "image_url":      r.image_url,
-            "category_id":    r.category_id,
+            "id":               r.id,
+            "name":             r.name,
+            "price":            float(r.price),
+            "product_type":     r.product_type,
+            "unit_type":        r.unit_type,
+            "base_unit":        r.base_unit,
+            "sold_by_weight":   r.sold_by_weight,
+            "price_per_unit":   float(r.price_per_unit) if r.price_per_unit else None,
+            "available_qty":    avail,
+            "stock_status":     _stock_status(avail, r.product_type),
+            "image_url":        r.image_url,
+            "category_id":      r.category_id,
+            "sub_category_id":  r.sub_category_id,
         })
 
     # Categories that actually have a visible product (for the filter bar)
     categories = []
+    subcategories = []
     if has_categories:
         cat_rows = db.session.execute(text("""
             SELECT c.id, c.name, COUNT(p.id) AS n
@@ -80,14 +86,30 @@ def products():
         """)).fetchall()
         categories = [{"id": cr.id, "name": cr.name, "count": cr.n} for cr in cat_rows]
 
-    # Pre-selected category from a shareable link (?category=<id>)
+    if has_subcategories:
+        sub_rows = db.session.execute(text("""
+            SELECT s.id, s.category_id, s.name, COUNT(p.id) AS n
+            FROM sub_categories s
+            JOIN products p ON p.sub_category_id = s.id
+            WHERE p.is_for_sale = true AND p.is_available_online = true AND p.is_archived = false
+            GROUP BY s.id, s.category_id, s.name
+            ORDER BY s.name ASC
+        """)).fetchall()
+        subcategories = [{"id": sr.id, "category_id": sr.category_id, "name": sr.name, "count": sr.n} for sr in sub_rows]
+
+    # Pre-selected category/sub-category from a shareable link
     try:
         sel_category = int(request.args.get("category")) if request.args.get("category") else None
     except (TypeError, ValueError):
         sel_category = None
+    try:
+        sel_subcategory = int(request.args.get("subcategory")) if request.args.get("subcategory") else None
+    except (TypeError, ValueError):
+        sel_subcategory = None
 
     return render_template("farmshop/products.html", items=items, search=search,
-                           categories=categories, sel_category=sel_category)
+                           categories=categories, subcategories=subcategories,
+                           sel_category=sel_category, sel_subcategory=sel_subcategory)
 
 
 @farmshop_bp.route("/farmshop/cart")

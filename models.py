@@ -81,6 +81,9 @@ class Product(db.Model):
     auto_price           = db.Column(db.Boolean, nullable=False, default=True, server_default='TRUE')
     pending_price          = db.Column(db.Numeric(10, 2), nullable=True)
     pending_price_per_unit = db.Column(db.Numeric(10, 6), nullable=True)
+    sub_category_id    = db.Column(db.Integer, db.ForeignKey('sub_categories.id', ondelete='SET NULL'), nullable=True, index=True)
+    product_family_id  = db.Column(db.Integer, db.ForeignKey('product_families.id', ondelete='SET NULL'), nullable=True, index=True)
+    is_default_variant = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
 
 
 class Category(db.Model):
@@ -96,6 +99,58 @@ class Category(db.Model):
 
     products   = db.relationship('Product', backref='category', lazy='dynamic',
                                  foreign_keys='Product.category_id')
+
+
+class SubCategory(db.Model):
+    """Sub-category beneath a Category. Used for online shop filtering and product organisation."""
+    __tablename__ = 'sub_categories'
+    id          = db.Column(db.Integer, primary_key=True)
+    category_id = db.Column(db.Integer, db.ForeignKey('categories.id', ondelete='CASCADE'), nullable=False, index=True)
+    name        = db.Column(db.String(100), nullable=False)
+    name_norm   = db.Column(db.String(100), nullable=False)  # lower(strip(name)) — unique per category
+    sort_order  = db.Column(db.Integer, nullable=False, default=0)
+    created_at  = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+
+    products    = db.relationship('Product', backref='sub_category', lazy='dynamic',
+                                  foreign_keys='Product.sub_category_id')
+
+
+class ProductFamily(db.Model):
+    """Groups related product variants (e.g. Apron Red, Apron Blue → Lady Coleen Apron)."""
+    __tablename__ = 'product_families'
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    slug        = db.Column(db.String(220), nullable=True, unique=True)
+    created_at  = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    updated_at  = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    variants    = db.relationship('Product', backref='family', lazy='dynamic',
+                                  foreign_keys='Product.product_family_id')
+
+
+class Attribute(db.Model):
+    """A variant dimension: Colour, Size, Weight, Pack Size, etc."""
+    __tablename__ = 'attributes'
+    id     = db.Column(db.Integer, primary_key=True)
+    name   = db.Column(db.String(100), nullable=False, unique=True)
+    values = db.relationship('AttributeValue', backref='attribute', lazy='dynamic',
+                             cascade='all, delete-orphan')
+
+
+class AttributeValue(db.Model):
+    """A specific value for an attribute: Red, Blue, Small, 500g, etc."""
+    __tablename__ = 'attribute_values'
+    id           = db.Column(db.Integer, primary_key=True)
+    attribute_id = db.Column(db.Integer, db.ForeignKey('attributes.id', ondelete='CASCADE'), nullable=False, index=True)
+    value        = db.Column(db.String(100), nullable=False)
+
+
+class ProductVariantAttribute(db.Model):
+    """Maps a product to its variant attribute values (e.g. product 5 → Colour=Red, Size=Large)."""
+    __tablename__ = 'product_variant_attributes'
+    product_id         = db.Column(db.Integer, db.ForeignKey('products.id', ondelete='CASCADE'), primary_key=True)
+    attribute_value_id = db.Column(db.Integer, db.ForeignKey('attribute_values.id', ondelete='CASCADE'), primary_key=True)
 
 
 class DeploySchedule(db.Model):

@@ -20,9 +20,13 @@ let STATE = {
   users:            [],
   currentTx:        null,
   receiveProductId: null,   // stock item being received
-  productsSubTab:   'active',  // 'active' | 'ingredients' | 'recipes' | 'specials' | 'archived' | 'categories'
+  productsSubTab:   'active',  // 'active' | 'ingredients' | 'recipes' | 'specials' | 'archived' | 'categories' | 'families'
   categories:       [],     // [{id, name, product_count}]
   selectedCategoryIds: new Set(),  // active category filters on the products tab
+  selectedSubCategoryId: null,     // active sub-category filter (single-select within category)
+  subcategories:    [],     // [{id, category_id, name, product_count}]
+  families:         [],     // [{id, name, slug, variant_count}]
+  attributes:       [],     // [{id, name, values: [{id, value}]}]
   customers:        [],
   activeCustomer:   null,   // customer detected at till
   customerPollInterval: null,  // interval ID for till customer polling
@@ -616,10 +620,21 @@ async function loadProducts() {
 async function loadCategories() {
   if (!STATE.user) return;
   try {
-    STATE.categories = await api('/api/categories');
+    const [cats, subs, fams, attrs] = await Promise.all([
+      api('/api/categories'),
+      api('/api/subcategories'),
+      api('/api/families'),
+      api('/api/attributes'),
+    ]);
+    STATE.categories    = cats;
+    STATE.subcategories = subs;
+    STATE.families      = fams;
+    STATE.attributes    = attrs;
     // Drop any selected filters whose category no longer exists
     const live = new Set(STATE.categories.map(c => c.id));
     STATE.selectedCategoryIds.forEach(id => { if (!live.has(id)) STATE.selectedCategoryIds.delete(id); });
+    // Clear sub-category filter if category filter cleared
+    if (!STATE.selectedCategoryIds.size) STATE.selectedSubCategoryId = null;
   } catch (e) { console.error('loadCategories', e); STATE.categories = []; }
 }
 
@@ -720,6 +735,10 @@ function renderProductsCards() {
     if (catFilterActive) {
       const key = p.category_id || UNCATEGORISED;
       if (!selectedCats.has(key)) return false;
+    }
+    // Sub-category filter (single-select, only active when a single category is selected)
+    if (STATE.selectedSubCategoryId !== null) {
+      if ((p.sub_category_id || null) !== STATE.selectedSubCategoryId) return false;
     }
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
@@ -1397,6 +1416,120 @@ function hideCategorySuggestions() {
   if (box) { box.style.display = 'none'; box.innerHTML = ''; }
 }
 
+function _populateSubCategorySelect(categoryId, selectedSubId) {
+  const row    = document.getElementById('row-sub-category');
+  const select = document.getElementById('p-sub-category');
+  if (!row || !select) return;
+  const subs = (STATE.subcategories || []).filter(s => s.category_id === categoryId);
+  if (!categoryId || !subs.length) { row.style.display = 'none'; return; }
+  select.innerHTML = `<option value="">— No sub-category —</option>` +
+    subs.map(s => `<option value="${s.id}"${s.id === selectedSubId ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+  row.style.display = '';
+}
+
+function _populateFamilySelect(selectedFamilyId) {
+  const select = document.getElementById('p-family');
+  if (!select) return;
+  const fams = STATE.families || [];
+  select.innerHTML = `<option value="">— No family (standalone) —</option>` +
+    fams.map(f => `<option value="${f.id}"${f.id === selectedFamilyId ? ' selected' : ''}>${escapeHtml(f.name)}</option>`).join('');
+  const varPanel = document.getElementById('p-variant-attrs');
+  if (varPanel) varPanel.style.display = selectedFamilyId ? '' : 'none';
+  select.onchange = () => {
+    const hasFamily = !!select.value;
+    if (varPanel) varPanel.style.display = hasFamily ? '' : 'none';
+  };
+}
+
+let _variantAttrValues = [];  // current per-product attribute value ids
+
+async function _loadVariantAttrs(productId, familyId) {
+  _variantAttrValues = [];
+  const list = document.getElementById('p-variant-attrs-list');
+  if (!list) return;
+  if (productId && familyId) {
+    try {
+      const rows = await api(`/api/products/${productId}/variant_attributes`);
+      _variantAttrValues = rows.map(r => r.value_id);
+    } catch {}
+  }
+  _renderVariantAttrList();
+}
+
+function _renderVariantAttrList() {
+  const list = document.getElementById('p-variant-attrs-list');
+  if (!list) return;
+  const attrs = STATE.attributes || [];
+  // Show each assigned attribute as a badge with remove button
+  const assigned = _variantAttrValues.map(vid => {
+    for (const a of attrs) {
+      const v = a.values.find(val => val.id === vid);
+      if (v) return { attrName: a.name, value: v.value, vid };
+    }
+    return null;
+  }).filter(Boolean);
+
+  list.innerHTML = assigned.map(a =>
+    `<span class="badge bg-primary me-1 py-1">${escapeHtml(a.attrName)}: ${escapeHtml(a.value)}
+       <button type="button" class="btn-close btn-close-white ms-1" style="width:8px;height:8px" data-remove-vid="${a.vid}"></button>
+     </span>`
+  ).join('') || `<span class="text-muted small">None assigned</span>`;
+
+  list.querySelectorAll('[data-remove-vid]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const vid = parseInt(btn.dataset.removeVid, 10);
+      _variantAttrValues = _variantAttrValues.filter(v => v !== vid);
+      _renderVariantAttrList();
+    });
+  });
+}
+
+document.getElementById('btn-add-variant-attr')?.addEventListener('click', () => {
+  const attrs = STATE.attributes || [];
+  if (!attrs.length) { toast('No attributes defined. Go to Products → Families to create attributes.', 'info'); return; }
+  // Show a quick picker modal
+  const opts = attrs.map(a =>
+    a.values.filter(v => !_variantAttrValues.includes(v.id))
+      .map(v => `<option value="${v.id}">[${escapeHtml(a.name)}] ${escapeHtml(v.value)}</option>`)
+  ).flat().join('');
+  if (!opts) { toast('All attribute values already assigned.', 'info'); return; }
+  const sel = document.createElement('select');
+  sel.className = 'form-select form-select-sm';
+  sel.innerHTML = `<option value="">Pick a value…</option>` + opts;
+  const added = confirm('Use the browser prompt to pick an attribute, or close this and use the Families tab to manage attributes.\n\nThis will open a select. Press OK to continue.');
+  if (!added) return;
+  // Inline picker using a temporary overlay
+  _showAttrPicker(attrs);
+});
+
+function _showAttrPicker(attrs) {
+  const existing = document.getElementById('_attr-picker-overlay');
+  if (existing) existing.remove();
+  const div = document.createElement('div');
+  div.id = '_attr-picker-overlay';
+  div.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
+  div.innerHTML = `<div class="bg-white rounded p-3 shadow" style="min-width:260px">
+    <h6 class="mb-2">Add variant attribute</h6>
+    <select id="_attr-pick-sel" class="form-select form-select-sm mb-2">
+      <option value="">Pick a value…</option>
+      ${attrs.map(a => `<optgroup label="${escapeHtml(a.name)}">${a.values.filter(v=>!_variantAttrValues.includes(v.id)).map(v=>`<option value="${v.id}">${escapeHtml(v.value)}</option>`).join('')}</optgroup>`).join('')}
+    </select>
+    <div class="d-flex gap-2 justify-content-end">
+      <button class="btn btn-outline-secondary btn-sm" id="_attr-pick-cancel">Cancel</button>
+      <button class="btn btn-primary btn-sm" id="_attr-pick-ok">Add</button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+  div.querySelector('#_attr-pick-cancel').onclick = () => div.remove();
+  div.querySelector('#_attr-pick-ok').onclick = () => {
+    const vid = parseInt(div.querySelector('#_attr-pick-sel').value, 10);
+    if (!vid) { toast('Pick a value first', 'warning'); return; }
+    if (!_variantAttrValues.includes(vid)) _variantAttrValues.push(vid);
+    _renderVariantAttrList();
+    div.remove();
+  };
+}
+
 function _categoryMatches(query) {
   const q = (query || '').trim().toLowerCase();
   const cats = STATE.categories || [];
@@ -1430,6 +1563,9 @@ function renderCategorySuggestions() {
       e.preventDefault();
       input.value = btn.dataset.catPick;
       hideCategorySuggestions();
+      // Refresh sub-category select when a category is picked
+      const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === btn.dataset.catPick.toLowerCase());
+      _populateSubCategorySelect(cat?.id || null, null);
     });
   });
 }
@@ -1448,33 +1584,57 @@ function renderCategoryFilterPills() {
   const wrap = document.getElementById('products-category-filter');
   if (!wrap) return;
   const tab = STATE.productsSubTab;
-  // Only show the filter on product-listing sub-tabs
-  if (tab === 'specials' || tab === 'categories') { wrap.style.display = 'none'; return; }
+  if (tab === 'specials' || tab === 'categories' || tab === 'families') { wrap.style.display = 'none'; return; }
 
   const cats = STATE.categories || [];
   const uncatCount = STATE.products.filter(p => !p.category_id && !p.is_archived).length;
   if (cats.length === 0) { wrap.style.display = 'none'; return; }
 
   const sel = STATE.selectedCategoryIds;
-  const pill = (id, label, count, active) =>
-    `<button type="button" class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" data-cat-filter="${id}">
+  const pill = (id, label, count, active, dataAttr = 'data-cat-filter') =>
+    `<button type="button" class="btn btn-sm ${active ? 'btn-primary' : 'btn-outline-secondary'}" ${dataAttr}="${id}">
        ${escapeHtml(label)}${count != null ? ` <span class="badge ${active ? 'bg-light text-dark' : 'bg-secondary'}">${count}</span>` : ''}
      </button>`;
 
-  let html = pill('all', 'All', null, sel.size === 0);
+  let html = `<div class="d-flex flex-wrap gap-1 align-items-center">`;
+  html += pill('all', 'All', null, sel.size === 0);
   html += cats.map(c => pill(c.id, c.name, c.product_count, sel.has(c.id))).join('');
   if (uncatCount > 0) html += pill('0', 'Uncategorised', uncatCount, sel.has(0));
+  html += `</div>`;
+
+  // Sub-category row — only when exactly one category is selected
+  const subCats = (STATE.subcategories || []).filter(s => sel.has(s.category_id));
+  if (sel.size === 1 && subCats.length > 0) {
+    const selSub = STATE.selectedSubCategoryId;
+    html += `<div class="d-flex flex-wrap gap-1 align-items-center mt-1 ps-2 border-start border-2">
+      <span class="text-muted small me-1">Sub:</span>`;
+    html += pill(0, 'All', null, selSub === null, 'data-subcat-filter');
+    html += subCats.map(s => pill(s.id, s.name, s.product_count, selSub === s.id, 'data-subcat-filter')).join('');
+    html += `</div>`;
+  } else {
+    STATE.selectedSubCategoryId = null;
+  }
 
   wrap.innerHTML = html;
   wrap.style.display = 'flex';
+  wrap.style.flexDirection = 'column';
+
   wrap.querySelectorAll('[data-cat-filter]').forEach(btn => {
     btn.addEventListener('click', () => {
       const v = btn.dataset.catFilter;
-      if (v === 'all') { sel.clear(); }
+      if (v === 'all') { sel.clear(); STATE.selectedSubCategoryId = null; }
       else {
         const id = parseInt(v, 10);
-        if (sel.has(id)) sel.delete(id); else sel.add(id);
+        if (sel.has(id)) { sel.delete(id); STATE.selectedSubCategoryId = null; }
+        else sel.add(id);
       }
+      renderProductsCards();
+    });
+  });
+  wrap.querySelectorAll('[data-subcat-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = parseInt(btn.dataset.subcatFilter, 10);
+      STATE.selectedSubCategoryId = v === 0 ? null : v;
       renderProductsCards();
     });
   });
@@ -1489,15 +1649,28 @@ function renderCategoriesManage() {
 
   const options = cats.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
 
-  let rows = cats.map(c => `
+  let rows = cats.map(c => {
+    const subCount = (STATE.subcategories || []).filter(s => s.category_id === c.id).length;
+    return `
     <tr data-cat-row="${c.id}">
       <td><input class="form-control form-control-sm" value="${escapeHtml(c.name)}" data-cat-name="${c.id}"></td>
       <td class="text-center align-middle">${c.product_count}</td>
+      <td class="text-center align-middle">
+        <button class="btn btn-link btn-sm p-0" data-cat-subs="${c.id}" data-cat-subs-name="${escapeHtml(c.name)}">
+          ${subCount} sub${subCount !== 1 ? 's' : ''} <i class="bi bi-chevron-down"></i>
+        </button>
+      </td>
       <td class="text-end">
         <button class="btn btn-outline-primary btn-sm" data-cat-save="${c.id}">Save</button>
         <button class="btn btn-outline-danger btn-sm" data-cat-del="${c.id}" data-cat-del-name="${escapeHtml(c.name)}" data-cat-del-count="${c.product_count}">Delete</button>
       </td>
-    </tr>`).join('');
+    </tr>
+    <tr id="subcat-row-${c.id}" class="hidden bg-light">
+      <td colspan="4" class="ps-4">
+        <div id="subcat-manage-${c.id}" class="py-2"></div>
+      </td>
+    </tr>`;
+  }).join('');
   if (!rows) rows = `<tr><td colspan="3" class="text-muted">No categories yet - add one below or type a new category when editing a product.</td></tr>`;
 
   wrap.innerHTML = `
@@ -1510,7 +1683,7 @@ function renderCategoriesManage() {
     </div>
     <div class="table-responsive">
       <table class="table table-sm align-middle">
-        <thead><tr><th>Name</th><th class="text-center" style="width:90px">Products</th><th class="text-end" style="width:170px">Actions</th></tr></thead>
+        <thead><tr><th>Name</th><th class="text-center" style="width:80px">Products</th><th class="text-center" style="width:100px">Sub-cats</th><th class="text-end" style="width:170px">Actions</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>
     </div>
@@ -1556,17 +1729,253 @@ function renderCategoriesManage() {
     if (!confirm('Merge these categories? This cannot be undone.')) return;
     await _categoryApi('/api/categories/merge', { source_id, target_id });
   });
+  // Sub-category accordion toggle
+  wrap.querySelectorAll('[data-cat-subs]').forEach(btn => btn.addEventListener('click', () => {
+    const catId  = parseInt(btn.dataset.catSubs, 10);
+    const row    = wrap.querySelector(`#subcat-row-${catId}`);
+    const manage = wrap.querySelector(`#subcat-manage-${catId}`);
+    if (!row) return;
+    const opening = row.classList.toggle('hidden');
+    if (!opening) renderSubCategoryManage(catId, `subcat-manage-${catId}`);
+  }));
 }
 
 async function _categoryApi(url, body) {
   try {
     await api(url, { method: 'POST', body: JSON.stringify(body) });
-    await loadProducts();          // refresh products (category_name may have changed) + categories
+    await loadProducts();
     renderCategoriesManage();
-    toast('Categories updated', 'success');
+    toast('Saved', 'success');
   } catch (e) {
-    toast(e?.message || 'Category update failed', 'danger');
+    toast(e?.message || 'Update failed', 'danger');
   }
+}
+
+// ── Sub-category management (rendered inside the categories tab) ──
+function renderSubCategoryManage(catId, containerId) {
+  const wrap = document.getElementById(containerId);
+  if (!wrap) return;
+  const subs = (STATE.subcategories || []).filter(s => s.category_id === catId);
+
+  let rows = subs.map(s => `
+    <tr>
+      <td><input class="form-control form-control-sm" value="${escapeHtml(s.name)}" data-sub-name="${s.id}"></td>
+      <td class="text-center">${s.product_count}</td>
+      <td class="text-end">
+        <button class="btn btn-outline-primary btn-sm" data-sub-save="${s.id}">Save</button>
+        <button class="btn btn-outline-danger btn-sm" data-sub-del="${s.id}" data-sub-del-name="${escapeHtml(s.name)}" data-sub-del-count="${s.product_count}">Delete</button>
+      </td>
+    </tr>`).join('');
+  if (!rows) rows = `<tr><td colspan="3" class="text-muted small">No sub-categories yet.</td></tr>`;
+
+  wrap.innerHTML = `
+    <div class="d-flex gap-2 align-items-end mb-2">
+      <input id="new-subcat-name-${catId}" class="form-control form-control-sm" placeholder="New sub-category" style="width:200px">
+      <button class="btn btn-success btn-sm" data-sub-add="${catId}">+ Add</button>
+    </div>
+    <table class="table table-sm align-middle">
+      <thead><tr><th>Name</th><th class="text-center" style="width:80px">Products</th><th style="width:150px"></th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  wrap.querySelector(`[data-sub-add]`)?.addEventListener('click', async () => {
+    const name = wrap.querySelector(`#new-subcat-name-${catId}`)?.value?.trim();
+    if (!name) { toast('Name required', 'warning'); return; }
+    await _subcatApi('/api/subcategories', { category_id: catId, name });
+    renderSubCategoryManage(catId, containerId);
+  });
+  wrap.querySelectorAll('[data-sub-save]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = parseInt(btn.dataset.subSave, 10);
+    const name = wrap.querySelector(`[data-sub-name="${id}"]`)?.value?.trim();
+    if (!name) { toast('Name required', 'warning'); return; }
+    await _subcatApi('/api/subcategories/update', { id, name });
+    renderSubCategoryManage(catId, containerId);
+  }));
+  wrap.querySelectorAll('[data-sub-del]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = parseInt(btn.dataset.subDel, 10);
+    const n  = parseInt(btn.dataset.subDelCount, 10) || 0;
+    if (!confirm(`Delete "${btn.dataset.subDelName}"?${n > 0 ? ` ${n} product${n===1?'':'s'} will lose their sub-category.` : ''}`)) return;
+    await _subcatApi('/api/subcategories/delete', { id });
+    renderSubCategoryManage(catId, containerId);
+  }));
+}
+
+async function _subcatApi(url, body) {
+  try {
+    await api(url, { method: 'POST', body: JSON.stringify(body) });
+    await loadCategories();
+    toast('Saved', 'success');
+  } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+}
+
+// ── Families management tab ──
+function renderFamiliesManage() {
+  const wrap = document.getElementById('families-manage');
+  if (!wrap) return;
+  const families = STATE.families || [];
+
+  let rows = families.map(f => `
+    <tr>
+      <td><input class="form-control form-control-sm" value="${escapeHtml(f.name)}" data-fam-name="${f.id}"></td>
+      <td class="text-center align-middle">${f.variant_count}</td>
+      <td class="text-end">
+        <button class="btn btn-outline-secondary btn-sm me-1" data-fam-view="${f.id}" data-fam-view-name="${escapeHtml(f.name)}">View</button>
+        <button class="btn btn-outline-primary btn-sm" data-fam-save="${f.id}">Save</button>
+        <button class="btn btn-outline-danger btn-sm" data-fam-del="${f.id}" data-fam-del-name="${escapeHtml(f.name)}" data-fam-del-count="${f.variant_count}">Delete</button>
+      </td>
+    </tr>`).join('');
+  if (!rows) rows = `<tr><td colspan="3" class="text-muted">No product families yet.</td></tr>`;
+
+  wrap.innerHTML = `
+    <h6>Product Families</h6>
+    <p class="text-muted small mb-2">Families group product variants (colours, sizes, flavours) under one name for the online shop.</p>
+    <div class="d-flex gap-2 align-items-end mb-3">
+      <input id="new-family-name" class="form-control form-control-sm" placeholder="Family name" style="width:240px">
+      <button id="btn-add-family" class="btn btn-success btn-sm">+ Add Family</button>
+    </div>
+    <div class="table-responsive mb-4">
+      <table class="table table-sm align-middle">
+        <thead><tr><th>Name</th><th class="text-center" style="width:80px">Variants</th><th class="text-end" style="width:200px">Actions</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div id="fam-variants-panel" class="hidden"></div>
+
+    <hr>
+    <h6>Variant Attributes</h6>
+    <p class="text-muted small mb-2">Define dimensions like Colour, Size, Material. Assign values to individual products in the product editor.</p>
+    <div id="attributes-manage"></div>`;
+
+  wrap.querySelector('#btn-add-family')?.addEventListener('click', async () => {
+    const name = wrap.querySelector('#new-family-name')?.value?.trim();
+    if (!name) { toast('Name required', 'warning'); return; }
+    try {
+      await api('/api/families', { method: 'POST', body: JSON.stringify({ name }) });
+      await loadCategories();
+      renderFamiliesManage();
+      toast('Family created', 'success');
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  });
+  wrap.querySelectorAll('[data-fam-save]').forEach(btn => btn.addEventListener('click', async () => {
+    const id   = parseInt(btn.dataset.famSave, 10);
+    const name = wrap.querySelector(`[data-fam-name="${id}"]`)?.value?.trim();
+    if (!name) { toast('Name required', 'warning'); return; }
+    try {
+      await api('/api/families/update', { method: 'POST', body: JSON.stringify({ id, name }) });
+      await loadCategories();
+      renderFamiliesManage();
+      toast('Saved', 'success');
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  }));
+  wrap.querySelectorAll('[data-fam-del]').forEach(btn => btn.addEventListener('click', async () => {
+    const id   = parseInt(btn.dataset.famDel, 10);
+    const n    = parseInt(btn.dataset.famDelCount, 10) || 0;
+    if (!confirm(`Delete family "${btn.dataset.famDelName}"?${n > 0 ? ` ${n} product${n===1?'':'s'} will become standalone.` : ''}`)) return;
+    try {
+      await api('/api/families/delete', { method: 'POST', body: JSON.stringify({ id }) });
+      await loadCategories();
+      renderFamiliesManage();
+      toast('Family deleted', 'success');
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  }));
+  wrap.querySelectorAll('[data-fam-view]').forEach(btn => btn.addEventListener('click', async () => {
+    const id   = parseInt(btn.dataset.famView, 10);
+    const name = btn.dataset.famViewName;
+    const panel = wrap.querySelector('#fam-variants-panel');
+    panel.classList.remove('hidden');
+    panel.innerHTML = `<h6 class="mb-2">Variants in "${name}"</h6><div class="text-muted small">Loading…</div>`;
+    try {
+      const data = await api(`/api/families/${id}/variants`);
+      if (!data.variants.length) { panel.innerHTML = `<h6>Variants in "${name}"</h6><p class="text-muted small">No variants yet — assign products to this family via the product editor.</p>`; return; }
+      panel.innerHTML = `<h6>Variants in "${escapeHtml(name)}"</h6>
+        <table class="table table-sm">
+          <thead><tr><th>Product</th><th>Attributes</th><th>Price</th><th>Default</th></tr></thead>
+          <tbody>${data.variants.map(v => `
+            <tr>
+              <td>${escapeHtml(v.name)}</td>
+              <td>${v.attributes.map(a => `<span class="badge bg-secondary me-1">${escapeHtml(a.attribute)}: ${escapeHtml(a.value)}</span>`).join('') || '<span class="text-muted">—</span>'}</td>
+              <td>${v.price != null ? `R${v.price.toFixed(2)}` : '—'}</td>
+              <td>${v.is_default_variant ? '<i class="bi bi-star-fill text-warning"></i>' : ''}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>`;
+    } catch (e) { panel.innerHTML = `<div class="text-danger small">Load failed</div>`; }
+  }));
+
+  _renderAttributesManage(wrap.querySelector('#attributes-manage'));
+}
+
+function _renderAttributesManage(wrap) {
+  if (!wrap) return;
+  const attrs = STATE.attributes || [];
+
+  let html = `<div class="d-flex gap-2 align-items-end mb-3">
+    <input id="new-attr-name" class="form-control form-control-sm" placeholder="Attribute name (e.g. Colour)" style="width:220px">
+    <button id="btn-add-attr" class="btn btn-success btn-sm">+ Add</button>
+  </div>`;
+
+  if (attrs.length) {
+    html += `<div class="row g-3">` + attrs.map(a => `
+      <div class="col-md-4 col-sm-6">
+        <div class="card border-0 shadow-sm p-2">
+          <div class="d-flex justify-content-between align-items-center mb-1">
+            <strong class="small">${escapeHtml(a.name)}</strong>
+            <button class="btn btn-link btn-sm text-danger p-0" data-attr-del="${a.id}" data-attr-del-name="${escapeHtml(a.name)}"><i class="bi bi-trash3"></i></button>
+          </div>
+          <div class="d-flex flex-wrap gap-1 mb-1">
+            ${a.values.map(v => `<span class="badge bg-secondary">${escapeHtml(v.value)} <button class="btn-close btn-close-white btn-sm ms-1" style="width:8px;height:8px" data-val-del="${v.id}" data-val-del-attr="${a.id}"></button></span>`).join('')}
+          </div>
+          <div class="d-flex gap-1">
+            <input class="form-control form-control-sm" id="new-val-${a.id}" placeholder="Add value…" style="width:120px">
+            <button class="btn btn-outline-secondary btn-sm" data-val-add="${a.id}">+</button>
+          </div>
+        </div>
+      </div>`).join('') + `</div>`;
+  } else {
+    html += `<p class="text-muted small">No attributes yet. Add one above (e.g. Colour, Size, Weight).</p>`;
+  }
+
+  wrap.innerHTML = html;
+
+  wrap.querySelector('#btn-add-attr')?.addEventListener('click', async () => {
+    const name = wrap.querySelector('#new-attr-name')?.value?.trim();
+    if (!name) { toast('Name required', 'warning'); return; }
+    try {
+      await api('/api/attributes', { method: 'POST', body: JSON.stringify({ name }) });
+      await loadCategories();
+      renderFamiliesManage();
+      toast('Attribute added', 'success');
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  });
+  wrap.querySelectorAll('[data-attr-del]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = parseInt(btn.dataset.attrDel, 10);
+    if (!confirm(`Delete attribute "${btn.dataset.attrDelName}" and all its values?`)) return;
+    try {
+      await api('/api/attributes/delete', { method: 'POST', body: JSON.stringify({ id }) });
+      await loadCategories();
+      renderFamiliesManage();
+      toast('Attribute deleted', 'success');
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  }));
+  wrap.querySelectorAll('[data-val-add]').forEach(btn => btn.addEventListener('click', async () => {
+    const attrId = parseInt(btn.dataset.valAdd, 10);
+    const value  = wrap.querySelector(`#new-val-${attrId}`)?.value?.trim();
+    if (!value) return;
+    try {
+      await api('/api/attributes/values', { method: 'POST', body: JSON.stringify({ attribute_id: attrId, value }) });
+      await loadCategories();
+      renderFamiliesManage();
+      toast('Value added', 'success');
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  }));
+  wrap.querySelectorAll('[data-val-del]').forEach(btn => btn.addEventListener('click', async () => {
+    const id = parseInt(btn.dataset.valDel, 10);
+    try {
+      await api('/api/attribute_values/delete', { method: 'POST', body: JSON.stringify({ id }) });
+      await loadCategories();
+      renderFamiliesManage();
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  }));
 }
 
 let _archiveProduct = null;
@@ -1941,19 +2350,23 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
     b.classList.toggle('active', b.dataset.productsSub === STATE.productsSubTab);
   });
 
-  const isSpecials   = STATE.productsSubTab === 'specials';
-  const isCategories = STATE.productsSubTab === 'categories';
-  const isProductList = !isSpecials && !isCategories;
+  const isSpecials    = STATE.productsSubTab === 'specials';
+  const isCategories  = STATE.productsSubTab === 'categories';
+  const isFamilies    = STATE.productsSubTab === 'families';
+  const isManageView  = isCategories || isFamilies;
+  const isProductList = !isSpecials && !isManageView;
 
-  const specialsList = document.getElementById('specials-list');
-  const catManage    = document.getElementById('categories-manage');
-  const cardList     = document.getElementById('products-card-list');
-  const newProduct   = document.getElementById('btn-new-product');
-  const newSpecial   = document.getElementById('btn-new-special');
-  const filterInput  = document.getElementById('products-filter');
-  const catFilter    = document.getElementById('products-category-filter');
+  const specialsList  = document.getElementById('specials-list');
+  const catManage     = document.getElementById('categories-manage');
+  const famManage     = document.getElementById('families-manage');
+  const cardList      = document.getElementById('products-card-list');
+  const newProduct    = document.getElementById('btn-new-product');
+  const newSpecial    = document.getElementById('btn-new-special');
+  const filterInput   = document.getElementById('products-filter');
+  const catFilter     = document.getElementById('products-category-filter');
   if (specialsList) specialsList.classList.toggle('hidden', !isSpecials);
   if (catManage)    catManage.classList.toggle('hidden', !isCategories);
+  if (famManage)    famManage.classList.toggle('hidden', !isFamilies);
   if (cardList)     cardList.style.display = isProductList ? '' : 'none';
   if (catFilter && !isProductList) catFilter.style.display = 'none';
   if (newProduct)   newProduct.classList.toggle('hidden', !isProductList);
@@ -1961,10 +2374,8 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
   if (filterInput)  filterInput.classList.toggle('hidden', !isProductList);
 
   if (isProductList) {
-    // Hide +New Product button on archived tab - you can't create archived products
     if (newProduct) newProduct.classList.toggle('hidden', STATE.productsSubTab === 'archived');
     renderProductsCards();
-    // Reload ingredients data when switching to recipes sub-tab so costs are current
     if (STATE.productsSubTab === 'recipes') loadIngredients();
     setTimeout(() => {
       const wrap = document.getElementById('products-card-list');
@@ -1972,8 +2383,10 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
     }, 50);
   } else if (isSpecials) {
     renderSpecialsList();
-  } else {
+  } else if (isCategories) {
     renderCategoriesManage();
+  } else if (isFamilies) {
+    renderFamiliesManage();
   }
 });
 
@@ -2059,6 +2472,15 @@ function openProductEditor(p) {
   const catEl = document.getElementById('p-category');
   if (catEl) catEl.value = p?.category_name ?? '';
   hideCategorySuggestions();
+
+  // Sub-category
+  _populateSubCategorySelect(p?.category_id || null, p?.sub_category_id || null);
+
+  // Product Family
+  _populateFamilySelect(p?.product_family_id || null);
+  const _defVar = document.getElementById('p-is-default-variant');
+  if (_defVar) _defVar.checked = !!p?.is_default_variant;
+  _loadVariantAttrs(p?.id || null, p?.product_family_id || null);
 
   // Multi-image list
   const _fileInp = document.getElementById('p-image-files');
@@ -2963,7 +3385,12 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
   if (!payload || payload._blocked) return;
   try {
     const result = await api('/api/products', { method: 'POST', body: JSON.stringify(payload) });
-    if (result?.id) await _uploadProductImagesIfSelected(result.id);
+    if (result?.id) {
+      await _uploadProductImagesIfSelected(result.id);
+      if (payload.product_family_id && _variantAttrValues.length) {
+        await api(`/api/products/${result.id}/variant_attributes`, { method: 'POST', body: JSON.stringify({ value_ids: _variantAttrValues }) });
+      }
+    }
     await loadProducts();
     loadIngredients();
     toast('Product added');
@@ -2998,6 +3425,9 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
   try {
     await api('/api/products/update', { method: 'POST', body: JSON.stringify(payload) });
     await _uploadProductImagesIfSelected(id);
+    if (payload.product_family_id !== undefined) {
+      await api(`/api/products/${id}/variant_attributes`, { method: 'POST', body: JSON.stringify({ value_ids: _variantAttrValues }) });
+    }
     await loadProducts();
     loadIngredients();
     loadPendingPricesBanner();
@@ -3135,6 +3565,10 @@ function buildProductPayload() {
     consignment_pct:  (() => { const v = parseFloat(document.getElementById('p-consignment-pct')?.value || ''); return isNaN(v) ? null : v; })(),
     // Auto-price
     auto_price: document.getElementById('p-auto-price')?.checked ?? true,
+    // Sub-category & family
+    sub_category_id:    parseInt(document.getElementById('p-sub-category')?.value || '0', 10) || null,
+    product_family_id:  parseInt(document.getElementById('p-family')?.value || '0', 10) || null,
+    is_default_variant: document.getElementById('p-is-default-variant')?.checked || false,
   };
 }
 

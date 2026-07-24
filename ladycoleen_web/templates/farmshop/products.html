@@ -16,17 +16,27 @@
 
   <!-- Category filter (multi-select) -->
   {% if categories %}
-  <div class="mb-4 d-flex flex-wrap gap-2" id="category-filter">
+  <div class="mb-2 d-flex flex-wrap gap-2" id="category-filter">
     <button type="button" class="btn btn-sm lc-cat-pill lc-btn-primary" data-cat="all">All</button>
     {% for c in categories %}
     <button type="button" class="btn btn-sm lc-cat-pill btn-outline-secondary" data-cat="{{ c.id }}">{{ c.name }} <span class="badge bg-secondary">{{ c.count }}</span></button>
     {% endfor %}
   </div>
+  <!-- Sub-category filter — shown by JS when exactly one category selected -->
+  {% if subcategories %}
+  <div class="mb-3 d-flex flex-wrap gap-2 align-items-center ps-2 border-start border-2" id="subcategory-filter" style="display:none!important">
+    <span class="text-muted small me-1">Filter:</span>
+    <button type="button" class="btn btn-sm lc-subcat-pill lc-btn-primary" data-subcat="all">All</button>
+    {% for s in subcategories %}
+    <button type="button" class="btn btn-sm lc-subcat-pill btn-outline-secondary" data-subcat="{{ s.id }}" data-subcat-cat="{{ s.category_id }}">{{ s.name }} <span class="badge bg-secondary">{{ s.count }}</span></button>
+    {% endfor %}
+  </div>
+  {% endif %}
   {% endif %}
 
   <div class="row g-3" id="product-grid">
     {% for item in items %}
-    <div class="col-6 col-md-4 col-lg-3 lc-product-col" data-category-id="{{ item.category_id or 0 }}">
+    <div class="col-6 col-md-4 col-lg-3 lc-product-col" data-category-id="{{ item.category_id or 0 }}" data-sub-category-id="{{ item.sub_category_id or 0 }}">
       <div class="lc-card p-0 h-100 d-flex flex-column overflow-hidden">
 
         <!-- Product image (links to detail page) -->
@@ -136,14 +146,18 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2000);
 }
 
-// ── Category filter (multi-select, client-side) ──
+// ── Category + Sub-category filter (multi-select, client-side) ──
 (function () {
-  const bar = document.getElementById('category-filter');
+  const bar    = document.getElementById('category-filter');
+  const subBar = document.getElementById('subcategory-filter');
   if (!bar) return;
+
   const pills    = Array.from(bar.querySelectorAll('.lc-cat-pill'));
+  const subPills = subBar ? Array.from(subBar.querySelectorAll('.lc-subcat-pill')) : [];
   const cols     = Array.from(document.querySelectorAll('.lc-product-col'));
   const emptyMsg = document.getElementById('no-category-msg');
-  const selected = new Set();
+  const selected    = new Set();  // category ids
+  let   selectedSub = null;       // sub-category id or null
 
   const setActive = (pill, on) => {
     pill.classList.toggle('lc-btn-primary', on);
@@ -151,16 +165,37 @@ function showToast(msg) {
   };
 
   function apply() {
+    // Show/hide sub-category bar — only when exactly one cat selected and it has sub-cats
+    if (subBar) {
+      if (selected.size === 1) {
+        const catId = [...selected][0];
+        const hasSubs = subPills.some(p => parseInt(p.dataset.subcatCat || '0', 10) === catId);
+        subBar.style.display = hasSubs ? '' : 'none';
+        // Hide pills from other categories
+        subPills.forEach(p => {
+          p.style.display = parseInt(p.dataset.subcatCat || '0', 10) === catId || p.dataset.subcat === 'all' ? '' : 'none';
+        });
+      } else {
+        subBar.style.display = 'none';
+        selectedSub = null;
+        const allSubPill = subBar.querySelector('[data-subcat="all"]');
+        subPills.forEach(p => { setActive(p, p === allSubPill); p.style.display = ''; });
+      }
+    }
+
     const allPill = bar.querySelector('[data-cat="all"]');
     setActive(allPill, selected.size === 0);
     let shown = 0;
     cols.forEach(col => {
-      const cid = parseInt(col.dataset.categoryId || '0', 10);
-      const show = selected.size === 0 || selected.has(cid);
+      const cid  = parseInt(col.dataset.categoryId || '0', 10);
+      const scid = parseInt(col.dataset.subCategoryId || '0', 10);
+      const catOk = selected.size === 0 || selected.has(cid);
+      const subOk = !selectedSub || scid === selectedSub;
+      const show = catOk && subOk;
       col.style.display = show ? '' : 'none';
       if (show) shown++;
     });
-    if (emptyMsg) emptyMsg.style.display = (shown === 0 && selected.size > 0) ? '' : 'none';
+    if (emptyMsg) emptyMsg.style.display = (shown === 0 && (selected.size > 0 || selectedSub)) ? '' : 'none';
   }
 
   pills.forEach(pill => {
@@ -168,20 +203,45 @@ function showToast(msg) {
       const v = pill.dataset.cat;
       if (v === 'all') {
         selected.clear();
+        selectedSub = null;
         pills.forEach(p => { if (p.dataset.cat !== 'all') setActive(p, false); });
       } else {
         const id = parseInt(v, 10);
         if (selected.has(id)) { selected.delete(id); setActive(pill, false); }
         else { selected.add(id); setActive(pill, true); }
+        selectedSub = null;
       }
       apply();
     });
   });
 
-  // Pre-select from ?category=<id>
+  subPills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      const v = pill.dataset.subcat;
+      if (v === 'all') {
+        selectedSub = null;
+        subPills.forEach(p => { if (p.dataset.subcat !== 'all') setActive(p, false); });
+        setActive(pill, true);
+      } else {
+        const id = parseInt(v, 10);
+        selectedSub = (selectedSub === id) ? null : id;
+        subPills.forEach(p => {
+          if (p.dataset.subcat === 'all') setActive(p, !selectedSub);
+          else setActive(p, parseInt(p.dataset.subcat, 10) === selectedSub);
+        });
+      }
+      apply();
+    });
+  });
+
+  // Pre-select from ?category=<id>&subcategory=<id>
   {% if sel_category %}
   const pre = bar.querySelector('[data-cat="{{ sel_category }}"]');
   if (pre) pre.click();
+  {% endif %}
+  {% if sel_subcategory %}
+  const preSub = subBar && subBar.querySelector('[data-subcat="{{ sel_subcategory }}"]');
+  if (preSub) preSub.click();
   {% endif %}
 })();
 </script>

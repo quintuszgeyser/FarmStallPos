@@ -621,6 +621,11 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'archived_reason':      p.archived_reason,
         'category_id':          p.category_id,
         'category_name':        p.category.name if p.category else None,
+        'sub_category_id':      p.sub_category_id,
+        'sub_category_name':    p.sub_category.name if getattr(p, 'sub_category', None) else None,
+        'product_family_id':    p.product_family_id,
+        'family_name':          p.family.name if getattr(p, 'family', None) else None,
+        'is_default_variant':   p.is_default_variant,
         # Scale sync fields
         'sync_to_scale':           p.sync_to_scale,
         'scale_tare':              float(p.scale_tare) if p.scale_tare is not None else 0,
