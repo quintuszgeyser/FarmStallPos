@@ -20,7 +20,7 @@ let STATE = {
   users:            [],
   currentTx:        null,
   receiveProductId: null,   // stock item being received
-  productsSubTab:   'active',  // 'active' | 'ingredients' | 'recipes' | 'specials' | 'archived' | 'categories' | 'families'
+  productsSubTab:   'active',  // 'active' | 'ingredients' | 'recipes' | 'specials' | 'archived'
   categories:       [],     // [{id, name, product_count}]
   selectedCategoryIds: new Set(),  // active category filters on the products tab
   selectedSubCategoryId: null,     // active sub-category filter (single-select within category)
@@ -1639,26 +1639,71 @@ function _showAttrPicker(attrs) {
   const div = document.createElement('div');
   div.id = '_attr-picker-overlay';
   div.style.cssText = 'position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center';
-  div.innerHTML = `<div class="bg-white rounded p-3 shadow" style="min-width:260px">
-    <h6 class="mb-2">Add variant attribute</h6>
-    <select id="_attr-pick-sel" class="form-select form-select-sm mb-2">
-      <option value="">Pick a value…</option>
-      ${attrs.map(a => `<optgroup label="${escapeHtml(a.name)}">${a.values.filter(v=>!_variantAttrValues.includes(v.id)).map(v=>`<option value="${v.id}">${escapeHtml(v.value)}</option>`).join('')}</optgroup>`).join('')}
-    </select>
-    <div class="d-flex gap-2 justify-content-end">
+
+  const existingHtml = attrs.length ? `
+    <div class="mb-2">
+      <label class="form-label small mb-1 fw-semibold">Choose existing</label>
+      <select id="_attr-pick-sel" class="form-select form-select-sm">
+        <option value="">Pick a value…</option>
+        ${attrs.map(a => `<optgroup label="${escapeHtml(a.name)}">${a.values.filter(v => !_variantAttrValues.includes(v.id)).map(v => `<option value="${v.id}">${escapeHtml(v.value)}</option>`).join('')}</optgroup>`).join('')}
+      </select>
+    </div>
+    <div class="text-center text-muted small mb-2">— or —</div>` : '';
+
+  div.innerHTML = `<div class="bg-white rounded p-3 shadow" style="min-width:300px;max-width:360px">
+    <h6 class="mb-3">Variant attribute</h6>
+    ${existingHtml}
+    <div class="mb-2">
+      <label class="form-label small mb-1 fw-semibold">Create new</label>
+      <div class="d-flex gap-1">
+        <input id="_new-attr-type" class="form-control form-control-sm" placeholder="Type (e.g. Colour)"
+          list="_attr-types-list" style="flex:1">
+        <datalist id="_attr-types-list">${attrs.map(a => `<option value="${escapeHtml(a.name)}">`).join('')}</datalist>
+        <input id="_new-attr-val" class="form-control form-control-sm" placeholder="Value (e.g. Red)" style="flex:1">
+      </div>
+    </div>
+    <div class="d-flex gap-2 justify-content-end mt-3">
       <button class="btn btn-outline-secondary btn-sm" id="_attr-pick-cancel">Cancel</button>
-      <button class="btn btn-primary btn-sm" id="_attr-pick-ok">Add</button>
+      ${attrs.length ? `<button class="btn btn-primary btn-sm" id="_attr-pick-ok">Add existing</button>` : ''}
+      <button class="btn btn-success btn-sm" id="_attr-pick-new-ok">Create &amp; add</button>
     </div>
   </div>`;
   document.body.appendChild(div);
+
   div.querySelector('#_attr-pick-cancel').onclick = () => div.remove();
-  div.querySelector('#_attr-pick-ok').onclick = () => {
+
+  div.querySelector('#_attr-pick-ok')?.addEventListener('click', () => {
     const vid = parseInt(div.querySelector('#_attr-pick-sel').value, 10);
     if (!vid) { toast('Pick a value first', 'warning'); return; }
     if (!_variantAttrValues.includes(vid)) _variantAttrValues.push(vid);
     _renderVariantAttrList();
     div.remove();
-  };
+  });
+
+  div.querySelector('#_attr-pick-new-ok').addEventListener('click', async () => {
+    const typeName = div.querySelector('#_new-attr-type').value.trim();
+    const valName  = div.querySelector('#_new-attr-val').value.trim();
+    if (!typeName || !valName) { toast('Both type and value are required', 'warning'); return; }
+    try {
+      // Find or create the attribute type
+      let attr = (STATE.attributes || []).find(a => a.name.toLowerCase() === typeName.toLowerCase());
+      if (!attr) {
+        attr = await api('/api/attributes', { method: 'POST', body: JSON.stringify({ name: typeName }) });
+        attr.values = [];
+      }
+      // Check the value doesn't already exist
+      const existingVal = (STATE.attributes || [])
+        .find(a => a.id === attr.id)?.values
+        .find(v => v.value.toLowerCase() === valName.toLowerCase());
+      const newVal = existingVal || await api('/api/attributes/values', {
+        method: 'POST', body: JSON.stringify({ attribute_id: attr.id, value: valName }),
+      });
+      await loadCategories();  // refresh STATE.attributes
+      if (!_variantAttrValues.includes(newVal.id)) _variantAttrValues.push(newVal.id);
+      _renderVariantAttrList();
+      div.remove();
+    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
+  });
 }
 
 function _categoryMatches(query) {
@@ -1726,7 +1771,7 @@ function renderCategoryFilterPills() {
   const wrap = document.getElementById('products-category-filter');
   if (!wrap) return;
   const tab = STATE.productsSubTab;
-  if (tab === 'specials' || tab === 'categories' || tab === 'families') { wrap.style.display = 'none'; return; }
+  if (tab === 'specials') { wrap.style.display = 'none'; return; }
 
   const cats = STATE.categories || [];
   const uncatCount = STATE.products.filter(p => !p.category_id && !p.is_archived).length;
@@ -1782,342 +1827,15 @@ function renderCategoryFilterPills() {
   });
 }
 
-// ── Management view (rename / delete / merge) ──
-function renderCategoriesManage() {
-  const wrap = document.getElementById('categories-manage');
-  if (!wrap) return;
-  const cats = STATE.categories || [];
-  const uncatCount = STATE.products.filter(p => !p.category_id).length;
-
-  const options = cats.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
-
-  let rows = cats.map(c => {
-    const subCount = (STATE.subcategories || []).filter(s => s.category_id === c.id).length;
-    return `
-    <tr data-cat-row="${c.id}">
-      <td><input class="form-control form-control-sm" value="${escapeHtml(c.name)}" data-cat-name="${c.id}"></td>
-      <td class="text-center align-middle">${c.product_count}</td>
-      <td class="text-center align-middle">
-        <button class="btn btn-link btn-sm p-0" data-cat-subs="${c.id}" data-cat-subs-name="${escapeHtml(c.name)}">
-          ${subCount} sub${subCount !== 1 ? 's' : ''} <i class="bi bi-chevron-down"></i>
-        </button>
-      </td>
-      <td class="text-end">
-        <button class="btn btn-outline-primary btn-sm" data-cat-save="${c.id}">Save</button>
-        <button class="btn btn-outline-danger btn-sm" data-cat-del="${c.id}" data-cat-del-name="${escapeHtml(c.name)}" data-cat-del-count="${c.product_count}">Delete</button>
-      </td>
-    </tr>
-    <tr id="subcat-row-${c.id}" class="hidden bg-light">
-      <td colspan="4" class="ps-4">
-        <div id="subcat-manage-${c.id}" class="py-2"></div>
-      </td>
-    </tr>`;
-  }).join('');
-  if (!rows) rows = `<tr><td colspan="3" class="text-muted">No categories yet - add one below or type a new category when editing a product.</td></tr>`;
-
-  wrap.innerHTML = `
-    <div class="d-flex flex-wrap gap-2 align-items-end mb-3">
-      <div>
-        <label class="form-label small mb-1">New category</label>
-        <input id="new-category-name" class="form-control form-control-sm" placeholder="Category name" style="width:220px">
-      </div>
-      <button id="btn-add-category" class="btn btn-success btn-sm">+ Add</button>
-    </div>
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
-        <thead><tr><th>Name</th><th class="text-center" style="width:80px">Products</th><th class="text-center" style="width:100px">Sub-cats</th><th class="text-end" style="width:170px">Actions</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-    <div class="text-muted small mb-3">${uncatCount} product${uncatCount === 1 ? '' : 's'} with no category. Deleting a category leaves its products uncategorised.</div>
-    ${cats.length >= 2 ? `
-    <div class="border-top pt-3">
-      <h6 class="mb-2">Merge categories</h6>
-      <div class="d-flex flex-wrap gap-2 align-items-end">
-        <div><label class="form-label small mb-1">Move all products from</label>
-          <select id="merge-source" class="form-select form-select-sm" style="width:200px">${options}</select></div>
-        <div><label class="form-label small mb-1">into</label>
-          <select id="merge-target" class="form-select form-select-sm" style="width:200px">${options}</select></div>
-        <button id="btn-merge-categories" class="btn btn-outline-warning btn-sm">Merge</button>
-      </div>
-      <div class="form-text">The source category is removed; its products move to the target.</div>
-    </div>` : ''}
-  `;
-
-  wrap.querySelector('#btn-add-category')?.addEventListener('click', async () => {
-    const name = wrap.querySelector('#new-category-name')?.value?.trim();
-    if (!name) { toast('Category name required', 'warning'); return; }
-    await _categoryApi('/api/categories', { name });
-  });
-  wrap.querySelectorAll('[data-cat-save]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = parseInt(btn.dataset.catSave, 10);
-    const name = wrap.querySelector(`[data-cat-name="${id}"]`)?.value?.trim();
-    if (!name) { toast('Category name required', 'warning'); return; }
-    await _categoryApi('/api/categories/update', { id, name });
-  }));
-  wrap.querySelectorAll('[data-cat-del]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = parseInt(btn.dataset.catDel, 10);
-    const n  = parseInt(btn.dataset.catDelCount, 10) || 0;
-    const msg = n > 0
-      ? `Delete “${btn.dataset.catDelName}”? ${n} product${n === 1 ? '' : 's'} will become uncategorised.`
-      : `Delete “${btn.dataset.catDelName}”?`;
-    if (!confirm(msg)) return;
-    await _categoryApi('/api/categories/delete', { id });
-  }));
-  wrap.querySelector('#btn-merge-categories')?.addEventListener('click', async () => {
-    const source_id = parseInt(wrap.querySelector('#merge-source')?.value, 10);
-    const target_id = parseInt(wrap.querySelector('#merge-target')?.value, 10);
-    if (source_id === target_id) { toast('Pick two different categories', 'warning'); return; }
-    if (!confirm('Merge these categories? This cannot be undone.')) return;
-    await _categoryApi('/api/categories/merge', { source_id, target_id });
-  });
-  // Sub-category accordion toggle
-  wrap.querySelectorAll('[data-cat-subs]').forEach(btn => btn.addEventListener('click', () => {
-    const catId  = parseInt(btn.dataset.catSubs, 10);
-    const row    = wrap.querySelector(`#subcat-row-${catId}`);
-    const manage = wrap.querySelector(`#subcat-manage-${catId}`);
-    if (!row) return;
-    const opening = row.classList.toggle('hidden');
-    if (!opening) renderSubCategoryManage(catId, `subcat-manage-${catId}`);
-  }));
-}
-
+// ── Category API helper (used after category rename/delete/merge from product cards) ──
 async function _categoryApi(url, body) {
   try {
     await api(url, { method: 'POST', body: JSON.stringify(body) });
     await loadProducts();
-    renderCategoriesManage();
     toast('Saved', 'success');
   } catch (e) {
     toast(e?.message || 'Update failed', 'danger');
   }
-}
-
-// ── Sub-category management (rendered inside the categories tab) ──
-function renderSubCategoryManage(catId, containerId) {
-  const wrap = document.getElementById(containerId);
-  if (!wrap) return;
-  const subs = (STATE.subcategories || []).filter(s => s.category_id === catId);
-
-  let rows = subs.map(s => `
-    <tr>
-      <td><input class="form-control form-control-sm" value="${escapeHtml(s.name)}" data-sub-name="${s.id}"></td>
-      <td class="text-center">${s.product_count}</td>
-      <td class="text-end">
-        <button class="btn btn-outline-primary btn-sm" data-sub-save="${s.id}">Save</button>
-        <button class="btn btn-outline-danger btn-sm" data-sub-del="${s.id}" data-sub-del-name="${escapeHtml(s.name)}" data-sub-del-count="${s.product_count}">Delete</button>
-      </td>
-    </tr>`).join('');
-  if (!rows) rows = `<tr><td colspan="3" class="text-muted small">No sub-categories yet.</td></tr>`;
-
-  wrap.innerHTML = `
-    <div class="d-flex gap-2 align-items-end mb-2">
-      <input id="new-subcat-name-${catId}" class="form-control form-control-sm" placeholder="New sub-category" style="width:200px">
-      <button class="btn btn-success btn-sm" data-sub-add="${catId}">+ Add</button>
-    </div>
-    <table class="table table-sm align-middle">
-      <thead><tr><th>Name</th><th class="text-center" style="width:80px">Products</th><th style="width:150px"></th></tr></thead>
-      <tbody>${rows}</tbody>
-    </table>`;
-
-  wrap.querySelector(`[data-sub-add]`)?.addEventListener('click', async () => {
-    const name = wrap.querySelector(`#new-subcat-name-${catId}`)?.value?.trim();
-    if (!name) { toast('Name required', 'warning'); return; }
-    await _subcatApi('/api/subcategories', { category_id: catId, name });
-    renderSubCategoryManage(catId, containerId);
-  });
-  wrap.querySelectorAll('[data-sub-save]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = parseInt(btn.dataset.subSave, 10);
-    const name = wrap.querySelector(`[data-sub-name="${id}"]`)?.value?.trim();
-    if (!name) { toast('Name required', 'warning'); return; }
-    await _subcatApi('/api/subcategories/update', { id, name });
-    renderSubCategoryManage(catId, containerId);
-  }));
-  wrap.querySelectorAll('[data-sub-del]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = parseInt(btn.dataset.subDel, 10);
-    const n  = parseInt(btn.dataset.subDelCount, 10) || 0;
-    if (!confirm(`Delete "${btn.dataset.subDelName}"?${n > 0 ? ` ${n} product${n===1?'':'s'} will lose their sub-category.` : ''}`)) return;
-    await _subcatApi('/api/subcategories/delete', { id });
-    renderSubCategoryManage(catId, containerId);
-  }));
-}
-
-async function _subcatApi(url, body) {
-  try {
-    await api(url, { method: 'POST', body: JSON.stringify(body) });
-    await loadCategories();
-    toast('Saved', 'success');
-  } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-}
-
-// ── Families management tab ──
-function renderFamiliesManage() {
-  const wrap = document.getElementById('families-manage');
-  if (!wrap) return;
-  const families = STATE.families || [];
-
-  let rows = families.map(f => `
-    <tr>
-      <td><input class="form-control form-control-sm" value="${escapeHtml(f.name)}" data-fam-name="${f.id}"></td>
-      <td class="text-center align-middle">${f.variant_count}</td>
-      <td class="text-end">
-        <button class="btn btn-outline-secondary btn-sm me-1" data-fam-view="${f.id}" data-fam-view-name="${escapeHtml(f.name)}">View</button>
-        <button class="btn btn-outline-primary btn-sm" data-fam-save="${f.id}">Save</button>
-        <button class="btn btn-outline-danger btn-sm" data-fam-del="${f.id}" data-fam-del-name="${escapeHtml(f.name)}" data-fam-del-count="${f.variant_count}">Delete</button>
-      </td>
-    </tr>`).join('');
-  if (!rows) rows = `<tr><td colspan="3" class="text-muted">No product families yet.</td></tr>`;
-
-  wrap.innerHTML = `
-    <h6>Product Families</h6>
-    <p class="text-muted small mb-2">Families group product variants (colours, sizes, flavours) under one name for the online shop.</p>
-    <div class="d-flex gap-2 align-items-end mb-3">
-      <input id="new-family-name" class="form-control form-control-sm" placeholder="Family name" style="width:240px">
-      <button id="btn-add-family" class="btn btn-success btn-sm">+ Add Family</button>
-    </div>
-    <div class="table-responsive mb-4">
-      <table class="table table-sm align-middle">
-        <thead><tr><th>Name</th><th class="text-center" style="width:80px">Variants</th><th class="text-end" style="width:200px">Actions</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    </div>
-    <div id="fam-variants-panel" class="hidden"></div>
-
-    <hr>
-    <h6>Variant Attributes</h6>
-    <p class="text-muted small mb-2">Define dimensions like Colour, Size, Material. Assign values to individual products in the product editor.</p>
-    <div id="attributes-manage"></div>`;
-
-  wrap.querySelector('#btn-add-family')?.addEventListener('click', async () => {
-    const name = wrap.querySelector('#new-family-name')?.value?.trim();
-    if (!name) { toast('Name required', 'warning'); return; }
-    try {
-      await api('/api/families', { method: 'POST', body: JSON.stringify({ name }) });
-      await loadCategories();
-      renderFamiliesManage();
-      toast('Family created', 'success');
-    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-  });
-  wrap.querySelectorAll('[data-fam-save]').forEach(btn => btn.addEventListener('click', async () => {
-    const id   = parseInt(btn.dataset.famSave, 10);
-    const name = wrap.querySelector(`[data-fam-name="${id}"]`)?.value?.trim();
-    if (!name) { toast('Name required', 'warning'); return; }
-    try {
-      await api('/api/families/update', { method: 'POST', body: JSON.stringify({ id, name }) });
-      await loadCategories();
-      renderFamiliesManage();
-      toast('Saved', 'success');
-    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-  }));
-  wrap.querySelectorAll('[data-fam-del]').forEach(btn => btn.addEventListener('click', async () => {
-    const id   = parseInt(btn.dataset.famDel, 10);
-    const n    = parseInt(btn.dataset.famDelCount, 10) || 0;
-    if (!confirm(`Delete family "${btn.dataset.famDelName}"?${n > 0 ? ` ${n} product${n===1?'':'s'} will become standalone.` : ''}`)) return;
-    try {
-      await api('/api/families/delete', { method: 'POST', body: JSON.stringify({ id }) });
-      await loadCategories();
-      renderFamiliesManage();
-      toast('Family deleted', 'success');
-    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-  }));
-  wrap.querySelectorAll('[data-fam-view]').forEach(btn => btn.addEventListener('click', async () => {
-    const id   = parseInt(btn.dataset.famView, 10);
-    const name = btn.dataset.famViewName;
-    const panel = wrap.querySelector('#fam-variants-panel');
-    panel.classList.remove('hidden');
-    panel.innerHTML = `<h6 class="mb-2">Variants in "${name}"</h6><div class="text-muted small">Loading…</div>`;
-    try {
-      const data = await api(`/api/families/${id}/variants`);
-      if (!data.variants.length) { panel.innerHTML = `<h6>Variants in "${name}"</h6><p class="text-muted small">No variants yet — assign products to this family via the product editor.</p>`; return; }
-      panel.innerHTML = `<h6>Variants in "${escapeHtml(name)}"</h6>
-        <table class="table table-sm">
-          <thead><tr><th>Product</th><th>Attributes</th><th>Price</th><th>Default</th></tr></thead>
-          <tbody>${data.variants.map(v => `
-            <tr>
-              <td>${escapeHtml(v.name)}</td>
-              <td>${v.attributes.map(a => `<span class="badge bg-secondary me-1">${escapeHtml(a.attribute)}: ${escapeHtml(a.value)}</span>`).join('') || '<span class="text-muted">—</span>'}</td>
-              <td>${v.price != null ? `R${v.price.toFixed(2)}` : '—'}</td>
-              <td>${v.is_default_variant ? '<i class="bi bi-star-fill text-warning"></i>' : ''}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>`;
-    } catch (e) { panel.innerHTML = `<div class="text-danger small">Load failed</div>`; }
-  }));
-
-  _renderAttributesManage(wrap.querySelector('#attributes-manage'));
-}
-
-function _renderAttributesManage(wrap) {
-  if (!wrap) return;
-  const attrs = STATE.attributes || [];
-
-  let html = `<div class="d-flex gap-2 align-items-end mb-3">
-    <input id="new-attr-name" class="form-control form-control-sm" placeholder="Attribute name (e.g. Colour)" style="width:220px">
-    <button id="btn-add-attr" class="btn btn-success btn-sm">+ Add</button>
-  </div>`;
-
-  if (attrs.length) {
-    html += `<div class="row g-3">` + attrs.map(a => `
-      <div class="col-md-4 col-sm-6">
-        <div class="card border-0 shadow-sm p-2">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <strong class="small">${escapeHtml(a.name)}</strong>
-            <button class="btn btn-link btn-sm text-danger p-0" data-attr-del="${a.id}" data-attr-del-name="${escapeHtml(a.name)}"><i class="bi bi-trash3"></i></button>
-          </div>
-          <div class="d-flex flex-wrap gap-1 mb-1">
-            ${a.values.map(v => `<span class="badge bg-secondary">${escapeHtml(v.value)} <button class="btn-close btn-close-white btn-sm ms-1" style="width:8px;height:8px" data-val-del="${v.id}" data-val-del-attr="${a.id}"></button></span>`).join('')}
-          </div>
-          <div class="d-flex gap-1">
-            <input class="form-control form-control-sm" id="new-val-${a.id}" placeholder="Add value…" style="width:120px">
-            <button class="btn btn-outline-secondary btn-sm" data-val-add="${a.id}">+</button>
-          </div>
-        </div>
-      </div>`).join('') + `</div>`;
-  } else {
-    html += `<p class="text-muted small">No attributes yet. Add one above (e.g. Colour, Size, Weight).</p>`;
-  }
-
-  wrap.innerHTML = html;
-
-  wrap.querySelector('#btn-add-attr')?.addEventListener('click', async () => {
-    const name = wrap.querySelector('#new-attr-name')?.value?.trim();
-    if (!name) { toast('Name required', 'warning'); return; }
-    try {
-      await api('/api/attributes', { method: 'POST', body: JSON.stringify({ name }) });
-      await loadCategories();
-      renderFamiliesManage();
-      toast('Attribute added', 'success');
-    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-  });
-  wrap.querySelectorAll('[data-attr-del]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = parseInt(btn.dataset.attrDel, 10);
-    if (!confirm(`Delete attribute "${btn.dataset.attrDelName}" and all its values?`)) return;
-    try {
-      await api('/api/attributes/delete', { method: 'POST', body: JSON.stringify({ id }) });
-      await loadCategories();
-      renderFamiliesManage();
-      toast('Attribute deleted', 'success');
-    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-  }));
-  wrap.querySelectorAll('[data-val-add]').forEach(btn => btn.addEventListener('click', async () => {
-    const attrId = parseInt(btn.dataset.valAdd, 10);
-    const value  = wrap.querySelector(`#new-val-${attrId}`)?.value?.trim();
-    if (!value) return;
-    try {
-      await api('/api/attributes/values', { method: 'POST', body: JSON.stringify({ attribute_id: attrId, value }) });
-      await loadCategories();
-      renderFamiliesManage();
-      toast('Value added', 'success');
-    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-  }));
-  wrap.querySelectorAll('[data-val-del]').forEach(btn => btn.addEventListener('click', async () => {
-    const id = parseInt(btn.dataset.valDel, 10);
-    try {
-      await api('/api/attribute_values/delete', { method: 'POST', body: JSON.stringify({ id }) });
-      await loadCategories();
-      renderFamiliesManage();
-    } catch (e) { toast(e?.message || 'Failed', 'danger'); }
-  }));
 }
 
 let _archiveProduct = null;
@@ -2493,22 +2211,15 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
   });
 
   const isSpecials    = STATE.productsSubTab === 'specials';
-  const isCategories  = STATE.productsSubTab === 'categories';
-  const isFamilies    = STATE.productsSubTab === 'families';
-  const isManageView  = isCategories || isFamilies;
-  const isProductList = !isSpecials && !isManageView;
+  const isProductList = !isSpecials;
 
   const specialsList  = document.getElementById('specials-list');
-  const catManage     = document.getElementById('categories-manage');
-  const famManage     = document.getElementById('families-manage');
   const cardList      = document.getElementById('products-card-list');
   const newProduct    = document.getElementById('btn-new-product');
   const newSpecial    = document.getElementById('btn-new-special');
   const filterInput   = document.getElementById('products-filter');
   const catFilter     = document.getElementById('products-category-filter');
   if (specialsList) specialsList.classList.toggle('hidden', !isSpecials);
-  if (catManage)    catManage.classList.toggle('hidden', !isCategories);
-  if (famManage)    famManage.classList.toggle('hidden', !isFamilies);
   if (cardList)     cardList.style.display = isProductList ? '' : 'none';
   if (catFilter && !isProductList) catFilter.style.display = 'none';
   if (newProduct)   newProduct.classList.toggle('hidden', !isProductList);
@@ -2525,10 +2236,6 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
     }, 50);
   } else if (isSpecials) {
     renderSpecialsList();
-  } else if (isCategories) {
-    renderCategoriesManage();
-  } else if (isFamilies) {
-    renderFamiliesManage();
   }
 });
 
