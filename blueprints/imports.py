@@ -18,11 +18,12 @@ from flask import Blueprint, jsonify, request, Response
 from helpers import (
     require_role, current_user,
     _assign_product_code, _gen_barcode_from_code, _plu_range,
+    get_or_create_category,
 )
 
 # Unit conversion (grams/ml base)
 _UNIT_CONV = {'g': 1, 'kg': 1000, 'ml': 1, 'L': 1000, 'unit': 1}
-from models import db, Product, ProductImportRun
+from models import db, Product, ProductImportRun, SubCategory
 
 bp = Blueprint('imports', __name__)
 
@@ -30,15 +31,54 @@ bp = Blueprint('imports', __name__)
 CSV_VERSION = 1
 
 REQUIRED_COLS = {'name', 'product_type'}
+
+# Column order determines template header row order.
+# New optional columns appended at the end — existing CSVs without them still parse correctly.
 ALL_COLS = [
-    'name', 'product_type', 'unit_type', 'price', 'price_per_unit',
-    'product_code', 'stock_qty', 'barcode', 'is_for_sale',
-    'low_stock_threshold', 'sync_to_scale', 'scale_tare', 'scale_shelf_life',
-    'scale_msg1', 'scale_msg2', 'description', 'margin_pct',
+    # ── Core (mandatory) ──────────────────────────────────────────────────────
+    'name',
+    'product_type',
+    'unit_type',
+    # ── Pricing (conditional mandatory — see template comments) ───────────────
+    'price',
+    'price_per_unit',
+    # ── Identity ─────────────────────────────────────────────────────────────
+    'product_code',
+    'barcode',
+    # ── Stock & sales ─────────────────────────────────────────────────────────
+    'stock_qty',
+    'is_for_sale',
+    'low_stock_threshold',
+    # ── Metadata ──────────────────────────────────────────────────────────────
+    'description',
+    'margin_pct',
+    # ── Classification ────────────────────────────────────────────────────────
+    'category',
+    'sub_category',
+    # ── Online shop & kitchen ─────────────────────────────────────────────────
+    'is_available_online',
+    'is_prepared',
+    # ── Scale ─────────────────────────────────────────────────────────────────
+    'sync_to_scale',
+    'scale_tare',
+    'scale_shelf_life',
+    'scale_open_price',
+    'scale_msg1',
+    'scale_msg2',
+    # ── Consignment ───────────────────────────────────────────────────────────
+    'is_consignment',
+    'settlement_basis',
+    'consignment_pct',
+    # ── Packaging ─────────────────────────────────────────────────────────────
+    'package_size',
+    'package_size_unit',
+    'package_unit',
 ]
 
 SCALE_RELEVANT = {'name', 'price', 'price_per_unit', 'scale_tare', 'scale_shelf_life',
                   'scale_open_price', 'scale_msg1', 'scale_msg2', 'sold_by_weight'}
+
+_VALID_PACKAGE_UNITS = {'g', 'kg', 'ml', 'l', 'unit'}
 
 
 def _parse_bool(val, default=True):
@@ -125,6 +165,22 @@ def _validate_row(row, idx):
             if not (lo <= pc <= hi):
                 errors.append((f'product_code {pc} not in valid range {lo}-{hi} for this type', 'RANGE_EXCEEDED'))
 
+    # Consignment
+    is_consignment = _parse_bool(row.get('is_consignment'), False)
+    if is_consignment:
+        sb = (row.get('settlement_basis') or '').strip().upper()
+        if sb and sb not in ('FIXED_COST', 'PCT_OF_SALE'):
+            errors.append((f"settlement_basis '{sb}' invalid — use FIXED_COST or PCT_OF_SALE", 'INVALID_TYPE'))
+        if sb == 'PCT_OF_SALE':
+            pct = _parse_decimal(row.get('consignment_pct'))
+            if pct is None or pct <= 0 or pct > 100:
+                errors.append(('consignment_pct must be 0–100 when settlement_basis=PCT_OF_SALE', 'MISSING_FIELD'))
+
+    # Package size unit
+    ps_unit = (row.get('package_size_unit') or '').strip().lower()
+    if ps_unit and ps_unit not in _VALID_PACKAGE_UNITS:
+        errors.append((f"package_size_unit '{ps_unit}' invalid — use g/kg/ml/L/unit", 'INVALID_TYPE'))
+
     # Warnings
     if not row.get('margin_pct'):
         warnings.append('margin_pct not set')
@@ -132,6 +188,10 @@ def _validate_row(row, idx):
         warnings.append('description empty')
     if _parse_bool(row.get('sync_to_scale'), sold_by_weight) and not sold_by_weight:
         warnings.append('sync_to_scale=true but product is not weight/volume')
+    sub_name = (row.get('sub_category') or '').strip()
+    cat_name = (row.get('category') or '').strip()
+    if sub_name and not cat_name:
+        warnings.append('sub_category set but category is blank — sub_category will be ignored')
 
     return errors, warnings
 
@@ -183,17 +243,135 @@ def _parse_csv(file_bytes):
 
 @bp.route('/api/products/import-template')
 def api_import_template():
-    """Download CSV template with headers and example rows."""
-    lines = [
+    """Download CSV template with headers, column guide, and example rows."""
+    header = ','.join(ALL_COLS)
+
+    guide = [
         f'# version={CSV_VERSION}',
-        ','.join(ALL_COLS),
-        '# Example weight product (biltong):',
-        'Springbok Biltong,stock_item,weight,,0.68,1,,,true,50,true,10,14,Keep refrigerated,,Springbok biltong from the farm,40',
-        '# Example fixed price product:',
-        'Biltong Sampler,stock_item,count,89.99,,20000,,,true,,false,,,,,,Gift pack of assorted biltong,35',
-        '# Example volume product (milk):',
-        'Fresh Milk,stock_item,volume,,0.03,30000,,,true,1000,true,0,3,,,,Fresh farm milk,40',
+        '# ════════════════════════════════════════════════════════════════════',
+        '# PRODUCT IMPORT TEMPLATE — Farm POS',
+        '# ════════════════════════════════════════════════════════════════════',
+        '#',
+        '# MANDATORY — every row must have these',
+        '#   name           Unique product display name (required for all types)',
+        '#   product_type   stock_item | recipe',
+        '#',
+        '# CONDITIONAL — required depending on product_type / unit_type',
+        '#   unit_type      REQUIRED for stock_item: weight | volume | count',
+        '#   price          REQUIRED for stock_item (count) and recipe — sale price in Rands',
+        '#   price_per_unit REQUIRED for stock_item (weight or volume) — price per gram/ml',
+        '#                  Leave the OTHER pricing column blank (not both, not neither)',
+        '#',
+        '# OPTIONAL — leave blank to use the default shown in brackets',
+        '#   product_code       Auto-assigned if blank.',
+        '#                      Weight/volume range: 1–19 999  |  Fixed/count: 20 000–29 999',
+        '#   barcode            Auto-generated if blank (fixed/count items only)',
+        '#   stock_qty          Starting stock for a NEW product only (ignored on update)',
+        '#   is_for_sale        true/false  [default: true]  — show product at teller',
+        '#   low_stock_threshold  Alert threshold in product base unit (g, ml, or unit)',
+        '#   description        Shown on website and product detail view',
+        '#   margin_pct         Target margin % — for pricing guidance only',
+        '#   category           Category name. Created automatically if it does not exist.',
+        '#   sub_category       Sub-category name (requires category to also be filled in).',
+        '#                      Created automatically if it does not exist.',
+        '#   is_available_online  true/false  [default: false]  — list on Lady Coleen website',
+        '#   is_prepared        true/false  [default: false]  — sends to kitchen queue on sale',
+        '#   sync_to_scale      true/false  [default: true for weight/volume, false otherwise]',
+        '#   scale_tare         Tare weight in grams printed on scale label (weight items)',
+        '#   scale_shelf_life   Shelf life in days printed on scale label',
+        '#   scale_open_price   true/false  [default: false]  — allow price override on scale',
+        '#   scale_msg1         Extra label line 1 (max 20 chars)',
+        '#   scale_msg2         Extra label line 2 (max 20 chars)',
+        '#   is_consignment     true/false  [default: false]  — stock owned by supplier until sold',
+        '#   settlement_basis   FIXED_COST | PCT_OF_SALE  [default: FIXED_COST]',
+        '#                      Only relevant when is_consignment=true',
+        '#   consignment_pct    Supplier % of sale price (1–100).',
+        '#                      Only required when settlement_basis=PCT_OF_SALE',
+        '#   package_size       Package quantity number (e.g. 500 for a 500 g jar)',
+        '#   package_size_unit  g | kg | ml | L | unit',
+        '#   package_unit       Package display name (e.g. "500g jar")',
+        '#',
+        '# ════════════════════════════════════════════════════════════════════',
+        '# EXAMPLES — delete example rows before importing your own data',
+        '# ════════════════════════════════════════════════════════════════════',
+        '#',
+        '# Example 1: Weight product — price_per_unit required; price must be blank',
     ]
+
+    def row(*vals):
+        return ','.join(str(v) for v in vals)
+
+    # Col order: name,product_type,unit_type,price,price_per_unit,product_code,barcode,
+    #            stock_qty,is_for_sale,low_stock_threshold,description,margin_pct,
+    #            category,sub_category,is_available_online,is_prepared,
+    #            sync_to_scale,scale_tare,scale_shelf_life,scale_open_price,scale_msg1,scale_msg2,
+    #            is_consignment,settlement_basis,consignment_pct,
+    #            package_size,package_size_unit,package_unit
+
+    ex_weight = row(
+        'Springbok Biltong', 'stock_item', 'weight',
+        '', '0.68',                 # price blank, price_per_unit
+        '', '',                     # product_code blank, barcode blank
+        '', 'true', '50',           # stock_qty, is_for_sale, low_stock_threshold
+        'Springbok biltong from the farm', '40',  # description, margin_pct
+        'Biltong', 'Springbok',     # category, sub_category
+        'true', 'false',            # is_available_online, is_prepared
+        'true', '10', '14', 'false', 'Keep refrigerated', '',  # scale fields
+        'false', '', '',            # consignment
+        '', '', '',                 # packaging
+    )
+
+    ex_fixed = row(
+        'Biltong Sampler', 'stock_item', 'count',
+        '89.99', '',                # price, price_per_unit blank
+        '', '',
+        '', 'true', '',
+        'Gift pack of assorted biltong', '35',
+        'Gift Packs', '',
+        'true', 'false',
+        'false', '', '', 'false', '', '',
+        'false', '', '',
+        '', '', '',
+    )
+
+    ex_volume = row(
+        'Fresh Milk', 'stock_item', 'volume',
+        '', '0.03',
+        '', '',
+        '', 'true', '1000',
+        'Fresh farm milk', '40',
+        'Dairy', '',
+        'true', 'false',
+        'true', '0', '3', 'false', '', '',
+        'false', '', '',
+        '1', 'L', '1L bottle',
+    )
+
+    ex_consignment = row(
+        'Artisan Honey', 'stock_item', 'count',
+        '125.00', '',
+        '', '',
+        '', 'true', '2',
+        'Local artisan honey 500g jar', '20',
+        'Honey & Preserves', 'Honey',
+        'true', 'false',
+        'false', '', '', 'false', '', '',
+        'true', 'PCT_OF_SALE', '60',
+        '500', 'g', '500g jar',
+    )
+
+    lines = guide + [
+        f'# {ex_weight}',
+        '# Example 2: Fixed-price count product — price required; price_per_unit must be blank',
+        f'# {ex_fixed}',
+        '# Example 3: Volume product — price_per_unit required; price must be blank',
+        f'# {ex_volume}',
+        '# Example 4: Consignment product — supplier paid 60% of each sale',
+        f'# {ex_consignment}',
+        '#',
+        header,
+    ]
+
     content = '\n'.join(lines) + '\n'
     return Response(
         content,
@@ -399,6 +577,18 @@ def _process_row(raw, existing, idx, warnings, mode):
             if old_str != new_str:
                 changes[field] = f'{old_str} → {new_str}'
 
+    # Category / sub_category change detection (no DB lookup needed for preview)
+    cat_name = (raw.get('category') or '').strip()
+    if cat_name:
+        old_cat = (existing.category.name.strip() if existing and existing.category else '') if existing else ''
+        if cat_name.lower() != old_cat.lower():
+            changes['category'] = f'{old_cat or "(none)"} → {cat_name}'
+    sub_name = (raw.get('sub_category') or '').strip()
+    if sub_name and cat_name:
+        old_sub = (existing.sub_category.name.strip() if existing and existing.sub_category else '') if existing else ''
+        if sub_name.lower() != old_sub.lower():
+            changes['sub_category'] = f'{old_sub or "(none)"} → {sub_name}'
+
     if not changes:
         return {'row': idx, 'name': name, 'action': 'unchanged', 'warnings': warnings}
 
@@ -429,13 +619,34 @@ def _build_product_fields(raw, sold_by_weight, utype, ptype, existing=None):
 
     # Scale fields
     sync = raw.get('sync_to_scale')
-    fields['sync_to_scale'] = _parse_bool(sync, sold_by_weight)
+    fields['sync_to_scale']    = _parse_bool(sync, sold_by_weight)
     fields['scale_tare']       = _parse_decimal(raw.get('scale_tare'))
     fields['scale_shelf_life'] = _parse_int(raw.get('scale_shelf_life'))
+    fields['scale_open_price'] = _parse_bool(raw.get('scale_open_price'), False)
     msg1 = (raw.get('scale_msg1') or '').strip()[:20]
     msg2 = (raw.get('scale_msg2') or '').strip()[:20]
     fields['scale_msg1'] = msg1 or None
     fields['scale_msg2'] = msg2 or None
+
+    # Online shop / kitchen
+    fields['is_available_online'] = _parse_bool(raw.get('is_available_online'), False)
+    fields['is_prepared']          = _parse_bool(raw.get('is_prepared'), False)
+
+    # Consignment
+    fields['is_consignment'] = _parse_bool(raw.get('is_consignment'), False)
+    sb = (raw.get('settlement_basis') or '').strip().upper()
+    fields['settlement_basis'] = sb if sb in ('FIXED_COST', 'PCT_OF_SALE') else 'FIXED_COST'
+    if fields['is_consignment'] and fields['settlement_basis'] == 'PCT_OF_SALE':
+        fields['consignment_pct'] = _parse_decimal(raw.get('consignment_pct'))
+    else:
+        fields['consignment_pct'] = None
+
+    # Packaging
+    ps = _parse_decimal(raw.get('package_size'))
+    fields['package_size']      = ps
+    ps_unit = (raw.get('package_size_unit') or '').strip()
+    fields['package_size_unit'] = ps_unit if ps_unit.lower() in _VALID_PACKAGE_UNITS else None
+    fields['package_unit']      = (raw.get('package_unit') or '').strip() or None
 
     return fields
 
@@ -503,6 +714,35 @@ def _do_import_strict(results, raw_rows, allow_name_match):
         _write_row(result, raw, allow_name_match)
 
 
+def _apply_category(p, raw):
+    """Resolve category / sub_category from raw CSV row and set on product p.
+    Only writes when the CSV cell is non-empty; blank = leave existing value unchanged."""
+    cat_name = (raw.get('category') or '').strip()
+    if not cat_name:
+        return
+    cat = get_or_create_category(cat_name)
+    if not cat:
+        return
+    p.category_id = cat.id
+
+    sub_name = (raw.get('sub_category') or '').strip()
+    if sub_name:
+        norm = sub_name.lower()
+        sub = SubCategory.query.filter_by(category_id=cat.id, name_norm=norm).first()
+        if not sub:
+            sub = SubCategory(category_id=cat.id, name=sub_name, name_norm=norm)
+            db.session.add(sub)
+            db.session.flush()
+        p.sub_category_id = sub.id
+    else:
+        # Category changed but no sub_category specified — clear old sub_category if it
+        # belonged to a different category
+        if p.sub_category_id:
+            old_sub = db.session.get(SubCategory, p.sub_category_id)
+            if old_sub and old_sub.category_id != cat.id:
+                p.sub_category_id = None
+
+
 def _write_row(result, raw, allow_name_match):
     """Write a single row to DB."""
     from models import Product as P
@@ -519,6 +759,7 @@ def _write_row(result, raw, allow_name_match):
     if result['action'] == 'create':
         p = P()
         _apply_fields(p, fields, is_new=True, raw=raw)
+        _apply_category(p, raw)
         db.session.add(p)
         db.session.flush()
         result['product_id'] = p.id
@@ -535,6 +776,7 @@ def _write_row(result, raw, allow_name_match):
             return
         old_fields = {k: getattr(p, k, None) for k in fields}
         _apply_fields(p, fields, is_new=False, raw=raw)
+        _apply_category(p, raw)
         # Check if scale-relevant fields changed
         scale_changed = any(fields.get(f) != old_fields.get(f) for f in SCALE_RELEVANT)
         if scale_changed:
