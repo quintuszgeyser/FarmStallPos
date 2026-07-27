@@ -19,7 +19,7 @@
   <div class="mb-2">
     <div class="d-flex align-items-center gap-2 flex-wrap">
       <button type="button" id="cat-all-btn" class="btn btn-sm lc-btn-primary">All Categories</button>
-      <div id="cat-selected-wrap" class="d-none d-flex align-items-center gap-1">
+      <div id="cat-selected-wrap" class="align-items-center gap-1" style="display:none">
         <span class="badge rounded-pill" style="background:var(--lc-gold);color:var(--on-primary,#fff);font-size:.85rem;padding:.4em .75em" id="cat-selected-name"></span>
         <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="cat-clear-btn" title="Clear category">&times;</button>
       </div>
@@ -60,7 +60,7 @@
 
   <!-- Sub-category filter — JS shows/hides this -->
   {% if subcategories %}
-  <div class="mb-3 d-none d-flex flex-wrap gap-2 align-items-center ps-2 border-start border-2" id="subcategory-filter">
+  <div class="mb-3 flex-wrap gap-2 align-items-center ps-2 border-start border-2" id="subcategory-filter" style="display:none">
     <span class="text-muted small me-1">Filter:</span>
     <button type="button" class="btn btn-sm lc-subcat-pill lc-btn-primary" data-subcat="all">All</button>
     {% for s in subcategories %}
@@ -286,7 +286,7 @@ function showToast(msg) {
     if (catAllBtn) setActive(catAllBtn, id === null);
     catPills.forEach(p => setActive(p, id !== null && parseInt(p.dataset.cat, 10) === id));
 
-    if (catSelWrap) catSelWrap.classList.toggle('d-none', id === null);
+    if (catSelWrap) catSelWrap.style.display = id !== null ? 'flex' : 'none';
     if (catSelName && name) catSelName.textContent = name;
 
     // Close panel when selecting a category
@@ -300,7 +300,7 @@ function showToast(msg) {
     if (subBar) {
       if (id !== null) {
         const hasSubs = subPills.some(p => parseInt(p.dataset.subcatCat || '0', 10) === id);
-        subBar.classList.toggle('d-none', !hasSubs);
+        subBar.style.display = hasSubs ? 'flex' : 'none';
         subPills.forEach(p => {
           if (p.dataset.subcat === 'all') {
             p.style.display = '';
@@ -311,7 +311,7 @@ function showToast(msg) {
           }
         });
       } else {
-        subBar.classList.add('d-none');
+        subBar.style.display = 'none';
         subPills.forEach(p => { p.style.display = ''; });
         const allSub = subBar.querySelector('[data-subcat="all"]');
         subPills.forEach(p => setActive(p, p === allSub));
