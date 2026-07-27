@@ -1827,9 +1827,9 @@ function renderCategorySuggestions() {
       e.preventDefault();
       input.value = btn.dataset.catPick;
       hideCategorySuggestions();
-      // Refresh sub-category select when a category is picked
+      // Refresh sub-category select; use 'new' sentinel for categories not yet saved
       const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === btn.dataset.catPick.toLowerCase());
-      _populateSubCategorySelect(cat?.id || null, null);
+      _populateSubCategorySelect(cat?.id || 'new', null);
     });
   });
 }
@@ -1842,10 +1842,10 @@ function renderCategorySuggestions() {
   input.addEventListener('blur', () => {
     setTimeout(() => {
       hideCategorySuggestions();
-      // Show sub-cat row if the typed value matches an existing category
+      // Show sub-cat row whenever a category name is entered (existing or new)
       const val = input.value.trim().toLowerCase();
       const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === val);
-      const newCatId = cat?.id || null;
+      const newCatId = cat?.id || (val ? 'new' : null);
       if (newCatId !== _subCatCategoryId) {
         _populateSubCategorySelect(newCatId, null);
       }

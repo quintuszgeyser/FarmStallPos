@@ -1,9 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{{ family_name or product.name }} - Lady Coleen Farm Shop{% endblock %}
 
-{% set has_variants = family_attrs | length > 0 %}
-{% set multi_variant = family_variants | length > 1 %}
-
 {% block head %}
 {% if images | length > 1 and not multi_variant %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css">
@@ -120,7 +117,7 @@
             <button type="button"
                     id="vpill-{{ dim.name }}-{{ val.val_id }}"
                     class="btn btn-sm vpill {% if current_variant_attrs.get(dim.name) == val.val_id %}lc-btn-primary{% else %}btn-outline-secondary{% endif %}"
-                    onclick="_selectPill({{ dim.name | tojson }}, {{ val.val_id }})">
+                    onclick="_selectPill('{{ dim.name | e }}', {{ val.val_id }})">
               {{ val.attr_value }}
             </button>
             {% endfor %}

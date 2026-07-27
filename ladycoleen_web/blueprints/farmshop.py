@@ -270,10 +270,13 @@ def product_detail(product_id):
         if cur:
             current_variant_attrs = {a["attr_name"]: a["val_id"] for a in cur["attributes"]}
 
+    has_variants  = len(family_attrs) > 0
+    multi_variant = len(family_variants) > 1
     return render_template("farmshop/product_detail.html",
                            product=product, images=images, available_qty=avail,
                            family_variants=family_variants, family_attrs=family_attrs,
-                           family_name=family_name, current_variant_attrs=current_variant_attrs)
+                           family_name=family_name, current_variant_attrs=current_variant_attrs,
+                           has_variants=has_variants, multi_variant=multi_variant)
 
 
 @farmshop_bp.route("/farmshop/orders/<reference>")
