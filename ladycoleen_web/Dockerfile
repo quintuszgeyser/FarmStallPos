@@ -1,6 +1,8 @@
 FROM python:3.11-slim
 
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     gcc \
     libpq-dev \
     curl \
@@ -14,14 +16,15 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Install dependencies first so this layer is cached when only app code changes.
-# requirements.txt is copied from the build context (local file must match repo).
+# requirements.txt is pre-fetched from GitHub by deploy.sh before each build.
+# This layer is cached — pip only re-runs when requirements change.
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt
 
-# Clone monorepo and use ladycoleen_web subfolder - same repo as POS.
-# This layer always rebuilds (pulls latest code), but pip layer above stays cached.
-RUN git clone https://github.com/quintuszgeyser/FarmStallPos.git /tmp/repo && \
+# Always-fresh: shallow clone gets latest code without full git history.
+# The layers above (apt + pip) are cached so only this step re-runs each build.
+RUN git clone --depth=1 https://github.com/quintuszgeyser/FarmStallPos.git /tmp/repo && \
     cp -r /tmp/repo/ladycoleen_web/. /app/ && \
     rm -rf /tmp/repo
 

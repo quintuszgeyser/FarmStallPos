@@ -110,18 +110,48 @@ deploy_recognition() {
 }
 
 deploy_qa() {
-  echo "[deploy] Deploying QA POS (qa-pos container, port 5100)..."
-  docker rm -f qa-farmpos-app 2>/dev/null || true
-  docker compose build --no-cache qa-pos
+  # Fetch latest requirements.txt from GitHub into build contexts so Docker can cache
+  # the pip install layer. The layer only re-runs when requirements.txt actually changes;
+  # otherwise pip install is served from the BuildKit persistent cache (~/.cache/pip).
+  echo "[deploy] Fetching requirements.txt for pip layer caching..."
+  curl -sf "https://raw.githubusercontent.com/quintuszgeyser/FarmStallPos/main/farm_pos_web/requirements.txt" \
+    -o ~/farmpos-docker/pos/requirements.txt \
+    || echo "[deploy] WARN: could not fetch POS requirements.txt — pip layer will not be cached this build"
+  curl -sf "https://raw.githubusercontent.com/quintuszgeyser/FarmStallPos/main/ladycoleen_web/requirements.txt" \
+    -o ~/farmpos-docker/ladycoleen_web/requirements.txt \
+    || echo "[deploy] WARN: could not fetch web requirements.txt — pip layer will not be cached this build"
+
+  # Build QA POS and QA WEB in parallel — 12 cores available, no reason to serialize.
+  # No --no-cache: layer ordering (COPY requirements.txt -> pip -> git clone) ensures
+  # pip/apt are cached and only the git clone layer rebuilds each time.
+  echo "[deploy] Building QA POS + QA WEB in parallel..."
+  docker rm -f qa-farmpos-app qa-ladycoleen-web 2>/dev/null || true
+  DOCKER_BUILDKIT=1 docker compose build qa-pos > /tmp/build_qa_pos.log 2>&1 &
+  POS_PID=$!
+  DOCKER_BUILDKIT=1 docker compose build qa-web > /tmp/build_qa_web.log 2>&1 &
+  WEB_PID=$!
+
+  echo "[deploy] Waiting for parallel builds... (logs: /tmp/build_qa_pos.log, /tmp/build_qa_web.log)"
+  POS_RC=0; WEB_RC=0
+  wait $POS_PID || POS_RC=$?
+  wait $WEB_PID || WEB_RC=$?
+
+  if [ $POS_RC -ne 0 ]; then
+    echo "[deploy] ERROR: QA POS build failed — see /tmp/build_qa_pos.log"
+    tail -30 /tmp/build_qa_pos.log; exit 1
+  fi
+  echo "[deploy] QA POS build OK"
+  if [ $WEB_RC -ne 0 ]; then
+    echo "[deploy] ERROR: QA WEB build failed — see /tmp/build_qa_web.log"
+    tail -30 /tmp/build_qa_web.log; exit 1
+  fi
+  echo "[deploy] QA WEB build OK"
+
   docker compose up -d qa-pos
   wait_healthy qa-farmpos-app "QA POS"
-  # Record the artifact that QA validated, for traceable promotion.
   docker image inspect "$QA_IMAGE" --format '{{.Id}}' > /tmp/qa_image_id.txt 2>/dev/null || true
   echo "[deploy] QA artifact: $QA_IMAGE ($(cat /tmp/qa_image_id.txt 2>/dev/null))"
 
-  echo "[deploy] Deploying QA WEB (qa-web container, port 5101)..."
-  docker rm -f qa-ladycoleen-web 2>/dev/null || true
-  docker compose build --no-cache qa-web
   docker compose up -d qa-web
   wait_healthy qa-ladycoleen-web "QA WEB"
   docker image inspect "$QA_WEB_IMAGE" --format '{{.Id}}' > /tmp/qa_web_image_id.txt 2>/dev/null || true
