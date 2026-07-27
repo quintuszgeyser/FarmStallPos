@@ -6,7 +6,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request
 
 from helpers import require_role, current_user, get_or_create_category
-from models import db, Product, Category, ProductBulkEditRun, StockBatch
+from models import db, Product, Category, ProductBulkEditRun, StockBatch, SubCategory, ProductFamily
 
 bp = Blueprint('bulk', __name__)
 logger = logging.getLogger('pos')
@@ -29,7 +29,9 @@ _EDITABLE = {
     'scale_tare':           {'type': 'float',    'label': 'Scale tare (g)'},
     'scale_msg1':           {'type': 'str',      'label': 'Scale message 1'},
     'scale_msg2':           {'type': 'str',      'label': 'Scale message 2'},
-    'category':             {'type': 'category', 'label': 'Category'},
+    'category':             {'type': 'category',    'label': 'Category'},
+    'subcategory':          {'type': 'subcategory', 'label': 'Subcategory'},
+    'product_family':       {'type': 'family',      'label': 'Product family'},
 }
 
 # ── Filterable fields ────────────────────────────────────────────────────────
@@ -55,6 +57,9 @@ _FILTERABLE = {
     'scale_shelf_life':     {'type': 'int',    'label': 'Shelf life (days)'},
     'stock_qty':            {'type': 'int',    'label': 'Stock qty (simple)'},
     'scale_tare':           {'type': 'float',  'label': 'Scale tare (g)'},
+    'subcategory':          {'type': 'str',    'label': 'Subcategory'},
+    'product_family':       {'type': 'str',    'label': 'Product family'},
+    'supplier':             {'type': 'str',    'label': 'Supplier (latest batch)'},
 }
 
 _STR_OPS  = ('contains', 'not_contains', 'starts', 'ends', 'eq', 'ne', 'empty', 'populated')
@@ -62,19 +67,42 @@ _NUM_OPS  = ('eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'empty', 'populated')
 _BOOL_OPS = ('eq', 'empty', 'populated')
 
 
-def _get_field_val(p, field):
+def _build_supplier_map():
+    """Returns {product_id: comma-joined supplier names} from stock batches."""
+    from models import Supplier
+    rows = (db.session.query(StockBatch.product_id, Supplier.name)
+            .join(Supplier, Supplier.id == StockBatch.supplier_id)
+            .filter(StockBatch.supplier_id.isnot(None))
+            .all())
+    result = {}
+    for pid, sname in rows:
+        if pid in result:
+            if sname and sname not in result[pid].split(', '):
+                result[pid] += ', ' + sname
+        else:
+            result[pid] = sname or ''
+    return result
+
+
+def _get_field_val(p, field, supplier_map=None):
     if field == 'category':
         return p.category.name if p.category else None
+    if field == 'subcategory':
+        return p.sub_category.name if p.sub_category else None
+    if field == 'product_family':
+        return p.family.name if p.family else None
+    if field == 'supplier':
+        return (supplier_map or {}).get(p.id, '')
     return getattr(p, field, None)
 
 
-def _match_condition(p, cond):
+def _match_condition(p, cond, supplier_map=None):
     field    = cond.get('field', '')
     operator = cond.get('operator', 'contains')
     value    = cond.get('value', '')
     if field not in _FILTERABLE:
         return True  # unknown field = skip
-    raw = _get_field_val(p, field)
+    raw = _get_field_val(p, field, supplier_map)
     ftype = _FILTERABLE[field]['type']
 
     if operator == 'empty':
@@ -124,7 +152,10 @@ def _filter_products(conditions, include_archived=False, exclude_ids=None):
     products = q.order_by(Product.name.asc()).all()
     if not conditions:
         return products
-    return [p for p in products if all(_match_condition(p, c) for c in conditions)]
+    supplier_map = {}
+    if any(c.get('field') == 'supplier' for c in conditions):
+        supplier_map = _build_supplier_map()
+    return [p for p in products if all(_match_condition(p, c, supplier_map) for c in conditions)]
 
 
 def _serialize_match(p):
@@ -136,7 +167,9 @@ def _serialize_match(p):
         'price_per_unit': float(p.price_per_unit) if p.price_per_unit is not None else None,
         'barcode':      p.barcode,
         'product_code': p.product_code,
-        'category':     p.category.name if p.category else None,
+        'category':        p.category.name if p.category else None,
+        'subcategory':     p.sub_category.name if p.sub_category else None,
+        'product_family':  p.family.name if p.family else None,
         'is_for_sale':  p.is_for_sale,
         'is_available_online': p.is_available_online,
         'margin_pct':   float(p.margin_pct) if p.margin_pct is not None else None,
@@ -177,12 +210,32 @@ def _apply_action(p, action):
     if op == 'set':
         value = action.get('value')
         info  = _EDITABLE[field]
-        if info['type'] == 'category':
+        ftype = info['type']
+        if ftype == 'category':
             if not value:
                 p.category_id = None
             else:
                 cat = get_or_create_category(str(value))
                 p.category_id = cat.id if cat else None
+        elif ftype == 'subcategory':
+            if not value:
+                p.sub_category_id = None
+            else:
+                # Scoped to the product's category — pre-validation in api_bulk_apply ensures
+                # p.category_id is set and the subcategory exists within it.
+                sub = SubCategory.query.filter(
+                    db.func.lower(SubCategory.name) == str(value).strip().lower(),
+                    SubCategory.category_id == p.category_id,
+                ).first()
+                p.sub_category_id = sub.id if sub else None
+        elif ftype == 'family':
+            if not value:
+                p.product_family_id = None
+            else:
+                fam = ProductFamily.query.filter(
+                    db.func.lower(ProductFamily.name) == str(value).strip().lower()
+                ).first()
+                p.product_family_id = fam.id if fam else None
         else:
             coerced = _coerce_value(field, value)
             old = getattr(p, field, None)
@@ -268,8 +321,15 @@ def api_bulk_preview():
             if field not in _EDITABLE:
                 continue
             if op == 'set':
-                if info.get('type') == 'category':
+                ftype = info.get('type')
+                if ftype == 'category':
                     old_val = p.category.name if p.category else None
+                    new_val = action.get('value') or None
+                elif ftype == 'subcategory':
+                    old_val = p.sub_category.name if p.sub_category else None
+                    new_val = action.get('value') or None
+                elif ftype == 'family':
+                    old_val = p.family.name if p.family else None
                     new_val = action.get('value') or None
                 else:
                     old_val = getattr(p, field, None)
@@ -367,6 +427,53 @@ def api_bulk_apply():
 
     user = current_user()
 
+    # Pre-validate subcategory/family names before touching any product.
+    # This prevents silent no-ops when a name is mistyped or doesn't exist.
+    for action in actions:
+        field = action.get('field', '')
+        op    = action.get('op', 'set')
+        value = (action.get('value') or '').strip()
+        if op != 'set' or field not in _EDITABLE or not value:
+            continue
+        info = _EDITABLE[field]
+
+        if info['type'] == 'subcategory':
+            no_cat = [p for p in matched if not p.category_id]
+            if no_cat:
+                names = ', '.join(f'"{p.name}"' for p in no_cat[:3])
+                more = f' and {len(no_cat) - 3} more' if len(no_cat) > 3 else ''
+                return jsonify({'error': (
+                    f'Cannot set subcategory: {len(no_cat)} product(s) have no category '
+                    f'({names}{more}). Assign a category first.'
+                )}), 400
+            # Verify the subcategory name exists in every category represented in matched
+            missing_in = []
+            for cat_id in {p.category_id for p in matched}:
+                found = SubCategory.query.filter(
+                    db.func.lower(SubCategory.name) == value.lower(),
+                    SubCategory.category_id == cat_id,
+                ).first()
+                if not found:
+                    cat = db.session.get(Category, cat_id)
+                    missing_in.append(cat.name if cat else str(cat_id))
+            if missing_in:
+                cats = ', '.join(f'"{c}"' for c in missing_in)
+                return jsonify({'error': (
+                    f'Subcategory "{value}" does not exist in {cats}. '
+                    f'Create it first, or use the category filter to apply only within '
+                    f'categories that already have this subcategory.'
+                )}), 400
+
+        elif info['type'] == 'family':
+            fam = ProductFamily.query.filter(
+                db.func.lower(ProductFamily.name) == value.lower()
+            ).first()
+            if fam is None:
+                return jsonify({'error': (
+                    f'Product family "{value}" not found. '
+                    f'Create it first in the product editor.'
+                )}), 400
+
     # Capture before-state for rollback
     before = {}
     for p in matched:
@@ -379,6 +486,10 @@ def api_bulk_apply():
             if info.get('type') == 'category':
                 before[str(p.id)]['category'] = p.category.name if p.category else None
                 before[str(p.id)]['category_id'] = p.category_id
+            elif info.get('type') == 'subcategory':
+                before[str(p.id)]['subcategory_id'] = p.sub_category_id
+            elif info.get('type') == 'family':
+                before[str(p.id)]['product_family_id'] = p.product_family_id
             else:
                 before[str(p.id)][field] = getattr(p, field, None)
 
@@ -486,10 +597,13 @@ def api_bulk_rollback(run_id):
             continue
         for field, old_val in fields.items():
             if field == 'category':
-                # Handled via category_id
-                continue
+                continue  # handled via category_id
             if field == 'category_id':
                 p.category_id = old_val
+            elif field == 'subcategory_id':
+                p.sub_category_id = old_val
+            elif field == 'product_family_id':
+                p.product_family_id = old_val
             else:
                 setattr(p, field, old_val)
         restored += 1

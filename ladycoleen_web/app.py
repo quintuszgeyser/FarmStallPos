@@ -58,7 +58,8 @@ def create_app():
     _HEXRE = _re.compile(r'^#[0-9a-fA-F]{3,8}$')
     _SAFE_FONTS = {'system-ui','sans-serif','serif','monospace','Arial','Helvetica',
                    'Verdana','Tahoma','Georgia','Times New Roman','Courier New','Nunito'}
-    _wb_cache = {'data': None, 'exp': 0.0}
+    _wb_cache    = {'data': None, 'exp': 0.0}
+    _contact_cache = {'data': None, 'exp': 0.0}
 
     def _contrast(hx):
         v = (hx or '').strip().lstrip('#')
@@ -94,6 +95,22 @@ def create_app():
         # so an un-customised box renders byte-identical. store_name = the short brand,
         # store_name_full = the longer descriptive line used in footers/titles.
         store_name = name or 'Lady Coleen'
+        # Contact settings (separate 30s cache)
+        now2 = _time.monotonic()
+        if _contact_cache['data'] is None or now2 >= _contact_cache['exp']:
+            cdata = {}
+            try:
+                crow = db.session.execute(_text(
+                    "SELECT key, value FROM settings WHERE key IN "
+                    "('contact_phone','contact_email','contact_location',"
+                    "'contact_facebook','contact_instagram','contact_notes')"
+                )).fetchall()
+                cdata = {k: (v or '') for k, v in crow}
+            except Exception:
+                cdata = _contact_cache['data'] or {}
+            _contact_cache.update({'data': cdata, 'exp': now2 + 30.0})
+        cd = _contact_cache['data'] or {}
+
         return {
             'web_primary':  prim if _HEXRE.match(prim) else '',
             'web_on_primary': _contrast(prim) if _HEXRE.match(prim) else '#ffffff',
@@ -101,6 +118,12 @@ def create_app():
             'web_logo_url': ('/brand-logo/' + logo) if safe_logo else '/static/logo.svg',
             'store_name': store_name,
             'store_name_full': (store_name + ' Boutique Farm Shop') if not name else store_name,
+            'contact_phone':     cd.get('contact_phone', ''),
+            'contact_email':     cd.get('contact_email', ''),
+            'contact_location':  cd.get('contact_location', ''),
+            'contact_facebook':  cd.get('contact_facebook', ''),
+            'contact_instagram': cd.get('contact_instagram', ''),
+            'contact_notes':     cd.get('contact_notes', ''),
         }
 
     # Health check - required by Docker healthcheck

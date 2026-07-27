@@ -1041,6 +1041,18 @@
         </button>
       </div>
 
+      <!-- Category + sub-category filter pills (JS-rendered via renderCategoryFilterPills) -->
+      <div id="products-category-filter" class="mb-2" style="display:none"></div>
+
+      <!-- Additional filters: family and supplier (admin only) -->
+      <div id="products-extra-filter" class="mb-2 d-flex flex-wrap gap-2 align-items-center admin-only hidden">
+        <select id="products-family-filter" class="form-select form-select-sm" style="width:auto;max-width:220px" title="Filter by product family">
+          <option value="">All Families</option>
+        </select>
+        <input id="products-supplier-filter" type="text" class="form-control form-control-sm" placeholder="Supplier…" style="width:160px" title="Filter by supplier name (partial match)">
+        <button class="btn btn-outline-secondary btn-sm" onclick="clearExtraProductFilters()" title="Clear family and supplier filters">Clear</button>
+      </div>
+
       <div id="products-card-list" class="mt-1"></div>
       <div id="products-list" class="list-group"></div>
 
@@ -1789,6 +1801,43 @@
               <button class="btn btn-primary btn-sm" id="btn-save-branding">Save branding</button>
               <span id="branding-saved" class="text-success small ms-2 hidden">Saved</span>
               <div class="text-muted small mt-1">Leave a field blank to use the default look. The logo saves on selection.</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Contact Me (website footer details) ── -->
+        <div class="card mb-3 admin-only hidden">
+          <div class="card-header fw-semibold py-2"><i class="bi bi-telephone me-1"></i>Contact Details <span class="text-muted fw-normal small">(displayed in the public website footer — leave blank to hide a field)</span></div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small mb-1" for="contact-phone">Phone number</label>
+                <input type="text" id="contact-phone" class="form-control form-control-sm" placeholder="+27 12 345 6789" maxlength="50">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small mb-1" for="contact-email">Email address</label>
+                <input type="email" id="contact-email" class="form-control form-control-sm" placeholder="hello@example.co.za" maxlength="200">
+              </div>
+              <div class="col-md-12">
+                <label class="form-label fw-semibold small mb-1" for="contact-location">Location / address</label>
+                <input type="text" id="contact-location" class="form-control form-control-sm" placeholder="123 Farm Road, Stellenbosch" maxlength="300">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small mb-1" for="contact-facebook">Facebook URL</label>
+                <input type="url" id="contact-facebook" class="form-control form-control-sm" placeholder="https://facebook.com/yourpage" maxlength="200">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold small mb-1" for="contact-instagram">Instagram URL</label>
+                <input type="url" id="contact-instagram" class="form-control form-control-sm" placeholder="https://instagram.com/yourhandle" maxlength="200">
+              </div>
+              <div class="col-md-12">
+                <label class="form-label fw-semibold small mb-1" for="contact-notes">Additional notes</label>
+                <textarea id="contact-notes" class="form-control form-control-sm" rows="2" placeholder="e.g. Trading hours, pickup info…" maxlength="500"></textarea>
+              </div>
+            </div>
+            <div class="mt-3">
+              <button class="btn btn-primary btn-sm" id="btn-save-contact">Save contact details</button>
+              <span id="contact-saved" class="text-success small ms-2 hidden">Saved</span>
             </div>
           </div>
         </div>

@@ -14,40 +14,97 @@
     </div>
   </form>
 
-  <!-- Category filter (multi-select) -->
   {% if categories %}
-  <div class="mb-2 d-flex flex-wrap gap-2" id="category-filter">
-    <button type="button" class="btn btn-sm lc-cat-pill lc-btn-primary" data-cat="all">All</button>
-    {% for c in categories %}
-    <button type="button" class="btn btn-sm lc-cat-pill btn-outline-secondary" data-cat="{{ c.id }}">{{ c.name }} <span class="badge bg-secondary">{{ c.count }}</span></button>
-    {% endfor %}
+  <!-- Category filter -->
+  <div class="mb-2">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <button type="button" id="cat-all-btn" class="btn btn-sm lc-btn-primary">All Categories</button>
+      <div id="cat-selected-wrap" style="display:none" class="d-flex align-items-center gap-1">
+        <span class="badge rounded-pill" style="background:var(--lc-gold);color:var(--on-primary,#fff);font-size:.85rem;padding:.4em .75em" id="cat-selected-name"></span>
+        <button type="button" class="btn btn-sm btn-outline-secondary py-0 px-2" id="cat-clear-btn" title="Clear category">&times;</button>
+      </div>
+      {% if categories|length > 8 %}
+      <button type="button" id="cat-toggle-btn" class="btn btn-sm btn-outline-secondary">
+        <i class="bi bi-grid me-1"></i>Browse {{ categories|length }} categories <i class="bi bi-chevron-down" id="cat-toggle-icon"></i>
+      </button>
+      {% endif %}
+    </div>
+
+    {% if categories|length <= 8 %}
+    <!-- Few categories: flat pill row -->
+    <div class="d-flex flex-wrap gap-2 mt-2">
+      {% for c in categories %}
+      <button type="button" class="btn btn-sm lc-cat-pill btn-outline-secondary"
+              data-cat="{{ c.id }}" data-cat-name="{{ c.name|e }}">
+        {{ c.name }} <span class="badge bg-secondary">{{ c.count }}</span>
+      </button>
+      {% endfor %}
+    </div>
+    {% else %}
+    <!-- Many categories: searchable scrollable panel -->
+    <div id="cat-panel" style="display:none;border:1px solid var(--lc-gold-border,#d9c99a);border-radius:8px;background:var(--dd-surface,#fffdfb);margin-top:.5rem;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+      <div class="p-2">
+        <input type="text" id="cat-search" class="form-control form-control-sm lc-input mb-2" placeholder="Search categories…" autocomplete="off">
+        <div style="max-height:160px;overflow-y:auto" class="d-flex flex-wrap gap-2 pe-1">
+          {% for c in categories %}
+          <button type="button" class="btn btn-sm lc-cat-pill btn-outline-secondary"
+                  data-cat="{{ c.id }}" data-cat-name="{{ c.name|e }}">
+            {{ c.name }} <span class="badge bg-secondary">{{ c.count }}</span>
+          </button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
   </div>
-  <!-- Sub-category filter — shown by JS when exactly one category selected -->
+
+  <!-- Sub-category filter — JS shows/hides this -->
   {% if subcategories %}
   <div class="mb-3 d-flex flex-wrap gap-2 align-items-center ps-2 border-start border-2" id="subcategory-filter" style="display:none">
     <span class="text-muted small me-1">Filter:</span>
     <button type="button" class="btn btn-sm lc-subcat-pill lc-btn-primary" data-subcat="all">All</button>
     {% for s in subcategories %}
-    <button type="button" class="btn btn-sm lc-subcat-pill btn-outline-secondary" data-subcat="{{ s.id }}" data-subcat-cat="{{ s.category_id }}">{{ s.name }} <span class="badge bg-secondary">{{ s.count }}</span></button>
+    <button type="button" class="btn btn-sm lc-subcat-pill btn-outline-secondary"
+            data-subcat="{{ s.id }}" data-subcat-cat="{{ s.category_id }}">
+      {{ s.name }} <span class="badge bg-secondary">{{ s.count }}</span>
+    </button>
     {% endfor %}
   </div>
   {% endif %}
   {% endif %}
 
+  <!-- Pagination bar (top) -->
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3" id="pag-bar-top">
+    <span id="pag-info" class="text-muted small"></span>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <span class="text-muted small">Per page:</span>
+      <div class="btn-group btn-group-sm" role="group" aria-label="Page size">
+        <button type="button" class="btn btn-outline-secondary pag-size-btn active" data-size="50">50</button>
+        <button type="button" class="btn btn-outline-secondary pag-size-btn" data-size="100">100</button>
+        <button type="button" class="btn btn-outline-secondary pag-size-btn" data-size="200">200</button>
+      </div>
+      <button type="button" id="pag-prev" class="btn btn-sm btn-outline-secondary" disabled>
+        <i class="bi bi-chevron-left"></i> Prev
+      </button>
+      <span id="pag-page" class="text-muted small" style="white-space:nowrap"></span>
+      <button type="button" id="pag-next" class="btn btn-sm btn-outline-secondary" disabled>
+        Next <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+
   <div class="row g-3" id="product-grid">
     {% for item in items %}
-    <div class="col-6 col-md-4 col-lg-3 lc-product-col" data-category-id="{{ item.category_id or 0 }}" data-sub-category-id="{{ item.sub_category_id or 0 }}">
+    <div class="col-6 col-md-4 col-lg-3 lc-product-col"
+         data-category-id="{{ item.category_id or 0 }}"
+         data-sub-category-id="{{ item.sub_category_id or 0 }}">
       <div class="lc-card p-0 h-100 d-flex flex-column overflow-hidden">
 
-        <!-- Product image (links to detail page) -->
         <a href="/farmshop/products/{{ item.id }}" class="text-decoration-none d-block">
           {% if item.image_url %}
           <div style="height:160px;overflow:hidden;background:#f5efe0;position:relative">
             <img src="/product_images/{{ item.image_url | replace('.jpg','_small.jpg') }}"
-                 alt="{{ item.name }}"
-                 loading="lazy"
-                 decoding="async"
-                 width="300" height="300"
+                 alt="{{ item.name }}" loading="lazy" decoding="async" width="300" height="300"
                  style="width:100%;height:100%;object-fit:cover">
             {% if item.is_family_card and item.variant_count > 1 %}
             <span style="position:absolute;bottom:6px;right:6px;background:rgba(0,0,0,.55);color:#fff;font-size:.7rem;padding:2px 8px;border-radius:99px">{{ item.variant_count }} options</span>
@@ -64,7 +121,6 @@
         </a>
 
         <div class="p-3 d-flex flex-column flex-grow-1">
-          <!-- Stock message (only for standalone products) -->
           {% if not item.is_family_card %}
             {% if item.stock_status == 'out_of_stock' %}
             <p class="text-danger small mb-1" style="font-size:.75rem">Out of stock - available on order (longer lead time)</p>
@@ -108,10 +164,19 @@
 
       </div>
     </div>
-    {% else %}
-    <div class="col-12 text-center text-muted py-5">No products found.</div>
     {% endfor %}
-    <div class="col-12 text-center text-muted py-5" id="no-category-msg" style="display:none">No products in this category.</div>
+    <div class="col-12 text-center text-muted py-5" id="no-products-msg" style="display:none">No products found.</div>
+  </div>
+
+  <!-- Pagination bar (bottom) -->
+  <div class="d-flex align-items-center justify-content-center gap-2 mt-4" id="pag-bar-bottom">
+    <button type="button" id="pag-prev-b" class="btn btn-sm btn-outline-secondary" disabled>
+      <i class="bi bi-chevron-left"></i> Prev
+    </button>
+    <span id="pag-page-b" class="text-muted small" style="white-space:nowrap"></span>
+    <button type="button" id="pag-next-b" class="btn btn-sm btn-outline-secondary" disabled>
+      Next <i class="bi bi-chevron-right"></i>
+    </button>
   </div>
 
 </div>
@@ -120,8 +185,6 @@
 {% block scripts %}
 <script>
 const cart = JSON.parse(localStorage.getItem('lc_cart') || '[]');
-
-
 
 function addItem(id, name, price, image_url, available_qty) {
   const existing = cart.find(i => i.id === id && !i.sold_by_weight);
@@ -146,7 +209,6 @@ function addWeightItem(id, name, pricePerUnit, baseUnit, image_url, available_qt
 
 function saveCart() {
   localStorage.setItem('lc_cart', JSON.stringify(cart));
-  
   if (window._updateCartBadge) window._updateCartBadge();
 }
 
@@ -158,70 +220,170 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 2000);
 }
 
-// ── Category + Sub-category filter (single-select, client-side) ──
+// ── Category filter + subcategory + pagination ─────────────────────────────
 (function () {
-  const bar    = document.getElementById('category-filter');
-  const subBar = document.getElementById('subcategory-filter');
-  if (!bar) return;
+  const allCols    = Array.from(document.querySelectorAll('.lc-product-col'));
+  const noMsg      = document.getElementById('no-products-msg');
+  const subBar     = document.getElementById('subcategory-filter');
+  const catAllBtn  = document.getElementById('cat-all-btn');
+  const catSelWrap = document.getElementById('cat-selected-wrap');
+  const catSelName = document.getElementById('cat-selected-name');
+  const catClearBtn= document.getElementById('cat-clear-btn');
+  const catPanel   = document.getElementById('cat-panel');
+  const catToggle  = document.getElementById('cat-toggle-btn');
+  const catTIcon   = document.getElementById('cat-toggle-icon');
+  const catSearch  = document.getElementById('cat-search');
 
-  const pills    = Array.from(bar.querySelectorAll('.lc-cat-pill'));
+  const catPills = Array.from(document.querySelectorAll('.lc-cat-pill'));
   const subPills = subBar ? Array.from(subBar.querySelectorAll('.lc-subcat-pill')) : [];
-  const cols     = Array.from(document.querySelectorAll('.lc-product-col'));
-  const emptyMsg = document.getElementById('no-category-msg');
-  let   selectedCat = null;   // category id or null (single-select)
-  let   selectedSub = null;   // sub-category id or null
 
-  const setActive = (pill, on) => {
+  let selectedCat  = null;
+  let selectedSub  = null;
+  let pageSize     = 50;
+  let currentPage  = 0;
+  let filteredCols = [];
+
+  function setActive(pill, on) {
     pill.classList.toggle('lc-btn-primary', on);
     pill.classList.toggle('btn-outline-secondary', !on);
-  };
+  }
 
-  function apply() {
-    // Show/hide sub-category bar — only when a category is selected and it has sub-cats
+  // Panel toggle
+  if (catToggle && catPanel) {
+    catToggle.addEventListener('click', () => {
+      const open = catPanel.style.display !== 'none';
+      catPanel.style.display = open ? 'none' : '';
+      if (catTIcon) catTIcon.className = open ? 'bi bi-chevron-down' : 'bi bi-chevron-up';
+      if (!open && catSearch) catSearch.focus();
+    });
+  }
+
+  // Category search within panel
+  if (catSearch) {
+    catSearch.addEventListener('input', () => {
+      const q = catSearch.value.toLowerCase().trim();
+      catPills.forEach(p => {
+        const nm = (p.dataset.catName || '').toLowerCase();
+        p.style.display = (!q || nm.includes(q)) ? '' : 'none';
+      });
+    });
+  }
+
+  function selectCategory(id, name) {
+    selectedCat = id;
+    selectedSub = null;
+
+    if (catAllBtn) setActive(catAllBtn, id === null);
+    catPills.forEach(p => setActive(p, id !== null && parseInt(p.dataset.cat, 10) === id));
+
+    if (catSelWrap) catSelWrap.style.display = id !== null ? '' : 'none';
+    if (catSelName && name) catSelName.textContent = name;
+
+    // Close panel when selecting a category
+    if (catPanel && id !== null) {
+      catPanel.style.display = 'none';
+      if (catTIcon) catTIcon.className = 'bi bi-chevron-down';
+      if (catSearch) { catSearch.value = ''; catPills.forEach(p => p.style.display = ''); }
+    }
+
+    // Subcategory bar — only show when a category is selected AND it has subcats
     if (subBar) {
-      if (selectedCat !== null) {
-        const hasSubs = subPills.some(p => parseInt(p.dataset.subcatCat || '0', 10) === selectedCat);
+      if (id !== null) {
+        const hasSubs = subPills.some(p => parseInt(p.dataset.subcatCat || '0', 10) === id);
         subBar.style.display = hasSubs ? '' : 'none';
         subPills.forEach(p => {
-          p.style.display = parseInt(p.dataset.subcatCat || '0', 10) === selectedCat || p.dataset.subcat === 'all' ? '' : 'none';
+          if (p.dataset.subcat === 'all') {
+            p.style.display = '';
+            setActive(p, true);
+          } else {
+            p.style.display = parseInt(p.dataset.subcatCat || '0', 10) === id ? '' : 'none';
+            setActive(p, false);
+          }
         });
       } else {
         subBar.style.display = 'none';
-        selectedSub = null;
-        const allSubPill = subBar.querySelector('[data-subcat="all"]');
-        subPills.forEach(p => { setActive(p, p === allSubPill); p.style.display = ''; });
+        subPills.forEach(p => { p.style.display = ''; });
+        const allSub = subBar.querySelector('[data-subcat="all"]');
+        subPills.forEach(p => setActive(p, p === allSub));
       }
     }
 
-    const allPill = bar.querySelector('[data-cat="all"]');
-    setActive(allPill, selectedCat === null);
-    pills.forEach(p => { if (p.dataset.cat !== 'all') setActive(p, parseInt(p.dataset.cat, 10) === selectedCat); });
+    applyFilters();
+  }
 
-    let shown = 0;
-    cols.forEach(col => {
+  function applyFilters() {
+    filteredCols = allCols.filter(col => {
       const cid  = parseInt(col.dataset.categoryId || '0', 10);
       const scid = parseInt(col.dataset.subCategoryId || '0', 10);
       const catOk = selectedCat === null || cid === selectedCat;
       const subOk = !selectedSub || scid === selectedSub;
-      const show = catOk && subOk;
-      col.style.display = show ? '' : 'none';
-      if (show) shown++;
+      return catOk && subOk;
     });
-    if (emptyMsg) emptyMsg.style.display = (shown === 0 && (selectedCat !== null || selectedSub)) ? '' : 'none';
+    currentPage = 0;
+    applyPagination();
   }
 
-  pills.forEach(pill => {
+  function applyPagination() {
+    const total      = filteredCols.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    currentPage      = Math.max(0, Math.min(currentPage, totalPages - 1));
+    const start      = currentPage * pageSize;
+    const end        = start + pageSize;
+
+    allCols.forEach(c => c.style.display = 'none');
+    filteredCols.forEach((c, i) => { c.style.display = (i >= start && i < end) ? '' : 'none'; });
+    if (noMsg) noMsg.style.display = (total === 0) ? '' : 'none';
+
+    const shownStart = total === 0 ? 0 : start + 1;
+    const shownEnd   = Math.min(end, total);
+    const infoEl     = document.getElementById('pag-info');
+    if (infoEl) infoEl.textContent = total > 0 ? `Showing ${shownStart}–${shownEnd} of ${total} products` : '';
+
+    _syncPagUI('pag-prev',   'pag-next',   'pag-page',   totalPages);
+    _syncPagUI('pag-prev-b', 'pag-next-b', 'pag-page-b', totalPages);
+  }
+
+  function _syncPagUI(prevId, nextId, pageId, totalPages) {
+    const prevBtn = document.getElementById(prevId);
+    const nextBtn = document.getElementById(nextId);
+    const pageEl  = document.getElementById(pageId);
+    if (prevBtn) prevBtn.disabled = currentPage === 0;
+    if (nextBtn) nextBtn.disabled = currentPage >= totalPages - 1;
+    if (pageEl)  pageEl.textContent = (filteredCols.length > 0 && totalPages > 1) ? `Page ${currentPage + 1} of ${totalPages}` : '';
+  }
+
+  function _addPagListeners(prevId, nextId) {
+    const p = document.getElementById(prevId);
+    const n = document.getElementById(nextId);
+    if (p) p.addEventListener('click', () => {
+      if (currentPage > 0) { currentPage--; applyPagination(); window.scrollTo({top: 0, behavior: 'smooth'}); }
+    });
+    if (n) n.addEventListener('click', () => {
+      const totalPages = Math.max(1, Math.ceil(filteredCols.length / pageSize));
+      if (currentPage < totalPages - 1) { currentPage++; applyPagination(); window.scrollTo({top: 0, behavior: 'smooth'}); }
+    });
+  }
+  _addPagListeners('pag-prev', 'pag-next');
+  _addPagListeners('pag-prev-b', 'pag-next-b');
+
+  document.querySelectorAll('.pag-size-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.pag-size-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      pageSize = parseInt(btn.dataset.size, 10);
+      currentPage = 0;
+      applyPagination();
+    });
+  });
+
+  if (catAllBtn)    catAllBtn.addEventListener('click', () => selectCategory(null, null));
+  if (catClearBtn)  catClearBtn.addEventListener('click', () => selectCategory(null, null));
+
+  catPills.forEach(pill => {
     pill.addEventListener('click', () => {
-      const v = pill.dataset.cat;
-      if (v === 'all') {
-        selectedCat = null;
-      } else {
-        const id = parseInt(v, 10);
-        // Single-select: clicking active category deselects it; clicking another selects it
-        selectedCat = (selectedCat === id) ? null : id;
-      }
-      selectedSub = null;
-      apply();
+      const id   = parseInt(pill.dataset.cat, 10);
+      const name = pill.dataset.catName || '';
+      selectCategory(selectedCat === id ? null : id, name);
     });
   });
 
@@ -230,8 +392,7 @@ function showToast(msg) {
       const v = pill.dataset.subcat;
       if (v === 'all') {
         selectedSub = null;
-        subPills.forEach(p => { if (p.dataset.subcat !== 'all') setActive(p, false); });
-        setActive(pill, true);
+        subPills.forEach(p => setActive(p, p.dataset.subcat === 'all'));
       } else {
         const id = parseInt(v, 10);
         selectedSub = (selectedSub === id) ? null : id;
@@ -240,18 +401,22 @@ function showToast(msg) {
           else setActive(p, parseInt(p.dataset.subcat, 10) === selectedSub);
         });
       }
-      apply();
+      applyFilters();
     });
   });
 
-  // Pre-select from ?category=<id>&subcategory=<id>
+  // Pre-select from server-side query params
   {% if sel_category %}
-  selectedCat = {{ sel_category }};
-  apply();
-  {% endif %}
-  {% if sel_subcategory %}
-  const preSub = subBar && subBar.querySelector('[data-subcat="{{ sel_subcategory }}"]');
-  if (preSub) preSub.click();
+  (function () {
+    const prePill = document.querySelector('.lc-cat-pill[data-cat="{{ sel_category }}"]');
+    selectCategory({{ sel_category }}, prePill ? prePill.dataset.catName : '');
+    {% if sel_subcategory %}
+    const _preSub = subBar && subBar.querySelector('[data-subcat="{{ sel_subcategory }}"]');
+    if (_preSub) _preSub.click();
+    {% endif %}
+  })();
+  {% else %}
+  applyFilters();
   {% endif %}
 })();
 </script>

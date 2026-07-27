@@ -18,9 +18,14 @@ _BRANDING_KEYS = (
     'branding_invoice_legal', 'branding_invoice_subtitle', 'branding_invoice_footer',
     'web_branding_primary', 'web_branding_font',
 )
+_CONTACT_KEYS = (
+    'contact_phone', 'contact_email', 'contact_location',
+    'contact_facebook', 'contact_instagram', 'contact_notes',
+)
 _COLOUR_KEYS = {'branding_primary', 'branding_bg', 'web_branding_primary'}
 _FONT_KEYS   = {'branding_font', 'web_branding_font'}
 _HEX_RE = re.compile(r'^#[0-9a-fA-F]{3,8}$')
+_SAFE_URL_RE = re.compile(r'^https?://[^\s<>]{3,500}$', re.IGNORECASE)
 _SAFE_FONTS = {
     'system-ui', 'sans-serif', 'serif', 'monospace', 'Arial', 'Helvetica',
     'Verdana', 'Tahoma', 'Georgia', 'Times New Roman', 'Courier New', 'Nunito',
@@ -81,6 +86,7 @@ def api_settings():
             'scale_ip':                  str(get_setting('scale_ip', os.environ.get('SCALE_IP', '' if os.environ.get('STORE_ID', '').strip() else '10.0.0.103')) or ''),
             'scale_port':                int(get_setting('scale_port', os.environ.get('SCALE_PORT', 7061)) or 7061),
             **{k: str(get_setting(k, '') or '') for k in _BRANDING_KEYS},
+            **{k: str(get_setting(k, '') or '') for k in _CONTACT_KEYS},
         })
 
     data  = request.json or {}
@@ -126,4 +132,27 @@ def api_settings():
             bust_branding_cache()
         except Exception:
             pass
+
+    # Contact details — typed validation per field
+    _CONTACT_MAXLEN = {'contact_notes': 500, 'contact_location': 300}
+    for key in _CONTACT_KEYS:
+        if key not in data:
+            continue
+        v = ('' if data[key] is None else str(data[key])).strip()
+        maxlen = _CONTACT_MAXLEN.get(key, 200)
+        if len(v) > maxlen:
+            return jsonify({'error': f'{key} too long (max {maxlen} chars)'}), 400
+        if v:
+            if key == 'contact_email':
+                if not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]{2,}$', v):
+                    return jsonify({'error': 'contact_email must be a valid email address'}), 400
+            elif key in ('contact_facebook', 'contact_instagram'):
+                if not _SAFE_URL_RE.match(v):
+                    return jsonify({'error': f'{key} must be a valid https:// or http:// URL (no spaces; no javascript:/data:/file:)'}), 400
+            else:
+                if any(c in v for c in '<>'):
+                    return jsonify({'error': f'{key} may not contain < or >'}), 400
+        set_setting(key, v)
+        saved[key] = v
+
     return jsonify({'ok': True, 'saved': saved})

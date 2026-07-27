@@ -59,7 +59,6 @@
       </button>
       <div class="collapse navbar-collapse" id="nav">
         <ul class="navbar-nav ms-auto align-items-center">
-          <li class="nav-item"><a class="nav-link" href="/cakes">Cakes</a></li>
           <li class="nav-item"><a class="nav-link" href="/farmshop">Farm Shop</a></li>
           <li class="nav-item" id="nav-account">
             <a class="nav-link" href="#" id="nav-account-link">My Orders</a>
@@ -82,7 +81,30 @@
   <footer class="lc-footer mt-5 py-4">
     <div class="container text-center">
       <p class="mb-1">{{ store_name_full }}</p>
-      <p class="mb-1 text-muted small">Custom cakes &amp; farm-fresh products</p>
+      <p class="mb-1 text-muted small">Farm-fresh products</p>
+      {# Contact section — only renders if at least one field is set #}
+      {% if contact_phone or contact_email or contact_location or contact_facebook or contact_instagram or contact_notes %}
+      <div class="d-flex flex-wrap justify-content-center gap-3 mt-2 mb-1" style="font-size:.85rem">
+        {% if contact_phone %}
+        <span><i class="bi bi-telephone me-1"></i><a href="tel:{{ contact_phone }}" style="color:var(--lc-gold)">{{ contact_phone }}</a></span>
+        {% endif %}
+        {% if contact_email %}
+        <span><i class="bi bi-envelope me-1"></i><a href="mailto:{{ contact_email }}" style="color:var(--lc-gold)">{{ contact_email }}</a></span>
+        {% endif %}
+        {% if contact_location %}
+        <span><i class="bi bi-geo-alt me-1"></i>{{ contact_location }}</span>
+        {% endif %}
+        {% if contact_facebook %}
+        <span><i class="bi bi-facebook me-1"></i><a href="{{ contact_facebook }}" target="_blank" rel="noopener" style="color:var(--lc-gold)">Facebook</a></span>
+        {% endif %}
+        {% if contact_instagram %}
+        <span><i class="bi bi-instagram me-1"></i><a href="{{ contact_instagram }}" target="_blank" rel="noopener" style="color:var(--lc-gold)">Instagram</a></span>
+        {% endif %}
+      </div>
+      {% if contact_notes %}
+      <p class="text-muted small mb-1">{{ contact_notes }}</p>
+      {% endif %}
+      {% endif %}
       <div class="d-flex flex-wrap justify-content-center gap-3 mt-2" style="font-size:.82rem">
         <a href="/policies/refund"   style="color:var(--lc-gold)">Refund Policy</a>
         <a href="/policies/privacy"  style="color:var(--lc-gold)">Privacy Policy</a>

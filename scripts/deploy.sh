@@ -200,12 +200,51 @@ deploy_web() {
   docker compose up -d --remove-orphans
 }
 
+# Fast web-only QA rebuild: uses Docker layer caching (pip layer cached when only code changes).
+# Runs inside a tmux session so the build survives a dropped SSH connection.
+# Monitor: tail -f ~/farmpos-docker/logs/deploy_web.log
+deploy_qa_web_only() {
+  local LOG="$HOME/farmpos-docker/logs/deploy_web.log"
+  mkdir -p "$(dirname "$LOG")"
+  # Refuse to start if a deploy is already running — kill-session would silently abort a running build
+  if tmux has-session -t deploy-web 2>/dev/null; then
+    echo "[deploy] Another qa-web deploy is already running in tmux session 'deploy-web'."
+    echo "[deploy] Monitor:   tail -f $LOG"
+    echo "[deploy] Attach:    tmux attach -t deploy-web"
+    echo "[deploy] Force:     tmux kill-session -t deploy-web  (kills the running build)"
+    exit 1
+  fi
+  echo "[deploy] QA web-only build starting in tmux session 'deploy-web'"
+  echo "[deploy] Log: $LOG"
+  echo "[deploy] Monitor: tail -f $LOG"
+  tmux new-session -d -s deploy-web "
+    set -e
+    cd ~/farmpos-docker
+    exec >> '$LOG' 2>&1
+    echo \"[deploy] === QA web-only started \$(date) ===\"
+    docker rm -f qa-ladycoleen-web 2>/dev/null || true
+    docker compose build qa-web
+    docker compose up -d qa-web
+    for i in \$(seq 1 24); do
+      sleep 5
+      if docker ps | grep -q 'qa-ladycoleen-web.*healthy'; then
+        echo \"[deploy] qa-ladycoleen-web is healthy (\$((i*5))s)\"
+        break
+      fi
+      echo \"[deploy] Waiting for health... \$((i*5))s\"
+    done
+    docker ps --format 'table {{.Names}}\t{{.Status}}' | grep -E 'NAMES|qa-ladycoleen'
+    echo \"[deploy] === QA web-only DONE \$(date) ===\"
+  "
+}
+
 case "$TARGET" in
   pos)          deploy_pos ;;
   recognition)  deploy_recognition ;;
   web)          deploy_web ;;
   scale-sync)   deploy_scale_sync ;;
   qa)           deploy_qa ;;
+  qa-web)       deploy_qa_web_only ;;
   prod)         deploy_prod ;;
   *)            deploy_pos && deploy_recognition && deploy_web ;;
 esac

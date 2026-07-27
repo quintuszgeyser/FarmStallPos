@@ -26,6 +26,8 @@ let STATE = {
   selectedSubCategoryId: null,     // active sub-category filter (single-select within category)
   subcategories:    [],     // [{id, category_id, name, product_count}]
   families:         [],     // [{id, name, slug, variant_count}]
+  selectedFamilyId: null,  // active family filter on the products tab
+  productSupplierFilter: '', // partial supplier name filter on the products tab
   attributes:       [],     // [{id, name, values: [{id, value}]}]
   customers:        [],
   activeCustomer:   null,   // customer detected at till
@@ -725,6 +727,10 @@ function renderProductsCards() {
   const catFilterActive = selectedCats.size > 0;
   const UNCATEGORISED = 0;  // sentinel for "no category" pill
 
+  // Extra filters (family + supplier)
+  const famFilter      = STATE.selectedFamilyId;
+  const supplierQ      = (STATE.productSupplierFilter || '').trim().toLowerCase();
+
   let items = STATE.products.filter(p => {
     const matchesSearch = !q ||
       p.name.toLowerCase().includes(q) ||
@@ -739,6 +745,15 @@ function renderProductsCards() {
     // Sub-category filter (single-select, only active when a single category is selected)
     if (STATE.selectedSubCategoryId !== null) {
       if ((p.sub_category_id || null) !== STATE.selectedSubCategoryId) return false;
+    }
+    // Family filter
+    if (famFilter !== null) {
+      if ((p.product_family_id || null) !== famFilter) return false;
+    }
+    // Supplier filter (uses the stock-batch supplier index built by loadIngredients)
+    if (supplierQ) {
+      const names = (STATE._productSupplierMap[p.id] || '').toLowerCase();
+      if (!names.includes(supplierQ)) return false;
     }
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
@@ -1913,6 +1928,31 @@ function renderCategoryFilterPills() {
       renderProductsCards();
     });
   });
+
+  // Populate family dropdown and show extra-filter row for admins
+  _renderFamilyFilterSelect();
+}
+
+function _renderFamilyFilterSelect() {
+  const sel = document.getElementById('products-family-filter');
+  if (!sel) return;
+  const families = STATE.families || [];
+  // Rebuild options only when family list changed (avoids losing focus mid-type on other fields)
+  const current = Array.from(sel.options).slice(1).map(o => o.value).join(',');
+  const next    = families.map(f => f.id).join(',');
+  if (current !== next) {
+    sel.innerHTML = '<option value="">All Families</option>';
+    families.forEach(f => {
+      const o = document.createElement('option');
+      o.value = f.id;
+      o.textContent = f.name + (f.variant_count ? ` (${f.variant_count})` : '');
+      if (STATE.selectedFamilyId === f.id) o.selected = true;
+      sel.appendChild(o);
+    });
+  } else {
+    // Just sync selected value
+    sel.value = STATE.selectedFamilyId ?? '';
+  }
 }
 
 // ── Category API helper (used after category rename/delete/merge from product cards) ──
@@ -2156,6 +2196,32 @@ document.getElementById('btn-restore-confirm')?.addEventListener('click', async 
     toast(`"${_restoreProduct.name}" restored.`, 'success', 2000);
   } catch(e) { toast(e.message, 'error'); }
 });
+
+document.getElementById('products-family-filter')?.addEventListener('change', e => {
+  const v = parseInt(e.target.value, 10);
+  STATE.selectedFamilyId = isNaN(v) || !e.target.value ? null : v;
+  renderProductsCards();
+});
+
+document.getElementById('products-supplier-filter')?.addEventListener('input', e => {
+  STATE.productSupplierFilter = e.target.value || '';
+  // Lazily populate the supplier map the first time the user types in this field
+  if (STATE.productSupplierFilter && !Object.keys(STATE._productSupplierMap).length) {
+    loadIngredients();  // loadIngredients calls renderProductsCards() when done
+  } else {
+    renderProductsCards();
+  }
+});
+
+function clearExtraProductFilters() {
+  STATE.selectedFamilyId      = null;
+  STATE.productSupplierFilter = '';
+  const famSel  = document.getElementById('products-family-filter');
+  const supInp  = document.getElementById('products-supplier-filter');
+  if (famSel) famSel.value  = '';
+  if (supInp) supInp.value  = '';
+  renderProductsCards();
+}
 
 document.getElementById('products-filter')?.addEventListener('input', () => {
   renderProductsCards();
@@ -12888,6 +12954,15 @@ document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventList
     // Populate label printer config list
     _renderPrinterConfigList();
 
+    // Contact details
+    const _cset = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
+    _cset('contact-phone',     s.contact_phone);
+    _cset('contact-email',     s.contact_email);
+    _cset('contact-location',  s.contact_location);
+    _cset('contact-facebook',  s.contact_facebook);
+    _cset('contact-instagram', s.contact_instagram);
+    _cset('contact-notes',     s.contact_notes);
+
     // Branding (white-label)
     const _bset = (id, val) => { const el = document.getElementById(id); if (el) el.value = val || ''; };
     _brandFillFontSelects();
@@ -12935,6 +13010,32 @@ document.getElementById('brand-bg-clear')?.addEventListener('click', () => {
 });
 document.getElementById('web-primary-picker')?.addEventListener('input', (e) => {
   const hex = document.getElementById('web-primary-hex'); if (hex) hex.value = e.target.value;
+});
+
+document.getElementById('btn-save-contact')?.addEventListener('click', async () => {
+  const _v = id => (document.getElementById(id)?.value || '').trim();
+  const emailVal = _v('contact-email');
+  if (emailVal && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal)) {
+    toast('Contact email format looks invalid', 'warning'); return;
+  }
+  for (const id of ['contact-facebook', 'contact-instagram']) {
+    const u = _v(id);
+    if (u && !/^https?:\/\//i.test(u)) {
+      toast(`${id.replace('contact-', '')} must start with https://`, 'warning'); return;
+    }
+  }
+  try {
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      contact_phone:     _v('contact-phone'),
+      contact_email:     emailVal,
+      contact_location:  _v('contact-location'),
+      contact_facebook:  _v('contact-facebook'),
+      contact_instagram: _v('contact-instagram'),
+      contact_notes:     _v('contact-notes'),
+    })});
+    _flashSaved('contact-saved');
+    toast('Contact details saved — visible on website within 30s', 'success');
+  } catch(e) { toast(e.message, 'error'); }
 });
 
 document.getElementById('btn-save-branding')?.addEventListener('click', async () => {

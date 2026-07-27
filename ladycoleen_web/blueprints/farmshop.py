@@ -93,6 +93,14 @@ def products():
                          "min_price": item["price"], "max_price": item["price"]})
             items.append(item)
 
+    # Fetch family names so cards show the family name, not the individual product name
+    fam_names = {}
+    if family_groups:
+        fam_rows = db.session.execute(text(
+            "SELECT id, name FROM product_families WHERE id = ANY(:ids)"
+        ), {"ids": list(family_groups.keys())}).fetchall()
+        fam_names = {r.id: r.name for r in fam_rows}
+
     for fid, variants in family_groups.items():
         in_stock         = [v for v in variants if v["stock_status"] != "out_of_stock"]
         in_stock_default = [v for v in in_stock if v["is_default_variant"]]
@@ -111,6 +119,8 @@ def products():
         display["is_family_card"] = True
         display["min_price"] = min(prices) if prices else display["price"]
         display["max_price"] = max(prices) if prices else display["price"]
+        # Public listing shows the family name (the brand), not the default variant's product name
+        display["name"] = fam_names.get(fid, display["name"])
         items.append(display)
 
     items.sort(key=lambda x: x["name"])

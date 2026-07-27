@@ -14,12 +14,16 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Clone monorepo and use ladycoleen_web subfolder - same repo as POS
+# Install dependencies first so this layer is cached when only app code changes.
+# requirements.txt is copied from the build context (local file must match repo).
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Clone monorepo and use ladycoleen_web subfolder - same repo as POS.
+# This layer always rebuilds (pulls latest code), but pip layer above stays cached.
 RUN git clone https://github.com/quintuszgeyser/FarmStallPos.git /tmp/repo && \
     cp -r /tmp/repo/ladycoleen_web/. /app/ && \
     rm -rf /tmp/repo
-
-RUN pip install --no-cache-dir -r requirements.txt
 
 RUN mkdir -p /app/logs /app/uploads/cake_images /app/uploads/payment_proofs
 
