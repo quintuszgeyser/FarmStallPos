@@ -3674,7 +3674,6 @@ async function loadIngredients() {
     const data = await api('/api/stock/ingredients');
     STATE._productCostMap    = {};
     STATE._stockItems        = {};
-    STATE._productSupplierMap = {};
     data.forEach(item => {
       STATE._stockItems[item.id] = item;
       const remaining = item.batches.filter(b => parseFloat(b.qty_remaining_base) > 0);
@@ -3683,9 +3682,11 @@ async function loadIngredients() {
         const totalCost = remaining.reduce((s, b) => s + parseFloat(b.qty_remaining_base) * parseFloat(b.cost_per_base_unit), 0);
         if (totalQty > 0) STATE._productCostMap[item.id] = totalCost / totalQty;
       }
-      // Build supplier name index for teller search
-      const names = [...new Set(item.batches.map(b => b.supplier_name).filter(Boolean))];
-      if (names.length) STATE._productSupplierMap[item.id] = names.join(' ').toLowerCase();
+    });
+    // Rebuild supplier map from all-time data (products API) — active-batch data is a subset
+    STATE._productSupplierMap = {};
+    STATE.products.forEach(p => {
+      if (p.supplier_names) STATE._productSupplierMap[p.id] = p.supplier_names.toLowerCase();
     });
     // Refresh any already-rendered product cards so stock levels update
     renderProductsCards();
