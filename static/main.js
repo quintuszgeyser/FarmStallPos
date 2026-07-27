@@ -613,6 +613,11 @@ async function loadProducts() {
   if (!STATE.user) return;
   try {
     STATE.products = await api('/api/products?full=1');
+    // Build supplier map from all-time batch data included in the products response
+    STATE._productSupplierMap = {};
+    STATE.products.forEach(p => {
+      if (p.supplier_names) STATE._productSupplierMap[p.id] = p.supplier_names.toLowerCase();
+    });
     await loadCategories();
     renderProductsCards();
     renderTellerGrid();
@@ -2205,12 +2210,7 @@ document.getElementById('products-family-filter')?.addEventListener('change', e 
 
 document.getElementById('products-supplier-filter')?.addEventListener('input', e => {
   STATE.productSupplierFilter = e.target.value || '';
-  // Lazily populate the supplier map the first time the user types in this field
-  if (STATE.productSupplierFilter && !Object.keys(STATE._productSupplierMap).length) {
-    loadIngredients();  // loadIngredients calls renderProductsCards() when done
-  } else {
-    renderProductsCards();
-  }
+  renderProductsCards();
 });
 
 function clearExtraProductFilters() {

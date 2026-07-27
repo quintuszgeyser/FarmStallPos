@@ -593,7 +593,7 @@ def _parse_dt(value: str, is_end: bool = False):
         return None
 
 
-def _serialize_product(p, include_recipe=False, include_packages=False, image_cache=None):
+def _serialize_product(p, include_recipe=False, include_packages=False, image_cache=None, supplier_cache=None):
     d = {
         'id':           p.id,
         'name':         p.name,
@@ -650,6 +650,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'settlement_basis':  p.settlement_basis,
         'consignment_pct':   float(p.consignment_pct) if p.consignment_pct is not None else None,
         'auto_price':        p.auto_price if getattr(p, 'auto_price', None) is not None else True,
+        'supplier_names':    ', '.join(supplier_cache[p.id]) if supplier_cache and p.id in supplier_cache else '',
         'pending_price':          float(p.pending_price) if getattr(p, 'pending_price', None) is not None else None,
         'pending_price_per_unit': float(p.pending_price_per_unit) if getattr(p, 'pending_price_per_unit', None) is not None else None,
         'cost_per_base_unit':     (lambda _b: float(_b.cost_per_base_unit) if _b and _b.cost_per_base_unit else None)(

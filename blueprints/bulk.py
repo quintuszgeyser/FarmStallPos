@@ -32,6 +32,13 @@ _EDITABLE = {
     'category':             {'type': 'category',    'label': 'Category'},
     'subcategory':          {'type': 'subcategory', 'label': 'Subcategory'},
     'product_family':       {'type': 'family',      'label': 'Product family'},
+    'name':                 {'type': 'str',   'label': 'Name'},
+    'description':          {'type': 'str',   'label': 'Description'},
+    'price':                {'type': 'float', 'label': 'Price (fixed)'},
+    'price_per_unit':       {'type': 'float', 'label': 'Price per kg/L'},
+    'barcode':              {'type': 'str',   'label': 'Barcode'},
+    'unit_type':            {'type': 'str',   'label': 'Unit type'},
+    'sold_by_weight':       {'type': 'bool',  'label': 'Sold by weight'},
 }
 
 # ── Filterable fields ────────────────────────────────────────────────────────

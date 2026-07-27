@@ -166,9 +166,23 @@ def api_products_get():
             'id': img.id, 'filename': img.filename,
             'is_primary': img.is_primary, 'display_order': img.display_order,
         })
+    # Build supplier cache: product_id → list of unique supplier names (all batches, all time)
+    from models import StockBatch, Supplier as _Sup
+    supplier_cache: dict = {}
+    if products:
+        for pid, sname in (db.session.query(StockBatch.product_id, _Sup.name)
+                           .join(_Sup, _Sup.id == StockBatch.supplier_id)
+                           .filter(StockBatch.supplier_id.isnot(None))
+                           .all()):
+            if pid not in supplier_cache:
+                supplier_cache[pid] = []
+            if sname and sname not in supplier_cache[pid]:
+                supplier_cache[pid].append(sname)
+
     return jsonify([_serialize_product(p, include_recipe=include_recipe,
                                        include_packages=include_recipe,
-                                       image_cache=image_cache) for p in products])
+                                       image_cache=image_cache,
+                                       supplier_cache=supplier_cache) for p in products])
 
 
 @bp.route('/api/products/<int:pid>', methods=['GET'])
