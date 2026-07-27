@@ -154,13 +154,12 @@ deploy_qa() {
     || { echo "[deploy] ERROR: ladycoleen_web/requirements.txt missing — cannot build. Check GitHub URL."; exit 1; }
 
   # Build QA POS and QA WEB in parallel.
-  # No --no-cache: proper layer order (COPY requirements.txt -> pip -> git clone)
-  # means pip/apt layers are cached; only git clone re-runs on each build.
+  # --no-cache forces git clone to re-run; pip is still fast via BuildKit mount cache.
   echo "[deploy] Building QA POS + QA WEB in parallel (12 cores)..."
   docker rm -f qa-farmpos-app qa-ladycoleen-web 2>/dev/null || true
-  DOCKER_BUILDKIT=1 docker compose build qa-pos 2>&1 | tee /tmp/build_qa_pos.log &
+  DOCKER_BUILDKIT=1 docker compose build --no-cache qa-pos 2>&1 | tee /tmp/build_qa_pos.log &
   POS_PID=$!
-  DOCKER_BUILDKIT=1 docker compose build qa-web 2>&1 | tee /tmp/build_qa_web.log &
+  DOCKER_BUILDKIT=1 docker compose build --no-cache qa-web 2>&1 | tee /tmp/build_qa_web.log &
   WEB_PID=$!
 
   POS_RC=0; WEB_RC=0

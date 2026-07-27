@@ -22,8 +22,7 @@ COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install -r requirements.txt
 
-# Always-fresh: shallow clone gets latest code without full git history.
-# The layers above (apt + pip) are cached so only this step re-runs each build.
+# Always-fresh: --no-cache in deploy.sh ensures this layer is never reused.
 RUN git clone --depth=1 https://github.com/quintuszgeyser/FarmStallPos.git /tmp/repo && \
     cp -r /tmp/repo/ladycoleen_web/. /app/ && \
     rm -rf /tmp/repo
