@@ -740,7 +740,8 @@ function renderProductsCards() {
     const matchesSearch = !q ||
       p.name.toLowerCase().includes(q) ||
       String(p.id) === q ||
-      (p.barcode?.toLowerCase().includes(q));
+      (p.barcode?.toLowerCase().includes(q)) ||
+      (STATE._productSupplierMap[p.id] || '').includes(q);
     if (!matchesSearch) return false;
     // Category filter (multi-select; matches any selected)
     if (catFilterActive) {
@@ -754,11 +755,6 @@ function renderProductsCards() {
     // Family filter
     if (famFilter !== null) {
       if ((p.product_family_id || null) !== famFilter) return false;
-    }
-    // Supplier filter (uses the stock-batch supplier index built by loadIngredients)
-    if (supplierQ) {
-      const names = (STATE._productSupplierMap[p.id] || '').toLowerCase();
-      if (!names.includes(supplierQ)) return false;
     }
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
