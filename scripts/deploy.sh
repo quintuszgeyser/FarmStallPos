@@ -110,41 +110,62 @@ deploy_recognition() {
 }
 
 deploy_qa() {
-  # Fetch latest requirements.txt from GitHub into build contexts so Docker can cache
-  # the pip install layer. The layer only re-runs when requirements.txt actually changes;
-  # otherwise pip install is served from the BuildKit persistent cache (~/.cache/pip).
+  local SESSION="deploy-qa"
+  local LOG="$HOME/farmpos-docker/logs/deploy_qa.log"
+  mkdir -p "$(dirname "$LOG")"
+
+  # Wrap the build in a tmux session so it survives SSH disconnects.
+  # On reconnect, calling deploy.sh qa again re-attaches to the running session.
+  if [ -z "${DEPLOY_IN_TMUX:-}" ] && [ -z "${TMUX:-}" ]; then
+    if tmux has-session -t "$SESSION" 2>/dev/null; then
+      echo "[deploy] QA build already running — attaching to session '$SESSION'"
+      echo "[deploy] Log: $LOG"
+      exec tmux attach-session -t "$SESSION"
+    fi
+    echo "[deploy] Starting build in tmux session '$SESSION' (survives SSH drop)"
+    echo "[deploy] To detach without stopping: Ctrl+B then D"
+    echo "[deploy] Log: $LOG"
+    exec tmux new-session -s "$SESSION" \
+      "bash -c 'cd ~/farmpos-docker; DEPLOY_IN_TMUX=1 bash deploy.sh qa 2>&1 | tee -a \"$LOG\"; echo \"\"; echo \"[deploy] Session complete — press Enter to close\"; read'"
+  fi
+
+  # ── Actual build (runs inside tmux or when DEPLOY_IN_TMUX is set) ──────────
+
+  # Fetch latest requirements.txt from GitHub into build contexts.
+  # IMPORTANT: POS repo root = requirements.txt (not farm_pos_web/requirements.txt)
   echo "[deploy] Fetching requirements.txt for pip layer caching..."
-  curl -sf "https://raw.githubusercontent.com/quintuszgeyser/FarmStallPos/main/farm_pos_web/requirements.txt" \
+  curl -sf "https://raw.githubusercontent.com/quintuszgeyser/FarmStallPos/main/requirements.txt" \
     -o ~/farmpos-docker/pos/requirements.txt \
-    || echo "[deploy] WARN: could not fetch POS requirements.txt — pip layer will not be cached this build"
+    && echo "[deploy] POS requirements.txt OK ($(wc -l < ~/farmpos-docker/pos/requirements.txt) lines)" \
+    || echo "[deploy] WARN: could not fetch POS requirements.txt — COPY will fail if missing"
   curl -sf "https://raw.githubusercontent.com/quintuszgeyser/FarmStallPos/main/ladycoleen_web/requirements.txt" \
     -o ~/farmpos-docker/ladycoleen_web/requirements.txt \
-    || echo "[deploy] WARN: could not fetch web requirements.txt — pip layer will not be cached this build"
+    && echo "[deploy] WEB requirements.txt OK ($(wc -l < ~/farmpos-docker/ladycoleen_web/requirements.txt) lines)" \
+    || echo "[deploy] WARN: could not fetch web requirements.txt — COPY will fail if missing"
 
-  # Build QA POS and QA WEB in parallel — 12 cores available, no reason to serialize.
-  # No --no-cache: layer ordering (COPY requirements.txt -> pip -> git clone) ensures
-  # pip/apt are cached and only the git clone layer rebuilds each time.
-  echo "[deploy] Building QA POS + QA WEB in parallel..."
+  # Guard: abort if either requirements.txt is still missing
+  [ -f ~/farmpos-docker/pos/requirements.txt ] \
+    || { echo "[deploy] ERROR: pos/requirements.txt missing — cannot build. Check GitHub URL."; exit 1; }
+  [ -f ~/farmpos-docker/ladycoleen_web/requirements.txt ] \
+    || { echo "[deploy] ERROR: ladycoleen_web/requirements.txt missing — cannot build. Check GitHub URL."; exit 1; }
+
+  # Build QA POS and QA WEB in parallel.
+  # No --no-cache: proper layer order (COPY requirements.txt -> pip -> git clone)
+  # means pip/apt layers are cached; only git clone re-runs on each build.
+  echo "[deploy] Building QA POS + QA WEB in parallel (12 cores)..."
   docker rm -f qa-farmpos-app qa-ladycoleen-web 2>/dev/null || true
-  DOCKER_BUILDKIT=1 docker compose build qa-pos > /tmp/build_qa_pos.log 2>&1 &
+  DOCKER_BUILDKIT=1 docker compose build qa-pos 2>&1 | tee /tmp/build_qa_pos.log &
   POS_PID=$!
-  DOCKER_BUILDKIT=1 docker compose build qa-web > /tmp/build_qa_web.log 2>&1 &
+  DOCKER_BUILDKIT=1 docker compose build qa-web 2>&1 | tee /tmp/build_qa_web.log &
   WEB_PID=$!
 
-  echo "[deploy] Waiting for parallel builds... (logs: /tmp/build_qa_pos.log, /tmp/build_qa_web.log)"
   POS_RC=0; WEB_RC=0
   wait $POS_PID || POS_RC=$?
   wait $WEB_PID || WEB_RC=$?
 
-  if [ $POS_RC -ne 0 ]; then
-    echo "[deploy] ERROR: QA POS build failed — see /tmp/build_qa_pos.log"
-    tail -30 /tmp/build_qa_pos.log; exit 1
-  fi
+  [ $POS_RC -ne 0 ] && { echo "[deploy] ERROR: QA POS build failed"; exit 1; }
   echo "[deploy] QA POS build OK"
-  if [ $WEB_RC -ne 0 ]; then
-    echo "[deploy] ERROR: QA WEB build failed — see /tmp/build_qa_web.log"
-    tail -30 /tmp/build_qa_web.log; exit 1
-  fi
+  [ $WEB_RC -ne 0 ] && { echo "[deploy] ERROR: QA WEB build failed"; exit 1; }
   echo "[deploy] QA WEB build OK"
 
   docker compose up -d qa-pos
