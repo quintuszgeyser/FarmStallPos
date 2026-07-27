@@ -130,6 +130,10 @@ deploy_qa() {
   fi
 
   # ── Actual build (runs inside tmux or when DEPLOY_IN_TMUX is set) ──────────
+  echo ""
+  echo "════════════════════════════════════════════════════"
+  echo "[deploy] QA build started: $(date)"
+  echo "════════════════════════════════════════════════════"
 
   # Fetch latest requirements.txt from GitHub into build contexts.
   # IMPORTANT: POS repo root = requirements.txt (not farm_pos_web/requirements.txt)
@@ -177,6 +181,16 @@ deploy_qa() {
   wait_healthy qa-ladycoleen-web "QA WEB"
   docker image inspect "$QA_WEB_IMAGE" --format '{{.Id}}' > /tmp/qa_web_image_id.txt 2>/dev/null || true
   echo "[deploy] QA web artifact: $QA_WEB_IMAGE ($(cat /tmp/qa_web_image_id.txt 2>/dev/null))"
+
+  echo ""
+  echo "════════════════════════════════════════════════════"
+  echo "[deploy] QA deploy COMPLETE: $(date)"
+  echo "[deploy] POS  → http://10.0.0.101:5100"
+  echo "[deploy] WEB  → http://10.0.0.101:5101"
+  POS_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' qa-farmpos-app 2>/dev/null || echo unknown)
+  WEB_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' qa-ladycoleen-web 2>/dev/null || echo unknown)
+  echo "[deploy] POS health: $POS_HEALTH  |  WEB health: $WEB_HEALTH"
+  echo "════════════════════════════════════════════════════"
 }
 
 # PROMOTE the exact QA-tested images to prod - no rebuild. Prod == QA functionally, own DB.
