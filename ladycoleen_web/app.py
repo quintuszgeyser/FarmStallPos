@@ -138,6 +138,55 @@ def create_app():
         return Response("google-site-verification: google356d111296009565.html",
                         mimetype="text/html")
 
+    # XML sitemap for Google indexing
+    @app.route("/sitemap.xml")
+    def sitemap():
+        from flask import Response, request
+        from sqlalchemy import text as _text
+        import datetime
+
+        base = "https://ladycoleen.co.za"
+        today = datetime.date.today().isoformat()
+
+        static_urls = [
+            (base + "/farmshop",          "weekly",  "1.0"),
+            (base + "/farmshop/products", "weekly",  "0.9"),
+            (base + "/cakes",             "monthly", "0.7"),
+            (base + "/cakes/order",       "monthly", "0.6"),
+            (base + "/policies/refund",   "yearly",  "0.3"),
+            (base + "/policies/privacy",  "yearly",  "0.3"),
+            (base + "/policies/terms",    "yearly",  "0.3"),
+            (base + "/policies/shipping", "yearly",  "0.3"),
+            (base + "/policies/returns",  "yearly",  "0.3"),
+        ]
+
+        product_urls = []
+        try:
+            rows = db.session.execute(_text(
+                "SELECT id FROM products WHERE is_archived = false AND is_for_sale = true"
+            )).fetchall()
+            product_urls = [
+                (f"{base}/farmshop/products/{r[0]}", "weekly", "0.8")
+                for r in rows
+            ]
+        except Exception:
+            pass
+
+        all_urls = static_urls + product_urls
+
+        lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+        for loc, freq, pri in all_urls:
+            lines.append(
+                f"  <url><loc>{loc}</loc>"
+                f"<lastmod>{today}</lastmod>"
+                f"<changefreq>{freq}</changefreq>"
+                f"<priority>{pri}</priority></url>"
+            )
+        lines.append("</urlset>")
+
+        return Response("\n".join(lines), mimetype="application/xml")
+
     @app.route("/")
     def index():
         from flask import redirect, url_for
