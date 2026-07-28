@@ -187,6 +187,66 @@ def create_app():
 
         return Response("\n".join(lines), mimetype="application/xml")
 
+    # Google Merchant Center product feed
+    @app.route("/product-feed.xml")
+    def product_feed():
+        from flask import Response
+        from sqlalchemy import text as _text
+        from services.stock import get_available_qty
+        import xml.sax.saxutils as _sax
+
+        BASE = "https://ladycoleen.co.za"
+
+        rows = db.session.execute(_text("""
+            SELECT id, name, COALESCE(description, '') AS description,
+                   COALESCE(price, 0) AS price, product_type, image_url
+            FROM products
+            WHERE is_for_sale = true AND is_available_online = true AND is_archived = false
+            ORDER BY name ASC
+        """)).fetchall()
+
+        def _avail(product_type, qty):
+            if qty <= 0:
+                return "out of stock"
+            return "in stock"
+
+        def _esc(s):
+            return _sax.escape(str(s or ""))
+
+        items = []
+        for r in rows:
+            qty = get_available_qty(db, r.id, r.product_type)
+            avail = _avail(r.product_type, qty)
+            img = f"{BASE}/product_images/{r.image_url}" if r.image_url else ""
+            desc = r.description.strip() if r.description else r.name
+            price = f"{float(r.price):.2f} ZAR"
+            items.append(
+                f"    <item>\n"
+                f"      <g:id>{r.id}</g:id>\n"
+                f"      <g:title>{_esc(r.name)}</g:title>\n"
+                f"      <g:description>{_esc(desc)}</g:description>\n"
+                f"      <g:link>{BASE}/farmshop/products/{r.id}</g:link>\n"
+                + (f"      <g:image_link>{_esc(img)}</g:image_link>\n" if img else "")
+                + f"      <g:price>{price}</g:price>\n"
+                f"      <g:availability>{avail}</g:availability>\n"
+                f"      <g:condition>new</g:condition>\n"
+                f"      <g:brand>Lady Coleen</g:brand>\n"
+                f"    </item>"
+            )
+
+        xml = (
+            '<?xml version="1.0" encoding="UTF-8"?>\n'
+            '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">\n'
+            '  <channel>\n'
+            '    <title>Lady Coleen Boutique Farm Shop</title>\n'
+            f'    <link>{BASE}</link>\n'
+            '    <description>Handmade and farm-fresh products from Lady Coleen</description>\n'
+            + "\n".join(items) + "\n"
+            '  </channel>\n'
+            '</rss>'
+        )
+        return Response(xml, mimetype="application/xml")
+
     @app.route("/")
     def index():
         from flask import redirect, url_for
