@@ -131,6 +131,13 @@ def create_app():
     def health():
         return jsonify(status="ok"), 200
 
+    # Google Search Console ownership verification
+    @app.route("/google356d111296009565.html")
+    def google_site_verification():
+        from flask import Response
+        return Response("google-site-verification: google356d111296009565.html",
+                        mimetype="text/html")
+
     @app.route("/")
     def index():
         from flask import redirect, url_for
