@@ -571,6 +571,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     initSerialSupport();
     _loadCostCategories();   // non-blocking: populates type dropdown for cost entry
     await loadProducts();
+    await loadPackaging();
     _restoreCartFromSession();  // restore cart if session expired mid-sale
     await loadTransactions();
     await loadSpecials();
@@ -1987,11 +1988,13 @@ function _updateCategoryPackagingUI(catName) {
   const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === (catName || '').trim().toLowerCase());
   if (!cat) {
     flagRow.style.display = 'none';
+    flagRow.dataset.catId = '';
     capRow.style.display  = 'none';
     return;
   }
 
   flagRow.style.display = '';
+  flagRow.dataset.catId = String(cat.id); // store ID so handler doesn't re-search by name
   cbx.checked = !!cat.is_packaging;
   capRow.style.display = cat.is_packaging ? '' : 'none';
 }
@@ -2001,18 +2004,24 @@ function _updateCategoryPackagingUI(catName) {
   const cbx = document.getElementById('p-cat-is-packaging');
   if (!cbx || cbx._pkgBound) return;
   cbx.addEventListener('change', async () => {
-    const catName = document.getElementById('p-category')?.value?.trim();
-    const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === (catName || '').toLowerCase());
-    if (!cat) { cbx.checked = !cbx.checked; return; } // revert — no saved category
+    const flagRow = document.getElementById('row-packaging-flags');
+    const catId = parseInt(flagRow?.dataset.catId || '0', 10);
+    const cat = catId ? (STATE.categories || []).find(c => c.id === catId) : null;
+    if (!cat) {
+      cbx.checked = !cbx.checked;
+      toast('Save the product first, then mark the category as packaging.', 'warning');
+      return;
+    }
     try {
       await api('/api/categories/update', { method: 'POST', body: JSON.stringify({ id: cat.id, name: cat.name, is_packaging: cbx.checked }) });
       cat.is_packaging = cbx.checked;
-      await loadPackaging();  // refresh STATE.packagingCategoryIds
+      await loadPackaging();
       document.getElementById('row-packaging-capacity').style.display = cbx.checked ? '' : 'none';
+      toast(`"${cat.name}" ${cbx.checked ? 'marked as packaging' : 'unmarked'}`, 'success');
       renderProductsCards();
     } catch (e) {
       toast(e?.message || 'Failed to update category', 'danger');
-      cbx.checked = !cbx.checked; // revert on error
+      cbx.checked = !cbx.checked;
     }
   });
   cbx._pkgBound = true;

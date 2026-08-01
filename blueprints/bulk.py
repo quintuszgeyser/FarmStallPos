@@ -29,16 +29,14 @@ _EDITABLE = {
     'scale_tare':           {'type': 'float',    'label': 'Scale tare (g)'},
     'scale_msg1':           {'type': 'str',      'label': 'Scale message 1'},
     'scale_msg2':           {'type': 'str',      'label': 'Scale message 2'},
-    'category':             {'type': 'category',    'label': 'Category'},
-    'subcategory':          {'type': 'subcategory', 'label': 'Subcategory'},
-    'product_family':       {'type': 'family',      'label': 'Product family'},
-    'name':                 {'type': 'str',   'label': 'Name'},
-    'description':          {'type': 'str',   'label': 'Description'},
-    'price':                {'type': 'float', 'label': 'Price (fixed)'},
-    'price_per_unit':       {'type': 'float', 'label': 'Price per kg/L'},
-    'barcode':              {'type': 'str',   'label': 'Barcode'},
-    'unit_type':            {'type': 'str',   'label': 'Unit type'},
-    'sold_by_weight':       {'type': 'bool',  'label': 'Sold by weight'},
+    'category':              {'type': 'category',    'label': 'Category'},
+    'subcategory':           {'type': 'subcategory', 'label': 'Subcategory'},
+    'product_family':        {'type': 'family',      'label': 'Product family'},
+    'barcode':               {'type': 'str',         'label': 'Barcode'},
+    'unit_type':             {'type': 'str',         'label': 'Unit type'},
+    'sold_by_weight':        {'type': 'bool',        'label': 'Sold by weight'},
+    'packaging_capacity':    {'type': 'int',         'label': 'Packaging capacity (units)'},
+    'category_is_packaging': {'type': 'bool',        'label': 'Mark category as packaging'},
 }
 
 # ── Filterable fields ────────────────────────────────────────────────────────
@@ -67,6 +65,8 @@ _FILTERABLE = {
     'subcategory':          {'type': 'str',    'label': 'Subcategory'},
     'product_family':       {'type': 'str',    'label': 'Product family'},
     'supplier':             {'type': 'str',    'label': 'Supplier (latest batch)'},
+    'is_packaging':         {'type': 'bool',   'label': 'Packaging category'},
+    'packaging_capacity':   {'type': 'int',    'label': 'Packaging capacity (units)'},
 }
 
 _STR_OPS  = ('contains', 'not_contains', 'starts', 'ends', 'eq', 'ne', 'empty', 'populated')
@@ -100,6 +100,10 @@ def _get_field_val(p, field, supplier_map=None):
         return p.family.name if p.family else None
     if field == 'supplier':
         return (supplier_map or {}).get(p.id, '')
+    if field in ('is_packaging', 'category_is_packaging'):
+        return bool(p.category.is_packaging) if p.category else False
+    if field == 'packaging_capacity':
+        return p.packaging_capacity
     return getattr(p, field, None)
 
 
@@ -243,6 +247,17 @@ def _apply_action(p, action):
                     db.func.lower(ProductFamily.name) == str(value).strip().lower()
                 ).first()
                 p.product_family_id = fam.id if fam else None
+        elif field == 'category_is_packaging':
+            if not p.category_id:
+                return False
+            cat = db.session.get(Category, p.category_id)
+            if not cat:
+                return False
+            new_val = str(value).lower() in ('true', '1', 'yes')
+            if cat.is_packaging == new_val:
+                return False
+            cat.is_packaging = new_val
+            return True
         else:
             coerced = _coerce_value(field, value)
             old = getattr(p, field, None)
@@ -497,6 +512,9 @@ def api_bulk_apply():
                 before[str(p.id)]['subcategory_id'] = p.sub_category_id
             elif info.get('type') == 'family':
                 before[str(p.id)]['product_family_id'] = p.product_family_id
+            elif field == 'category_is_packaging':
+                before[str(p.id)]['category_is_packaging'] = bool(p.category.is_packaging) if p.category else False
+                before[str(p.id)]['_cat_id_for_pkg'] = p.category_id
             else:
                 before[str(p.id)][field] = getattr(p, field, None)
 
@@ -603,14 +621,20 @@ def api_bulk_rollback(run_id):
         if not p:
             continue
         for field, old_val in fields.items():
-            if field == 'category':
-                continue  # handled via category_id
+            if field in ('category', '_cat_id_for_pkg'):
+                continue  # handled via category_id / category_is_packaging
             if field == 'category_id':
                 p.category_id = old_val
             elif field == 'subcategory_id':
                 p.sub_category_id = old_val
             elif field == 'product_family_id':
                 p.product_family_id = old_val
+            elif field == 'category_is_packaging':
+                cat_id = fields.get('_cat_id_for_pkg')
+                if cat_id:
+                    cat = db.session.get(Category, cat_id)
+                    if cat:
+                        cat.is_packaging = bool(old_val)
             else:
                 setattr(p, field, old_val)
         restored += 1
