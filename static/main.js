@@ -39,6 +39,10 @@ let STATE = {
   _cartCount:         {},   // productId -> times added to cart (persisted in localStorage)
   _productSupplierMap: {},  // productId -> lowercased supplier names string (built from stock batches)
   _selectedBatchData:  [],  // [{id, product_name, supplier_id, supplier_name, base_cost_total, consumed_pct, updated_at}]
+  // Packaging
+  packagingProducts:    [],   // from GET /api/packaging — all packaging products
+  packagingCategoryIds: new Set(), // category IDs where is_packaging=true
+  packagingHints:       {},   // cache: `${productId}_${bucket}` → suggestion object|null
 };
 
 // Load persisted cart counts from localStorage
@@ -645,6 +649,103 @@ async function loadCategories() {
   } catch (e) { console.error('loadCategories', e); STATE.categories = []; }
 }
 
+async function loadPackaging() {
+  if (!STATE.user) return;
+  try {
+    const data = await api('/api/packaging');
+    STATE.packagingProducts = data.products || [];
+    STATE.packagingCategoryIds = new Set(
+      STATE.packagingProducts.map(p => p.category_id).filter(Boolean)
+    );
+  } catch (e) { console.error('loadPackaging', e); STATE.packagingProducts = []; }
+}
+
+function isPackagingProduct(p) {
+  return p && STATE.packagingCategoryIds.has(p.category_id);
+}
+
+function _qtyBucket(qty) {
+  qty = parseInt(qty) || 1;
+  if (qty <= 2) return 1;
+  if (qty <= 6) return 2;
+  if (qty <= 12) return 3;
+  return 4;
+}
+
+async function openPackagingModal(cartKey, productId, qty) {
+  const titleEl = document.getElementById('pkg-modal-title');
+  const body    = document.getElementById('pkg-modal-body');
+  if (!titleEl || !body) return;
+
+  if (cartKey) {
+    const item = STATE.cart[cartKey];
+    const name = item ? item.name.replace(/\s*\(.*$/, '') : 'item';
+    titleEl.textContent = 'Pack: ' + name;
+  } else {
+    titleEl.textContent = 'Add Cart Packaging';
+  }
+
+  body.innerHTML = '<div class="text-center py-2 text-muted"><i class="bi bi-hourglass-split"></i></div>';
+  const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('packagingModal'));
+  modal.show();
+
+  try {
+    const pid = productId || 0;
+    const q   = qty || 1;
+    const data = await api(`/api/packaging/suggestions?product_id=${pid}&qty=${q}`);
+    const suggestedIds = new Set((data.suggestions || []).map(s => s.id));
+    const rest = STATE.packagingProducts.filter(p => !suggestedIds.has(p.id));
+
+    const renderItem = (p, useCount) => {
+      let capacityHint = '';
+      if (p.packaging_capacity && qty) {
+        if (p.packaging_capacity >= qty)
+          capacityHint = `<span class="badge bg-success ms-1">Fits all ${qty}</span>`;
+        else
+          capacityHint = `<span class="badge bg-secondary ms-1">Need ${Math.ceil(qty / p.packaging_capacity)}</span>`;
+      }
+      const countBadge = useCount ? `<span class="badge bg-info text-dark ms-1">${useCount}×</span>` : '';
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-outline-secondary btn-sm w-100 text-start mb-1';
+      btn.innerHTML = `<i class="bi bi-box-seam me-1"></i>${escapeHtml(p.name)}<span class="text-muted ms-1 small">R${fmt(p.price)}</span>${countBadge}${capacityHint}`;
+      btn.onclick = () => {
+        addToCart(p);
+        modal.hide();
+      };
+      return btn;
+    };
+
+    body.innerHTML = '';
+
+    if (data.suggestions && data.suggestions.length) {
+      const hdr = document.createElement('div');
+      hdr.className = 'small text-muted mb-1 fw-semibold';
+      hdr.textContent = 'Often used:';
+      body.appendChild(hdr);
+      data.suggestions.forEach(s => {
+        const p = STATE.packagingProducts.find(x => x.id === s.id);
+        if (p) body.appendChild(renderItem(p, s.use_count));
+      });
+    }
+
+    if (rest.length) {
+      if (data.suggestions && data.suggestions.length) {
+        const hdr2 = document.createElement('div');
+        hdr2.className = 'small text-muted mt-2 mb-1 fw-semibold';
+        hdr2.textContent = 'All packaging:';
+        body.appendChild(hdr2);
+      }
+      rest.forEach(p => body.appendChild(renderItem(p, 0)));
+    }
+
+    if (!STATE.packagingProducts.length) {
+      body.innerHTML = '<p class="small text-muted mb-0">No packaging products. Mark a category as Packaging in admin.</p>';
+    }
+  } catch (e) {
+    body.innerHTML = '<p class="small text-danger mb-0">Could not load packaging.</p>';
+  }
+}
+
 function renderTellerGrid(q = '') {
   const host = document.getElementById('teller-product-grid');
   if (!host) return;
@@ -759,7 +860,8 @@ function renderProductsCards() {
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
     if (tab === 'recipes')      return p.is_archived !== true && p.product_type === 'recipe' && p.is_for_sale !== false;
-    // 'active' (Single Items) = for sale, not archived, not a recipe
+    if (tab === 'packaging')    return p.is_archived !== true && isPackagingProduct(p);
+    // 'active' (Single Items) = for sale, not archived, not a recipe, not packaging
     return p.is_archived !== true && p.is_for_sale !== false && p.product_type !== 'recipe';
   });
 
@@ -776,18 +878,20 @@ function renderProductsCards() {
   renderCategoryFilterPills();
 
   // Update count badges
-  const singleCount   = STATE.products.filter(p => !p.is_archived && p.is_for_sale !== false && p.product_type !== 'recipe').length;
-  const ingCount      = STATE.products.filter(p => !p.is_archived && p.is_for_sale === false).length;
-  const recipeCount   = STATE.products.filter(p => !p.is_archived && p.product_type === 'recipe').length;
-  const specialsCount = (STATE.specials || []).length;
-  const archivedCount = STATE.products.filter(p => p.is_archived).length;
+  const singleCount     = STATE.products.filter(p => !p.is_archived && p.is_for_sale !== false && p.product_type !== 'recipe').length;
+  const ingCount        = STATE.products.filter(p => !p.is_archived && p.is_for_sale === false).length;
+  const recipeCount     = STATE.products.filter(p => !p.is_archived && p.product_type === 'recipe').length;
+  const specialsCount   = (STATE.specials || []).length;
+  const archivedCount   = STATE.products.filter(p => p.is_archived).length;
+  const packagingCount  = STATE.products.filter(p => !p.is_archived && isPackagingProduct(p)).length;
   const setBadge = (id, n) => { const el = document.getElementById(id); if (el) { el.textContent = n; el.style.display = n > 0 ? '' : 'none'; } };
-  setBadge('single-count-badge',     singleCount);
+  setBadge('single-count-badge',      singleCount);
   setBadge('ingredients-count-badge', ingCount);
-  setBadge('recipes-count-badge',    recipeCount);
-  setBadge('specials-count-badge',   specialsCount);
-  setBadge('archived-count-badge',   archivedCount);
-  setBadge('categories-count-badge', (STATE.categories || []).length);
+  setBadge('recipes-count-badge',     recipeCount);
+  setBadge('specials-count-badge',    specialsCount);
+  setBadge('archived-count-badge',    archivedCount);
+  setBadge('packaging-count-badge',   packagingCount);
+  setBadge('categories-count-badge',  (STATE.categories || []).length);
 
   wrap.innerHTML = '';
   if (items.length === 0) {
@@ -913,6 +1017,7 @@ function renderProductsCards() {
         ${p.auto_price          ? `<i class="bi bi-percent pf-icon text-info"         title="Auto-price from markup"></i>`     : ''}
         ${p.is_consignment      ? `<i class="bi bi-handshake pf-icon text-secondary"  title="Consignment item"></i>`           : ''}
         ${p.scale_open_price    ? `<i class="bi bi-pencil-square pf-icon text-warning" title="Scale: open price"></i>`         : ''}
+        ${p.packaging_capacity  ? `<span class="badge bg-light text-dark border pf-icon" title="Fits ${p.packaging_capacity} units">Fits ${p.packaging_capacity}</span>` : ''}
       </div>
       <div class="pr-more-wrap">
         <button class="pr-more-btn" title="Actions">⋮</button>
@@ -1846,6 +1951,7 @@ function renderCategorySuggestions() {
       // Refresh sub-category select; use 'new' sentinel for categories not yet saved
       const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === btn.dataset.catPick.toLowerCase());
       _populateSubCategorySelect(cat?.id || 'new', null);
+      _updateCategoryPackagingUI(btn.dataset.catPick);
     });
   });
 }
@@ -1865,9 +1971,51 @@ function renderCategorySuggestions() {
       if (newCatId !== _subCatCategoryId) {
         _populateSubCategorySelect(newCatId, null);
       }
+      _updateCategoryPackagingUI(input.value);
     }, 150);
   });
   input._catBound = true;
+})();
+
+// ── Packaging flags for selected category in product editor ──
+function _updateCategoryPackagingUI(catName) {
+  const flagRow = document.getElementById('row-packaging-flags');
+  const capRow  = document.getElementById('row-packaging-capacity');
+  const cbx     = document.getElementById('p-cat-is-packaging');
+  if (!flagRow || !capRow || !cbx) return;
+
+  const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === (catName || '').trim().toLowerCase());
+  if (!cat) {
+    flagRow.style.display = 'none';
+    capRow.style.display  = 'none';
+    return;
+  }
+
+  flagRow.style.display = '';
+  cbx.checked = !!cat.is_packaging;
+  capRow.style.display = cat.is_packaging ? '' : 'none';
+}
+
+// Wire the is_packaging checkbox to update the category via API
+(function wireCategoryPackagingCheckbox() {
+  const cbx = document.getElementById('p-cat-is-packaging');
+  if (!cbx || cbx._pkgBound) return;
+  cbx.addEventListener('change', async () => {
+    const catName = document.getElementById('p-category')?.value?.trim();
+    const cat = (STATE.categories || []).find(c => c.name.toLowerCase() === (catName || '').toLowerCase());
+    if (!cat) { cbx.checked = !cbx.checked; return; } // revert — no saved category
+    try {
+      await api('/api/categories/update', { method: 'POST', body: JSON.stringify({ id: cat.id, name: cat.name, is_packaging: cbx.checked }) });
+      cat.is_packaging = cbx.checked;
+      await loadPackaging();  // refresh STATE.packagingCategoryIds
+      document.getElementById('row-packaging-capacity').style.display = cbx.checked ? '' : 'none';
+      renderProductsCards();
+    } catch (e) {
+      toast(e?.message || 'Failed to update category', 'danger');
+      cbx.checked = !cbx.checked; // revert on error
+    }
+  });
+  cbx._pkgBound = true;
 })();
 
 // ── Multi-select filter pills above the product cards ──
@@ -2467,10 +2615,15 @@ function openProductEditor(p) {
   const descEl = document.getElementById('p-description');
   if (descEl) descEl.value = p?.description ?? '';
 
+  // Packaging capacity
+  const capEl = document.getElementById('p-packaging-capacity');
+  if (capEl) capEl.value = p?.packaging_capacity ?? '';
+
   // Category (autocomplete text input - shows the current category name)
   const catEl = document.getElementById('p-category');
   if (catEl) catEl.value = p?.category_name ?? '';
   hideCategorySuggestions();
+  _updateCategoryPackagingUI(p?.category_name ?? '');
 
   // Sub-category
   _populateSubCategorySelect(p?.category_id || null, p?.sub_category_id || null);
@@ -3577,6 +3730,8 @@ function buildProductPayload() {
     product_family_id:   (typeof _currentFamilyId === 'number') ? _currentFamilyId : null,
     product_family_name: (_currentFamilyId === 'new' ? _currentFamilyName : null),
     is_default_variant: document.getElementById('p-is-default-variant')?.checked || false,
+    // Packaging
+    packaging_capacity: (() => { const v = parseInt(document.getElementById('p-packaging-capacity')?.value || '', 10); return v > 0 ? v : null; })(),
   };
 }
 
@@ -6745,6 +6900,48 @@ function renderCart() {
       btns.appendChild(discBtn);
     }
 
+    // Packaging hint button (non-packaging products only)
+    if (!isPackagingProduct(prod) && STATE.packagingProducts.length) {
+      const bucket  = _qtyBucket(item.qty);
+      const hintKey = `${item.product_id}_${bucket}`;
+      const hint    = STATE.packagingHints[hintKey];
+
+      if (hint === undefined) {
+        // Fetch async — prevent duplicate requests with null sentinel
+        STATE.packagingHints[hintKey] = null;
+        api(`/api/packaging/suggestions?product_id=${item.product_id}&qty=${item.qty}`)
+          .then(d => {
+            STATE.packagingHints[hintKey] = (d.suggestions && d.suggestions[0]) || null;
+            renderCart();
+          }).catch(() => {});
+      }
+
+      if (hint) {
+        const pkgQuick = document.createElement('button');
+        pkgQuick.className = 'btn btn-sm btn-outline-secondary';
+        pkgQuick.title = `Add ${hint.name}`;
+        pkgQuick.innerHTML = `<i class="bi bi-box-seam me-1"></i>${escapeHtml(hint.name)}`;
+        pkgQuick.onclick = () => {
+          const pkgProd = STATE.packagingProducts.find(x => x.id === hint.id);
+          if (pkgProd) addToCart(pkgProd);
+        };
+        btns.appendChild(pkgQuick);
+        const more = document.createElement('button');
+        more.className = 'btn btn-sm btn-link p-0 text-muted';
+        more.textContent = 'more';
+        more.onclick = () => openPackagingModal(item._key, item.product_id, item.qty);
+        btns.appendChild(more);
+      } else {
+        // No suggestion yet (no history or still loading) — show icon-only button
+        const pkgIcon = document.createElement('button');
+        pkgIcon.className = 'btn btn-sm btn-outline-secondary';
+        pkgIcon.title = 'Add packaging';
+        pkgIcon.innerHTML = '<i class="bi bi-box-seam"></i>';
+        pkgIcon.onclick = () => openPackagingModal(item._key, item.product_id, item.qty);
+        btns.appendChild(pkgIcon);
+      }
+    }
+
     const del = document.createElement('button'); del.textContent = 'Remove'; del.className = 'btn btn-sm btn-outline-danger';
     del.onclick = () => { delete STATE.cart[item._key]; renderCart(); };
     btns.appendChild(del);
@@ -6966,6 +7163,17 @@ function applyItemDiscount(basePrice, discount) {
   return Math.max(0, basePrice - saving);
 }
 
+// ── Cart-level packaging button ──
+document.getElementById('btn-cart-packaging')?.addEventListener('click', () => {
+  const totalQty = Object.values(STATE.cart)
+    .filter(i => {
+      const p = STATE.products.find(x => x.id === i.product_id);
+      return !isPackagingProduct(p);
+    })
+    .reduce((s, i) => s + (parseFloat(i.qty) || 1), 0);
+  openPackagingModal(null, 0, totalQty);
+});
+
 // ── Checkout ──
 document.getElementById('btn-checkout')?.addEventListener('click', async () => {
   const cart = Object.values(STATE.cart);
@@ -7036,7 +7244,7 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
 
   try {
     const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(requestBody) });
-    STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; renderCart();
+    STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; STATE.packagingHints = {}; renderCart();
     // Reset split inputs for the next sale
     document.getElementById('split-cash-input').value = '';
     document.getElementById('split-card-input').value = '';
@@ -10898,6 +11106,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
   await refreshMe();
   if (STATE.user) {
     await loadProducts();
+    await loadPackaging();
     await loadTransactions();
     if (isAdmin()) {
       await loadSettings();

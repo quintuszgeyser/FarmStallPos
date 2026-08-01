@@ -7,17 +7,72 @@ from collections import defaultdict
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 
+from flask import current_app
 from helpers import (
     require_login, require_role, current_user,
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
+    qty_bucket,
 )
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, KitchenOrder,
-    Sale, Purchase, User, AuditLog,
+    Sale, Purchase, User, AuditLog, Category, PackagingUsage,
 )
 
 bp = Blueprint('transactions', __name__)
+
+
+def _record_packaging_usage(sale_uuid):
+    """After a successful checkout, record which packaging was used with which products.
+    Runs in its own transaction so a failure here never blocks or rolls back the sale.
+    """
+    try:
+        # Re-query from DB — learn only from what actually persisted
+        sale_rows = Sale.query.filter_by(sale_id=sale_uuid, voided=False).all()
+        if not sale_rows:
+            return
+
+        product_ids = list({r.product_id for r in sale_rows})
+        products = {p.id: p for p in Product.query.filter(Product.id.in_(product_ids)).all()}
+
+        # Load packaging category IDs
+        pkg_cat_ids = {c.id for c in Category.query.filter_by(is_packaging=True).all()}
+
+        # Split into packaging and non-packaging
+        pkg_pids = [pid for pid in product_ids if products.get(pid) and products[pid].category_id in pkg_cat_ids]
+        if not pkg_pids:
+            return  # no packaging in this sale — nothing to record
+
+        # Sum qty per non-packaging product
+        non_pkg_qty = {}
+        for r in sale_rows:
+            if r.product_id not in {p for p in pkg_pids}:
+                non_pkg_qty[r.product_id] = non_pkg_qty.get(r.product_id, 0) + float(r.qty)
+
+        from sqlalchemy import text
+        upsert_sql = text("""
+            INSERT INTO packaging_usage (product_id, qty_bucket, packaging_product_id, use_count, last_used_at)
+            VALUES (:pid, :bucket, :pkg_pid, 1, NOW())
+            ON CONFLICT (product_id, qty_bucket, packaging_product_id)
+            DO UPDATE SET use_count = packaging_usage.use_count + 1, last_used_at = NOW()
+        """)
+
+        # Per-product pairings
+        for pid, qty in non_pkg_qty.items():
+            bucket = qty_bucket(qty)
+            for pkg_pid in pkg_pids:
+                db.session.execute(upsert_sql, {'pid': pid, 'bucket': bucket, 'pkg_pid': pkg_pid})
+
+        # Cart-level pairings (product_id=0 sentinel)
+        total_non_pkg_qty = sum(non_pkg_qty.values())
+        cart_bucket = qty_bucket(total_non_pkg_qty)
+        for pkg_pid in pkg_pids:
+            db.session.execute(upsert_sql, {'pid': 0, 'bucket': cart_bucket, 'pkg_pid': pkg_pid})
+
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        current_app.logger.exception('packaging_usage recording failed for sale %s', sale_uuid)
 
 
 def _serialize_sale_rows(rows):
@@ -331,6 +386,7 @@ def api_transactions_post():
     for pos, (ko_product, ko_qty, ko_ingredients) in enumerate(all_kitchen):
         db.session.add(KitchenOrder(sale_id=sale_uuid, product_id=ko_product.id, product_name=ko_product.name, qty=ko_qty, ingredients=_json.dumps(ko_ingredients), status='pending', sort_order=max_sort + pos + 1, queued_at=now, teller_id=u.id if u else None))
     db.session.commit()
+    _record_packaging_usage(sale_uuid)
     return jsonify({'ok': True, 'transaction_id': sale_uuid, 'kitchen_orders': len(all_kitchen)})
 
 

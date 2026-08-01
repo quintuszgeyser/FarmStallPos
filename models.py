@@ -84,6 +84,8 @@ class Product(db.Model):
     sub_category_id    = db.Column(db.Integer, db.ForeignKey('sub_categories.id', ondelete='SET NULL'), nullable=True, index=True)
     product_family_id  = db.Column(db.Integer, db.ForeignKey('product_families.id', ondelete='SET NULL'), nullable=True, index=True)
     is_default_variant = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    # Packaging: optional capacity hint (how many units fit in this box). NULL = unlimited.
+    packaging_capacity = db.Column(db.Integer, nullable=True)
 
 
 class Category(db.Model):
@@ -92,10 +94,11 @@ class Category(db.Model):
     name_norm = lower(trim(name)), UNIQUE - enforces case/whitespace de-duplication.
     """
     __tablename__ = 'categories'
-    id         = db.Column(db.Integer, primary_key=True)
-    name       = db.Column(db.String(80), nullable=False)
-    name_norm  = db.Column(db.String(80), unique=True, nullable=False, index=True)
-    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    id           = db.Column(db.Integer, primary_key=True)
+    name         = db.Column(db.String(80), nullable=False)
+    name_norm    = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    created_at   = db.Column(db.DateTime(timezone=True), nullable=False, default=datetime.utcnow)
+    is_packaging = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
 
     products   = db.relationship('Product', backref='category', lazy='dynamic',
                                  foreign_keys='Product.category_id')
@@ -804,3 +807,22 @@ class ConsignmentSettlementLine(db.Model):
     unit_cost     = db.Column(Numeric(10, 6), nullable=False)
     amount        = db.Column(Numeric(10, 2), nullable=False)
     camera_source = db.Column(db.String(20),  nullable=True)
+
+
+# ── Packaging suggestions ─────────────────────────────────────────────────────
+
+class PackagingUsage(db.Model):
+    """Tracks which packaging product was used with which product at checkout.
+    Drives smart suggestions sorted by use_count.
+
+    product_id = 0 is the cart-level sentinel (no FK — intentional, 0 is not a real product).
+    qty_bucket: 1=1-2 units, 2=3-6, 3=7-12, 4=12+
+    """
+    __tablename__  = 'packaging_usage'
+    id                   = db.Column(db.Integer, primary_key=True)
+    product_id           = db.Column(db.Integer, nullable=False, default=0, index=True)
+    qty_bucket           = db.Column(db.SmallInteger, nullable=False, default=1)
+    packaging_product_id = db.Column(db.Integer, db.ForeignKey('products.id', ondelete='CASCADE'), nullable=False)
+    use_count            = db.Column(db.Integer, nullable=False, default=1)
+    last_used_at         = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__       = (db.UniqueConstraint('product_id', 'qty_bucket', 'packaging_product_id'),)

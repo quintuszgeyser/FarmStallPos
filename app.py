@@ -1874,11 +1874,16 @@ def strong_migrate():
         if sales_count == 0:
             legacy_ok = False
             try:
+                conn.exec_driver_sql("SAVEPOINT legacy_check")
                 conn.execute(text("SELECT 1 FROM transactions LIMIT 1"))
                 conn.execute(text("SELECT 1 FROM transaction_lines LIMIT 1"))
+                conn.exec_driver_sql("RELEASE SAVEPOINT legacy_check")
                 legacy_ok = True
             except Exception:
-                pass
+                try:
+                    conn.exec_driver_sql("ROLLBACK TO SAVEPOINT legacy_check")
+                except Exception:
+                    pass
             if legacy_ok:
                 conn.exec_driver_sql("""
                 INSERT INTO sales (sale_id, date_time, product_id, qty, unit_price)
@@ -1922,6 +1927,31 @@ def strong_migrate():
         pg_try("ALTER TABLE products ADD COLUMN sub_category_id INTEGER REFERENCES sub_categories(id) ON DELETE SET NULL")
         pg_try("ALTER TABLE products ADD COLUMN product_family_id INTEGER REFERENCES product_families(id) ON DELETE SET NULL")
         pg_try("ALTER TABLE products ADD COLUMN is_default_variant BOOLEAN NOT NULL DEFAULT FALSE")
+
+        # ── Packaging feature ──────────────────────────────────────────────────
+        # Mark an entire category as packaging (is_packaging=true on category row).
+        pg_try("ALTER TABLE categories ADD COLUMN is_packaging BOOLEAN NOT NULL DEFAULT FALSE")
+        # Optional capacity hint on packaging products — "this box fits up to N units".
+        # NULL = unlimited. This is a display hint only; no packing logic is enforced.
+        pg_try("ALTER TABLE products ADD COLUMN packaging_capacity INTEGER")
+        # Usage tracking for smart suggestions.
+        # product_id = 0 is the cart-level sentinel (not a real product FK — intentional).
+        # qty_bucket: 1=1-2 units, 2=3-6, 3=7-12, 4=12+
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS packaging_usage (
+              id                    SERIAL PRIMARY KEY,
+              product_id            INTEGER NOT NULL DEFAULT 0,
+              qty_bucket            SMALLINT NOT NULL DEFAULT 1,
+              packaging_product_id  INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+              use_count             INTEGER NOT NULL DEFAULT 1,
+              last_used_at          TIMESTAMP NOT NULL DEFAULT NOW(),
+              UNIQUE(product_id, qty_bucket, packaging_product_id)
+            )
+        """)
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_packaging_usage_lookup "
+            "ON packaging_usage(product_id, qty_bucket)"
+        )
 
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
@@ -2192,6 +2222,7 @@ def _register_routes(_app):
     from blueprints.consignment     import bp as consignment_bp
     from blueprints.subcategories   import bp as subcategories_bp
     from blueprints.families        import bp as families_bp
+    from blueprints.packaging       import bp as packaging_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -2218,6 +2249,7 @@ def _register_routes(_app):
     _app.register_blueprint(consignment_bp)
     _app.register_blueprint(subcategories_bp)
     _app.register_blueprint(families_bp)
+    _app.register_blueprint(packaging_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

@@ -27,7 +27,8 @@ def api_categories_get():
     counts = _counts()
     cats = Category.query.order_by(Category.name.asc()).all()
     return jsonify([
-        {'id': c.id, 'name': c.name, 'product_count': counts.get(c.id, 0)}
+        {'id': c.id, 'name': c.name, 'product_count': counts.get(c.id, 0),
+         'is_packaging': bool(c.is_packaging)}
         for c in cats
     ])
 
@@ -61,8 +62,10 @@ def api_categories_update():
         return jsonify({'error': 'Another category already uses that name'}), 409
     cat.name = clean
     cat.name_norm = norm
+    if 'is_packaging' in data:
+        cat.is_packaging = bool(data['is_packaging'])
     db.session.commit()
-    return jsonify({'ok': True, 'id': cat.id, 'name': cat.name})
+    return jsonify({'ok': True, 'id': cat.id, 'name': cat.name, 'is_packaging': bool(cat.is_packaging)})
 
 
 @bp.route('/api/categories/delete', methods=['POST'])

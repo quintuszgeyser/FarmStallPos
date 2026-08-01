@@ -28,6 +28,20 @@ from models import (
 )
 
 
+def qty_bucket(qty):
+    """Map a sale quantity to a bucket for packaging suggestions.
+    Bucket 1=1-2, 2=3-6, 3=7-12, 4=12+
+    """
+    try:
+        qty = int(qty or 0)
+    except (TypeError, ValueError):
+        qty = 1
+    if qty <= 2:  return 1
+    if qty <= 6:  return 2
+    if qty <= 12: return 3
+    return 4
+
+
 # ---------------------------------------------------------------------------
 # Category helpers
 # ---------------------------------------------------------------------------
@@ -653,6 +667,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'supplier_names':    ', '.join(supplier_cache[p.id]) if supplier_cache and p.id in supplier_cache else '',
         'pending_price':          float(p.pending_price) if getattr(p, 'pending_price', None) is not None else None,
         'pending_price_per_unit': float(p.pending_price_per_unit) if getattr(p, 'pending_price_per_unit', None) is not None else None,
+        'packaging_capacity':     p.packaging_capacity,
         'cost_per_base_unit':     (lambda _b: float(_b.cost_per_base_unit) if _b and _b.cost_per_base_unit else None)(
             StockBatch.query.filter_by(product_id=p.id)
             .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).first()

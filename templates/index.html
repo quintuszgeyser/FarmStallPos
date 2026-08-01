@@ -887,7 +887,8 @@
                 <strong>R<span id="cart-total">0.00</span></strong>
                 <span id="cart-discount-label" class="text-success small ms-2 hidden"></span>
               </div>
-              <div class="d-flex gap-2">
+              <div class="d-flex gap-2 flex-wrap">
+                <button id="btn-cart-packaging" class="btn btn-outline-secondary btn-lg-touch" title="Add bag or box for the whole cart"><i class="bi bi-bag me-1"></i>Add Packaging</button>
                 <button id="btn-cart-discount" class="btn btn-outline-success btn-lg-touch admin-only hidden">% Discount</button>
                 <button id="btn-checkout" class="btn btn-primary btn-lg-touch">Checkout</button>
               </div>
@@ -997,6 +998,9 @@
             </li>
             <li class="nav-item">
               <button class="nav-link" data-products-sub="archived">Archived <span id="archived-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
+            </li>
+            <li class="nav-item">
+              <button class="nav-link" data-products-sub="packaging"><i class="bi bi-box-seam me-1"></i>Packaging <span id="packaging-count-badge" class="badge bg-secondary ms-1" style="display:none">0</span></button>
             </li>
           </ul>
         </div>
@@ -2542,6 +2546,21 @@
   </div>
 </div>
 
+<!-- ═══════════ PACKAGING PICKER MODAL ═══════════ -->
+<div class="modal fade" id="packagingModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h6 class="modal-title mb-0" id="pkg-modal-title">Add Packaging</h6>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2" id="pkg-modal-body">
+        <div class="text-center py-2 text-muted"><i class="bi bi-hourglass-split"></i></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ RETURN ITEMS MODAL ═══════════ -->
 <div class="modal fade" id="returnModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -2720,6 +2739,18 @@
         <div class="mb-2 position-relative">
           <input id="p-category" class="form-control" placeholder="Category (e.g. Baked Goods, Dairy)" autocomplete="off">
           <div id="p-category-suggestions" class="list-group position-absolute w-100" style="z-index:1060;top:100%;display:none"></div>
+        </div>
+        <div class="mb-2 d-flex align-items-center gap-3" id="row-packaging-flags" style="display:none">
+          <div class="form-check mb-0">
+            <input class="form-check-input" type="checkbox" id="p-cat-is-packaging">
+            <label class="form-check-label small" for="p-cat-is-packaging">
+              Packaging category <span class="text-muted">(marks all products in this category as packaging)</span>
+            </label>
+          </div>
+        </div>
+        <div class="mb-2" id="row-packaging-capacity" style="display:none">
+          <input type="number" id="p-packaging-capacity" class="form-control form-control-sm" min="1" step="1"
+            placeholder="Capacity (units) — e.g. 8 for a box that fits 8 slices (optional)">
         </div>
         <div class="mb-2 position-relative" id="row-sub-category" style="display:none">
           <input id="p-sub-category" class="form-control form-control-sm" placeholder="Sub-category (optional)" autocomplete="off">
@@ -3731,7 +3762,7 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260706-deploy"></script>
+<script src="/static/main.js?v=20260801-packaging"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">

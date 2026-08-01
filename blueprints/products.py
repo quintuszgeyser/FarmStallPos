@@ -307,6 +307,11 @@ def api_products_post():
     )
     is_default_variant = bool(data.get('is_default_variant', False))
 
+    try:
+        packaging_capacity = int(data['packaging_capacity']) if data.get('packaging_capacity') not in (None, '') else None
+    except (TypeError, ValueError):
+        packaging_capacity = None
+
     p = Product(
         name=name, barcode=barcode, stock_qty=stock_qty,
         price=price, product_type=product_type,
@@ -330,6 +335,7 @@ def api_products_post():
         sub_category_id=sub_category_id,
         product_family_id=product_family_id,
         is_default_variant=is_default_variant,
+        packaging_capacity=packaging_capacity,
     )
     db.session.add(p)
     db.session.flush()
@@ -536,6 +542,13 @@ def api_products_update():
 
     if 'sell_packages' in data:
         sync_sell_packages(p.id, data['sell_packages'])
+
+    if 'packaging_capacity' in data:
+        raw_cap = data['packaging_capacity']
+        try:
+            p.packaging_capacity = int(raw_cap) if raw_cap not in (None, '') else None
+        except (TypeError, ValueError):
+            pass
 
     if 'is_consignment' in data:
         p.is_consignment = bool(data['is_consignment'])
