@@ -2035,8 +2035,24 @@ function renderCategoryFilterPills() {
   if (tab === 'specials') { wrap.style.display = 'none'; return; }
 
   const cats = STATE.categories || [];
-  const uncatCount = STATE.products.filter(p => !p.category_id && !p.is_archived).length;
   if (cats.length === 0) { wrap.style.display = 'none'; return; }
+
+  // Compute tab-aware counts so pills reflect what's visible on the current sub-tab
+  const tabPred = (() => {
+    if (tab === 'archived')    return p => p.is_archived === true;
+    if (tab === 'ingredients') return p => p.is_archived !== true && p.is_for_sale === false;
+    if (tab === 'recipes')     return p => p.is_archived !== true && p.product_type === 'recipe' && p.is_for_sale !== false;
+    if (tab === 'packaging')   return p => p.is_archived !== true && isPackagingProduct(p);
+    return p => p.is_archived !== true && p.is_for_sale !== false && p.product_type !== 'recipe';
+  })();
+  const tabProducts = STATE.products.filter(tabPred);
+  const catCounts = {}, subCatCounts = {};
+  tabProducts.forEach(p => {
+    const key = p.category_id || 0;
+    catCounts[key] = (catCounts[key] || 0) + 1;
+    if (p.sub_category_id) subCatCounts[p.sub_category_id] = (subCatCounts[p.sub_category_id] || 0) + 1;
+  });
+  const uncatCount = catCounts[0] || 0;
 
   const sel = STATE.selectedCategoryIds;
   const pill = (id, label, count, active, dataAttr = 'data-cat-filter') =>
@@ -2044,9 +2060,12 @@ function renderCategoryFilterPills() {
        ${escapeHtml(label)}${count != null ? ` <span class="badge ${active ? 'bg-light text-dark' : 'bg-secondary'}">${count}</span>` : ''}
      </button>`;
 
+  // Show only categories that have products in the current tab (or are currently selected)
+  const visibleCats = cats.filter(c => (catCounts[c.id] || 0) > 0 || sel.has(c.id));
+
   let html = `<div class="d-flex flex-wrap gap-1 align-items-center">`;
   html += pill('all', 'All', null, sel.size === 0);
-  html += cats.map(c => pill(c.id, c.name, c.product_count, sel.has(c.id))).join('');
+  html += visibleCats.map(c => pill(c.id, c.name, catCounts[c.id] || 0, sel.has(c.id))).join('');
   if (uncatCount > 0) html += pill('0', 'Uncategorised', uncatCount, sel.has(0));
   html += `</div>`;
 
@@ -2057,7 +2076,7 @@ function renderCategoryFilterPills() {
     html += `<div class="d-flex flex-wrap gap-1 align-items-center mt-1 ps-2 border-start border-2">
       <span class="text-muted small me-1">Sub:</span>`;
     html += pill(0, 'All', null, selSub === null, 'data-subcat-filter');
-    html += subCats.map(s => pill(s.id, s.name, s.product_count, selSub === s.id, 'data-subcat-filter')).join('');
+    html += subCats.map(s => pill(s.id, s.name, subCatCounts[s.id] || 0, selSub === s.id, 'data-subcat-filter')).join('');
     html += `</div>`;
   } else {
     STATE.selectedSubCategoryId = null;
@@ -14394,8 +14413,11 @@ async function loadInvoices() {
 function renderInvoicesList() {
   const host = document.getElementById('invoices-list');
   if (!host) return;
+  const _activeCount = _invoices.filter(i => i.status !== 'finalised').length;
+  const _ordBadge = document.getElementById('orders-active-badge');
+  if (_ordBadge) { _ordBadge.textContent = _activeCount; _ordBadge.style.display = _activeCount > 0 ? '' : 'none'; }
   if (!_invoices.length) {
-    host.innerHTML = '<div class="text-muted">No invoices yet. Click "+ New Invoice" to create one.</div>';
+    host.innerHTML = '<div class="text-muted">No orders yet. Click "+ New Order" to create one.</div>';
     return;
   }
 
@@ -14424,7 +14446,7 @@ function renderInvoicesList() {
   }[s] || `<span class="badge bg-secondary">${s}</span>`);
 
   if (!filtered.length) {
-    host.innerHTML = '<div class="text-muted small">No invoices match the current filters.</div>';
+    host.innerHTML = '<div class="text-muted small">No orders match the current filters.</div>';
     return;
   }
 
@@ -14458,19 +14480,19 @@ function renderInvoicesList() {
 }
 
 async function _invDeleteFromList(invId, invNum) {
-  if (!confirm(`Delete invoice ${invNum}? This does not affect stock.`)) return;
+  if (!confirm(`Delete order ${invNum}? This does not affect stock.`)) return;
   try {
     await api(`/api/invoices/${invId}/delete`, { method: 'POST' });
-    toast('Invoice deleted', 'warning');
+    toast('Order deleted', 'warning');
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
 }
 
 async function _invFinaliseFromList(invId) {
-  if (!confirm('Finalise this invoice? Stock will be deducted from inventory.')) return;
+  if (!confirm('Finalise this order? Stock will be deducted from inventory.')) return;
   try {
     await api(`/api/invoices/${invId}/finalise`, { method: 'POST' });
-    toast('Invoice finalised - stock deducted', 'success');
+    toast('Order finalised — stock deducted', 'success');
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -14479,7 +14501,7 @@ async function _invUndoFromList(invId) {
   if (!confirm('Undo this sale? Stock will be restored to inventory.')) return;
   try {
     await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
-    toast('Invoice undone - stock restored. Invoice is now Draft.', 'warning');
+    toast('Order undone — stock restored. Order is now Draft.', 'warning');
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -14583,7 +14605,7 @@ function _renderInvLines() {
 function openInvoiceEditor(invId) {
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('invoiceEditorModal'));
   document.getElementById('inv-id').value = invId || '';
-  document.getElementById('invoiceEditorTitle').textContent = invId ? 'Edit Invoice' : 'New Invoice';
+  document.getElementById('invoiceEditorTitle').textContent = invId ? 'Edit Order' : 'New Order';
   const printBtn    = document.getElementById('btn-inv-print');
   const delBtn      = document.getElementById('btn-inv-delete');
   const finaliseBtn = document.getElementById('btn-inv-finalise');
@@ -14812,10 +14834,10 @@ document.getElementById('inv-status')?.addEventListener('change', e => {
 document.getElementById('btn-inv-finalise')?.addEventListener('click', async () => {
   const invId = document.getElementById('inv-id').value;
   if (!invId) return;
-  if (!confirm('Finalise this invoice? Stock will be deducted from inventory.')) return;
+  if (!confirm('Finalise this order? Stock will be deducted from inventory.')) return;
   try {
     await api(`/api/invoices/${invId}/finalise`, { method: 'POST' });
-    toast('Invoice finalised - stock deducted', 'success');
+    toast('Order finalised — stock deducted', 'success');
     bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
@@ -14827,7 +14849,7 @@ document.getElementById('btn-inv-undo')?.addEventListener('click', async () => {
   if (!confirm('Undo this invoice?\n\nStock will be restored to inventory.\nThe invoice will return to Draft so it can be edited and re-finalised.')) return;
   try {
     await api(`/api/invoices/${invId}/undo`, { method: 'POST' });
-    toast('Invoice undone - stock restored. Invoice is now Draft.', 'warning');
+    toast('Order undone — stock restored. Order is now Draft.', 'warning');
     bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'))?.hide();
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }

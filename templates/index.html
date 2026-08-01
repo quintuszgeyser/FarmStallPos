@@ -805,7 +805,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#suppliers">Suppliers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
-    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Invoices</button></li>
+    <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Orders <span class="badge bg-danger ms-1" id="orders-active-badge" style="display:none">0</span></button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings"><i class="bi bi-gear me-1"></i>Configuration</button></li>
     {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor"><i class="bi bi-bar-chart-line me-1"></i>Monitor</button></li>{% endif %}
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()"><i class="bi bi-speedometer2 me-1"></i>Scale</button></li>
@@ -2134,10 +2134,10 @@
     <!-- ═══════════════ INVOICES ═══════════════ -->
     <div class="tab-pane fade" id="invoices">
       <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
-        <h5 class="mb-0">Invoices</h5>
+        <h5 class="mb-0">Orders</h5>
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary btn-sm" id="btn-shipping-fees" data-bs-toggle="modal" data-bs-target="#shippingFeesModal"><i class="bi bi-truck me-1"></i>Shipping Fees</button>
-          <button class="btn btn-primary btn-sm" id="btn-new-invoice">+ New Invoice</button>
+          <button class="btn btn-primary btn-sm" id="btn-new-invoice">+ New Order</button>
         </div>
       </div>
 
@@ -3627,7 +3627,7 @@
   <div class="modal-dialog modal-dialog-centered modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="invoiceEditorTitle">New Invoice</h5>
+        <h5 class="modal-title" id="invoiceEditorTitle">New Order</h5>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -3742,7 +3742,7 @@
         <div class="d-flex gap-2">
           <button class="btn btn-outline-secondary" id="btn-inv-print" disabled>Print</button>
           <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button class="btn btn-primary" id="btn-inv-save">Save Invoice</button>
+          <button class="btn btn-primary" id="btn-inv-save">Save Order</button>
         </div>
       </div>
     </div>
@@ -3762,7 +3762,7 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260801-packaging2"></script>
+<script src="/static/main.js?v=20260801-packaging3"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">
