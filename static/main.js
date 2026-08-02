@@ -5234,9 +5234,8 @@ function _editInvoice(inv) {
         unitSel.appendChild(fallback);
         unitSel.value = dispUnit;
       }
-      // Sync the auto-scale tracker so first manual change is correct
-      unitSel.dataset.lineUnitConv = parseFloat(unitSel.selectedOptions[0]?.dataset?.conv || 1) || 1;
-      unitSel.dataset.linePrevUnit = dispUnit;
+      // Sync the closure-based conv tracker so the first manual change scales correctly
+      if (typeof unitSel._syncUnitConv === 'function') unitSel._syncUnitConv();
     }
     if (priceInput) priceInput.value = b.base_cost_total != null ? parseFloat(b.base_cost_total).toFixed(2) : '';
 
@@ -6189,14 +6188,22 @@ function addPurchaseLine() {
   const unitSel  = line.querySelector('[data-unit]');
   const qtyInput = line.querySelector('[data-qty]');
 
-  let _lineProduct = null;
+  let _lineProduct  = null;
+  let _lineUnitConv = 1;   // conv factor for the CURRENTLY SELECTED unit (closure variable — no dataset)
+  let _linePrevVal  = 'unit';
+
+  // Returns the conv for an option by its value — explicit lookup, no reliance on selectedOptions state
+  function _getOptConv(val) {
+    const opt = [...unitSel.options].find(o => o.value === val);
+    return parseFloat(opt?.dataset?.conv || 0) || 1;
+  }
 
   function updateUnitsForProduct(pid) {
     const p = STATE.products.find(pr => pr.id === parseInt(pid));
     _lineProduct = p || null;
     const opts = buildUnitOptions(p?.unit_type || 'count', p?.package_size || null, p?.package_unit || null);
 
-    // Add purchase_options as selectable sizes (e.g. "250 g (packet)")
+    // Add purchase_options as selectable sizes (e.g. "box (100 unit)")
     (p?.purchase_options || []).forEach(opt => {
       const baseConv = UNITS[p?.unit_type]?.toBase?.[opt.package_size_unit] ?? 1;
       const conv     = opt.package_size * baseConv;
@@ -6212,7 +6219,10 @@ function addPurchaseLine() {
       : '<option value="unit" data-conv="1">unit</option>';
     html += `<option value="__add_package__" data-conv="1">+ Add package size…</option>`;
     unitSel.innerHTML = html;
-    unitSel.dataset.lineUnitConv = parseFloat(unitSel.selectedOptions[0]?.dataset?.conv || 1) || 1;
+
+    // Sync closure conv tracker to the first (currently selected) option
+    _lineUnitConv = _getOptConv(unitSel.value);
+    _linePrevVal  = unitSel.value;
   }
 
   // Hidden input drives unit updates; typeahead click dispatches 'change' on it too
@@ -6222,22 +6232,28 @@ function addPurchaseLine() {
 
   // Unit change: auto-scale qty + handle "Add package size…"
   unitSel?.addEventListener('change', () => {
-    const newVal  = unitSel.value;
+    const newVal = unitSel.value;
     if (newVal === '__add_package__') {
-      const prevVal = unitSel.dataset.linePrevUnit || (unitSel.options[0]?.value ?? 'unit');
-      unitSel.value = prevVal;
+      unitSel.value = _linePrevVal;
       _addPurchasePackageFromLine(line, _lineProduct, unitSel, qtyInput);
       return;
     }
-    const newConv  = parseFloat(unitSel.selectedOptions[0]?.dataset?.conv || 1) || 1;
-    const prevConv = parseFloat(unitSel.dataset.lineUnitConv || 1) || 1;
+    const newConv  = _getOptConv(newVal);
+    const prevConv = _lineUnitConv;
     const prevQty  = parseFloat(qtyInput.value || 0);
-    if (prevConv && newConv && prevConv !== newConv && prevQty > 0)
+    if (prevConv > 0 && newConv > 0 && prevConv !== newConv && prevQty > 0)
       qtyInput.value = parseFloat((prevQty * prevConv / newConv).toFixed(6));
-    unitSel.dataset.linePrevUnit  = newVal;
-    unitSel.dataset.lineUnitConv  = newConv;
+    _lineUnitConv = newConv;
+    _linePrevVal  = newVal;
     _updatePurchaseRunSummary();
   });
+
+  // Expose sync function so edit pre-fill can update the closure after setting unitSel.value externally
+  unitSel._syncUnitConv = () => {
+    _lineUnitConv = _getOptConv(unitSel.value);
+    _linePrevVal  = unitSel.value;
+  };
+
   line.querySelector('[data-price]')?.addEventListener('input', _updatePurchaseRunSummary);
 
   // Convert incl. VAT to excl. VAT
@@ -6374,24 +6390,14 @@ async function _addPurchasePackageFromLine(lineEl, prod, unitSel, qtyInput) {
       if (!stateProduct.purchase_options) stateProduct.purchase_options = [];
       stateProduct.purchase_options.push(result.option);
     }
-    // Rebuild the unit dropdown (dispatching change on the hidden product input re-runs updateUnitsForProduct)
+    // Rebuild the unit dropdown, then select the new option
     const hiddenInput = lineEl.querySelector('[data-product-select]');
     if (hiddenInput) hiddenInput.dispatchEvent(new Event('change'));
-    // Auto-select the new option and scale qty
     requestAnimationFrame(() => {
       const newOptVal = `po_${result.option.id}`;
-      const newOptEl  = unitSel.querySelector(`option[value="${CSS.escape(newOptVal)}"]`);
-      if (newOptEl) {
-        const prevConv = parseFloat(unitSel.dataset.lineUnitConv || 1) || 1;
-        const newConv  = parseFloat(newOptEl.dataset.conv || 1) || 1;
-        const prevQty  = parseFloat(qtyInput?.value || 0);
-        if (prevConv && newConv && prevConv !== newConv && prevQty > 0)
-          qtyInput.value = parseFloat((prevQty * prevConv / newConv).toFixed(6));
-        unitSel.value = newOptVal;
-        unitSel.dataset.lineUnitConv = newConv;
-        unitSel.dataset.linePrevUnit = newOptVal;
-        _updatePurchaseRunSummary();
-      }
+      unitSel.value = newOptVal;
+      if (typeof unitSel._syncUnitConv === 'function') unitSel._syncUnitConv();
+      _updatePurchaseRunSummary();
     });
     toast(`Package "${size} ${resolvedUnit}" saved for "${prod.name}"`, 'success');
   } catch (e) {
