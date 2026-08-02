@@ -1175,7 +1175,7 @@ function _openBulkAction(action) {
 
   if (action === 'edit') {
     if (products.length === 1) { openProductEditor(products[0]); return; }
-    openBulkEditor();
+    openBulkEditor(STATE._selectedProductIds);
     return;
   }
 
@@ -3583,14 +3583,7 @@ document.getElementById('btn-add-product')?.addEventListener('click', async () =
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
     // If opened from a purchase run line, auto-select the new product in that line
     if (_pendingPurchaseLine && result?.id) {
-      const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
-      supplierProductIds.add(result.id); // new product belongs to this supplier run
-      const sel = _pendingPurchaseLine.querySelector('[data-product-select]');
-      if (sel) {
-        sel.innerHTML = _buildProductOptions(supplierProductIds, false);
-        sel.value = result.id;
-        sel.dispatchEvent(new Event('change'));
-      }
+      _setLineProduct(_pendingPurchaseLine, result.id);
       _pendingPurchaseLine = null;
     }
   } catch (e) { toast(e.message, 'error'); }
@@ -5132,12 +5125,7 @@ function _editInvoice(inv) {
     const unitSel    = lineEl.querySelector('[data-unit]');
     const priceInput = lineEl.querySelector('[data-price]');
 
-    if (productSel) {
-      const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
-      productSel.innerHTML = _buildProductOptions(supplierProductIds, true);
-      productSel.value = b.product_id;
-      productSel.dispatchEvent(new Event('change'));
-    }
+    if (b.product_id) _setLineProduct(lineEl, b.product_id);
 
     // Present qty in the most natural display unit (kg instead of g if >= 1000)
     let dispQty = b.qty_purchased_base, dispUnit = b.base_unit || 'unit';
@@ -5862,15 +5850,11 @@ document.getElementById('btn-scan-apply')?.addEventListener('click', () => {
       const match = _fuzzyMatchProduct(ln.description);
       if (match) selectedProductId = match.id;
     }
-    if (selectedProductId && productSel) {
-      const supplierProductIds = new Set((_currentSupplierProducts || []).map(p => p.id));
-      productSel.innerHTML = _buildProductOptions(supplierProductIds, true);
-      productSel.value = selectedProductId;
-      productSel.dispatchEvent(new Event('change'));
-    }
+    if (selectedProductId) _setLineProduct(lineEl, selectedProductId);
 
-    // Store parsed description as data attribute so user can see what was on invoice
-    if (productSel) productSel.title = `Invoice: ${ln.description}`;
+    // Store parsed description as tooltip so user can see what was on the invoice
+    const _taSearch = lineEl.querySelector('[data-product-search]');
+    if (_taSearch) _taSearch.title = `Invoice: ${ln.description}`;
   });
 
   // Sync overhead costs from invoice — shipping only; VAT goes to the dedicated VAT section
@@ -5989,6 +5973,15 @@ document.getElementById('btn-add-purchase-line')?.addEventListener('click', addP
 // Track which purchase line is waiting for a new product to be created
 let _pendingPurchaseLine = null;
 
+// Set the product on a purchase line: updates both the hidden input and the visible search text
+function _setLineProduct(lineEl, productId) {
+  const hidden = lineEl.querySelector('[data-product-select]');
+  const search = lineEl.querySelector('[data-product-search]');
+  const prod   = (STATE.products || []).find(p => String(p.id) === String(productId));
+  if (hidden) { hidden.value = productId; hidden.dispatchEvent(new Event('change')); }
+  if (search && prod) search.value = prod.name;
+}
+
 function _buildProductOptions(supplierProductIds, showAll = false) {
   const active = STATE.products.filter(p => !p.is_archived);
   const own    = active.filter(p => supplierProductIds.has(p.id));
@@ -6023,11 +6016,12 @@ function addPurchaseLine() {
       <button type="button" class="btn btn-outline-secondary btn-sm ms-auto" data-create-product-btn>+ Create New Product</button>
       <button class="btn btn-sm btn-outline-danger" data-remove-line><i class="bi bi-x-lg"></i></button>
     </div>
-    <div class="mb-2">
-      <select class="form-select form-select-sm" data-product-select>
-        ${_buildProductOptions(supplierProductIds)}
-      </select>
-      ${hasSupplierProducts ? `<a href="#" class="d-block mt-1 small text-muted text-end" data-toggle-all-products>Not on list? Show all products</a>` : ''}
+    <div class="mb-2" style="position:relative">
+      <input type="text" class="form-control form-control-sm" data-product-search
+        placeholder="${hasSupplierProducts ? 'Search supplier products (or type any name)…' : 'Search product by name…'}"
+        autocomplete="off">
+      <div data-product-results class="list-group" style="position:absolute;z-index:1050;width:100%;display:none;max-height:220px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.15);background:#fff"></div>
+      <input type="hidden" data-product-select>
     </div>
     <div class="row g-2">
       <div class="col-4"><input type="number" step="0.01" min="0.01" class="form-control form-control-sm" placeholder="Qty" data-qty></div>
@@ -6083,6 +6077,7 @@ function addPurchaseLine() {
     }
   }
 
+  // Hidden input drives unit updates; typeahead click dispatches 'change' on it too
   line.querySelector('[data-product-select]')?.addEventListener('change', e => {
     updateUnitsForProduct(e.target.value);
   });
@@ -6145,17 +6140,49 @@ function addPurchaseLine() {
 
   line.querySelector('[data-remove-line]')?.addEventListener('click', () => { line.remove(); _updatePurchaseRunSummary(); });
 
-  // Toggle between supplier-only products and all products
-  const toggleLink = line.querySelector('[data-toggle-all-products]');
-  const productSel = line.querySelector('[data-product-select]');
-  let _showingAllProducts = false;
-  toggleLink?.addEventListener('click', e => {
+  // Typeahead wiring
+  const _taSearch  = line.querySelector('[data-product-search]');
+  const _taResults = line.querySelector('[data-product-results]');
+  const _taHidden  = line.querySelector('[data-product-select]');
+
+  function _showTypeaheadResults(query) {
+    const q = (query || '').toLowerCase().trim();
+    const active = (STATE.products || []).filter(p => !p.is_archived);
+    let matches;
+    if (!q) {
+      const own    = active.filter(p => supplierProductIds.has(p.id));
+      const others = active.filter(p => !supplierProductIds.has(p.id));
+      matches = [...own.slice(0, 12), ...others.slice(0, 5)];
+    } else {
+      const own    = active.filter(p => supplierProductIds.has(p.id) && p.name.toLowerCase().includes(q));
+      const others = active.filter(p => !supplierProductIds.has(p.id) && p.name.toLowerCase().includes(q));
+      matches = [...own, ...others].slice(0, 15);
+    }
+    if (!matches.length) { _taResults.style.display = 'none'; return; }
+    _taResults.innerHTML = matches.map(p => {
+      const star = supplierProductIds.has(p.id) ? '<i class="bi bi-star-fill text-warning me-1"></i>' : '';
+      return `<a href="#" class="list-group-item list-group-item-action py-1 px-2 small d-flex justify-content-between" data-product-id="${p.id}">
+        <span>${star}${p.name}</span>
+        <span class="text-muted ms-2">R${parseFloat(p.price || 0).toFixed(2)}</span>
+      </a>`;
+    }).join('');
+    _taResults.style.display = '';
+  }
+
+  _taSearch?.addEventListener('focus', () => _showTypeaheadResults(_taSearch.value));
+  _taSearch?.addEventListener('input', () => _showTypeaheadResults(_taSearch.value));
+  _taSearch?.addEventListener('blur',  () => setTimeout(() => { _taResults.style.display = 'none'; }, 200));
+  _taResults?.addEventListener('mousedown', e => {
     e.preventDefault();
-    _showingAllProducts = !_showingAllProducts;
-    const currentVal = productSel.value;
-    productSel.innerHTML = _buildProductOptions(supplierProductIds, _showingAllProducts);
-    if (currentVal) productSel.value = currentVal;
-    toggleLink.textContent = _showingAllProducts ? 'Show supplier products only' : 'Not on list? Show all products';
+    const item = e.target.closest('[data-product-id]');
+    if (!item) return;
+    const prod = (STATE.products || []).find(p => String(p.id) === item.dataset.productId);
+    if (prod) {
+      _taSearch.value  = prod.name;
+      _taHidden.value  = prod.id;
+      _taHidden.dispatchEvent(new Event('change'));
+      _taResults.style.display = 'none';
+    }
   });
 
   return line;
@@ -15815,19 +15842,32 @@ async function _bulkEnsureFields() {
   return _bulkFields;
 }
 
-function openBulkEditor() {
+function openBulkEditor(preselectedIds) {
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkEditorModal'));
   modal.show();
   _bulkEnsureFields();
-  // Reset to Filter tab
-  const filterTab = document.querySelector('#bulk-tabs .nav-link');
-  if (filterTab) bootstrap.Tab.getOrCreateInstance(filterTab).show();
-  document.getElementById('bulk-filter-result').textContent = '';
-  document.getElementById('bulk-action-scope').textContent = '';
-  const matchedList = document.getElementById('bulk-filter-matched-list');
-  if (matchedList) matchedList.innerHTML = '';
-  _bulkFilteredProducts = [];
   _bulkExcludedIds = new Set();
+
+  if (preselectedIds && preselectedIds.size > 0) {
+    // Products already chosen — skip filter, jump straight to Actions
+    const matched = (STATE.products || []).filter(p => preselectedIds.has(p.id));
+    _bulkFilteredProducts = matched.map(p => ({ id: p.id, name: p.name, product_type: p.product_type, price: p.price }));
+    const n = matched.length;
+    document.getElementById('bulk-filter-result').textContent = `${n} product${n !== 1 ? 's' : ''} pre-selected.`;
+    document.getElementById('bulk-action-scope').textContent = `Applies to ${n} product${n !== 1 ? 's' : ''}`;
+    _renderBulkFilteredList();
+    const actionTabLink = document.getElementById('bulk-tab-action-link');
+    if (actionTabLink) bootstrap.Tab.getOrCreateInstance(actionTabLink).show();
+  } else {
+    // No pre-selection — open on Filter tab as normal
+    const filterTab = document.querySelector('#bulk-tabs .nav-link');
+    if (filterTab) bootstrap.Tab.getOrCreateInstance(filterTab).show();
+    document.getElementById('bulk-filter-result').textContent = '';
+    document.getElementById('bulk-action-scope').textContent = '';
+    const matchedList = document.getElementById('bulk-filter-matched-list');
+    if (matchedList) matchedList.innerHTML = '';
+    _bulkFilteredProducts = [];
+  }
 }
 
 // ── Condition builder ────────────────────────────────────────────────────────

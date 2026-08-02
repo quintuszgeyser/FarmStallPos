@@ -37,6 +37,19 @@ _EDITABLE = {
     'sold_by_weight':        {'type': 'bool',        'label': 'Sold by weight'},
     'packaging_capacity':    {'type': 'int',         'label': 'Packaging capacity (units)'},
     'category_is_packaging': {'type': 'bool',        'label': 'Mark category as packaging'},
+    'product_type':          {'type': 'str',         'label': 'Product type'},
+    'base_unit':             {'type': 'str',         'label': 'Base unit'},
+    'package_size':          {'type': 'float',       'label': 'Package size'},
+    'package_size_unit':     {'type': 'str',         'label': 'Package size unit'},
+    'package_unit':          {'type': 'str',         'label': 'Package unit'},
+    'is_produced':           {'type': 'bool',        'label': 'Is produced (produce run)'},
+    'batch_size':            {'type': 'float',       'label': 'Batch size'},
+    'scale_open_price':      {'type': 'bool',        'label': 'Scale open price'},
+    'scale_pack_qty':        {'type': 'int',         'label': 'Scale pack qty'},
+    'is_consignment':        {'type': 'bool',        'label': 'Consignment'},
+    'settlement_basis':      {'type': 'str',         'label': 'Settlement basis'},
+    'consignment_pct':       {'type': 'float',       'label': 'Consignment %'},
+    'is_default_variant':    {'type': 'bool',        'label': 'Default variant'},
 }
 
 # ── Filterable fields ────────────────────────────────────────────────────────
@@ -67,7 +80,73 @@ _FILTERABLE = {
     'supplier':             {'type': 'str',    'label': 'Supplier (latest batch)'},
     'is_packaging':         {'type': 'bool',   'label': 'Packaging category'},
     'packaging_capacity':   {'type': 'int',    'label': 'Packaging capacity (units)'},
+    'product_code':         {'type': 'int',    'label': 'Product code (PLU)'},
+    'package_size':         {'type': 'float',  'label': 'Package size'},
+    'package_size_unit':    {'type': 'str',    'label': 'Package size unit'},
+    'package_unit':         {'type': 'str',    'label': 'Package unit'},
+    'is_produced':          {'type': 'bool',   'label': 'Is produced (produce run)'},
+    'batch_size':           {'type': 'float',  'label': 'Batch size'},
+    'scale_open_price':     {'type': 'bool',   'label': 'Scale open price'},
+    'scale_pack_qty':       {'type': 'int',    'label': 'Scale pack qty'},
+    'is_consignment':       {'type': 'bool',   'label': 'Consignment'},
+    'settlement_basis':     {'type': 'str',    'label': 'Settlement basis'},
+    'consignment_pct':      {'type': 'float',  'label': 'Consignment %'},
+    'is_default_variant':   {'type': 'bool',   'label': 'Default variant'},
 }
+
+
+def _auto_extend_bulk_fields():
+    """Add any Product columns not already in _EDITABLE/_FILTERABLE so new fields appear automatically."""
+    import sqlalchemy
+    _SKIP = {
+        # Internal / identity columns — never expose in bulk editor
+        'id', 'is_archived', 'archived_at', 'archived_reason', 'created_at', 'updated_at',
+        'category_id', 'sub_category_id', 'product_family_id',
+        'scale_last_synced_at', 'scale_prohibit',
+        # Internal scale sync state — read-only system fields
+        'scale_last_sync_status', 'scale_last_sync_error', 'scale_hash',
+        # FK / relations
+        'parent_stock_item_id',
+        # Image management — not a bulk action
+        'image_data', 'image_mime', 'image_url',
+        # Internal JSON blobs
+        'last_overhead_costs',
+        # Virtual / derived — handled specially
+        'pending_price', 'pending_price_per_unit',
+    }
+    _EDIT_SKIP = {
+        # Read-only in bulk context
+        'stock_qty', 'product_code',
+    }
+    _TYPE_MAP = {
+        sqlalchemy.Boolean:      'bool',
+        sqlalchemy.Integer:      'int',
+        sqlalchemy.Numeric:      'float',
+        sqlalchemy.Float:        'float',
+        sqlalchemy.String:       'str',
+        sqlalchemy.Text:         'str',
+        sqlalchemy.DateTime:     'str',
+    }
+    try:
+        from models import Product
+        for col in Product.__table__.columns:
+            name = col.name
+            if name in _SKIP:
+                continue
+            col_type = type(col.type)
+            mapped = next((v for k, v in _TYPE_MAP.items() if issubclass(col_type, k)), None)
+            if mapped is None:
+                continue
+            label = name.replace('_', ' ').title()
+            if name not in _FILTERABLE:
+                _FILTERABLE[name] = {'type': mapped, 'label': label}
+            if name not in _EDITABLE and name not in _EDIT_SKIP:
+                _EDITABLE[name] = {'type': mapped, 'label': label}
+    except Exception:
+        pass  # never crash startup if model introspection fails
+
+
+_auto_extend_bulk_fields()
 
 _STR_OPS  = ('contains', 'not_contains', 'starts', 'ends', 'eq', 'ne', 'empty', 'populated')
 _NUM_OPS  = ('eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'empty', 'populated')
