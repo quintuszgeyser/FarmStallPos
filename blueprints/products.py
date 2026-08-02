@@ -1165,6 +1165,44 @@ def api_product_permanent_delete(product_id):
     return jsonify({'ok': True, 'deleted_id': product_id})
 
 
+@bp.route('/api/products/<int:product_id>/purchase_option', methods=['POST'])
+def api_add_purchase_option(product_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = db.session.get(Product, product_id)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+    data = request.get_json() or {}
+    try:
+        ps = float(data['package_size'])
+    except (TypeError, ValueError, KeyError):
+        return jsonify({'error': 'package_size required and must be a number'}), 400
+    if ps <= 0:
+        return jsonify({'error': 'package_size must be positive'}), 400
+    valid_units = {'g', 'kg', 'ml', 'L', 'unit'}
+    psu = str(data.get('package_size_unit') or 'unit').strip()[:10]
+    if psu not in valid_units:
+        psu = 'unit'
+    sort_order = ProductPurchaseOption.query.filter_by(product_id=product_id).count()
+    opt = ProductPurchaseOption(
+        product_id=product_id,
+        package_size=ps,
+        package_size_unit=psu,
+        package_unit=str(data.get('package_unit') or '').strip()[:30] or None,
+        sort_order=sort_order,
+    )
+    db.session.add(opt)
+    db.session.commit()
+    logger.info('Purchase option added to product %d: %.4f %s', product_id, ps, psu)
+    return jsonify({'ok': True, 'option': {
+        'id': opt.id,
+        'package_size': float(opt.package_size),
+        'package_size_unit': opt.package_size_unit,
+        'package_unit': opt.package_unit,
+        'sort_order': opt.sort_order,
+    }})
+
+
 @bp.route('/api/products/<int:pid>/recipe_cost')
 def api_recipe_cost(pid):
     if not require_login():

@@ -5225,7 +5225,19 @@ function _editInvoice(inv) {
       dispQty = b.qty_purchased_base / 1000; dispUnit = 'L';
     }
     if (qtyInput)   qtyInput.value   = dispQty;
-    if (unitSel)    unitSel.value    = dispUnit;
+    if (unitSel) {
+      unitSel.value = dispUnit;
+      // If the stored unit wasn't in the rebuilt dropdown, add it so editing doesn't lose it
+      if (unitSel.value !== dispUnit) {
+        const fallback = document.createElement('option');
+        fallback.value = dispUnit; fallback.textContent = dispUnit; fallback.dataset.conv = '1';
+        unitSel.appendChild(fallback);
+        unitSel.value = dispUnit;
+      }
+      // Sync the auto-scale tracker so first manual change is correct
+      unitSel.dataset.lineUnitConv = parseFloat(unitSel.selectedOptions[0]?.dataset?.conv || 1) || 1;
+      unitSel.dataset.linePrevUnit = dispUnit;
+    }
     if (priceInput) priceInput.value = b.base_cost_total != null ? parseFloat(b.base_cost_total).toFixed(2) : '';
 
     // Pre-fill per-line discount from batch additional_costs
@@ -6176,19 +6188,54 @@ function addPurchaseLine() {
 
   const unitSel = line.querySelector('[data-unit]');
 
+  let _lineProduct = null;
+
   function updateUnitsForProduct(pid) {
     const p = STATE.products.find(pr => pr.id === parseInt(pid));
+    _lineProduct = p || null;
     const opts = buildUnitOptions(p?.unit_type || 'count', p?.package_size || null, p?.package_unit || null);
-    if (opts.length) {
-      unitSel.innerHTML = opts.map(o => `<option value="${o.value}" data-conv="${o.conv}">${o.label}</option>`).join('');
-    } else {
-      unitSel.innerHTML = '<option value="unit">unit</option>';
-    }
+
+    // Add purchase_options as selectable sizes (e.g. "250 g (packet)")
+    (p?.purchase_options || []).forEach(opt => {
+      const baseConv = UNITS[p?.unit_type]?.toBase?.[opt.package_size_unit] ?? 1;
+      const conv     = opt.package_size * baseConv;
+      const label    = opt.package_unit
+        ? `${opt.package_unit} (${opt.package_size} ${opt.package_size_unit})`
+        : `${opt.package_size} ${opt.package_size_unit}`;
+      if (!opts.find(o => o.value === `po_${opt.id}`))
+        opts.push({ value: `po_${opt.id}`, label, conv });
+    });
+
+    let html = opts.length
+      ? opts.map(o => `<option value="${escapeHtml(o.value)}" data-conv="${o.conv}">${escapeHtml(o.label)}</option>`).join('')
+      : '<option value="unit" data-conv="1">unit</option>';
+    html += `<option value="__add_package__" data-conv="1">+ Add package size…</option>`;
+    unitSel.innerHTML = html;
+    unitSel.dataset.lineUnitConv = parseFloat(unitSel.selectedOptions[0]?.dataset?.conv || 1) || 1;
   }
 
   // Hidden input drives unit updates; typeahead click dispatches 'change' on it too
   line.querySelector('[data-product-select]')?.addEventListener('change', e => {
     updateUnitsForProduct(e.target.value);
+  });
+
+  // Unit change: auto-scale qty + handle "Add package size…"
+  unitSel?.addEventListener('change', () => {
+    const newVal  = unitSel.value;
+    if (newVal === '__add_package__') {
+      const prevVal = unitSel.dataset.linePrevUnit || (unitSel.options[0]?.value ?? 'unit');
+      unitSel.value = prevVal;
+      _addPurchasePackageFromLine(line, _lineProduct, unitSel, qtyInput);
+      return;
+    }
+    const newConv  = parseFloat(unitSel.selectedOptions[0]?.dataset?.conv || 1) || 1;
+    const prevConv = parseFloat(unitSel.dataset.lineUnitConv || 1) || 1;
+    const prevQty  = parseFloat(qtyInput.value || 0);
+    if (prevConv && newConv && prevConv !== newConv && prevQty > 0)
+      qtyInput.value = parseFloat((prevQty * prevConv / newConv).toFixed(6));
+    unitSel.dataset.linePrevUnit  = newVal;
+    unitSel.dataset.lineUnitConv  = newConv;
+    _updatePurchaseRunSummary();
   });
   line.querySelector('[data-price]')?.addEventListener('input', _updatePurchaseRunSummary);
 
@@ -6296,6 +6343,59 @@ function addPurchaseLine() {
   });
 
   return line;
+}
+
+async function _addPurchasePackageFromLine(lineEl, prod, unitSel, qtyInput) {
+  if (!prod) { toast('Select a product first', 'warning'); return; }
+  const sizeStr = prompt(`Add purchase package size for "${prod.name}"\n\nEnter the package size (number only, e.g. 250):`);
+  if (!sizeStr) return;
+  const size = parseFloat(sizeStr);
+  if (!size || size <= 0) { toast('Invalid size — enter a positive number', 'warning'); return; }
+
+  const validUnits = ['g', 'kg', 'ml', 'L', 'unit'];
+  const unitStr = (prompt(
+    `Unit for this package:\n${validUnits.join(', ')}\n\nType the unit (e.g. g, kg, unit):`
+  ) || '').trim().toLowerCase();
+  const resolvedUnit = validUnits.find(u => u.toLowerCase() === unitStr) || 'unit';
+
+  const labelStr = (prompt(
+    'Optional label (e.g. "packet", "box", "bag") — press Enter to skip:'
+  ) || '').trim();
+
+  try {
+    const result = await api(`/api/products/${prod.id}/purchase_option`, {
+      method: 'POST',
+      body: JSON.stringify({ package_size: size, package_size_unit: resolvedUnit, package_unit: labelStr || null }),
+    });
+    // Update STATE so the dropdown rebuilds correctly
+    const stateProduct = (STATE.products || []).find(p => p.id === prod.id);
+    if (stateProduct) {
+      if (!stateProduct.purchase_options) stateProduct.purchase_options = [];
+      stateProduct.purchase_options.push(result.option);
+    }
+    // Rebuild the unit dropdown (dispatching change on the hidden product input re-runs updateUnitsForProduct)
+    const hiddenInput = lineEl.querySelector('[data-product-select]');
+    if (hiddenInput) hiddenInput.dispatchEvent(new Event('change'));
+    // Auto-select the new option and scale qty
+    requestAnimationFrame(() => {
+      const newOptVal = `po_${result.option.id}`;
+      const newOptEl  = unitSel.querySelector(`option[value="${CSS.escape(newOptVal)}"]`);
+      if (newOptEl) {
+        const prevConv = parseFloat(unitSel.dataset.lineUnitConv || 1) || 1;
+        const newConv  = parseFloat(newOptEl.dataset.conv || 1) || 1;
+        const prevQty  = parseFloat(qtyInput?.value || 0);
+        if (prevConv && newConv && prevConv !== newConv && prevQty > 0)
+          qtyInput.value = parseFloat((prevQty * prevConv / newConv).toFixed(6));
+        unitSel.value = newOptVal;
+        unitSel.dataset.lineUnitConv = newConv;
+        unitSel.dataset.linePrevUnit = newOptVal;
+        _updatePurchaseRunSummary();
+      }
+    });
+    toast(`Package "${size} ${resolvedUnit}" saved for "${prod.name}"`, 'success');
+  } catch (e) {
+    toast(e.message || 'Failed to save package option', 'danger');
+  }
 }
 
 function _resolveLineDiscAmount(lineEl) {
@@ -6514,9 +6614,23 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
   const lines = [];
   for (const lineEl of lineElements) {
     const productId = parseInt(lineEl.querySelector('[data-product-select]')?.value || 0);
-    const qty       = parseFloat(lineEl.querySelector('[data-qty]')?.value || 0);
+    let   qty       = parseFloat(lineEl.querySelector('[data-qty]')?.value || 0);
     const price     = parseFloat(lineEl.querySelector('[data-price]')?.value || 0);
-    const unit      = lineEl.querySelector('[data-unit]')?.value || 'unit';
+    let   unit      = lineEl.querySelector('[data-unit]')?.value || 'unit';
+
+    // Resolve purchase-option virtual units (po_<id>) to real base units before sending
+    if (unit.startsWith('po_')) {
+      const poId   = parseInt(unit.slice(3));
+      const pState = (STATE.products || []).find(p => p.id === productId);
+      const opt    = (pState?.purchase_options || []).find(o => o.id === poId);
+      if (opt) {
+        const baseConv = UNITS[pState?.unit_type]?.toBase?.[opt.package_size_unit] ?? 1;
+        qty  = qty * opt.package_size * baseConv;
+        unit = UNITS[pState?.unit_type]?.base || opt.package_size_unit;
+      } else {
+        unit = 'unit';
+      }
+    }
 
     if (!productId) return toast('Please select a product for all lines', 'warning');
     if (qty <= 0)   return toast('Quantity must be greater than 0', 'warning');
