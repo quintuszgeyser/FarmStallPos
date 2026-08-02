@@ -747,6 +747,77 @@ async function openPackagingModal(cartKey, productId, qty) {
   }
 }
 
+// ── Purchase package option helpers ──────────────────────────────────────────
+
+function renderPurchaseOptionsList(options) {
+  const list = document.getElementById('purchase-options-list');
+  if (!list) return;
+  list.innerHTML = '';
+  (options || []).forEach((opt, i) => addPurchaseOptionRow(opt, i));
+}
+
+function addPurchaseOptionRow(opt, idx) {
+  const list = document.getElementById('purchase-options-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'd-flex gap-1 align-items-center mb-1';
+  row.dataset.purchaseOptionIdx = idx != null ? idx : list.children.length;
+  const sizeVal = opt ? (opt.package_size || '') : '';
+  const unitVal = opt ? (opt.package_size_unit || 'g') : 'g';
+  const labelVal = opt ? escapeHtml(opt.package_unit || '') : '';
+  row.innerHTML = `
+    <input type="number" step="0.001" min="0.001" class="form-control form-control-sm" style="width:90px"
+      placeholder="Size" data-po-size value="${sizeVal}">
+    <select class="form-select form-select-sm" style="width:80px" data-po-unit>
+      ${['g','kg','ml','L','unit'].map(u => `<option value="${u}"${unitVal===u?' selected':''}>${u}</option>`).join('')}
+    </select>
+    <input type="text" class="form-control form-control-sm" style="flex:1" placeholder="Label (optional)"
+      data-po-label value="${labelVal}">
+    <button type="button" class="btn btn-outline-danger btn-sm" data-remove-po><i class="bi bi-x-lg"></i></button>
+  `;
+  row.querySelector('[data-remove-po]').addEventListener('click', () => row.remove());
+  list.appendChild(row);
+}
+
+function _showPurchaseOptionButtons(lineEl, prod) {
+  let wrap = lineEl.querySelector('[data-po-buttons]');
+  if (!wrap) {
+    wrap = document.createElement('div');
+    wrap.dataset.poButtons = '';
+    wrap.className = 'd-flex flex-wrap gap-1 mt-1';
+    const resultsDiv = lineEl.querySelector('[data-product-results]');
+    if (resultsDiv?.parentNode) resultsDiv.parentNode.insertBefore(wrap, resultsDiv.nextSibling);
+    else lineEl.appendChild(wrap);
+  }
+  wrap.innerHTML = '';
+  const opts = prod?.purchase_options || [];
+  if (!opts.length) return;
+  const unitSel  = lineEl.querySelector('[data-unit]');
+  const qtyInput = lineEl.querySelector('[data-qty]');
+  opts.forEach(opt => {
+    const label = opt.package_unit
+      ? `${opt.package_size} ${opt.package_size_unit} (${opt.package_unit})`
+      : `${opt.package_size} ${opt.package_size_unit}`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'btn btn-outline-primary btn-sm';
+    btn.style.fontSize = '11px';
+    btn.textContent = label;
+    btn.addEventListener('click', () => {
+      if (qtyInput) qtyInput.value = opt.package_size;
+      if (unitSel) {
+        const optEl = [...unitSel.options].find(o => o.value === opt.package_size_unit);
+        if (optEl) unitSel.value = opt.package_size_unit;
+      }
+      wrap.querySelectorAll('button').forEach(b => { b.classList.remove('btn-primary'); b.classList.add('btn-outline-primary'); });
+      btn.classList.remove('btn-outline-primary');
+      btn.classList.add('btn-primary');
+      _updatePurchaseRunSummary?.();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
 function renderTellerGrid(q = '') {
   const host = document.getElementById('teller-product-grid');
   if (!host) return;
@@ -2647,6 +2718,18 @@ function openProductEditor(p) {
   const capEl = document.getElementById('p-packaging-capacity');
   if (capEl) capEl.value = p?.packaging_capacity ?? '';
 
+  // Purchase options
+  renderPurchaseOptionsList(p?.purchase_options || []);
+
+  // Permanent delete button — only for existing products (admin)
+  const _permDelRow = document.getElementById('row-delete-perm');
+  if (_permDelRow) {
+    const isAdmin = STATE.currentUser?.role?.includes('admin');
+    _permDelRow.style.display = (p?.id && isAdmin) ? '' : 'none';
+    const _permDelBtn = document.getElementById('btn-delete-product-perm');
+    if (_permDelBtn) _permDelBtn.dataset.productId = p?.id || '';
+  }
+
   // Category (autocomplete text input - shows the current category name)
   const catEl = document.getElementById('p-category');
   if (catEl) catEl.value = p?.category_name ?? '';
@@ -3753,6 +3836,13 @@ function buildProductPayload() {
     is_default_variant: document.getElementById('p-is-default-variant')?.checked || false,
     // Packaging
     packaging_capacity: (() => { const v = parseInt(document.getElementById('p-packaging-capacity')?.value || '', 10); return v > 0 ? v : null; })(),
+    // Purchase package options
+    purchase_options: [...document.querySelectorAll('#purchase-options-list [data-purchase-option-idx]')].map(row => ({
+      package_size: parseFloat(row.querySelector('[data-po-size]')?.value || 0) || null,
+      package_size_unit: row.querySelector('[data-po-unit]')?.value || 'g',
+      package_unit: row.querySelector('[data-po-label]')?.value?.trim() || null,
+      sort_order: parseInt(row.dataset.purchaseOptionIdx || 0),
+    })).filter(o => o.package_size && o.package_size > 0),
   };
 }
 
@@ -5969,6 +6059,24 @@ document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', ()
 });
 
 document.getElementById('btn-add-purchase-line')?.addEventListener('click', addPurchaseLine);
+document.getElementById('btn-add-purchase-option')?.addEventListener('click', () => addPurchaseOptionRow(null, null));
+
+document.getElementById('btn-delete-product-perm')?.addEventListener('click', async () => {
+  const id = parseInt(document.getElementById('btn-delete-product-perm')?.dataset?.productId || 0);
+  if (!id) return;
+  const pName = document.getElementById('p-name')?.value || `Product #${id}`;
+  if (!confirm(`Permanently delete "${pName}"?\n\nThis cannot be undone. The product and all its stock records will be removed.`)) return;
+  try {
+    await api(`/api/products/${id}/delete`, { method: 'DELETE' });
+    toast(`"${pName}" permanently deleted.`, 'success');
+    const modal = document.getElementById('productEditorModal');
+    if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
+    STATE.products = (STATE.products || []).filter(p => p.id !== id);
+    renderProductsCards?.();
+  } catch (err) {
+    toast(err.message || 'Could not delete product.', 'danger', 6000);
+  }
+});
 
 // Track which purchase line is waiting for a new product to be created
 let _pendingPurchaseLine = null;
@@ -5980,6 +6088,7 @@ function _setLineProduct(lineEl, productId) {
   const prod   = (STATE.products || []).find(p => String(p.id) === String(productId));
   if (hidden) { hidden.value = productId; hidden.dispatchEvent(new Event('change')); }
   if (search && prod) search.value = prod.name;
+  if (prod) _showPurchaseOptionButtons(lineEl, prod);
 }
 
 function _buildProductOptions(supplierProductIds, showAll = false) {
@@ -6182,6 +6291,7 @@ function addPurchaseLine() {
       _taHidden.value  = prod.id;
       _taHidden.dispatchEvent(new Event('change'));
       _taResults.style.display = 'none';
+      _showPurchaseOptionButtons(line, prod);
     }
   });
 

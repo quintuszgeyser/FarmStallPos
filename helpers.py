@@ -24,6 +24,7 @@ from models import (
     StockBatch, StockConsumption,
     Sale, Purchase,
     ConsignmentLiability,
+    ProductPurchaseOption,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 
@@ -668,6 +669,19 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'pending_price':          float(p.pending_price) if getattr(p, 'pending_price', None) is not None else None,
         'pending_price_per_unit': float(p.pending_price_per_unit) if getattr(p, 'pending_price_per_unit', None) is not None else None,
         'packaging_capacity':     p.packaging_capacity,
+        'purchase_options': [
+            {
+                'id':               opt.id,
+                'package_size':     float(opt.package_size),
+                'package_size_unit': opt.package_size_unit,
+                'package_unit':     opt.package_unit,
+                'sort_order':       opt.sort_order,
+            }
+            for opt in sorted(
+                ProductPurchaseOption.query.filter_by(product_id=p.id).all(),
+                key=lambda o: (o.sort_order, o.id)
+            )
+        ],
         'cost_per_base_unit':     (lambda _b: float(_b.cost_per_base_unit) if _b and _b.cost_per_base_unit else None)(
             StockBatch.query.filter_by(product_id=p.id)
             .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).first()

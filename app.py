@@ -1952,6 +1952,20 @@ def strong_migrate():
             "CREATE INDEX IF NOT EXISTS ix_packaging_usage_lookup "
             "ON packaging_usage(product_id, qty_bucket)"
         )
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS product_purchase_options (
+              id                SERIAL PRIMARY KEY,
+              product_id        INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+              package_size      NUMERIC(10,4) NOT NULL,
+              package_size_unit VARCHAR(10) NOT NULL DEFAULT 'g',
+              package_unit      VARCHAR(30),
+              sort_order        INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_product_purchase_options_product "
+            "ON product_purchase_options(product_id)"
+        )
 
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.

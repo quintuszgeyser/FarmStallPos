@@ -18,7 +18,7 @@ from helpers import (
 from models import (
     db,
     Product, ProductImage, RecipeLine, Category, SubCategory, ProductFamily,
-    StockBatch, StockAdjustment, Purchase, Sale, ScalePluLog,
+    StockBatch, StockAdjustment, Purchase, Sale, ScalePluLog, ProductPurchaseOption,
 )
 
 bp = Blueprint('products', __name__)
@@ -349,6 +349,22 @@ def api_products_post():
     if data.get('sell_packages'):
         sync_sell_packages(p.id, data['sell_packages'])
 
+    if 'purchase_options' in data and isinstance(data.get('purchase_options'), list):
+        for opt in data['purchase_options']:
+            try:
+                ps = float(opt.get('package_size') or 0)
+            except (TypeError, ValueError):
+                ps = 0
+            if ps <= 0:
+                continue
+            db.session.add(ProductPurchaseOption(
+                product_id=p.id,
+                package_size=ps,
+                package_size_unit=str(opt.get('package_size_unit') or 'g').strip()[:10] or 'g',
+                package_unit=str(opt.get('package_unit') or '').strip()[:30] or None,
+                sort_order=int(opt.get('sort_order') or 0),
+            ))
+
     db.session.commit()
     return jsonify({'ok': True, 'id': p.id})
 
@@ -549,6 +565,23 @@ def api_products_update():
             p.packaging_capacity = int(raw_cap) if raw_cap not in (None, '') else None
         except (TypeError, ValueError):
             pass
+
+    if 'purchase_options' in data and isinstance(data.get('purchase_options'), list):
+        ProductPurchaseOption.query.filter_by(product_id=p.id).delete()
+        for opt in data['purchase_options']:
+            try:
+                ps = float(opt.get('package_size') or 0)
+            except (TypeError, ValueError):
+                ps = 0
+            if ps <= 0:
+                continue
+            db.session.add(ProductPurchaseOption(
+                product_id=p.id,
+                package_size=ps,
+                package_size_unit=str(opt.get('package_size_unit') or 'g').strip()[:10] or 'g',
+                package_unit=str(opt.get('package_unit') or '').strip()[:30] or None,
+                sort_order=int(opt.get('sort_order') or 0),
+            ))
 
     if 'is_consignment' in data:
         p.is_consignment = bool(data['is_consignment'])
@@ -1079,6 +1112,57 @@ def api_products_delete(name):
         old_family_id=_del_family_id,
     )
     return jsonify({'ok': True})
+
+
+@bp.route('/api/products/<int:product_id>/delete', methods=['DELETE'])
+def api_product_permanent_delete(product_id):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    p = db.session.get(Product, product_id)
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+
+    sale_count = Sale.query.filter_by(product_id=product_id).count()
+    if sale_count:
+        return jsonify({'error': f'Cannot delete: product has {sale_count} sale record(s). Archive it instead.'}), 409
+
+    import os as _os, glob as _glob
+
+    for img in ProductImage.query.filter_by(product_id=product_id).all():
+        for folder in (
+            current_app.config.get('UPLOAD_FOLDER', 'product_images'),
+            current_app.config.get('THUMB_FOLDER', 'product_images/thumbs'),
+        ):
+            for path in _glob.glob(_os.path.join(folder, img.filename.split('/')[-1])):
+                try:
+                    _os.remove(path)
+                except OSError:
+                    pass
+        db.session.delete(img)
+
+    RecipeLine.query.filter(
+        db.or_(RecipeLine.product_id == product_id, RecipeLine.ingredient_id == product_id)
+    ).delete(synchronize_session='fetch')
+    StockBatch.query.filter_by(product_id=product_id).delete()
+    StockAdjustment.query.filter_by(product_id=product_id).delete()
+    Purchase.query.filter_by(product_id=product_id).delete()
+    ScalePluLog.query.filter_by(product_id=product_id).delete()
+    ProductPurchaseOption.query.filter_by(product_id=product_id).delete()
+
+    _del_cat_id    = p.category_id
+    _del_sub_id    = p.sub_category_id
+    _del_family_id = p.product_family_id
+    db.session.delete(p)
+    db.session.commit()
+    _cleanup_empty_taxonomies(
+        old_category_id=_del_cat_id,
+        old_sub_category_id=_del_sub_id,
+        old_family_id=_del_family_id,
+    )
+
+    logger.info('Product %d (%s) permanently deleted', product_id, p.name)
+    return jsonify({'ok': True, 'deleted_id': product_id})
 
 
 @bp.route('/api/products/<int:pid>/recipe_cost')

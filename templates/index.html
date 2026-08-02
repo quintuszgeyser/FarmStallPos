@@ -2752,6 +2752,15 @@
           <input type="number" id="p-packaging-capacity" class="form-control form-control-sm" min="1" step="1"
             placeholder="Capacity (units) — e.g. 8 for a box that fits 8 slices (optional)">
         </div>
+        <!-- Purchase Package Options -->
+        <div class="mb-2" id="row-purchase-options">
+          <label class="form-label small fw-semibold mb-1">Purchase Package Sizes</label>
+          <div id="purchase-options-list"></div>
+          <button type="button" class="btn btn-outline-secondary btn-sm mt-1" id="btn-add-purchase-option">
+            <i class="bi bi-plus-lg me-1"></i>Add Package Size
+          </button>
+          <div class="form-text">Record the different sizes this product comes in from suppliers (e.g. 250 g and 350 g).</div>
+        </div>
         <div class="mb-2 position-relative" id="row-sub-category" style="display:none">
           <input id="p-sub-category" class="form-control form-control-sm" placeholder="Sub-category (optional)" autocomplete="off">
           <div id="p-sub-category-suggestions" class="list-group position-absolute w-100" style="z-index:1061;top:100%;display:none"></div>
@@ -3040,6 +3049,11 @@
           <button id="btn-add-product"    class="btn btn-success  flex-fill">Add</button>
           <button id="btn-update-product" class="btn btn-primary  flex-fill">Update</button>
           <button id="btn-delete-product" class="btn btn-danger   flex-fill">Delete</button>
+        </div>
+        <div id="row-delete-perm" style="display:none">
+          <button type="button" class="btn btn-outline-danger btn-sm w-100" id="btn-delete-product-perm">
+            <i class="bi bi-trash3 me-1"></i>Delete permanently (no sales on record)
+          </button>
         </div>
 
         <!-- ── Simple/Legacy purchase section ── -->
@@ -3762,7 +3776,7 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260802-bulk-typeahead"></script>
+<script src="/static/main.js?v=20260802-purchase-opts"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">

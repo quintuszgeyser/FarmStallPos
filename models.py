@@ -826,3 +826,14 @@ class PackagingUsage(db.Model):
     use_count            = db.Column(db.Integer, nullable=False, default=1)
     last_used_at         = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     __table_args__       = (db.UniqueConstraint('product_id', 'qty_bucket', 'packaging_product_id'),)
+
+
+class ProductPurchaseOption(db.Model):
+    """Multiple supplier package sizes for one product (e.g. 250 g and 350 g)."""
+    __tablename__ = 'product_purchase_options'
+    id                = db.Column(db.Integer, primary_key=True)
+    product_id        = db.Column(db.Integer, db.ForeignKey('products.id', ondelete='CASCADE'), nullable=False, index=True)
+    package_size      = db.Column(db.Numeric(10, 4), nullable=False)
+    package_size_unit = db.Column(db.String(10), nullable=False, default='g')
+    package_unit      = db.Column(db.String(30), nullable=True)
+    sort_order        = db.Column(db.Integer, nullable=False, default=0)
