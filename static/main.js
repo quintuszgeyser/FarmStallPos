@@ -6579,6 +6579,10 @@ function _updatePurchaseRunSummary() {
   const calculatedTotal = linesTotal + addlTotal + vatAmt - discTotal;
 
   const supplierInvInput = document.getElementById('pr-supplier-invoice-total');
+  const wasSupplierFocused = document.activeElement === supplierInvInput;
+  const prevRawValue = wasSupplierFocused ? supplierInvInput.value : null;
+  const prevSelStart = wasSupplierFocused ? supplierInvInput.selectionStart : null;
+  const prevSelEnd   = wasSupplierFocused ? supplierInvInput.selectionEnd   : null;
   const supplierInvTotal = supplierInvInput ? (parseFloat(supplierInvInput.value || '') || null) : null;
 
   const diff = supplierInvTotal != null ? calculatedTotal - supplierInvTotal : null;
@@ -6608,7 +6612,14 @@ function _updatePurchaseRunSummary() {
     </div>
   `;
 
-  summaryWrap.querySelector('#pr-supplier-invoice-total')?.addEventListener('input', _updatePurchaseRunSummary);
+  const newSupplierInput = summaryWrap.querySelector('#pr-supplier-invoice-total');
+  newSupplierInput?.addEventListener('input', _updatePurchaseRunSummary);
+
+  if (wasSupplierFocused && newSupplierInput) {
+    newSupplierInput.value = prevRawValue;
+    newSupplierInput.focus();
+    try { newSupplierInput.setSelectionRange(prevSelStart, prevSelEnd); } catch (_) {}
+  }
 }
 
 
