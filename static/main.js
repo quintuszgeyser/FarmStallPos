@@ -6186,7 +6186,8 @@ function addPurchaseLine() {
 
   container.appendChild(line);
 
-  const unitSel = line.querySelector('[data-unit]');
+  const unitSel  = line.querySelector('[data-unit]');
+  const qtyInput = line.querySelector('[data-qty]');
 
   let _lineProduct = null;
 
