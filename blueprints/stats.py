@@ -1549,3 +1549,350 @@ def api_stats_supplier_discounts():
         'total_discounts': round(float(total_discounts), 2),
         'by_supplier': rows,
     })
+
+
+# ---------------------------------------------------------------------------
+# Inventory Stats
+# ---------------------------------------------------------------------------
+
+@bp.route('/api/stats/inventory')
+def api_stats_inventory():
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+
+    today = date.today()
+    try: start_dt = datetime.fromisoformat(request.args.get('start', today.isoformat()))
+    except Exception: start_dt = datetime(today.year, today.month, today.day)
+    try:
+        end_dt = datetime.fromisoformat(request.args.get('end', today.isoformat()))
+        end_dt = end_dt.replace(hour=23, minute=59, second=59)
+    except Exception:
+        end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
+
+    try: product_id_filter = int(request.args.get('product_id')) if request.args.get('product_id') else None
+    except (ValueError, TypeError): product_id_filter = None
+
+    period_days = max(1, (end_dt.date() - start_dt.date()).days + 1)
+
+    # ── Load all non-archived products & categories ──────────────────────────
+    all_products = Product.query.filter_by(is_archived=False).all()
+    if product_id_filter:
+        all_products = [p for p in all_products if p.id == product_id_filter]
+    cats = {c.id: c for c in Category.query.all()}
+
+    # ── Active stock batches ─────────────────────────────────────────────────
+    batch_q = StockBatch.query.filter(StockBatch.qty_remaining_base > 0)
+    if product_id_filter:
+        batch_q = batch_q.filter_by(product_id=product_id_filter)
+    batches_by_pid = defaultdict(list)
+    for b in batch_q.all():
+        batches_by_pid[b.product_id].append(b)
+
+    # ── Sales in date range ──────────────────────────────────────────────────
+    _not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+    sales_q = db.session.query(Sale).filter(
+        Sale.date_time >= start_dt, Sale.date_time <= end_dt,
+        Sale.voided == False, _not_return,
+    )
+    if product_id_filter:
+        sales_q = sales_q.filter(Sale.product_id == product_id_filter)
+    sales = sales_q.all()
+
+    sales_qty_by_pid  = defaultdict(Decimal)
+    sales_rev_by_pid  = defaultdict(Decimal)
+    sales_last_by_pid = {}
+    for s in sales:
+        sales_qty_by_pid[s.product_id]  += Decimal(str(s.qty))
+        sales_rev_by_pid[s.product_id]  += Decimal(str(s.qty)) * s.unit_price
+        prev = sales_last_by_pid.get(s.product_id)
+        if prev is None or s.date_time > prev:
+            sales_last_by_pid[s.product_id] = s.date_time
+
+    # ── COGS from consumptions in period ─────────────────────────────────────
+    sc_q = db.session.query(StockConsumption).filter(
+        StockConsumption.consumed_at >= start_dt,
+        StockConsumption.consumed_at <= end_dt,
+    )
+    if product_id_filter:
+        sale_ids_in_period = list({s.sale_id for s in sales})
+        sc_q = sc_q.filter(StockConsumption.sale_id.in_(sale_ids_in_period)) if sale_ids_in_period else sc_q.filter(False)
+    total_cogs = sum(
+        Decimal(str(sc.qty_consumed_base)) * sc.cost_per_base_unit
+        for sc in sc_q.all()
+    )
+    total_revenue  = sum(sales_rev_by_pid.values(), Decimal('0'))
+    gross_profit   = total_revenue - total_cogs
+
+    # ── Per-product inventory values ─────────────────────────────────────────
+    def classify(p):
+        cat = cats.get(p.category_id)
+        if cat and getattr(cat, 'is_packaging', False):
+            return 'packaging'
+        if not p.is_for_sale:
+            return 'ingredients'
+        return 'retail'
+
+    inv_cost_total   = Decimal('0')
+    inv_retail_total = Decimal('0')
+    inv_by_type = {
+        'retail':      {'cost': Decimal('0'), 'retail': Decimal('0')},
+        'packaging':   {'cost': Decimal('0'), 'retail': Decimal('0')},
+        'ingredients': {'cost': Decimal('0'), 'retail': Decimal('0')},
+    }
+    inv_by_cat = defaultdict(lambda: {'name': '', 'is_packaging': False,
+                                      'cost': Decimal('0'), 'retail': Decimal('0'),
+                                      'products': []})
+    product_inv = {}
+
+    for p in all_products:
+        if p.product_type == 'recipe':
+            continue
+        cost_val   = Decimal('0')
+        retail_val = Decimal('0')
+        stock_base = Decimal('0')
+
+        if p.product_type == 'stock_item':
+            for b in batches_by_pid.get(p.id, []):
+                stock_base += b.qty_remaining_base
+                cost_val   += b.qty_remaining_base * b.cost_per_base_unit
+            if p.sold_by_weight and p.price_per_unit is not None:
+                retail_val = stock_base * Decimal(str(p.price_per_unit))
+            elif p.package_size and float(p.package_size) > 0 and p.price is not None:
+                retail_val = (stock_base / Decimal(str(p.package_size))) * Decimal(str(p.price))
+            elif p.price is not None:
+                retail_val = stock_base * Decimal(str(p.price))
+        elif p.product_type == 'simple':
+            stock_base = Decimal(str(p.stock_qty or 0))
+            retail_val = stock_base * Decimal(str(p.price or 0))
+
+        ptype = classify(p)
+        inv_cost_total   += cost_val
+        inv_retail_total += retail_val
+        inv_by_type[ptype]['cost']   += cost_val
+        inv_by_type[ptype]['retail'] += retail_val
+
+        cat = cats.get(p.category_id)
+        cid = p.category_id or 0
+        inv_by_cat[cid]['name']         = cat.name if cat else 'Uncategorised'
+        inv_by_cat[cid]['is_packaging'] = bool(cat and getattr(cat, 'is_packaging', False))
+        inv_by_cat[cid]['cost']   += cost_val
+        inv_by_cat[cid]['retail'] += retail_val
+        inv_by_cat[cid]['products'].append({
+            'id':           p.id,
+            'name':         p.name,
+            'cost_value':   round(float(cost_val), 2),
+            'retail_value': round(float(retail_val), 2),
+            'stock_base':   float(stock_base),
+            'unit_type':    p.unit_type or 'count',
+            'package_size': float(p.package_size or 1),
+            'package_unit': p.package_unit,
+        })
+        product_inv[p.id] = {'cost': cost_val, 'retail': retail_val,
+                              'stock_base': stock_base, 'p': p}
+
+    # ── Days until stockout (top 10 most urgent) ─────────────────────────────
+    stockout_rows = []
+    for p in all_products:
+        if p.product_type == 'recipe':
+            continue
+        inv = product_inv.get(p.id)
+        if not inv or inv['stock_base'] <= 0:
+            continue
+        qty_sold = float(sales_qty_by_pid.get(p.id, 0))
+        avg_daily = qty_sold / period_days
+        if avg_daily <= 0:
+            continue
+        days_left = float(inv['stock_base']) / avg_daily
+        stockout_rows.append({
+            'product_id':       p.id,
+            'name':             p.name,
+            'current_stock_base': float(inv['stock_base']),
+            'unit_type':        p.unit_type or 'count',
+            'package_size':     float(p.package_size or 1),
+            'package_unit':     p.package_unit,
+            'avg_daily_base':   round(avg_daily, 4),
+            'days_left':        round(days_left, 1),
+        })
+    stockout_rows.sort(key=lambda x: x['days_left'])
+    stockout_rows = stockout_rows[:10]
+
+    # ── Fast movers (sorted by qty sold desc) ────────────────────────────────
+    pid_name = {p.id: p.name for p in all_products}
+    fast_movers = sorted(
+        [{'product_id': pid, 'name': pid_name.get(pid, str(pid)),
+          'qty_sold': float(sales_qty_by_pid[pid]),
+          'revenue':  round(float(sales_rev_by_pid[pid]), 2)}
+         for pid in sales_qty_by_pid],
+        key=lambda x: x['qty_sold'], reverse=True
+    )[:10]
+
+    # ── Slow movers (bottom 10 with at least 1 sale) ─────────────────────────
+    for_sale_ids = {p.id for p in all_products if p.is_for_sale and p.product_type != 'recipe'}
+    slow_movers = sorted(
+        [{'product_id': pid, 'name': pid_name.get(pid, str(pid)),
+          'qty_sold': float(sales_qty_by_pid[pid]),
+          'last_sold': sales_last_by_pid[pid].date().isoformat() if pid in sales_last_by_pid else None}
+         for pid in sales_qty_by_pid if pid in for_sale_ids and float(sales_qty_by_pid[pid]) > 0],
+        key=lambda x: x['qty_sold']
+    )[:10]
+
+    # ── Dead stock (no sale in last 90 days, has stock) ──────────────────────
+    dead_cutoff = end_dt - timedelta(days=90)
+    recent_sold_pids = {
+        r[0] for r in db.session.query(Sale.product_id).filter(
+            Sale.date_time >= dead_cutoff, Sale.voided == False
+        ).distinct().all()
+    }
+    dead_candidate_pids = [
+        pid for pid, inv in product_inv.items()
+        if inv['stock_base'] > 0 and pid not in recent_sold_pids
+    ]
+    last_sale_map = {}
+    if dead_candidate_pids:
+        for r in db.session.query(Sale.product_id, func.max(Sale.date_time).label('ls')).filter(
+            Sale.product_id.in_(dead_candidate_pids), Sale.voided == False
+        ).group_by(Sale.product_id).all():
+            last_sale_map[r.product_id] = r.ls
+
+    dead_stock = []
+    for pid in dead_candidate_pids:
+        inv  = product_inv[pid]
+        p    = inv['p']
+        ls   = last_sale_map.get(pid)
+        days = int((end_dt - ls).days) if ls else 999
+        dead_stock.append({
+            'product_id':   pid,
+            'name':         p.name,
+            'stock_base':   float(inv['stock_base']),
+            'unit_type':    p.unit_type or 'count',
+            'package_size': float(p.package_size or 1),
+            'package_unit': p.package_unit,
+            'cost_value':   round(float(inv['cost']), 2),
+            'retail_value': round(float(inv['retail']), 2),
+            'days_since_sale': days,
+            'last_sold':    ls.date().isoformat() if ls else None,
+        })
+    dead_stock.sort(key=lambda x: x['cost_value'], reverse=True)
+
+    # ── Inventory turnover ───────────────────────────────────────────────────
+    turnover_rate = None
+    if inv_cost_total > 0 and period_days > 0:
+        annualised_cogs = float(total_cogs) * (365.0 / period_days)
+        turnover_rate   = round(annualised_cogs / float(inv_cost_total), 2)
+
+    # ── GMROI ────────────────────────────────────────────────────────────────
+    gmroi_val = None
+    if inv_cost_total > 0 and period_days > 0:
+        annualised_gp = float(gross_profit) * (365.0 / period_days)
+        gmroi_val     = round(annualised_gp / float(inv_cost_total), 2)
+
+    # ── Shrinkage (negative adjustments in period) ────────────────────────────
+    adj_q = StockAdjustment.query.filter(
+        StockAdjustment.adjusted_at >= start_dt,
+        StockAdjustment.adjusted_at <= end_dt,
+        StockAdjustment.qty_change_base < 0,
+    )
+    if product_id_filter:
+        adj_q = adj_q.filter_by(product_id=product_id_filter)
+    adjustments = adj_q.order_by(StockAdjustment.adjusted_at.desc()).all()
+    total_shrinkage = sum((a.cost_written_off or Decimal('0')) for a in adjustments)
+    shrinkage_rows = []
+    for a in adjustments[:25]:
+        p = product_inv.get(a.product_id, {}).get('p')
+        if not p:
+            p = db.session.get(Product, a.product_id)
+        shrinkage_rows.append({
+            'product_id':     a.product_id,
+            'name':           p.name if p else str(a.product_id),
+            'adjustment_type': a.adjustment_type,
+            'qty_change_base': float(a.qty_change_base),
+            'unit_type':      (p.unit_type if p else None) or 'count',
+            'cost_written_off': round(float(a.cost_written_off or 0), 2),
+            'reason':         a.reason,
+            'date':           a.adjusted_at.date().isoformat() if a.adjusted_at else None,
+        })
+
+    # ── Reorder recommendations (< 14 days left) ─────────────────────────────
+    reorder = [
+        {**r, 'suggested_order_base': round(r['avg_daily_base'] * 30, 4)}
+        for r in stockout_rows if r['days_left'] < 14
+    ]
+
+    # ── Overstock (> 3 months cover) ────────────────────────────────────────
+    overstock = []
+    for p in all_products:
+        if p.product_type == 'recipe':
+            continue
+        inv = product_inv.get(p.id)
+        if not inv or inv['stock_base'] <= 0:
+            continue
+        qty_sold      = float(sales_qty_by_pid.get(p.id, 0))
+        avg_monthly   = qty_sold * 30.0 / period_days if period_days > 0 else 0
+        if avg_monthly <= 0:
+            continue
+        months_cover = float(inv['stock_base']) / avg_monthly
+        if months_cover > 3:
+            overstock.append({
+                'product_id':   p.id,
+                'name':         p.name,
+                'stock_base':   float(inv['stock_base']),
+                'unit_type':    p.unit_type or 'count',
+                'package_size': float(p.package_size or 1),
+                'package_unit': p.package_unit,
+                'cost_value':   round(float(inv['cost']), 2),
+                'avg_monthly_base': round(avg_monthly, 4),
+                'months_cover': round(months_cover, 1),
+            })
+    overstock.sort(key=lambda x: x['months_cover'], reverse=True)
+    overstock = overstock[:15]
+
+    # ── Category list (sorted by cost value desc) ────────────────────────────
+    cat_rows = sorted(
+        [{'id': cid,
+          'name': d['name'],
+          'is_packaging': d['is_packaging'],
+          'cost_value':   round(float(d['cost']), 2),
+          'retail_value': round(float(d['retail']), 2),
+          'products':     sorted(d['products'], key=lambda x: x['cost_value'], reverse=True)}
+         for cid, d in inv_by_cat.items()],
+        key=lambda x: x['cost_value'], reverse=True
+    )
+
+    return jsonify({
+        'start':        start_dt.isoformat(),
+        'end':          end_dt.isoformat(),
+        'period_days':  period_days,
+        'inventory_value': {
+            'total_cost':       round(float(inv_cost_total), 2),
+            'total_retail':     round(float(inv_retail_total), 2),
+            'potential_profit': round(float(inv_retail_total - inv_cost_total), 2),
+            'breakdown': {
+                k: {'cost': round(float(v['cost']), 2),
+                    'retail': round(float(v['retail']), 2)}
+                for k, v in inv_by_type.items()
+            },
+            'by_category': cat_rows,
+        },
+        'days_until_stockout': stockout_rows,
+        'fast_movers':  fast_movers,
+        'slow_movers':  slow_movers,
+        'dead_stock':   dead_stock,
+        'turnover': {
+            'rate':                  turnover_rate,
+            'period_days':           period_days,
+            'cogs':                  round(float(total_cogs), 2),
+            'current_inventory_cost': round(float(inv_cost_total), 2),
+        },
+        'gmroi': {
+            'value':                  gmroi_val,
+            'gross_profit_period':    round(float(gross_profit), 2),
+            'current_inventory_cost': round(float(inv_cost_total), 2),
+            'period_days':            period_days,
+        },
+        'shrinkage': {
+            'total_value':  round(float(total_shrinkage), 2),
+            'count':        len(adjustments),
+            'adjustments':  shrinkage_rows,
+        },
+        'reorder':    reorder,
+        'overstock':  overstock,
+    })

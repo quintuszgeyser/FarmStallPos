@@ -9923,11 +9923,12 @@ async function loadStats() {
       }
     }
 
-    // Fire overhead, VAT, discount, and consignment stats in parallel — non-blocking
+    // Fire overhead, VAT, discount, consignment, and inventory stats in parallel — non-blocking
     loadOverheadStats(start, end, productId).catch(e => console.error('overhead stats', e));
     loadSupplierVatStats(start, end, productId).catch(e => console.error('supplier vat stats', e));
     loadSupplierDiscountStats(start, end, productId).catch(e => console.error('supplier discount stats', e));
     loadConsignmentStats().catch(e => console.error('consignment stats', e));
+    loadInventoryStats(start, end, productId).catch(e => console.error('inventory stats', e));
 
   } catch (e) { console.error('loadStats', e); toast('Could not load stats', 'error'); }
 }
@@ -16621,3 +16622,535 @@ async function _addCostCategory() {
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', () => {
   if (isAdmin()) loadCostCategoriesSettings();
 });
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// INVENTORY STATS
+// ══════════════════════════════════════════════════════════════════════════════
+
+function _invDisplayQty(stockBase, unitType, packageSize, packageUnit) {
+  if (unitType === 'weight') {
+    const kg = stockBase / 1000;
+    return kg >= 1 ? `${kg.toFixed(2)} kg` : `${Math.round(stockBase)} g`;
+  }
+  if (unitType === 'volume') {
+    const l = stockBase / 1000;
+    return l >= 1 ? `${l.toFixed(2)} L` : `${Math.round(stockBase)} ml`;
+  }
+  if (packageSize && packageSize > 1) {
+    const units = stockBase / packageSize;
+    const label = packageUnit || 'unit';
+    return `${units % 1 === 0 ? units : units.toFixed(2)} ${label}`;
+  }
+  return `${stockBase % 1 === 0 ? stockBase : stockBase.toFixed(2)} ${packageUnit || 'unit'}`;
+}
+
+function _invDailyDisplay(avgDailyBase, unitType, packageSize, packageUnit) {
+  if (unitType === 'weight') {
+    const g = avgDailyBase;
+    return g >= 1000 ? `${(g/1000).toFixed(2)} kg/day` : `${g.toFixed(0)} g/day`;
+  }
+  if (unitType === 'volume') {
+    return avgDailyBase >= 1000 ? `${(avgDailyBase/1000).toFixed(2)} L/day` : `${avgDailyBase.toFixed(0)} ml/day`;
+  }
+  if (packageSize && packageSize > 1) {
+    const units = avgDailyBase / packageSize;
+    return `${units.toFixed(2)} ${packageUnit || 'unit'}/day`;
+  }
+  return `${avgDailyBase.toFixed(2)} ${packageUnit || 'unit'}/day`;
+}
+
+function _invDaysClass(days) {
+  if (days <= 3)  return 'text-danger fw-bold';
+  if (days <= 7)  return 'text-warning fw-semibold';
+  if (days <= 14) return 'text-primary';
+  return 'text-success';
+}
+
+function _openInventoryDrilldown(title, html) {
+  document.getElementById('drilldown-title').textContent = title;
+  document.getElementById('drilldown-body').innerHTML = html;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
+}
+
+async function loadInventoryStats(start, end, productId) {
+  const wrap = document.getElementById('inventory-stats-body');
+  if (!wrap) return;
+
+  const params = new URLSearchParams({ start, end });
+  if (productId) params.set('product_id', productId);
+
+  let d;
+  try {
+    d = await api(`/api/stats/inventory?${params}`);
+  } catch (e) {
+    wrap.innerHTML = `<div class="text-muted small">Could not load inventory stats: ${escapeHtml(e.message)}</div>`;
+    return;
+  }
+
+  const iv    = d.inventory_value || {};
+  const bd    = iv.breakdown || {};
+  const turn  = d.turnover   || {};
+  const gm    = d.gmroi      || {};
+  const shr   = d.shrinkage  || {};
+  const cats  = iv.by_category || [];
+
+  const totalCost   = iv.total_cost   || 0;
+  const totalRetail = iv.total_retail || 0;
+  const potProfit   = iv.potential_profit || 0;
+
+  // ── Row 1: 4 summary KPI cards ────────────────────────────────────────────
+  const kpiRow = `
+  <div class="row g-2 mb-3">
+
+    <!-- Card 1: Total Inventory Value -->
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm" style="cursor:pointer"
+           onclick="_invShowCategoryDrilldown()">
+        <div class="card-body p-3">
+          <div class="small text-muted mb-1"><i class="bi bi-archive me-1"></i>On-Hand Cost Value</div>
+          <div class="fs-5 fw-bold">R${fmt(totalCost)}</div>
+          <div class="mt-2" style="font-size:11px;line-height:1.6">
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Retail stock</span>
+              <span class="fw-semibold">R${fmt((bd.retail||{}).cost||0)}</span>
+            </div>
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Packaging</span>
+              <span class="fw-semibold">R${fmt((bd.packaging||{}).cost||0)}</span>
+            </div>
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Ingredients</span>
+              <span class="fw-semibold">R${fmt((bd.ingredients||{}).cost||0)}</span>
+            </div>
+          </div>
+          <div class="text-muted mt-2" style="font-size:10px"><i class="bi bi-zoom-in me-1"></i>Click for category breakdown</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 2: Potential Retail Value -->
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm">
+        <div class="card-body p-3">
+          <div class="small text-muted mb-1"><i class="bi bi-cash-coin me-1"></i>Potential Retail Value</div>
+          <div class="fs-5 fw-bold text-success">R${fmt(totalRetail)}</div>
+          <div class="mt-2" style="font-size:11px;line-height:1.7">
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Cost value</span>
+              <span>R${fmt(totalCost)}</span>
+            </div>
+            <div class="d-flex justify-content-between border-top pt-1 mt-1">
+              <span class="text-muted">Potential GP</span>
+              <span class="fw-bold text-success">+R${fmt(potProfit)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 3: Inventory Turnover -->
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm">
+        <div class="card-body p-3">
+          <div class="small text-muted mb-1"><i class="bi bi-arrow-repeat me-1"></i>Inventory Turnover</div>
+          <div class="fs-5 fw-bold">${turn.rate != null ? turn.rate + '×/yr' : '—'}</div>
+          <div class="mt-2" style="font-size:11px;line-height:1.7">
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">COGS (period)</span>
+              <span>R${fmt(turn.cogs||0)}</span>
+            </div>
+            <div class="d-flex justify-content-between">
+              <span class="text-muted">Inventory cost</span>
+              <span>R${fmt(turn.current_inventory_cost||0)}</span>
+            </div>
+          </div>
+          <div class="text-muted mt-2" style="font-size:10px">Higher = faster sell-through</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card 4: GMROI -->
+    <div class="col-6 col-lg-3">
+      <div class="card h-100 border-0 shadow-sm">
+        <div class="card-body p-3">
+          <div class="small text-muted mb-1"><i class="bi bi-graph-up-arrow me-1"></i>GMROI</div>
+          <div class="fs-5 fw-bold ${gm.value != null && gm.value >= 2 ? 'text-success' : gm.value != null && gm.value < 1 ? 'text-danger' : ''}">${gm.value != null ? gm.value : '—'}</div>
+          <div class="mt-2 text-muted" style="font-size:11px">
+            For every R1 in inventory you earn
+            <strong>R${gm.value != null ? gm.value.toFixed(2) : '—'}</strong> gross profit/yr.
+          </div>
+          <div class="text-muted mt-2" style="font-size:10px">Target: &gt;2.0 for retail</div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── Row 2: Days until stockout + Fast/Slow movers ────────────────────────
+  const stockoutRows = d.days_until_stockout || [];
+  let stockoutHtml = '';
+  if (stockoutRows.length) {
+    stockoutHtml = stockoutRows.map(r => `
+      <tr>
+        <td class="small">${escapeHtml(r.name)}</td>
+        <td class="small">${_invDisplayQty(r.current_stock_base, r.unit_type, r.package_size, r.package_unit)}</td>
+        <td class="small">${_invDailyDisplay(r.avg_daily_base, r.unit_type, r.package_size, r.package_unit)}</td>
+        <td class="small text-end ${_invDaysClass(r.days_left)}">${r.days_left}d</td>
+      </tr>`).join('');
+  } else {
+    stockoutHtml = '<tr><td colspan="4" class="text-muted small">No products with active sales velocity.</td></tr>';
+  }
+
+  const fastRows = d.fast_movers || [];
+  let fastHtml = '';
+  if (fastRows.length) {
+    fastHtml = fastRows.map((r, i) => `
+      <tr>
+        <td class="small text-muted">${i+1}</td>
+        <td class="small">${escapeHtml(r.name)}</td>
+        <td class="small text-end fw-semibold">${r.qty_sold % 1 === 0 ? r.qty_sold : r.qty_sold.toFixed(2)}</td>
+        <td class="small text-end text-success">R${fmt(r.revenue)}</td>
+      </tr>`).join('');
+  } else {
+    fastHtml = '<tr><td colspan="4" class="text-muted small">No sales in this period.</td></tr>';
+  }
+
+  const slowRows = d.slow_movers || [];
+  let slowHtml = '';
+  if (slowRows.length) {
+    slowHtml = slowRows.map(r => `
+      <tr>
+        <td class="small">${escapeHtml(r.name)}</td>
+        <td class="small text-end">${r.qty_sold % 1 === 0 ? r.qty_sold : r.qty_sold.toFixed(2)}</td>
+        <td class="small text-end text-muted">${r.last_sold || '—'}</td>
+      </tr>`).join('');
+  } else {
+    slowHtml = '<tr><td colspan="3" class="text-muted small">No slow movers in this period.</td></tr>';
+  }
+
+  const row2 = `
+  <div class="row g-2 mb-3">
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-3">
+          <div class="small fw-semibold mb-2"><i class="bi bi-hourglass-split me-1 text-warning"></i>Days Until Stockout</div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead class="table-light"><tr>
+                <th class="small">Product</th>
+                <th class="small">In Stock</th>
+                <th class="small">Daily Usage</th>
+                <th class="small text-end">Days Left</th>
+              </tr></thead>
+              <tbody>${stockoutHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-6">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-3">
+          <!-- Nav tabs -->
+          <ul class="nav nav-tabs nav-tabs-sm mb-2" style="font-size:12px">
+            <li class="nav-item"><a class="nav-link active py-1 px-2" data-bs-toggle="tab" href="#inv-fast-tab">Fast Movers</a></li>
+            <li class="nav-item"><a class="nav-link py-1 px-2" data-bs-toggle="tab" href="#inv-slow-tab">Slow Movers</a></li>
+          </ul>
+          <div class="tab-content">
+            <div class="tab-pane active" id="inv-fast-tab">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead class="table-light"><tr>
+                    <th class="small">#</th><th class="small">Product</th>
+                    <th class="small text-end">Sold</th><th class="small text-end">Revenue</th>
+                  </tr></thead>
+                  <tbody>${fastHtml}</tbody>
+                </table>
+              </div>
+            </div>
+            <div class="tab-pane" id="inv-slow-tab">
+              <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                  <thead class="table-light"><tr>
+                    <th class="small">Product</th>
+                    <th class="small text-end">Sold</th>
+                    <th class="small text-end">Last Sale</th>
+                  </tr></thead>
+                  <tbody>${slowHtml}</tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── Row 3: Dead stock + Overstock ─────────────────────────────────────────
+  const deadRows = d.dead_stock || [];
+  let deadHtml = '';
+  if (deadRows.length) {
+    deadHtml = deadRows.map(r => `
+      <tr>
+        <td class="small">${escapeHtml(r.name)}</td>
+        <td class="small">${_invDisplayQty(r.stock_base, r.unit_type, r.package_size, r.package_unit)}</td>
+        <td class="small text-end fw-semibold text-danger">R${fmt(r.cost_value)}</td>
+        <td class="small text-end text-muted">${r.last_sold || 'Never'}</td>
+        <td class="small text-end"><span class="badge bg-danger">${r.days_since_sale === 999 ? 'Never sold' : r.days_since_sale + 'd ago'}</span></td>
+      </tr>`).join('');
+  } else {
+    deadHtml = '<tr><td colspan="5" class="text-muted small">No dead stock — everything has sold in the last 90 days.</td></tr>';
+  }
+
+  const overstockRows = d.overstock || [];
+  let overstockHtml = '';
+  if (overstockRows.length) {
+    overstockHtml = overstockRows.map(r => `
+      <tr>
+        <td class="small">${escapeHtml(r.name)}</td>
+        <td class="small">${_invDisplayQty(r.stock_base, r.unit_type, r.package_size, r.package_unit)}</td>
+        <td class="small text-end">R${fmt(r.cost_value)}</td>
+        <td class="small text-end ${r.months_cover > 12 ? 'text-danger fw-bold' : 'text-warning fw-semibold'}">${r.months_cover}mo</td>
+      </tr>`).join('');
+  } else {
+    overstockHtml = '<tr><td colspan="4" class="text-muted small">No products with &gt;3 months cover.</td></tr>';
+  }
+
+  const row3 = `
+  <div class="row g-2 mb-3">
+    <div class="col-12 col-lg-7">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-3">
+          <div class="small fw-semibold mb-2"><i class="bi bi-emoji-frown me-1 text-danger"></i>Dead Stock
+            <span class="badge bg-danger ms-1">${deadRows.length}</span>
+            <span class="text-muted fw-normal"> — no sales in 90 days</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead class="table-light"><tr>
+                <th class="small">Product</th>
+                <th class="small">In Stock</th>
+                <th class="small text-end">Cost</th>
+                <th class="small text-end">Last Sold</th>
+                <th class="small text-end">Status</th>
+              </tr></thead>
+              <tbody>${deadHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-5">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-3">
+          <div class="small fw-semibold mb-2"><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Overstock Risk
+            <span class="text-muted fw-normal"> — &gt;3 months cover</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead class="table-light"><tr>
+                <th class="small">Product</th>
+                <th class="small">In Stock</th>
+                <th class="small text-end">Value</th>
+                <th class="small text-end">Cover</th>
+              </tr></thead>
+              <tbody>${overstockHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── Row 4: Reorder + Shrinkage ────────────────────────────────────────────
+  const reorderRows = d.reorder || [];
+  let reorderHtml = '';
+  if (reorderRows.length) {
+    reorderHtml = reorderRows.map(r => `
+      <tr>
+        <td class="small">${escapeHtml(r.name)}</td>
+        <td class="small ${_invDaysClass(r.days_left)}">${_invDisplayQty(r.current_stock_base, r.unit_type, r.package_size, r.package_unit)}</td>
+        <td class="small text-muted">${_invDailyDisplay(r.avg_daily_base, r.unit_type, r.package_size, r.package_unit)}</td>
+        <td class="small text-end fw-semibold">${_invDisplayQty(r.suggested_order_base, r.unit_type, r.package_size, r.package_unit)}</td>
+        <td class="small text-end ${_invDaysClass(r.days_left)}">${r.days_left}d left</td>
+      </tr>`).join('');
+  } else {
+    reorderHtml = '<tr><td colspan="5" class="text-muted small">No products need reordering right now.</td></tr>';
+  }
+
+  const shrRows = shr.adjustments || [];
+  let shrHtml = '';
+  if (shrRows.length) {
+    shrHtml = shrRows.slice(0, 8).map(r => `
+      <tr>
+        <td class="small">${escapeHtml(r.name)}</td>
+        <td class="small text-muted">${r.date || '—'}</td>
+        <td class="small text-end text-danger">${r.qty_change_base < 0 ? '' : '+'}${r.qty_change_base.toFixed(r.unit_type === 'weight' ? 0 : 2)}</td>
+        <td class="small text-end fw-semibold text-danger">-R${fmt(r.cost_written_off)}</td>
+      </tr>`).join('');
+  } else {
+    shrHtml = '<tr><td colspan="4" class="text-muted small">No stock losses recorded in this period.</td></tr>';
+  }
+
+  const row4 = `
+  <div class="row g-2 mb-3">
+    <div class="col-12 col-lg-7">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-3">
+          <div class="small fw-semibold mb-2"><i class="bi bi-cart-plus me-1 text-primary"></i>Reorder Recommendations
+            <span class="text-muted fw-normal"> — under 14 days stock</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead class="table-light"><tr>
+                <th class="small">Product</th>
+                <th class="small">In Stock</th>
+                <th class="small">Daily Usage</th>
+                <th class="small text-end">Order (30 days)</th>
+                <th class="small text-end">Urgency</th>
+              </tr></thead>
+              <tbody>${reorderHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-12 col-lg-5">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body p-3">
+          <div class="small fw-semibold mb-2"><i class="bi bi-exclamation-circle me-1 text-danger"></i>Shrinkage / Variance
+            ${shr.total_value > 0 ? `<span class="badge bg-danger ms-1">-R${fmt(shr.total_value)}</span>` : ''}
+          </div>
+          ${shr.count > 8 ? `<div class="small text-muted mb-1">Showing 8 of ${shr.count} adjustments — <a href="#" onclick="event.preventDefault();_invShowShrinkageDrilldown()" class="text-decoration-none">view all</a></div>` : ''}
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <thead class="table-light"><tr>
+                <th class="small">Product</th>
+                <th class="small">Date</th>
+                <th class="small text-end">Qty</th>
+                <th class="small text-end">Value Lost</th>
+              </tr></thead>
+              <tbody>${shrHtml}</tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  // ── Row 5: Category Cash Locked Up ────────────────────────────────────────
+  let catBarHtml = '';
+  if (cats.length && totalCost > 0) {
+    catBarHtml = cats.map(c => {
+      const pct = totalCost > 0 ? (c.cost_value / totalCost * 100).toFixed(1) : 0;
+      const icon = c.is_packaging ? 'bi-bag' : 'bi-box-seam';
+      return `
+        <div class="d-flex align-items-center gap-2 mb-2" style="cursor:pointer"
+             onclick="_invShowCategoryProductDrilldown(${JSON.stringify(c).replace(/"/g, '&quot;')})">
+          <div style="width:110px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            <i class="bi ${icon} me-1 text-muted"></i>${escapeHtml(c.name)}
+          </div>
+          <div class="flex-grow-1 bg-light rounded" style="height:16px;position:relative">
+            <div class="rounded" style="height:16px;width:${pct}%;background:var(--bs-primary);opacity:0.7"></div>
+          </div>
+          <div style="width:70px;text-align:right;font-size:11px" class="fw-semibold">R${fmt(c.cost_value)}</div>
+          <div style="width:36px;text-align:right;font-size:10px;color:#6c757d">${pct}%</div>
+        </div>`;
+    }).join('');
+  } else {
+    catBarHtml = '<div class="text-muted small">No category data available.</div>';
+  }
+
+  const row5 = `
+  <div class="card border-0 shadow-sm mb-3">
+    <div class="card-body p-3">
+      <div class="small fw-semibold mb-2"><i class="bi bi-pie-chart me-1"></i>Category Cash Locked Up
+        <span class="text-muted fw-normal"> — click a row to see products</span>
+      </div>
+      ${catBarHtml}
+    </div>
+  </div>`;
+
+  wrap.innerHTML = kpiRow + row2 + row3 + row4 + row5;
+
+  // Stash drilldown data for onclick handlers
+  wrap._invData = d;
+}
+
+function _invShowCategoryDrilldown() {
+  const wrap = document.getElementById('inventory-stats-body');
+  const d = wrap?._invData;
+  if (!d) return;
+  const cats = (d.inventory_value || {}).by_category || [];
+  if (!cats.length) return;
+
+  let html = `<div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th>Category</th>
+        <th class="text-end">Cost Value</th>
+        <th class="text-end">Retail Value</th>
+        <th class="text-end">Potential GP</th>
+        <th class="text-end">Products</th>
+      </tr></thead><tbody>`;
+  cats.forEach(c => {
+    const gp = (c.retail_value - c.cost_value).toFixed(2);
+    html += `<tr style="cursor:pointer" onclick="_invShowCategoryProductDrilldown(${JSON.stringify(c).replace(/"/g, '&#34;')})">
+      <td>${escapeHtml(c.name)}${c.is_packaging ? ' <span class="badge bg-secondary" style="font-size:9px">PKG</span>' : ''}</td>
+      <td class="text-end fw-semibold">R${fmt(c.cost_value)}</td>
+      <td class="text-end">R${fmt(c.retail_value)}</td>
+      <td class="text-end text-success">+R${fmt(parseFloat(gp))}</td>
+      <td class="text-end">${c.products.length}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  _openInventoryDrilldown('Inventory by Category', html);
+}
+
+function _invShowCategoryProductDrilldown(cat) {
+  const products = (cat.products || []).sort((a, b) => b.cost_value - a.cost_value);
+  let html = `<div class="small text-muted mb-2">${escapeHtml(cat.name)} — ${products.length} products</div>
+    <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th>Product</th>
+        <th class="text-end">In Stock</th>
+        <th class="text-end">Cost Value</th>
+        <th class="text-end">Retail Value</th>
+      </tr></thead><tbody>`;
+  products.forEach(p => {
+    html += `<tr>
+      <td class="small">${escapeHtml(p.name)}</td>
+      <td class="small text-end">${_invDisplayQty(p.stock_base, p.unit_type, p.package_size, p.package_unit)}</td>
+      <td class="small text-end fw-semibold">R${fmt(p.cost_value)}</td>
+      <td class="small text-end">R${fmt(p.retail_value)}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  _openInventoryDrilldown(`Category: ${cat.name}`, html);
+}
+
+function _invShowShrinkageDrilldown() {
+  const wrap = document.getElementById('inventory-stats-body');
+  const d = wrap?._invData;
+  if (!d) return;
+  const rows = (d.shrinkage || {}).adjustments || [];
+  let html = `<div class="small text-muted mb-2">Total shrinkage: <strong class="text-danger">-R${fmt((d.shrinkage||{}).total_value||0)}</strong></div>
+    <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle">
+      <thead class="table-light"><tr>
+        <th>Product</th><th>Date</th><th>Type</th><th class="text-end">Qty Change</th><th class="text-end">Value Lost</th><th>Reason</th>
+      </tr></thead><tbody>`;
+  rows.forEach(r => {
+    html += `<tr>
+      <td class="small">${escapeHtml(r.name)}</td>
+      <td class="small text-muted">${r.date || '—'}</td>
+      <td class="small"><span class="badge bg-secondary">${escapeHtml(r.adjustment_type || '')}</span></td>
+      <td class="small text-end text-danger">${r.qty_change_base < 0 ? '' : '+'}${r.qty_change_base.toFixed(2)}</td>
+      <td class="small text-end fw-semibold text-danger">-R${fmt(r.cost_written_off)}</td>
+      <td class="small text-muted">${escapeHtml(r.reason || '')}</td>
+    </tr>`;
+  });
+  html += `</tbody></table></div>`;
+  _openInventoryDrilldown('All Shrinkage / Variances', html);
+}
