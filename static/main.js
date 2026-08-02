@@ -405,9 +405,13 @@ async function api(path, opts = {}, timeoutMs = 10000) {
       throw new Error('Session expired');
     }
     if (!res.ok) {
-      let err = 'Request failed';
-      try { const j = await res.json(); err = j.error || JSON.stringify(j); } catch {}
-      throw new Error(err);
+      let msg = 'Request failed';
+      let data = null;
+      try { const j = await res.json(); msg = j.error || JSON.stringify(j); data = j; } catch {}
+      const e = new Error(msg);
+      e.status = res.status;
+      e.data = data;
+      throw e;
     }
     try { return await res.json(); } catch { return {}; }
   } catch(e) {
@@ -6075,17 +6079,43 @@ document.getElementById('btn-add-purchase-option')?.addEventListener('click', ()
 document.getElementById('btn-delete-product-perm')?.addEventListener('click', async () => {
   const id = parseInt(document.getElementById('btn-delete-product-perm')?.dataset?.productId || 0);
   if (!id) return;
-  const pName = document.getElementById('p-name')?.value || `Product #${id}`;
+  const pName  = document.getElementById('p-name')?.value || `Product #${id}`;
+  const prod   = (STATE.products || []).find(p => p.id === id);
+  const isArch = prod?.is_archived;
+
   if (!confirm(`Permanently delete "${pName}"?\n\nThis cannot be undone. The product and all its stock records will be removed.`)) return;
-  try {
-    await api(`/api/products/${id}/delete`, { method: 'DELETE' });
+
+  const _doDelete = async (force) => {
+    await api(`/api/products/${id}/delete`, {
+      method: 'DELETE',
+      body: force ? JSON.stringify({ force: true }) : undefined,
+    });
     toast(`"${pName}" permanently deleted.`, 'success');
     const modal = document.getElementById('productEditorModal');
     if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
     STATE.products = (STATE.products || []).filter(p => p.id !== id);
     renderProductsCards?.();
+  };
+
+  try {
+    await _doDelete(false);
   } catch (err) {
-    toast(err.message || 'Could not delete product.', 'danger', 6000);
+    // If the product is archived and has sales, offer a force-delete
+    if (err.status === 409 && isArch && err.data?.can_force) {
+      const saleCount = err.data?.sale_count || '?';
+      if (!confirm(
+        `"${pName}" has ${saleCount} sale record(s) in history.\n\n` +
+        `Force-deleting will permanently remove the product AND all ${saleCount} of its sales from the database.\n\n` +
+        `This will affect sales history, reports, and financial records. This CANNOT be undone.\n\nDelete anyway?`
+      )) return;
+      try {
+        await _doDelete(true);
+      } catch (e2) {
+        toast(e2.message || 'Could not delete product.', 'danger', 6000);
+      }
+    } else {
+      toast(err.message || 'Could not delete product.', 'danger', 6000);
+    }
   }
 });
 

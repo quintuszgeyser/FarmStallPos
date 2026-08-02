@@ -26,7 +26,11 @@ logger = logging.getLogger('pos')
 
 
 def _cleanup_empty_taxonomies(old_category_id=None, old_sub_category_id=None, old_family_id=None):
-    """Delete category/sub-category/family if they now have zero active (non-archived) products."""
+    """Delete category/sub-category/family if they now have zero active (non-archived) products.
+
+    Product.category_id has no ondelete clause (RESTRICT by default), so archived products
+    still hold a FK reference.  We must null those out before deleting the category row.
+    """
     if old_sub_category_id:
         if not Product.query.filter_by(sub_category_id=old_sub_category_id, is_archived=False).count():
             sub = db.session.get(SubCategory, old_sub_category_id)
@@ -34,6 +38,11 @@ def _cleanup_empty_taxonomies(old_category_id=None, old_sub_category_id=None, ol
                 db.session.delete(sub)
     if old_category_id:
         if not Product.query.filter_by(category_id=old_category_id, is_archived=False).count():
+            # Null out FK on any remaining (archived) products before deleting the row
+            db.session.execute(
+                text("UPDATE products SET category_id = NULL WHERE category_id = :cid"),
+                {'cid': old_category_id},
+            )
             cat = db.session.get(Category, old_category_id)
             if cat:
                 db.session.delete(cat)
@@ -1124,8 +1133,20 @@ def api_product_permanent_delete(product_id):
         return jsonify({'error': 'Product not found'}), 404
 
     sale_count = Sale.query.filter_by(product_id=product_id).count()
+    data = request.get_json(silent=True) or {}
+    force = bool(data.get('force', False))
+
     if sale_count:
-        return jsonify({'error': f'Cannot delete: product has {sale_count} sale record(s). Archive it instead.'}), 409
+        if not force:
+            return jsonify({
+                'error': f'Cannot delete: product has {sale_count} sale record(s). Archive it first, then delete with force=true.',
+                'sale_count': sale_count,
+                'can_force': p.is_archived,
+            }), 409
+        if not p.is_archived:
+            return jsonify({'error': 'Product must be archived before a force-delete with sales history.'}), 409
+        # Force delete: remove all sale records for this product
+        Sale.query.filter_by(product_id=product_id).delete()
 
     import os as _os, glob as _glob
 
