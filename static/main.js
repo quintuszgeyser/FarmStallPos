@@ -16772,7 +16772,7 @@ async function loadInventoryStats(start, end, productId) {
             </div>
             <div class="d-flex justify-content-between border-top pt-1 mt-1">
               <span class="text-muted">Potential GP</span>
-              <span class="fw-bold text-success">+R${fmt(potProfit)}</span>
+              <span class="fw-bold ${potProfit >= 0 ? 'text-success' : 'text-danger'}">${potProfit >= 0 ? '+' : '-'}R${fmt(Math.abs(potProfit))}</span>
             </div>
           </div>
         </div>
@@ -17129,7 +17129,7 @@ function _invShowCategoryDrilldown() {
       <td>${escapeHtml(c.name)}${c.is_packaging ? ' <span class="badge bg-secondary" style="font-size:9px">PKG</span>' : ''}</td>
       <td class="text-end fw-semibold">R${fmt(c.cost_value)}</td>
       <td class="text-end">R${fmt(c.retail_value)}</td>
-      <td class="text-end text-success">+R${fmt(parseFloat(gp))}</td>
+      <td class="text-end ${parseFloat(gp) >= 0 ? 'text-success' : 'text-danger'}">${parseFloat(gp) >= 0 ? '+' : '-'}R${fmt(Math.abs(parseFloat(gp)))}</td>
       <td class="text-end">${c.products.length}</td>
     </tr>`;
   });
