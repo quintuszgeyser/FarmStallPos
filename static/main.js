@@ -56,6 +56,18 @@ function _bumpCartCount(productId) {
   try { localStorage.setItem('farmpos_cart_counts', JSON.stringify(STATE._cartCount)); } catch {}
 }
 
+// ── Tom Select helper — makes a <select> searchable ──────────────────────────
+const _tomSelects = {};
+function _tomSelectSync(id) {
+  const el = document.getElementById(id);
+  if (!el || typeof TomSelect === 'undefined') return;
+  if (_tomSelects[id]) {
+    _tomSelects[id].sync();
+  } else {
+    _tomSelects[id] = new TomSelect(el, { allowEmptyOption: true, maxItems: 1 });
+  }
+}
+
 // ── Additional Costs Helpers ─────────────────────────────────────────────────
 
 let _costCategories = [
@@ -934,8 +946,9 @@ function renderProductsCards() {
       if ((p.product_family_id || null) !== famFilter) return false;
     }
     if (tab === 'archived')     return p.is_archived === true;
-    if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false;
-    if (tab === 'recipes')      return p.is_archived !== true && p.product_type === 'recipe' && p.is_for_sale !== false;
+    if (tab === 'producable')   return p.is_archived !== true && p.product_type === 'recipe' && p.is_produced === true;
+    if (tab === 'ingredients')  return p.is_archived !== true && p.is_for_sale === false && !(p.product_type === 'recipe' && p.is_produced);
+    if (tab === 'recipes')      return p.is_archived !== true && p.product_type === 'recipe';
     if (tab === 'packaging')    return p.is_archived !== true && isPackagingProduct(p);
     // 'active' (Single Items) = for sale, not archived, not a recipe, not packaging
     return p.is_archived !== true && p.is_for_sale !== false && p.product_type !== 'recipe';
@@ -955,11 +968,12 @@ function renderProductsCards() {
 
   // Update count badges
   const singleCount     = STATE.products.filter(p => !p.is_archived && p.is_for_sale !== false && p.product_type !== 'recipe').length;
-  const ingCount        = STATE.products.filter(p => !p.is_archived && p.is_for_sale === false).length;
+  const ingCount        = STATE.products.filter(p => !p.is_archived && p.is_for_sale === false && !(p.product_type === 'recipe' && p.is_produced)).length;
   const recipeCount     = STATE.products.filter(p => !p.is_archived && p.product_type === 'recipe').length;
   const specialsCount   = (STATE.specials || []).length;
   const archivedCount   = STATE.products.filter(p => p.is_archived).length;
   const packagingCount  = STATE.products.filter(p => !p.is_archived && isPackagingProduct(p)).length;
+  const producableCount = STATE.products.filter(p => !p.is_archived && p.product_type === 'recipe' && p.is_produced).length;
   const setBadge = (id, n) => { const el = document.getElementById(id); if (el) { el.textContent = n; el.style.display = n > 0 ? '' : 'none'; } };
   setBadge('single-count-badge',      singleCount);
   setBadge('ingredients-count-badge', ingCount);
@@ -967,6 +981,7 @@ function renderProductsCards() {
   setBadge('specials-count-badge',    specialsCount);
   setBadge('archived-count-badge',    archivedCount);
   setBadge('packaging-count-badge',   packagingCount);
+  setBadge('producable-count-badge',  producableCount);
   setBadge('categories-count-badge',  (STATE.categories || []).length);
 
   wrap.innerHTML = '';
@@ -1205,16 +1220,28 @@ function _updateSelectionBar() {
   bar.classList.remove('d-none');
   cntEl.textContent = `${count} product${count > 1 ? 's' : ''} selected`;
 
-  // Only show stock-specific actions when at least one stock_item is selected
-  const selectedProds     = (STATE.products || []).filter(p => STATE._selectedProductIds.has(p.id));
-  const anyStockItems     = selectedProds.some(p => p.product_type === 'stock_item');
+  const selectedProds      = (STATE.products || []).filter(p => STATE._selectedProductIds.has(p.id));
+  const anyStockItems      = selectedProds.some(p => p.product_type === 'stock_item');
   const anyProducedRecipes = selectedProds.some(p => p.product_type === 'recipe' && p.is_produced);
-  ['receive', 'stocktake', 'writeoff'].forEach(a => {
+  const isArchivedTab      = STATE.productsSubTab === 'archived';
+
+  // On archived tab: show only restore/delete. On all others: show normal actions.
+  ['stocktake', 'writeoff', 'produce', 'labels', 'edit', 'archive'].forEach(a => {
     const btn = bar.querySelector(`[data-bulk-action="${a}"]`);
-    if (btn) btn.style.display = anyStockItems ? '' : 'none';
+    if (btn) btn.style.display = isArchivedTab ? 'none' : '';
   });
-  const produceBtn = bar.querySelector('[data-bulk-action="produce"]');
-  if (produceBtn) produceBtn.style.display = anyProducedRecipes ? '' : 'none';
+  bar.querySelector('[data-bulk-action="restore"]').style.display        = isArchivedTab ? '' : 'none';
+  bar.querySelector('[data-bulk-action="permanent-delete"]').style.display = isArchivedTab ? '' : 'none';
+
+  if (!isArchivedTab) {
+    // Only show stock-specific actions when at least one stock_item is selected
+    ['stocktake', 'writeoff'].forEach(a => {
+      const btn = bar.querySelector(`[data-bulk-action="${a}"]`);
+      if (btn) btn.style.display = anyStockItems ? '' : 'none';
+    });
+    const produceBtn = bar.querySelector('[data-bulk-action="produce"]');
+    if (produceBtn) produceBtn.style.display = anyProducedRecipes ? '' : 'none';
+  }
 }
 
 // Wire selection bar (main.js loads at end of body, DOM is ready)
@@ -1260,10 +1287,12 @@ function _openBulkAction(action) {
   }
 
   const builders = {
-    receive:   _buildBulkReceive,
-    stocktake: _buildBulkStocktake,
-    writeoff:  _buildBulkWriteoff,
-    archive:   _buildBulkArchive,
+    receive:            _buildBulkReceive,
+    stocktake:          _buildBulkStocktake,
+    writeoff:           _buildBulkWriteoff,
+    archive:            _buildBulkArchive,
+    restore:            _buildBulkRestore,
+    'permanent-delete': _buildBulkDelete,
   };
   if (builders[action]) {
     builders[action](products);
@@ -1593,9 +1622,64 @@ function _buildBulkArchive(products) {
       try {
         await api(`/api/products/${p.id}/archive`, { method: 'POST' });
         ok.push(p.name);
-      } catch (e) { errs.push(`${p.name}: ${e.message}`); }
+      } catch (e) { errs.push(`${p.name}: ${e.data?.detail || e.message}`); }
     }
     if (ok.length) toast(`Archived: ${ok.join(', ')}`, 'success', 5000);
+    if (errs.length) toast(errs.join(' | '), 'error', 7000);
+    if (ok.length) {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
+      STATE._selectedProductIds.clear(); _updateSelectionBar();
+      await loadProducts();
+    }
+  };
+}
+
+function _buildBulkRestore(products) {
+  document.getElementById('bulk-action-title').textContent = `Restore ${products.length} product${products.length > 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-bulk-confirm');
+  btn.textContent = 'Restore All';
+  btn.className   = 'btn btn-success';
+  document.getElementById('bulk-action-body').innerHTML = `
+    <p>Restore the following products? They will be visible for sales again.</p>
+    <ul class="small">${products.map(p => `<li>${escapeHtml(p.name)}</li>`).join('')}</ul>
+  `;
+  btn.onclick = async () => {
+    const errs = [], ok = [];
+    for (const p of products) {
+      try {
+        await api(`/api/products/${p.id}/restore`, { method: 'POST' });
+        ok.push(p.name);
+      } catch (e) { errs.push(`${p.name}: ${e.data?.detail || e.message}`); }
+    }
+    if (ok.length) toast(`Restored: ${ok.join(', ')}`, 'success', 5000);
+    if (errs.length) toast(errs.join(' | '), 'error', 7000);
+    if (ok.length) {
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
+      STATE._selectedProductIds.clear(); _updateSelectionBar();
+      await loadProducts();
+    }
+  };
+}
+
+function _buildBulkDelete(products) {
+  document.getElementById('bulk-action-title').textContent = `Permanently delete ${products.length} product${products.length > 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-bulk-confirm');
+  btn.textContent = 'Delete Permanently';
+  btn.className   = 'btn btn-danger';
+  document.getElementById('bulk-action-body').innerHTML = `
+    <p class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>This cannot be undone.</p>
+    <p class="small">Stock batches, purchase records and data will be permanently removed. Products with sales history cannot be deleted — archive them instead to keep records intact.</p>
+    <ul class="small">${products.map(p => `<li>${escapeHtml(p.name)}</li>`).join('')}</ul>
+  `;
+  btn.onclick = async () => {
+    const errs = [], ok = [];
+    for (const p of products) {
+      try {
+        await api(`/api/products/${p.id}/delete`, { method: 'DELETE' });
+        ok.push(p.name);
+      } catch (e) { errs.push(`${p.name}: ${e.data?.detail || e.message}`); }
+    }
+    if (ok.length) toast(`Deleted: ${ok.join(', ')}`, 'success', 5000);
     if (errs.length) toast(errs.join(' | '), 'error', 7000);
     if (ok.length) {
       bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
@@ -2115,7 +2199,8 @@ function renderCategoryFilterPills() {
   // Compute tab-aware counts so pills reflect what's visible on the current sub-tab
   const tabPred = (() => {
     if (tab === 'archived')    return p => p.is_archived === true;
-    if (tab === 'ingredients') return p => p.is_archived !== true && p.is_for_sale === false;
+    if (tab === 'producable')  return p => p.is_archived !== true && p.product_type === 'recipe' && p.is_produced === true;
+    if (tab === 'ingredients') return p => p.is_archived !== true && p.is_for_sale === false && !(p.product_type === 'recipe' && p.is_produced);
     if (tab === 'recipes')     return p => p.is_archived !== true && p.product_type === 'recipe' && p.is_for_sale !== false;
     if (tab === 'packaging')   return p => p.is_archived !== true && isPackagingProduct(p);
     return p => p.is_archived !== true && p.is_for_sale !== false && p.product_type !== 'recipe';
@@ -2205,6 +2290,7 @@ function _renderFamilyFilterSelect() {
     // Just sync selected value
     sel.value = STATE.selectedFamilyId ?? '';
   }
+  _tomSelectSync('products-family-filter');
 }
 
 // ── Category API helper (used after category rename/delete/merge from product cards) ──
@@ -2628,7 +2714,7 @@ document.getElementById('products-sub-tabs')?.addEventListener('click', (e) => {
   if (filterInput)  filterInput.classList.toggle('hidden', !isProductList);
 
   if (isProductList) {
-    if (newProduct) newProduct.classList.toggle('hidden', STATE.productsSubTab === 'archived');
+    if (newProduct) newProduct.classList.toggle('hidden', STATE.productsSubTab === 'archived' || STATE.productsSubTab === 'producable');
     renderProductsCards();
     if (STATE.productsSubTab === 'recipes') loadIngredients();
     setTimeout(() => {
@@ -3272,6 +3358,8 @@ function renderRecipeLines() {
       <td><button class="btn btn-outline-danger btn-sm" data-rl-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>
     `;
     tbody.appendChild(tr);
+    const _rlIngSel = tr.querySelector('[data-rl-field="ingredient_id"]');
+    if (_rlIngSel && typeof TomSelect !== 'undefined') new TomSelect(_rlIngSel, { allowEmptyOption: true, maxItems: 1 });
   });
 
   // Bind changes
@@ -4462,6 +4550,7 @@ document.addEventListener('click', (e) => {
     if (String(s.id) === String(supplierId)) opt.selected = true;
     supSel.appendChild(opt);
   });
+  _tomSelectSync('edit-batch-supplier');
 
   // Optimistic lock timestamp and reason
   document.getElementById('edit-batch-updated-at').value = editBatchUpdAt;
@@ -6083,39 +6172,17 @@ document.getElementById('btn-delete-product-perm')?.addEventListener('click', as
   const prod   = (STATE.products || []).find(p => p.id === id);
   const isArch = prod?.is_archived;
 
-  if (!confirm(`Permanently delete "${pName}"?\n\nThis cannot be undone. The product and all its stock records will be removed.`)) return;
+  if (!confirm(`Permanently delete "${pName}"?\n\nThis cannot be undone. Stock batches and purchase records will be removed. Products with sales history cannot be deleted.`)) return;
 
-  const _doDelete = async (force) => {
-    await api(`/api/products/${id}/delete`, {
-      method: 'DELETE',
-      body: force ? JSON.stringify({ force: true }) : undefined,
-    });
+  try {
+    await api(`/api/products/${id}/delete`, { method: 'DELETE' });
     toast(`"${pName}" permanently deleted.`, 'success');
     const modal = document.getElementById('productEditorModal');
     if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
     STATE.products = (STATE.products || []).filter(p => p.id !== id);
     renderProductsCards?.();
-  };
-
-  try {
-    await _doDelete(false);
   } catch (err) {
-    // If the product is archived and has sales, offer a force-delete
-    if (err.status === 409 && isArch && err.data?.can_force) {
-      const saleCount = err.data?.sale_count || '?';
-      if (!confirm(
-        `"${pName}" has ${saleCount} sale record(s) in history.\n\n` +
-        `Force-deleting will permanently remove the product AND all ${saleCount} of its sales from the database.\n\n` +
-        `This will affect sales history, reports, and financial records. This CANNOT be undone.\n\nDelete anyway?`
-      )) return;
-      try {
-        await _doDelete(true);
-      } catch (e2) {
-        toast(e2.message || 'Could not delete product.', 'danger', 6000);
-      }
-    } else {
-      toast(err.message || 'Could not delete product.', 'danger', 6000);
-    }
+    toast(err.message || 'Could not delete product.', 'danger', 6000);
   }
 });
 
@@ -8828,6 +8895,7 @@ async function loadUsers() {
         sel.appendChild(o);
       });
       if (current) sel.value = current;
+      _tomSelectSync('tx-adv-user');
     }
   } catch (e) { console.error('loadUsers', e); }
 }
@@ -9622,6 +9690,7 @@ function _populateStatsProductFilter() {
       if (String(p.id) === String(current)) opt.selected = true;
       sel.appendChild(opt);
     });
+  _tomSelectSync('stats-product-filter');
 }
 
 async function loadStats() {
@@ -11928,6 +11997,8 @@ function renderSubsTable() {
       </td>
       <td><button class="${removeBtnClass}" data-sub-remove="${idx}">${removeBtnLabel}</button></td>`;
     tbody.appendChild(tr);
+    const _subRepSel = tr.querySelector('[data-sub-field="replace"]');
+    if (_subRepSel && typeof TomSelect !== 'undefined') new TomSelect(_subRepSel, { allowEmptyOption: true, maxItems: 1 });
 
     tr.querySelector(`[data-sub-field="replace"]`)?.addEventListener('change', e => {
       const repId = parseInt(e.target.value) || null;
@@ -11983,6 +12054,8 @@ function renderSubsTable() {
       </td>
       <td><button class="btn btn-outline-danger btn-sm" data-extra-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>`;
     tbody.appendChild(tr);
+    const _extIngSel = tr.querySelector('[data-extra-field="ingredient_id"]');
+    if (_extIngSel && typeof TomSelect !== 'undefined') new TomSelect(_extIngSel, { allowEmptyOption: true, maxItems: 1 });
 
     tr.querySelector(`[data-extra-field="ingredient_id"]`).addEventListener('change', e => {
       const id  = parseInt(e.target.value) || null;
@@ -14588,6 +14661,7 @@ function _invPopulateCustomers() {
       sel.appendChild(opt);
     });
   if (prev) sel.value = prev;
+  _tomSelectSync('inv-customer-select');
 }
 
 // ── Product search / typeahead ──
@@ -15545,6 +15619,7 @@ async function openLabelDesigner(existingTemplateId) {
     });
     if (LABELS._currentProduct) prodSel.value = LABELS._currentProduct.id;
     prodSel.onchange = ldRequestRender;
+    _tomSelectSync('ld-preview-product');
   }
 
   if (existingTemplateId) {

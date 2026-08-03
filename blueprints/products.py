@@ -1033,12 +1033,21 @@ def api_product_archive(pid):
                 cost_written_off=Decimal('0'), base_unit=p.base_unit, reason='Product archived',
                 adjusted_at=now, user_id=u.id if u else None,
             ))
-    db.session.commit()
-    _cleanup_empty_taxonomies(
-        old_category_id=_arch_cat_id,
-        old_sub_category_id=_arch_sub_id,
-        old_family_id=_arch_family_id,
-    )
+    try:
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        logger.error('archive commit failed pid=%s: %s', pid, e)
+        return jsonify({'error': f'Archive failed: {e}'}), 500
+    try:
+        _cleanup_empty_taxonomies(
+            old_category_id=_arch_cat_id,
+            old_sub_category_id=_arch_sub_id,
+            old_family_id=_arch_family_id,
+        )
+    except Exception as e:
+        db.session.rollback()
+        logger.warning('archive cleanup failed pid=%s (archive succeeded): %s', pid, e)
     cascaded = [r.id for r in affected_recipes if r.is_archived and r.archived_reason == 'cascade']
     return jsonify({'ok': True, 'cascaded_recipe_ids': cascaded})
 
@@ -1133,20 +1142,12 @@ def api_product_permanent_delete(product_id):
         return jsonify({'error': 'Product not found'}), 404
 
     sale_count = Sale.query.filter_by(product_id=product_id).count()
-    data = request.get_json(silent=True) or {}
-    force = bool(data.get('force', False))
 
     if sale_count:
-        if not force:
-            return jsonify({
-                'error': f'Cannot delete: product has {sale_count} sale record(s). Archive it first, then delete with force=true.',
-                'sale_count': sale_count,
-                'can_force': p.is_archived,
-            }), 409
-        if not p.is_archived:
-            return jsonify({'error': 'Product must be archived before a force-delete with sales history.'}), 409
-        # Force delete: remove all sale records for this product
-        Sale.query.filter_by(product_id=product_id).delete()
+        return jsonify({
+            'error': f'Cannot delete: product has {sale_count} sale record(s). Sales history is preserved — archive the product instead.',
+            'sale_count': sale_count,
+        }), 409
 
     import os as _os, glob as _glob
 
