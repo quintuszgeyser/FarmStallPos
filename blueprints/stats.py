@@ -154,6 +154,8 @@ def api_stats():
     # For weight/volume products: track sum and count per transaction line to compute avg portion
     _pid_line_qty = defaultdict(list)
     for r in rows:
+        if r.product_id is None:
+            continue  # deleted product — counted in revenue totals, excluded from per-product breakdown
         top_qty_map[r.product_id] += float(r.qty)
         top_revenue_map[r.product_id] += float(Decimal(str(r.qty)) * r.unit_price)
         _pid_line_qty[r.product_id].append(float(r.qty))

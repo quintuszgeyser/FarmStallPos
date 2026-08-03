@@ -1967,6 +1967,17 @@ def strong_migrate():
             "ON product_purchase_options(product_id)"
         )
 
+        # Allow product_id to be NULL on sales so archived products can be permanently
+        # deleted while keeping their sale rows intact for history and stats.
+        # product_name is snapshotted at deletion time so the name is still visible.
+        pg_try("ALTER TABLE sales ALTER COLUMN product_id DROP NOT NULL")
+        pg_try("ALTER TABLE sales ADD COLUMN product_name VARCHAR(200)")
+        # Backfill product_name for existing rows where it is still NULL
+        pg_try("""
+            UPDATE sales s SET product_name = p.name
+            FROM products p WHERE s.product_id = p.id AND s.product_name IS NULL
+        """)
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 

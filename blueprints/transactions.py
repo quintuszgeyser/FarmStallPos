@@ -130,7 +130,8 @@ def api_transactions_get():
 
     rows = q.order_by(Sale.id.desc()).limit(2000).all()
 
-    product_names = {prod.id: prod.name for prod in Product.query.filter(Product.id.in_({r.product_id for r in rows})).all()} if rows else {}
+    _pids = {r.product_id for r in rows if r.product_id}
+    product_names = {prod.id: prod.name for prod in Product.query.filter(Product.id.in_(_pids)).all()} if _pids else {}
     user_names    = {usr.id: usr.username for usr in User.query.filter(User.id.in_({r.user_id for r in rows if r.user_id})).all()} if rows else {}
 
     grouped = defaultdict(list)
@@ -208,7 +209,7 @@ def api_transactions_get():
         for ln in grouped[sid]:
             subtotal = Decimal(str(ln.qty)) * ln.unit_price
             total   += subtotal
-            line     = {'product_id': ln.product_id, 'name': product_names.get(ln.product_id, f'Product {ln.product_id}'), 'qty': float(ln.qty), 'unit_price': float(ln.unit_price), 'subtotal': float(subtotal)}
+            line     = {'product_id': ln.product_id, 'name': product_names.get(ln.product_id) or ln.product_name or f'Product {ln.product_id}', 'qty': float(ln.qty), 'unit_price': float(ln.unit_price), 'subtotal': float(subtotal)}
             if ln.discount_json:
                 try: line['discount'] = _json.loads(ln.discount_json)
                 except Exception: pass

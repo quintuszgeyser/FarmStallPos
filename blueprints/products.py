@@ -1144,10 +1144,15 @@ def api_product_permanent_delete(product_id):
     sale_count = Sale.query.filter_by(product_id=product_id).count()
 
     if sale_count:
-        return jsonify({
-            'error': f'Cannot delete: product has {sale_count} sale record(s). Sales history is preserved — archive the product instead.',
-            'sale_count': sale_count,
-        }), 409
+        # Snapshot name onto each sale row, then NULL the FK so the product can be deleted
+        # while full sales history (stats, transactions) remains intact.
+        db.session.execute(
+            db.text(
+                "UPDATE sales SET product_name = :name, product_id = NULL "
+                "WHERE product_id = :pid"
+            ),
+            {'name': p.name, 'pid': product_id}
+        )
 
     import os as _os, glob as _glob
 

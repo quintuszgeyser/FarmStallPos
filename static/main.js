@@ -1668,7 +1668,7 @@ function _buildBulkDelete(products) {
   btn.className   = 'btn btn-danger';
   document.getElementById('bulk-action-body').innerHTML = `
     <p class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>This cannot be undone.</p>
-    <p class="small">Stock batches, purchase records and data will be permanently removed. Products with sales history cannot be deleted — archive them instead to keep records intact.</p>
+    <p class="small">The product record will be permanently removed. Any sales history is preserved — transactions and stats remain intact with the product name.</p>
     <ul class="small">${products.map(p => `<li>${escapeHtml(p.name)}</li>`).join('')}</ul>
   `;
   btn.onclick = async () => {
@@ -6172,7 +6172,7 @@ document.getElementById('btn-delete-product-perm')?.addEventListener('click', as
   const prod   = (STATE.products || []).find(p => p.id === id);
   const isArch = prod?.is_archived;
 
-  if (!confirm(`Permanently delete "${pName}"?\n\nThis cannot be undone. Stock batches and purchase records will be removed. Products with sales history cannot be deleted.`)) return;
+  if (!confirm(`Permanently delete "${pName}"?\n\nThe product record will be removed. Sales history and stats are preserved with the product name.`)) return;
 
   try {
     await api(`/api/products/${id}/delete`, { method: 'DELETE' });
