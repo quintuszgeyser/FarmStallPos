@@ -50,6 +50,7 @@ _EDITABLE = {
     'settlement_basis':      {'type': 'str',         'label': 'Settlement basis'},
     'consignment_pct':       {'type': 'float',       'label': 'Consignment %'},
     'is_default_variant':    {'type': 'bool',        'label': 'Default variant'},
+    'inventory_policy':      {'type': 'str',         'label': 'Inventory Policy (STRICT / WARN / ALLOW_NEGATIVE)'},
 }
 
 # ── Filterable fields ────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ _FILTERABLE = {
     'settlement_basis':     {'type': 'str',    'label': 'Settlement basis'},
     'consignment_pct':      {'type': 'float',  'label': 'Consignment %'},
     'is_default_variant':   {'type': 'bool',   'label': 'Default variant'},
+    'inventory_policy':     {'type': 'str',    'label': 'Inventory Policy'},
 }
 
 
@@ -337,6 +339,13 @@ def _apply_action(p, action):
                 return False
             cat.is_packaging = new_val
             return True
+        elif field == 'inventory_policy':
+            v = str(value or '').strip().upper()
+            if v not in ('STRICT', 'WARN', 'ALLOW_NEGATIVE'):
+                return False
+            if getattr(p, 'inventory_policy', None) == v:
+                return False
+            p.inventory_policy = v
         else:
             coerced = _coerce_value(field, value)
             old = getattr(p, field, None)

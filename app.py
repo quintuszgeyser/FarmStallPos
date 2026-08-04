@@ -1979,6 +1979,24 @@ def strong_migrate():
         """)
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS inventory_policy VARCHAR(20) NOT NULL DEFAULT 'STRICT'")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS batch_type VARCHAR(30) NOT NULL DEFAULT 'normal'")
+        # One-time: set correct policy defaults based on product role.
+        # is_produced=True → ALLOW_NEGATIVE; ingredient (not for sale) → STRICT; at-till → WARN.
+        # Guarded by a settings flag so manual overrides are never clobbered on restart.
+        pg_try("""
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'migration_inv_policy_defaults') THEN
+                UPDATE products SET inventory_policy = 'ALLOW_NEGATIVE' WHERE is_produced = TRUE;
+                UPDATE products SET inventory_policy = 'STRICT'
+                  WHERE is_produced = FALSE AND is_for_sale = FALSE;
+                UPDATE products SET inventory_policy = 'WARN'
+                  WHERE is_produced = FALSE AND is_for_sale = TRUE;
+                INSERT INTO settings (key, value)
+                  VALUES ('migration_inv_policy_defaults', 'done')
+                  ON CONFLICT (key) DO NOTHING;
+              END IF;
+            END $$;
+        """)
 
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.

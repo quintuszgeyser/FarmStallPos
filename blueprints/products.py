@@ -305,7 +305,12 @@ def api_products_post():
 
     auto_price = bool(data.get('auto_price', True))
 
-    _default_policy  = 'ALLOW_NEGATIVE' if product_type == 'recipe' else 'STRICT'
+    if is_produced:
+        _default_policy = 'ALLOW_NEGATIVE'
+    elif is_for_sale:
+        _default_policy = 'WARN'
+    else:
+        _default_policy = 'STRICT'
     inv_policy_raw   = str(data.get('inventory_policy') or _default_policy).strip().upper()
     inventory_policy = inv_policy_raw if inv_policy_raw in ('STRICT', 'WARN', 'ALLOW_NEGATIVE') else _default_policy
 
