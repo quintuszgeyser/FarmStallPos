@@ -28,7 +28,17 @@ def _git_commit():
     if val and val != 'unknown':
         _CACHED_GIT_COMMIT = val
         return _CACHED_GIT_COMMIT
-    # 2. Ask git (works in server containers where source is git-cloned)
+    # 2. /app/COMMIT file written by deploy.sh after QA docker-commit bake
+    try:
+        _commit_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'COMMIT')
+        with open(_commit_file) as _f:
+            _fval = _f.read().strip()
+        if _fval and _fval != 'unknown':
+            _CACHED_GIT_COMMIT = _fval
+            return _CACHED_GIT_COMMIT
+    except Exception:
+        pass
+    # 3. Ask git (works in server containers where source is git-cloned)
     try:
         result = subprocess.run(
             ['git', 'rev-parse', '--short', 'HEAD'],

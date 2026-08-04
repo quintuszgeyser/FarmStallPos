@@ -173,6 +173,19 @@ deploy_qa() {
 
   docker compose up -d qa-pos
   wait_healthy qa-farmpos-app "QA POS"
+
+  # Bake GIT_COMMIT env var into the QA image so PROD promotion always carries the right hash.
+  # We ask the running container (which has git + .git from the clone) for its commit, then
+  # docker-commit a new layer with GIT_COMMIT set.  The running container keeps working;
+  # PROD re-tags this updated image so it doesn't have to run git at all.
+  _GC=$(docker exec qa-farmpos-app git -C /app rev-parse --short HEAD 2>/dev/null \
+        || docker exec qa-farmpos-app bash -c "cat /app/COMMIT 2>/dev/null" \
+        || echo "")
+  if [ -n "$_GC" ] && [ "$_GC" != "unknown" ]; then
+    docker commit -c "ENV GIT_COMMIT=$_GC" qa-farmpos-app "$QA_IMAGE" >/dev/null 2>&1 \
+      && echo "[deploy] GIT_COMMIT=$_GC baked into $QA_IMAGE"
+  fi
+
   docker image inspect "$QA_IMAGE" --format '{{.Id}}' > /tmp/qa_image_id.txt 2>/dev/null || true
   echo "[deploy] QA artifact: $QA_IMAGE ($(cat /tmp/qa_image_id.txt 2>/dev/null))"
 
