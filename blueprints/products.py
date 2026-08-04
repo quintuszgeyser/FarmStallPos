@@ -1567,12 +1567,33 @@ def api_suggested_price(pid):
         markup = float(markup_param) if markup_param else float(get_setting('markup_percent', 20) or 20)
     except Exception:
         markup = 20.0
-    batches   = StockBatch.query.filter_by(product_id=pid).filter(StockBatch.qty_remaining_base > 0).all()
-    total_qty = sum(float(b.qty_remaining_base) for b in batches)
-    if total_qty > 0:
-        wac = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches) / total_qty
+
+    if p.product_type == 'recipe':
+        # Recipes have no stock batches of their own — compute WAC from ingredients
+        def _ingredient_cost(product_id, _depth=0):
+            if _depth > 10: return 0.0
+            total = 0.0
+            for ln in RecipeLine.query.filter_by(product_id=product_id).all():
+                ing = db.session.get(Product, ln.ingredient_id)
+                if not ing: continue
+                if ing.product_type == 'recipe':
+                    sub_batch = float(ing.batch_size or 1) or 1.0
+                    sub_cost  = _ingredient_cost(ing.id, _depth + 1)
+                    total += float(ln.qty_base) * (sub_cost / sub_batch)
+                else:
+                    total += float(ln.qty_base) * get_fifo_cost_per_unit(ln.ingredient_id)
+            return total
+        raw_cost   = _ingredient_cost(pid)
+        batch_size = float(p.batch_size or 1) or 1.0
+        wac = raw_cost / batch_size if p.is_produced else raw_cost
     else:
-        wac = 0.0
+        batches   = StockBatch.query.filter_by(product_id=pid).filter(StockBatch.qty_remaining_base > 0).all()
+        total_qty = sum(float(b.qty_remaining_base) for b in batches)
+        if total_qty > 0:
+            wac = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches) / total_qty
+        else:
+            wac = 0.0
+
     return jsonify({'product_id': pid, 'wac': round(wac, 4), 'markup_percent': markup, 'suggested_price': round(wac * (1 + markup / 100.0), 2)})
 
 
