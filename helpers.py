@@ -311,6 +311,23 @@ def get_stock_level(product_id):
     return float(result or 0)
 
 
+def absorb_neg_placeholder(product_id, incoming_qty_dec):
+    """When receiving stock, absorb any existing negative-placeholder batch first.
+    Returns the amount absorbed (Decimal). The new batch's qty_remaining_base
+    should be reduced by this amount so the visible available qty is correct."""
+    _neg = (StockBatch.query
+            .filter_by(product_id=product_id, batch_type='negative_placeholder')
+            .filter(StockBatch.qty_remaining_base < 0)
+            .with_for_update()
+            .first())
+    if not _neg:
+        return Decimal('0')
+    _neg_qty  = abs(Decimal(str(_neg.qty_remaining_base)))
+    _absorbed = min(_neg_qty, incoming_qty_dec)
+    _neg.qty_remaining_base = Decimal(str(_neg.qty_remaining_base)) + _absorbed
+    return _absorbed
+
+
 def get_fifo_cost_per_unit(product_id):
     batch = (StockBatch.query
              .filter_by(product_id=product_id)

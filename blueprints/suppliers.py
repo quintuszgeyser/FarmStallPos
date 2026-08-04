@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products
+from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
                     SupplierInvoiceTemplate, SupplierProductMapping,
@@ -1689,10 +1689,13 @@ def api_suppliers_purchase_run(sid):
         _cuc        = pl.get('consignment_unit_cost')
         if _ownership == 'CONSIGNMENT' and _cuc is None and pl['qty_base']:
             _cuc = float((pl['base_cost_total'] / Decimal(str(pl['qty_base']))).quantize(Decimal('0.0001')))
+        _pr_qty_dec    = Decimal(str(pl['qty_base']))
+        _pr_absorbed   = absorb_neg_placeholder(pl['pid'], _pr_qty_dec)
+        _pr_remaining  = float(_pr_qty_dec - _pr_absorbed)
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
-            qty_remaining_base=pl['qty_base'],
+            qty_remaining_base=_pr_remaining,
             cost_per_base_unit=cost_per_base,
             ownership_type=_ownership,
             consignment_unit_cost=_cuc,
@@ -2228,10 +2231,13 @@ def api_supplier_invoice_update(sid, inv_id):
                                   if e.get('type') == 'shipping') if batch_addl else Decimal('0')
         final_cost_upd      = base_incl_vat_upd + share - disc_share_upd
         cost_per_base       = final_cost_upd / Decimal(str(pl['qty_base']))
+        _upd_qty_dec    = Decimal(str(pl['qty_base']))
+        _upd_absorbed   = absorb_neg_placeholder(pl['pid'], _upd_qty_dec)
+        _upd_remaining  = float(_upd_qty_dec - _upd_absorbed)
         db.session.add(StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
-            qty_remaining_base=pl['qty_base'],
+            qty_remaining_base=_upd_remaining,
             cost_per_base_unit=cost_per_base,
             base_cost_total=pl['base_cost_total'],
             vat_amount=float(vat_share.quantize(Decimal('0.0001'))) if vat_total_upd > 0 else None,

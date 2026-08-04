@@ -11,6 +11,7 @@ from sqlalchemy import func
 from helpers import (
     require_login, require_role, current_user,
     get_stock_level, consume_fifo, reverse_fifo, _parse_dt, _auto_price_products,
+    absorb_neg_placeholder,
 )
 from models import (
     db,
@@ -261,8 +262,11 @@ def api_stock_receive():
 
     _is_consign = bool(getattr(p, 'is_consignment', False))
     _cuc = float((base_cost_total / Decimal(str(qty_base))).quantize(Decimal('0.0001'))) if _is_consign and qty_base else None
+    _qty_base_dec  = Decimal(str(qty_base))
+    _neg_absorbed  = absorb_neg_placeholder(pid, _qty_base_dec)
+    _qty_remaining = float(_qty_base_dec - _neg_absorbed)
     batch = StockBatch(
-        product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=qty_base,
+        product_id=pid, qty_purchased_base=qty_base, qty_remaining_base=_qty_remaining,
         cost_per_base_unit=cost_per_base,
         ownership_type='CONSIGNMENT' if _is_consign else 'NORMAL',
         consignment_unit_cost=_cuc,
