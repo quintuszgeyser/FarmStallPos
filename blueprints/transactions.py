@@ -370,7 +370,7 @@ def api_transactions_post():
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
             sale_row.cogs = consume_fifo(pid, qty, sale_uuid, now, sale_unit_price=unit_price)
             _pol_main = getattr(p, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
-            if _pol_main == 'ALLOW_NEGATIVE':
+            if _pol_main in ('ALLOW_NEGATIVE', 'WARN'):
                 _pre = _pre_stock.get(pid, Decimal('0'))
                 _shortfall = qty - max(Decimal('0'), _pre)
                 if _shortfall > 0:

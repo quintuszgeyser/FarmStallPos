@@ -308,7 +308,7 @@ def api_products_post():
     if is_produced:
         _default_policy = 'ALLOW_NEGATIVE'
     elif is_for_sale:
-        _default_policy = 'WARN'
+        _default_policy = 'ALLOW_NEGATIVE'
     else:
         _default_policy = 'STRICT'
     inv_policy_raw   = str(data.get('inventory_policy') or _default_policy).strip().upper()

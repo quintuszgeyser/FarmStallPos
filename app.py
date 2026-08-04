@@ -1989,10 +1989,23 @@ def strong_migrate():
                 UPDATE products SET inventory_policy = 'ALLOW_NEGATIVE' WHERE is_produced = TRUE;
                 UPDATE products SET inventory_policy = 'STRICT'
                   WHERE is_produced = FALSE AND is_for_sale = FALSE;
-                UPDATE products SET inventory_policy = 'WARN'
+                UPDATE products SET inventory_policy = 'ALLOW_NEGATIVE'
                   WHERE is_produced = FALSE AND is_for_sale = TRUE;
                 INSERT INTO settings (key, value)
                   VALUES ('migration_inv_policy_defaults', 'done')
+                  ON CONFLICT (key) DO NOTHING;
+              END IF;
+            END $$;
+        """)
+        # v2: fix servers where v1 already ran with WARN for at-till products
+        pg_try("""
+            DO $$
+            BEGIN
+              IF NOT EXISTS (SELECT 1 FROM settings WHERE key = 'migration_inv_policy_defaults_v2') THEN
+                UPDATE products SET inventory_policy = 'ALLOW_NEGATIVE'
+                  WHERE is_produced = FALSE AND is_for_sale = TRUE AND inventory_policy = 'WARN';
+                INSERT INTO settings (key, value)
+                  VALUES ('migration_inv_policy_defaults_v2', 'done')
                   ON CONFLICT (key) DO NOTHING;
               END IF;
             END $$;
