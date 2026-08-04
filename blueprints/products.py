@@ -1569,7 +1569,10 @@ def api_suggested_price(pid):
         markup = 20.0
 
     if p.product_type == 'recipe':
-        # Recipes have no stock batches of their own — compute WAC from ingredients
+        # Recipes have no stock batches of their own — compute WAC from ingredients.
+        # For sub-recipe ingredients: use their actual produced/purchased WAC if stock
+        # exists; fall back to BOM recursion so we still get a theoretical cost even
+        # before the first production run.
         def _ingredient_cost(product_id, _depth=0):
             if _depth > 10: return 0.0
             total = 0.0
@@ -1577,9 +1580,15 @@ def api_suggested_price(pid):
                 ing = db.session.get(Product, ln.ingredient_id)
                 if not ing: continue
                 if ing.product_type == 'recipe':
-                    sub_batch = float(ing.batch_size or 1) or 1.0
-                    sub_cost  = _ingredient_cost(ing.id, _depth + 1)
-                    total += float(ln.qty_base) * (sub_cost / sub_batch)
+                    # Use actual stock WAC if available (produced or received batches)
+                    actual_wac = get_fifo_cost_per_unit(ing.id)
+                    if actual_wac > 0:
+                        total += float(ln.qty_base) * actual_wac
+                    else:
+                        # No stock yet — recurse into BOM for theoretical cost
+                        sub_batch = float(ing.batch_size or 1) or 1.0
+                        sub_cost  = _ingredient_cost(ing.id, _depth + 1)
+                        total += float(ln.qty_base) * (sub_cost / sub_batch)
                 else:
                     total += float(ln.qty_base) * get_fifo_cost_per_unit(ln.ingredient_id)
             return total
