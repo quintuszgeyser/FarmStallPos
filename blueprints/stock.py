@@ -15,7 +15,7 @@ from helpers import (
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, Purchase, Supplier, User,
-    SupplierInvoice,
+    SupplierInvoice, Sale,
 )
 
 bp = Blueprint('stock', __name__)
@@ -908,19 +908,39 @@ def api_stock_negative():
         return jsonify([])
     pids = [r.product_id for r in rows]
     products = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()}
+
+    # Pull negative placeholder batches to get when each product first went negative
+    neg_placeholders = (StockBatch.query
+                        .filter(StockBatch.product_id.in_(pids),
+                                StockBatch.batch_type == 'negative_placeholder')
+                        .all())
+    neg_since_map = {nb.product_id: nb.purchased_at for nb in neg_placeholders}
+
+    # Count sale lines per product since its placeholder was created
+    sale_counts = {}
+    for pid2, since_dt in neg_since_map.items():
+        sale_counts[pid2] = Sale.query.filter(
+            Sale.product_id == pid2,
+            Sale.voided == False,
+            Sale.date_time >= since_dt,
+        ).count()
+
     result = []
     for r in rows:
         p = products.get(r.product_id)
         if not p:
             continue
+        since_dt = neg_since_map.get(r.product_id)
         result.append({
-            'product_id':       r.product_id,
-            'name':             p.name,
-            'stock_level':      float(r.total),
-            'unit_type':        p.unit_type,
-            'base_unit':        p.base_unit,
-            'product_type':     p.product_type,
-            'inventory_policy': p.inventory_policy or 'ALLOW_NEGATIVE',
+            'product_id':            r.product_id,
+            'name':                  p.name,
+            'stock_level':           float(r.total),
+            'unit_type':             p.unit_type,
+            'base_unit':             p.base_unit,
+            'product_type':          p.product_type,
+            'inventory_policy':      p.inventory_policy or 'ALLOW_NEGATIVE',
+            'negative_since':        since_dt.date().isoformat() if since_dt else None,
+            'negative_transactions': sale_counts.get(r.product_id, 0),
         })
     result.sort(key=lambda x: x['stock_level'])
     return jsonify(result)

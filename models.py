@@ -465,6 +465,7 @@ class StockBatch(db.Model):
     # Values: NORMAL | CONSIGNMENT | RETURNED
     ownership_type        = db.Column(db.String(20), nullable=False, default='NORMAL', server_default="'NORMAL'")
     consignment_unit_cost = db.Column(Numeric(10, 4), nullable=True)  # settlement contract cost, separate from FIFO cost
+    batch_type            = db.Column(db.String(30), nullable=False, default='normal', server_default="'normal'")
 
 
 class StockConsumption(db.Model):

@@ -305,8 +305,9 @@ def api_products_post():
 
     auto_price = bool(data.get('auto_price', True))
 
-    inv_policy_raw = str(data.get('inventory_policy') or 'ALLOW_NEGATIVE').strip().upper()
-    inventory_policy = inv_policy_raw if inv_policy_raw in ('STRICT', 'WARN', 'ALLOW_NEGATIVE') else 'ALLOW_NEGATIVE'
+    _default_policy  = 'ALLOW_NEGATIVE' if product_type == 'recipe' else 'STRICT'
+    inv_policy_raw   = str(data.get('inventory_policy') or _default_policy).strip().upper()
+    inventory_policy = inv_policy_raw if inv_policy_raw in ('STRICT', 'WARN', 'ALLOW_NEGATIVE') else _default_policy
 
     sub_category_id   = _resolve_sub_category(
         category_id,
@@ -991,10 +992,24 @@ def api_product_produce(pid):
     cost_per_unit  = total_cost / units_added if units_added > 0 else Decimal('0')
     before_stock   = get_stock_level(pid)
 
+    # Reconcile any outstanding negative placeholder (created by ALLOW_NEGATIVE sales).
+    # Absorb the negative into this batch so net stock is correct without phantom negatives.
+    _neg_ph = (StockBatch.query
+               .filter_by(product_id=pid, batch_type='negative_placeholder')
+               .filter(StockBatch.qty_remaining_base < 0)
+               .with_for_update()
+               .first())
+    _reconciled_units = 0
+    if _neg_ph:
+        _neg_qty = abs(Decimal(str(_neg_ph.qty_remaining_base)))
+        _cancel  = min(_neg_qty, Decimal(str(units_added)))
+        _neg_ph.qty_remaining_base = Decimal(str(_neg_ph.qty_remaining_base)) + _cancel
+        _reconciled_units = int(_cancel.to_integral_value())
+
     db.session.add(StockBatch(
         product_id=pid,
         qty_purchased_base=units_added,
-        qty_remaining_base=units_added,
+        qty_remaining_base=units_added - _reconciled_units,  # net after cancelling negative placeholder
         cost_per_base_unit=cost_per_unit,
         base_cost_total=total_ingredient_cost,
         additional_costs=_json.dumps(addl_costs) if addl_costs else None,

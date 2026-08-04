@@ -17427,6 +17427,7 @@ async function _loadNegativeStock() {
       return `<tr>
         <td>${escapeHtml(item.name)}</td>
         <td class="text-end text-danger fw-semibold">${qty}</td>
+        <td class="small text-muted">${item.negative_since || '—'}${item.negative_transactions ? ` <span class="badge bg-secondary">${item.negative_transactions} sales</span>` : ''}</td>
         <td>${polBadge}</td>
         <td class="text-end">
           ${item.product_type === 'recipe' ? `<button class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.75rem" onclick="_negStockProduce(${item.product_id})">Produce</button>` : ''}
