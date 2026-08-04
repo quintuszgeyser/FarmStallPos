@@ -86,6 +86,7 @@ class Product(db.Model):
     is_default_variant = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     # Packaging: optional capacity hint (how many units fit in this box). NULL = unlimited.
     packaging_capacity = db.Column(db.Integer, nullable=True)
+    inventory_policy   = db.Column(db.String(20), nullable=False, default='ALLOW_NEGATIVE', server_default="'ALLOW_NEGATIVE'")
 
 
 class Category(db.Model):

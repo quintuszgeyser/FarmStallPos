@@ -2874,6 +2874,8 @@ function openProductEditor(p) {
   if (_batchSizeEl) _batchSizeEl.value = p?.batch_size ?? 1;
   const _stockUnitEl = document.getElementById('p-stock-unit');
   if (_stockUnitEl) _stockUnitEl.value = p?.stock_unit ?? '';
+  const _ipEl = document.getElementById('prod-inventory-policy');
+  if (_ipEl) _ipEl.value = p?.inventory_policy || 'ALLOW_NEGATIVE';
   const _onlineEl = document.getElementById('p-is-available-online');
   if (_onlineEl) _onlineEl.checked = !!p?.is_available_online;
 
@@ -4015,6 +4017,8 @@ function buildProductPayload() {
     consignment_pct:  (() => { const v = parseFloat(document.getElementById('p-consignment-pct')?.value || ''); return isNaN(v) ? null : v; })(),
     // Auto-price
     auto_price: document.getElementById('p-auto-price')?.checked ?? true,
+    // Inventory policy
+    inventory_policy: document.getElementById('prod-inventory-policy')?.value || 'ALLOW_NEGATIVE',
     // Sub-category — send id if existing, name if new (backend resolves)
     sub_category_id:   (typeof _currentSubCatId === 'number') ? _currentSubCatId : null,
     sub_category_name: (_currentSubCatId === 'new' ? _currentSubCatName : null),
@@ -7732,8 +7736,8 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     ...(STATE._cartDiscount               ? { cart_discount: STATE._cartDiscount               } : {}),
   };
 
-  try {
-    const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(requestBody) });
+  async function _doSubmitSale(body) {
+    const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(body) });
     STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; STATE.packagingHints = {}; renderCart();
     // Reset split inputs for the next sale
     document.getElementById('split-cash-input').value = '';
@@ -7741,6 +7745,7 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     document.getElementById('split-balance').textContent = '';
     await loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
     await loadProducts();
+    _loadNegativeStock();
     const kitchenMsg = j.kitchen_orders > 0 ? ` - ${j.kitchen_orders} kitchen order${j.kitchen_orders > 1 ? 's' : ''} queued` : '';
     toast(`Sale complete - #${String(j.transaction_id).slice(0,8)}${kitchenMsg}`, 'success', 4000);
     // Auto-print receipt if enabled in settings
@@ -7760,7 +7765,34 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
       const kitchenPane = document.getElementById('kitchen');
       if (kitchenPane?.classList.contains('active')) loadKitchenOrders();
     }
-  } catch (e) { toast(e.message, 'error'); }
+  }
+
+  try {
+    await _doSubmitSale(requestBody);
+  } catch (e) {
+    // WARN policy: server returned 409 with warn:true — show confirmation then re-submit
+    if (e.status === 409 && e.data?.warn) {
+      const warnItems = e.data.warnings || [];
+      const warnBody = document.getElementById('stock-warn-body');
+      if (warnBody) {
+        warnBody.innerHTML = `<p class="mb-2">${escapeHtml(e.data.message || 'Some items are out of stock.')}</p><ul class="mb-0">${
+          warnItems.map(w => `<li><strong>${escapeHtml(w.name)}</strong> — have ${w.available}, need ${w.needed}</li>`).join('')
+        }</ul>`;
+      }
+      const modal = new bootstrap.Modal(document.getElementById('stockWarnModal'));
+      const confirmBtn = document.getElementById('btn-stock-warn-confirm');
+      const handler = async () => {
+        confirmBtn.removeEventListener('click', handler);
+        modal.hide();
+        try { await _doSubmitSale({ ...requestBody, force: true }); }
+        catch (e2) { toast(e2.message, 'error'); }
+      };
+      confirmBtn.addEventListener('click', handler);
+      modal.show();
+    } else {
+      toast(e.message, 'error');
+    }
+  }
 });
 
 // ── Split payment UI ─────────────────────────────────────────────────────────
@@ -11561,6 +11593,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
     if (STATE.products.length === 0) await loadProducts(); else renderProductsCards();
     loadPendingPricesBanner();
     loadIngredients();  // populates Stock Overview (expanded by default) and cost map
+    _loadNegativeStock();
     setTimeout(() => {
       const wrap = document.getElementById('products-card-list');
       if (wrap?._pendingBarcodeItems) _renderBarcodes(wrap._pendingBarcodeItems);
@@ -17369,4 +17402,47 @@ function _invShowShrinkageDrilldown() {
   });
   html += `</tbody></table></div>`;
   _openInventoryDrilldown('All Shrinkage / Variances', html);
+}
+
+// ── Negative Stock Dashboard ──────────────────────────────────────────────────
+async function _loadNegativeStock() {
+  if (!isAdmin()) return;
+  try {
+    const items = await api('/api/stock/negative');
+    const panel   = document.getElementById('negative-stock-panel');
+    const tbody   = document.getElementById('negative-stock-tbody');
+    const countEl = document.getElementById('negative-stock-count');
+    if (!panel || !tbody) return;
+    if (!items.length) { panel.style.display = 'none'; return; }
+    panel.style.display = '';
+    if (countEl) countEl.textContent = items.length;
+    tbody.innerHTML = items.map(item => {
+      const pol = item.inventory_policy;
+      const polBadge = pol === 'STRICT' ? '<span class="badge bg-danger">Strict</span>'
+                     : pol === 'WARN'   ? '<span class="badge bg-warning text-dark">Warn</span>'
+                     : '<span class="badge bg-secondary">Allow</span>';
+      const qty = item.unit_type === 'weight' ? `${item.stock_level.toFixed(0)} g`
+                : item.unit_type === 'volume' ? `${item.stock_level.toFixed(0)} ml`
+                : item.stock_level.toFixed(0);
+      return `<tr>
+        <td>${escapeHtml(item.name)}</td>
+        <td class="text-end text-danger fw-semibold">${qty}</td>
+        <td>${polBadge}</td>
+        <td class="text-end">
+          ${item.product_type === 'recipe' ? `<button class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.75rem" onclick="_negStockProduce(${item.product_id})">Produce</button>` : ''}
+          <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" style="font-size:0.75rem" onclick="_negStockAdjust(${item.product_id})">Adjust</button>
+        </td>
+      </tr>`;
+    }).join('');
+  } catch (e) { /* silently ignore */ }
+}
+
+function _negStockProduce(productId) {
+  const p = STATE.products.find(x => x.id === productId);
+  if (p) openProduceModal(p);
+}
+
+function _negStockAdjust(productId) {
+  const p = STATE.products.find(x => x.id === productId);
+  if (p) openStocktakeModal(p);
 }

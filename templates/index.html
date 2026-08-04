@@ -1062,6 +1062,24 @@
         <button class="btn btn-outline-secondary btn-sm" onclick="clearExtraProductFilters()" title="Clear family filter">Clear</button>
       </div>
 
+      <!-- Negative Inventory Alert (admin only) -->
+      <div id="negative-stock-panel" class="mb-3" style="display:none">
+        <div class="card border-warning">
+          <div class="card-header bg-warning bg-opacity-10 d-flex justify-content-between align-items-center py-2">
+            <span class="fw-semibold text-warning-emphasis"><i class="bi bi-exclamation-triangle me-1"></i>Negative Inventory (<span id="negative-stock-count">0</span> items)</span>
+            <button class="btn btn-sm btn-outline-secondary py-0" type="button" data-bs-toggle="collapse" data-bs-target="#negative-stock-body" title="Collapse"><i class="bi bi-chevron-down"></i></button>
+          </div>
+          <div class="collapse show" id="negative-stock-body">
+            <div class="card-body p-0">
+              <table class="table table-sm table-hover mb-0 small">
+                <thead class="table-light"><tr><th>Product</th><th class="text-end">Stock</th><th>Policy</th><th></th></tr></thead>
+                <tbody id="negative-stock-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="products-card-list" class="mt-1"></div>
       <div id="products-list" class="list-group"></div>
 
@@ -3017,6 +3035,17 @@
           </div>
         </div>
 
+        <!-- ── Inventory Policy ── -->
+        <div class="mb-3">
+          <label class="form-label small fw-semibold mb-1">Inventory Policy</label>
+          <select class="form-select form-select-sm" id="prod-inventory-policy">
+            <option value="ALLOW_NEGATIVE">Allow Negative — sell when out of stock (stock goes negative)</option>
+            <option value="WARN">Warn — prompt before selling out of stock</option>
+            <option value="STRICT">Strict — block sale when out of stock</option>
+          </select>
+          <div class="form-text">Controls what happens at the till when stock reaches zero.</div>
+        </div>
+
 
         <!-- ── Scale Settings ── -->
         <div id="section-scale" class="border rounded p-3 mb-3" style="background:#f8f9fa">
@@ -3491,6 +3520,23 @@
       <div class="modal-body small" id="produce-result-body"></div>
       <div class="modal-footer py-2">
         <button class="btn btn-primary btn-sm" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Stock warning confirmation modal (WARN policy) -->
+<div class="modal fade" id="stockWarnModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2 bg-warning bg-opacity-10">
+        <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-1 text-warning"></i>Stock Warning</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body small" id="stock-warn-body"></div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-warning btn-sm" id="btn-stock-warn-confirm">Sell Anyway</button>
       </div>
     </div>
   </div>

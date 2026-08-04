@@ -1977,6 +1977,7 @@ def strong_migrate():
             UPDATE sales s SET product_name = p.name
             FROM products p WHERE s.product_id = p.id AND s.product_name IS NULL
         """)
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS inventory_policy VARCHAR(20) NOT NULL DEFAULT 'ALLOW_NEGATIVE'")
 
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.

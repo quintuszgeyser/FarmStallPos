@@ -889,3 +889,38 @@ def api_opening_stock_undo(run_id):
             deleted += 1
     db.session.commit()
     return jsonify({'ok': True, 'deleted': deleted, 'skipped_consumed': skipped})
+
+
+@bp.route('/api/stock/negative', methods=['GET'])
+def api_stock_negative():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    rows = (
+        db.session.query(
+            StockBatch.product_id,
+            func.sum(StockBatch.qty_remaining_base).label('total')
+        )
+        .group_by(StockBatch.product_id)
+        .having(func.sum(StockBatch.qty_remaining_base) < 0)
+        .all()
+    )
+    if not rows:
+        return jsonify([])
+    pids = [r.product_id for r in rows]
+    products = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()}
+    result = []
+    for r in rows:
+        p = products.get(r.product_id)
+        if not p:
+            continue
+        result.append({
+            'product_id':       r.product_id,
+            'name':             p.name,
+            'stock_level':      float(r.total),
+            'unit_type':        p.unit_type,
+            'base_unit':        p.base_unit,
+            'product_type':     p.product_type,
+            'inventory_policy': p.inventory_policy or 'ALLOW_NEGATIVE',
+        })
+    result.sort(key=lambda x: x['stock_level'])
+    return jsonify(result)

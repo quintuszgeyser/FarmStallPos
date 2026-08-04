@@ -305,6 +305,9 @@ def api_products_post():
 
     auto_price = bool(data.get('auto_price', True))
 
+    inv_policy_raw = str(data.get('inventory_policy') or 'ALLOW_NEGATIVE').strip().upper()
+    inventory_policy = inv_policy_raw if inv_policy_raw in ('STRICT', 'WARN', 'ALLOW_NEGATIVE') else 'ALLOW_NEGATIVE'
+
     sub_category_id   = _resolve_sub_category(
         category_id,
         data.get('sub_category_id') or None,
@@ -345,6 +348,7 @@ def api_products_post():
         product_family_id=product_family_id,
         is_default_variant=is_default_variant,
         packaging_capacity=packaging_capacity,
+        inventory_policy=inventory_policy,
     )
     db.session.add(p)
     db.session.flush()
@@ -603,6 +607,9 @@ def api_products_update():
             p.consignment_pct = Decimal(str(raw_pct)) if raw_pct not in (None, '') else None
         except Exception:
             pass
+    if 'inventory_policy' in data:
+        v = str(data['inventory_policy'] or 'ALLOW_NEGATIVE').strip().upper()
+        p.inventory_policy = v if v in ('STRICT', 'WARN', 'ALLOW_NEGATIVE') else 'ALLOW_NEGATIVE'
 
     db.session.commit()
     # Clean up any taxonomy entries that are now empty after this change
@@ -867,6 +874,53 @@ def api_product_produce(pid):
     now = datetime.utcnow()
     u   = current_user()
 
+    # ── Pre-flight: verify no ingredient goes negative before touching anything ──
+    shortages = []
+    for rl in RecipeLine.query.filter_by(product_id=pid).all():
+        ing = db.session.get(Product, rl.ingredient_id)
+        if not ing:
+            continue
+        needed    = Decimal(str(rl.qty_base)) * batches
+        if ing.product_type == 'recipe' and ing.is_produced:
+            # Sub-recipe: we'll auto-produce it — check its raw ingredients
+            available = Decimal(str(get_stock_level(rl.ingredient_id)))
+            if available >= needed:
+                continue  # enough sub-recipe stock, no auto-produce needed
+            shortage  = needed - available
+            batch_sz  = Decimal(str(ing.batch_size or 1))
+            sub_batches_needed = (shortage / batch_sz).to_integral_value(rounding=ROUND_CEILING)
+            for sub_rl in RecipeLine.query.filter_by(product_id=ing.id).all():
+                sub_ing = db.session.get(Product, sub_rl.ingredient_id)
+                if not sub_ing:
+                    continue
+                sub_needed    = Decimal(str(sub_rl.qty_base)) * sub_batches_needed
+                sub_available = Decimal(str(get_stock_level(sub_rl.ingredient_id)))
+                if sub_available < sub_needed:
+                    shortages.append({
+                        'ingredient_id': sub_rl.ingredient_id,
+                        'name':          sub_ing.name,
+                        'needed':        float(sub_needed),
+                        'available':     float(sub_available),
+                        'context':       f'for auto-producing {ing.name}',
+                    })
+        else:
+            # Regular ingredient: direct stock check
+            available = Decimal(str(get_stock_level(rl.ingredient_id)))
+            if available < needed:
+                shortages.append({
+                    'ingredient_id': rl.ingredient_id,
+                    'name':          ing.name,
+                    'needed':        float(needed),
+                    'available':     float(available),
+                    'context':       '',
+                })
+
+    if shortages:
+        return jsonify({
+            'error':     f'Cannot produce {p.name} — ingredient shortages.',
+            'shortages': shortages,
+        }), 409
+
     # Auto-produce any sub-recipe ingredients that are short (one level deep).
     # All sub-produces share the same transaction — either everything commits or nothing does.
     auto_produced = []
@@ -915,13 +969,13 @@ def api_product_produce(pid):
             user_id=u.id if u else None,
         ))
         auto_produced.append({
-            'product_id':   ing.id,
-            'name':         ing.name,
-            'batches':      int(sub_batches_needed),
-            'units_added':  sub_units_added,
-            'cost':         float(sub_total_cost),
+            'product_id':    ing.id,
+            'name':          ing.name,
+            'batches':       int(sub_batches_needed),
+            'units_added':   sub_units_added,
+            'cost':          float(sub_total_cost),
             'was_available': float(available),
-            'shortage':     float(shortage),
+            'shortage':      float(shortage),
         })
 
     # Main produce — consume_fifo on meringue now sees the newly added sub-batches

@@ -11,7 +11,7 @@ from flask import current_app
 from helpers import (
     require_login, require_role, current_user,
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
-    qty_bucket,
+    qty_bucket, get_stock_level,
 )
 from models import (
     db,
@@ -284,6 +284,37 @@ def api_transactions_post():
     has_discount  = cart_discount or any(i.get('item_discount') or i.get('special_name') for i in cart)
     discount_by_id = (u.id if u else None) if has_discount else None
 
+    force = bool(data.get('force', False))
+
+    # ── Pre-flight policy check (read-only, before any DB writes) ──
+    _pre_stock   = {}   # pid -> Decimal stock level (for phantom batch calc later)
+    _sale_blocks = []
+    _sale_warns  = []
+    for _item in cart:
+        _pid = int(_item['product_id'])
+        _qty = Decimal(str(_item.get('qty', 1)))
+        _pc  = db.session.get(Product, _pid)
+        if not _pc:
+            continue
+        _pol = getattr(_pc, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
+        if _pc.product_type == 'stock_item' or (_pc.product_type == 'recipe' and _pc.is_produced):
+            _stk = Decimal(str(get_stock_level(_pid)))
+            _pre_stock[_pid] = _stk
+            if _pol != 'ALLOW_NEGATIVE' and _stk < _qty:
+                _info = {'product_id': _pid, 'name': _pc.name,
+                         'available': float(_stk), 'needed': float(_qty)}
+                if _pol == 'STRICT':
+                    _sale_blocks.append(_info)
+                elif _pol == 'WARN':
+                    _sale_warns.append(_info)
+    if _sale_blocks:
+        return jsonify({'error': 'Sale blocked: insufficient stock.',
+                        'blocked': _sale_blocks}), 409
+    if _sale_warns and not force:
+        return jsonify({'warn': True,
+                        'message': 'Some items are out of stock. Confirm to sell anyway.',
+                        'warnings': _sale_warns}), 409
+
     for item in cart:
         pid        = int(item['product_id'])
         qty        = Decimal(str(item.get('qty', 1)))
@@ -330,6 +361,19 @@ def api_transactions_post():
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
             sale_row.cogs = consume_fifo(pid, qty, sale_uuid, now, sale_unit_price=unit_price)
+            _pol_main = getattr(p, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
+            if _pol_main == 'ALLOW_NEGATIVE':
+                _pre = _pre_stock.get(pid, Decimal('0'))
+                _shortfall = qty - max(Decimal('0'), _pre)
+                if _shortfall > 0:
+                    db.session.add(StockBatch(
+                        product_id=pid,
+                        qty_purchased_base=-_shortfall,
+                        qty_remaining_base=-_shortfall,
+                        cost_per_base_unit=Decimal('0'),
+                        purchased_at=now,
+                        user_id=u.id if u else None,
+                    ))
         elif p.product_type == 'recipe':
             # Made-to-order: consume ingredients at point of sale
             line_cogs = Decimal('0')

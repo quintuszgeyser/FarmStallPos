@@ -660,6 +660,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'batch_size':              float(p.batch_size) if p.batch_size is not None else 1.0,
         'stock_unit':              p.stock_unit,
         'last_overhead_costs':     p.last_overhead_costs,
+        'inventory_policy':        p.inventory_policy or 'ALLOW_NEGATIVE',
         # Consignment fields
         'is_consignment':    p.is_consignment,
         'settlement_basis':  p.settlement_basis,
