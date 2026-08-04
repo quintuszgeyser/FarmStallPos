@@ -2566,11 +2566,13 @@ document.getElementById('products-filter')?.addEventListener('input', () => {
 
 // ── Batch-produce modal ────────────────────────────────────────────────────────
 let _produceProduct = null;
+let _previewDebounceTimer = null;
 
 function openProduceModal(p) {
   _produceProduct = p;
   document.getElementById('produce-modal-name').textContent = p.name;
   document.getElementById('produce-batches-input').value = '1';
+  document.getElementById('btn-produce-confirm').disabled = false;
   _updateProducePreview();
   const existingOverhead = p.last_overhead_costs
     ? (() => { try { return JSON.parse(p.last_overhead_costs); } catch { return []; } })()
@@ -2581,16 +2583,54 @@ function openProduceModal(p) {
 
 function _updateProducePreview() {
   const p = _produceProduct; if (!p) return;
-  const batches = parseInt(document.getElementById('produce-batches-input')?.value || '1', 10) || 1;
+  const batches   = parseInt(document.getElementById('produce-batches-input')?.value || '1', 10) || 1;
   const units     = Math.round((p.batch_size || 1) * batches);
   const unitLabel = p.stock_unit || 'unit';
-  const lines   = (p.recipe_lines || []).map(l =>
+  const lines     = (p.recipe_lines || []).map(l =>
     `<li>${escapeHtml(l.ingredient_name || String(l.ingredient_id))}: ${displayQty(l.qty_base * batches, l.unit_type)}</li>`
   ).join('');
+
   document.getElementById('produce-modal-preview').innerHTML = `
     <div class="mb-1"><strong>${units}</strong> ${escapeHtml(unitLabel)}${units !== 1 ? 's' : ''} will be added to stock.</div>
-    ${lines ? `<div class="mt-1">Ingredients consumed:</div><ul class="mb-0 ps-3">${lines}</ul>` : ''}
+    ${lines ? `<div class="mt-1">Ingredients needed:</div><ul class="mb-0 ps-3">${lines}</ul>` : ''}
+    <div id="produce-subrecipe-status" class="mt-2 text-muted"><i class="bi bi-hourglass-split me-1"></i>Checking sub-recipe stock…</div>
   `;
+
+  clearTimeout(_previewDebounceTimer);
+  _previewDebounceTimer = setTimeout(async () => {
+    const statusEl = document.getElementById('produce-subrecipe-status');
+    if (!statusEl || _produceProduct?.id !== p.id) return;
+    try {
+      const pr = await api(`/api/products/${p.id}/produce-preview?batches=${batches}`);
+      if (!statusEl || _produceProduct?.id !== p.id) return;
+      if (pr.circular) {
+        statusEl.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Circular recipe:</strong> ${escapeHtml(pr.cycle.join(' → '))}. Cannot produce.</div>`;
+        document.getElementById('btn-produce-confirm').disabled = true;
+        return;
+      }
+      document.getElementById('btn-produce-confirm').disabled = false;
+      if (!pr.sub_recipes || pr.sub_recipes.length === 0) {
+        statusEl.innerHTML = '';
+        return;
+      }
+      const rows = pr.sub_recipes.map(sr => {
+        if (!sr.will_auto_produce) {
+          return `<div class="d-flex align-items-start gap-1 mb-1">
+            <i class="bi bi-check-circle-fill text-success mt-1 flex-shrink-0"></i>
+            <span><strong>${escapeHtml(sr.name)}</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)} — OK</span>
+          </div>`;
+        }
+        return `<div class="d-flex align-items-start gap-1 mb-1">
+          <i class="bi bi-exclamation-circle-fill text-warning mt-1 flex-shrink-0"></i>
+          <span><strong>${escapeHtml(sr.name)} shortage</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)} →
+          will auto-produce <strong>${sr.auto_batches} batch${sr.auto_batches !== 1 ? 'es' : ''}</strong> (${displayQty(sr.auto_units, sr.unit_type)})</span>
+        </div>`;
+      }).join('');
+      statusEl.innerHTML = `<div class="fw-semibold mb-1">Sub-recipe status:</div>${rows}`;
+    } catch (_) {
+      if (statusEl && _produceProduct?.id === p.id) statusEl.innerHTML = '';
+    }
+  }, 300);
 }
 
 document.getElementById('produce-batches-input')?.addEventListener('input', _updateProducePreview);
@@ -2600,23 +2640,79 @@ document.getElementById('btn-produce-confirm')?.addEventListener('click', async 
   const batches = parseInt(document.getElementById('produce-batches-input').value || '1', 10) || 1;
   const btn = document.getElementById('btn-produce-confirm');
   btn.disabled = true;
+  const product = _produceProduct;
   try {
     const prodAddlWrap  = document.getElementById('produce-addl-costs-wrap');
     const prodAddlCosts = prodAddlWrap ? _readAdditionalCosts(prodAddlWrap) : [];
-    const r = await api(`/api/products/${_produceProduct.id}/produce`, {
+    const r = await api(`/api/products/${product.id}/produce`, {
       method: 'POST',
       body: JSON.stringify({ batches, additional_costs: prodAddlCosts }),
     });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).hide();
-    toast(`Produced ${r.units_added} unit${r.units_added !== 1 ? 's' : ''} — stock now ${r.new_stock}`, 'success', 3000);
     await loadProducts();
     loadIngredients();
+    if (r.auto_produced && r.auto_produced.length > 0) {
+      _showProduceResultModal(r, product, batches);
+    } else {
+      toast(`Produced ${r.units_added} unit${r.units_added !== 1 ? 's' : ''} — stock now ${r.new_stock}`, 'success', 3000);
+    }
   } catch(e) {
     toast(e.message, 'danger');
   } finally {
     btn.disabled = false;
   }
 });
+
+function _showProduceResultModal(r, product, batchesProduced) {
+  const body = document.getElementById('produce-result-body');
+  if (!body) return;
+  const html = [];
+  let stepIdx = 1;
+
+  (r.auto_produced || []).forEach(ap => {
+    const subProd  = STATE.products.find(x => x.id === ap.product_id);
+    const unitType = subProd?.unit_type || 'unit';
+    const subLines = subProd ? (subProd.recipe_lines || []).map(l => {
+      const consumed = l.qty_base * ap.batches;
+      return `<li>${escapeHtml(l.ingredient_name || String(l.ingredient_id))}: ${displayQty(consumed, l.unit_type)}</li>`;
+    }).join('') : '';
+
+    html.push(`
+      <div class="mb-3 border-start border-warning border-3 ps-2">
+        <div class="fw-semibold"><span class="badge bg-warning text-dark me-1">Step ${stepIdx++}</span>
+          <i class="bi bi-arrow-repeat me-1"></i>Auto-produced: ${escapeHtml(ap.name)}</div>
+        <div class="text-muted ms-1 mt-1">
+          Needed ${displayQty(ap.shortage + ap.was_available, unitType)},
+          had ${displayQty(ap.was_available, unitType)},
+          produced <strong>${ap.batches} batch${ap.batches !== 1 ? 'es' : ''}</strong>
+          → ${displayQty(ap.units_added, unitType)} added to stock
+        </div>
+        ${subLines ? `<div class="ms-1 mt-1">Ingredients consumed:<ul class="mb-0 ps-3 text-muted">${subLines}</ul></div>` : ''}
+      </div>`);
+  });
+
+  const mainLines = (product.recipe_lines || []).map(l => {
+    const consumed = l.qty_base * batchesProduced;
+    return `<li>${escapeHtml(l.ingredient_name || String(l.ingredient_id))}: ${displayQty(consumed, l.unit_type)}</li>`;
+  }).join('');
+
+  html.push(`
+    <div class="mb-3 border-start border-success border-3 ps-2">
+      <div class="fw-semibold"><span class="badge bg-success me-1">Step ${stepIdx}</span>
+        <i class="bi bi-fire me-1 text-warning"></i>Produced: ${escapeHtml(product.name)}</div>
+      <div class="text-muted ms-1 mt-1">
+        <strong>${r.units_added}</strong> ${escapeHtml(product.stock_unit || 'unit')}${r.units_added !== 1 ? 's' : ''} added to stock
+      </div>
+      ${mainLines ? `<div class="ms-1 mt-1">Ingredients consumed:<ul class="mb-0 ps-3 text-muted">${mainLines}</ul></div>` : ''}
+    </div>`);
+
+  html.push(`<div class="fw-semibold text-success border-top pt-2 mt-1">
+    <i class="bi bi-box-seam me-1"></i>Stock now: <strong>${r.new_stock}</strong> ${escapeHtml(product.stock_unit || 'unit')}${r.new_stock !== 1 ? 's' : ''}
+  </div>`);
+
+  body.innerHTML = html.join('');
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('produceResultModal')).show();
+}
 
 // ── Multi-produce modal (bulk selection) ──────────────────────────────────────
 function openMultiProduceModal(producible) {

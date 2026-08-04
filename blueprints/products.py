@@ -2,7 +2,7 @@ import json as _json
 import os
 import uuid
 import logging
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, current_app
@@ -764,9 +764,80 @@ def api_pending_prices_dismiss():
     return jsonify({'ok': True, 'dismissed': dismissed})
 
 
+def _detect_circular_bom(product_id, path=None):
+    """Return cycle path (list of product_ids) if the BOM is circular, else None.
+    Only traverses is_produced recipe ingredients — those are the ones that can
+    trigger auto-production and therefore cause infinite loops.
+    """
+    if path is None:
+        path = []
+    if product_id in path:
+        start = path.index(product_id)
+        return path[start:] + [product_id]
+    path = path + [product_id]
+    for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+        ing = db.session.get(Product, rl.ingredient_id)
+        if ing and ing.product_type == 'recipe' and ing.is_produced:
+            result = _detect_circular_bom(rl.ingredient_id, path)
+            if result is not None:
+                return result
+    return None
+
+
+@bp.route('/api/products/<int:pid>/produce-preview', methods=['GET'])
+def api_produce_preview(pid):
+    """Pre-flight BOM check: returns which sub-recipe ingredients are short and will
+    be auto-produced if the user proceeds. Safe to call repeatedly — read-only."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = db.session.get(Product, pid)
+    if not p or p.product_type != 'recipe' or not p.is_produced:
+        return jsonify({'error': 'Not a batch-produced recipe'}), 400
+    try:
+        batches = Decimal(str(request.args.get('batches', 1) or 1))
+    except Exception:
+        return jsonify({'error': 'Invalid batches'}), 400
+    if batches <= 0:
+        return jsonify({'error': 'batches must be > 0'}), 400
+
+    cycle = _detect_circular_bom(pid)
+    if cycle:
+        ids = set(cycle)
+        names = {q.id: q.name for q in Product.query.filter(Product.id.in_(ids)).all()}
+        return jsonify({'circular': True, 'cycle': [names.get(i, str(i)) for i in cycle]})
+
+    sub_recipes = []
+    for rl in RecipeLine.query.filter_by(product_id=pid).all():
+        ing = db.session.get(Product, rl.ingredient_id)
+        if not (ing and ing.product_type == 'recipe' and ing.is_produced):
+            continue
+        needed_d    = Decimal(str(rl.qty_base)) * batches
+        available_d = Decimal(str(get_stock_level(rl.ingredient_id)))
+        shortage_d  = max(Decimal('0'), needed_d - available_d)
+        batch_sz_d  = Decimal(str(ing.batch_size or 1))
+        auto_batches = int((shortage_d / batch_sz_d).to_integral_value(rounding=ROUND_CEILING)) if shortage_d > 0 else 0
+        sub_recipes.append({
+            'ingredient_id':     rl.ingredient_id,
+            'name':              ing.name,
+            'needed':            float(needed_d),
+            'available':         float(available_d),
+            'shortage':          float(shortage_d),
+            'will_auto_produce': shortage_d > 0,
+            'auto_batches':      auto_batches,
+            'auto_units':        float(batch_sz_d * auto_batches),
+            'unit_type':         ing.unit_type,
+            'base_unit':         ing.base_unit,
+        })
+
+    return jsonify({'circular': False, 'sub_recipes': sub_recipes})
+
+
 @bp.route('/api/products/<int:pid>/produce', methods=['POST'])
 def api_product_produce(pid):
-    """Consume raw ingredients for N batches and create a StockBatch of finished units."""
+    """Consume raw ingredients for N batches and create a StockBatch of finished units.
+    If any ingredient is itself a batch-produced recipe with insufficient stock,
+    it is auto-produced first (one level deep) within the same transaction.
+    """
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     p = db.session.get(Product, pid, with_for_update=True)
@@ -785,9 +856,77 @@ def api_product_produce(pid):
     except ValueError as e:
         return jsonify({'error': str(e)}), 400
 
-    produce_uuid = str(uuid.uuid4())
+    # Circular BOM guard
+    cycle = _detect_circular_bom(pid)
+    if cycle:
+        ids = set(cycle)
+        names = {q.id: q.name for q in Product.query.filter(Product.id.in_(ids)).all()}
+        cycle_names = [names.get(i, str(i)) for i in cycle]
+        return jsonify({'error': f'Circular recipe detected: {" → ".join(cycle_names)}. Production aborted.'}), 400
+
     now = datetime.utcnow()
-    u = current_user()
+    u   = current_user()
+
+    # Auto-produce any sub-recipe ingredients that are short (one level deep).
+    # All sub-produces share the same transaction — either everything commits or nothing does.
+    auto_produced = []
+    for rl in RecipeLine.query.filter_by(product_id=pid).all():
+        ing = db.session.get(Product, rl.ingredient_id)
+        if not (ing and ing.product_type == 'recipe' and ing.is_produced):
+            continue
+        needed    = Decimal(str(rl.qty_base)) * batches
+        available = Decimal(str(get_stock_level(rl.ingredient_id)))
+        if available >= needed:
+            continue
+        shortage  = needed - available
+        batch_sz  = Decimal(str(ing.batch_size or 1))
+        sub_batches_needed = (shortage / batch_sz).to_integral_value(rounding=ROUND_CEILING)
+
+        sub_produce_uuid  = str(uuid.uuid4())
+        sub_total_cost    = Decimal('0')
+        for sub_rl in RecipeLine.query.filter_by(product_id=ing.id).all():
+            sub_total_cost += consume_fifo(
+                sub_rl.ingredient_id,
+                Decimal(str(sub_rl.qty_base)) * sub_batches_needed,
+                sub_produce_uuid, now,
+            )
+        sub_units_added  = int((batch_sz * sub_batches_needed).to_integral_value())
+        sub_cost_per_unit = sub_total_cost / sub_units_added if sub_units_added > 0 else Decimal('0')
+        db.session.add(StockBatch(
+            product_id=ing.id,
+            qty_purchased_base=sub_units_added,
+            qty_remaining_base=sub_units_added,
+            cost_per_base_unit=sub_cost_per_unit,
+            base_cost_total=sub_total_cost,
+            purchased_at=now,
+            user_id=u.id if u else None,
+            produce_ref=sub_produce_uuid,
+            produce_cost=sub_total_cost,
+        ))
+        db.session.add(StockAdjustment(
+            product_id=ing.id,
+            adjustment_type='produce',
+            qty_change_base=sub_units_added,
+            system_qty_before=available,
+            cost_written_off=sub_total_cost,
+            base_unit=ing.base_unit,
+            reason=f'Auto-produce for {p.name}: {int(sub_batches_needed)} batch(es)',
+            adjusted_at=now,
+            user_id=u.id if u else None,
+        ))
+        auto_produced.append({
+            'product_id':   ing.id,
+            'name':         ing.name,
+            'batches':      int(sub_batches_needed),
+            'units_added':  sub_units_added,
+            'cost':         float(sub_total_cost),
+            'was_available': float(available),
+            'shortage':     float(shortage),
+        })
+
+    # Main produce — consume_fifo on meringue now sees the newly added sub-batches
+    # because SQLAlchemy autoflushes pending adds before each query.
+    produce_uuid = str(uuid.uuid4())
     total_ingredient_cost = Decimal('0')
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
         total_ingredient_cost += consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches, produce_uuid, now)
@@ -822,7 +961,6 @@ def api_product_produce(pid):
         user_id=u.id if u else None,
     ))
 
-    # Update last_overhead_costs for pre-population next time
     if addl_costs:
         p.last_overhead_costs = _json.dumps([
             {'label': c['label'], 'type': c['type'], 'amount': c['amount']}
@@ -831,7 +969,13 @@ def api_product_produce(pid):
 
     db.session.commit()
     new_stock = get_stock_level(pid)
-    return jsonify({'ok': True, 'units_added': units_added, 'new_stock': new_stock, 'cost': float(total_ingredient_cost)})
+    return jsonify({
+        'ok':           True,
+        'units_added':  units_added,
+        'new_stock':    new_stock,
+        'cost':         float(total_ingredient_cost),
+        'auto_produced': auto_produced,
+    })
 
 
 @bp.route('/api/products/<int:pid>/image', methods=['POST'])
