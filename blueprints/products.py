@@ -840,11 +840,108 @@ def api_produce_preview(pid):
     return jsonify({'circular': False, 'sub_recipes': sub_recipes})
 
 
+def _collect_bom_shortages(product_id, qty_needed, context, shortages, _depth=0):
+    """Recursively collect ingredient shortages for producing qty_needed batches of product_id.
+    qty_needed is in batches at each level. context is a human-readable trail for the UI.
+    Aborts at depth 10 (safe because circular BOM is checked before calling this).
+    """
+    if _depth > 10:
+        return
+    for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+        ing = db.session.get(Product, rl.ingredient_id)
+        if not ing:
+            continue
+        ing_qty = Decimal(str(rl.qty_base)) * qty_needed
+        if ing.product_type == 'recipe' and ing.is_produced:
+            available = Decimal(str(get_stock_level(ing.id)))
+            if available >= ing_qty:
+                continue
+            shortage = ing_qty - available
+            batch_sz = Decimal(str(ing.batch_size or 1))
+            sub_batches = (shortage / batch_sz).to_integral_value(rounding=ROUND_CEILING)
+            sub_ctx = f'for auto-producing {ing.name}' + (f' ({context})' if context else '')
+            _collect_bom_shortages(ing.id, sub_batches, sub_ctx, shortages, _depth + 1)
+        else:
+            available = Decimal(str(get_stock_level(ing.id)))
+            if available < ing_qty:
+                shortages.append({
+                    'ingredient_id': ing.id,
+                    'name':          ing.name,
+                    'needed':        float(ing_qty),
+                    'available':     float(available),
+                    'context':       context,
+                })
+
+
+def _auto_produce_tree(product_id, batches_needed, now, u, parent_name, auto_produced, _depth=0):
+    """Recursively auto-produce sub-recipe shortfalls deepest-first so each level is
+    available before its parent consumes it. All adds share the caller's transaction.
+    """
+    if _depth > 10:
+        return
+    ing = db.session.get(Product, product_id)
+    if not ing:
+        return
+    # First recurse — produce deeper sub-recipes before this one needs them
+    for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+        sub = db.session.get(Product, rl.ingredient_id)
+        if not (sub and sub.product_type == 'recipe' and sub.is_produced):
+            continue
+        sub_needed    = Decimal(str(rl.qty_base)) * batches_needed
+        sub_available = Decimal(str(get_stock_level(sub.id)))
+        if sub_available < sub_needed:
+            sub_shortage  = sub_needed - sub_available
+            sub_batch_sz  = Decimal(str(sub.batch_size or 1))
+            sub_sub_batches = (sub_shortage / sub_batch_sz).to_integral_value(rounding=ROUND_CEILING)
+            _auto_produce_tree(sub.id, sub_sub_batches, now, u, ing.name, auto_produced, _depth + 1)
+    # Now produce this level — deeper ingredients are already available via autoflush
+    available_before = Decimal(str(get_stock_level(product_id)))
+    produce_uuid     = str(uuid.uuid4())
+    total_cost       = Decimal('0')
+    for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+        total_cost += consume_fifo(rl.ingredient_id,
+                                   Decimal(str(rl.qty_base)) * batches_needed,
+                                   produce_uuid, now)
+    batch_sz    = Decimal(str(ing.batch_size or 1))
+    units_added = int((batch_sz * batches_needed).to_integral_value())
+    cost_per    = total_cost / units_added if units_added > 0 else Decimal('0')
+    db.session.add(StockBatch(
+        product_id=product_id,
+        qty_purchased_base=units_added,
+        qty_remaining_base=units_added,
+        cost_per_base_unit=cost_per,
+        base_cost_total=total_cost,
+        purchased_at=now,
+        user_id=u.id if u else None,
+        produce_ref=produce_uuid,
+        produce_cost=total_cost,
+    ))
+    db.session.add(StockAdjustment(
+        product_id=product_id,
+        adjustment_type='produce',
+        qty_change_base=units_added,
+        system_qty_before=available_before,
+        cost_written_off=total_cost,
+        base_unit=ing.base_unit,
+        reason=f'Auto-produce for {parent_name}: {int(batches_needed)} batch(es)',
+        adjusted_at=now,
+        user_id=u.id if u else None,
+    ))
+    auto_produced.append({
+        'product_id':    product_id,
+        'name':          ing.name,
+        'batches':       int(batches_needed),
+        'units_added':   units_added,
+        'cost':          float(total_cost),
+        'was_available': float(available_before),
+    })
+
+
 @bp.route('/api/products/<int:pid>/produce', methods=['POST'])
 def api_product_produce(pid):
     """Consume raw ingredients for N batches and create a StockBatch of finished units.
-    If any ingredient is itself a batch-produced recipe with insufficient stock,
-    it is auto-produced first (one level deep) within the same transaction.
+    Sub-recipe ingredients that are short are auto-produced recursively (full BOM tree)
+    within the same transaction.
     """
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -875,55 +972,16 @@ def api_product_produce(pid):
     now = datetime.utcnow()
     u   = current_user()
 
-    # ── Pre-flight: verify no ingredient goes negative before touching anything ──
+    # ── Pre-flight: recursively verify no ingredient goes negative ──
     shortages = []
-    for rl in RecipeLine.query.filter_by(product_id=pid).all():
-        ing = db.session.get(Product, rl.ingredient_id)
-        if not ing:
-            continue
-        needed    = Decimal(str(rl.qty_base)) * batches
-        if ing.product_type == 'recipe' and ing.is_produced:
-            # Sub-recipe: we'll auto-produce it — check its raw ingredients
-            available = Decimal(str(get_stock_level(rl.ingredient_id)))
-            if available >= needed:
-                continue  # enough sub-recipe stock, no auto-produce needed
-            shortage  = needed - available
-            batch_sz  = Decimal(str(ing.batch_size or 1))
-            sub_batches_needed = (shortage / batch_sz).to_integral_value(rounding=ROUND_CEILING)
-            for sub_rl in RecipeLine.query.filter_by(product_id=ing.id).all():
-                sub_ing = db.session.get(Product, sub_rl.ingredient_id)
-                if not sub_ing:
-                    continue
-                sub_needed    = Decimal(str(sub_rl.qty_base)) * sub_batches_needed
-                sub_available = Decimal(str(get_stock_level(sub_rl.ingredient_id)))
-                if sub_available < sub_needed:
-                    shortages.append({
-                        'ingredient_id': sub_rl.ingredient_id,
-                        'name':          sub_ing.name,
-                        'needed':        float(sub_needed),
-                        'available':     float(sub_available),
-                        'context':       f'for auto-producing {ing.name}',
-                    })
-        else:
-            # Regular ingredient: direct stock check
-            available = Decimal(str(get_stock_level(rl.ingredient_id)))
-            if available < needed:
-                shortages.append({
-                    'ingredient_id': rl.ingredient_id,
-                    'name':          ing.name,
-                    'needed':        float(needed),
-                    'available':     float(available),
-                    'context':       '',
-                })
-
+    _collect_bom_shortages(pid, batches, '', shortages)
     if shortages:
         return jsonify({
             'error':     f'Cannot produce {p.name} — ingredient shortages.',
             'shortages': shortages,
         }), 409
 
-    # Auto-produce any sub-recipe ingredients that are short (one level deep).
-    # All sub-produces share the same transaction — either everything commits or nothing does.
+    # ── Auto-produce sub-recipe shortfalls recursively (deepest first) ──
     auto_produced = []
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
         ing = db.session.get(Product, rl.ingredient_id)
@@ -933,51 +991,10 @@ def api_product_produce(pid):
         available = Decimal(str(get_stock_level(rl.ingredient_id)))
         if available >= needed:
             continue
-        shortage  = needed - available
-        batch_sz  = Decimal(str(ing.batch_size or 1))
-        sub_batches_needed = (shortage / batch_sz).to_integral_value(rounding=ROUND_CEILING)
-
-        sub_produce_uuid  = str(uuid.uuid4())
-        sub_total_cost    = Decimal('0')
-        for sub_rl in RecipeLine.query.filter_by(product_id=ing.id).all():
-            sub_total_cost += consume_fifo(
-                sub_rl.ingredient_id,
-                Decimal(str(sub_rl.qty_base)) * sub_batches_needed,
-                sub_produce_uuid, now,
-            )
-        sub_units_added  = int((batch_sz * sub_batches_needed).to_integral_value())
-        sub_cost_per_unit = sub_total_cost / sub_units_added if sub_units_added > 0 else Decimal('0')
-        db.session.add(StockBatch(
-            product_id=ing.id,
-            qty_purchased_base=sub_units_added,
-            qty_remaining_base=sub_units_added,
-            cost_per_base_unit=sub_cost_per_unit,
-            base_cost_total=sub_total_cost,
-            purchased_at=now,
-            user_id=u.id if u else None,
-            produce_ref=sub_produce_uuid,
-            produce_cost=sub_total_cost,
-        ))
-        db.session.add(StockAdjustment(
-            product_id=ing.id,
-            adjustment_type='produce',
-            qty_change_base=sub_units_added,
-            system_qty_before=available,
-            cost_written_off=sub_total_cost,
-            base_unit=ing.base_unit,
-            reason=f'Auto-produce for {p.name}: {int(sub_batches_needed)} batch(es)',
-            adjusted_at=now,
-            user_id=u.id if u else None,
-        ))
-        auto_produced.append({
-            'product_id':    ing.id,
-            'name':          ing.name,
-            'batches':       int(sub_batches_needed),
-            'units_added':   sub_units_added,
-            'cost':          float(sub_total_cost),
-            'was_available': float(available),
-            'shortage':      float(shortage),
-        })
+        shortage   = needed - available
+        batch_sz   = Decimal(str(ing.batch_size or 1))
+        sub_batches = (shortage / batch_sz).to_integral_value(rounding=ROUND_CEILING)
+        _auto_produce_tree(ing.id, sub_batches, now, u, p.name, auto_produced)
 
     # Main produce — consume_fifo on meringue now sees the newly added sub-batches
     # because SQLAlchemy autoflushes pending adds before each query.
