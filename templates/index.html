@@ -1625,6 +1625,20 @@
       <h5 class="mb-3">Configuration</h5>
       <div class="d-flex flex-column gap-3" style="max-width:560px">
 
+        <!-- ── System Info ── -->
+        <div class="card border">
+          <div class="card-header fw-semibold py-2">System</div>
+          <div class="card-body py-2 px-3">
+            <table class="table table-sm table-borderless mb-0 small">
+              <tbody>
+                <tr><td class="text-muted pe-3" style="white-space:nowrap">Version</td><td id="sysinfo-version">—</td></tr>
+                <tr><td class="text-muted pe-3" style="white-space:nowrap">Commit</td><td><code id="sysinfo-commit">—</code></td></tr>
+                <tr><td class="text-muted pe-3" style="white-space:nowrap">Environment</td><td id="sysinfo-env">—</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
         <!-- ── Kiosk Tablets ── -->
         <div class="card border">
           <div class="card-header fw-semibold py-2 d-flex justify-content-between align-items-center">

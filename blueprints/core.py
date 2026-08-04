@@ -1,4 +1,5 @@
 import os
+import subprocess
 
 from flask import Blueprint, jsonify, request, render_template
 from sqlalchemy import text
@@ -10,11 +11,37 @@ bp = Blueprint('core', __name__)
 
 LOG_PATH    = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'logs', 'pos.log')
 APP_VERSION = None  # set via init_app or lazy import
+_CACHED_GIT_COMMIT = None
 
 
 def _app_version():
     import app as _app_module
     return _app_module.APP_VERSION
+
+
+def _git_commit():
+    global _CACHED_GIT_COMMIT
+    if _CACHED_GIT_COMMIT is not None:
+        return _CACHED_GIT_COMMIT
+    # 1. Explicit env var (set via Docker build arg in appliance builds)
+    val = os.environ.get('GIT_COMMIT', '').strip()
+    if val and val != 'unknown':
+        _CACHED_GIT_COMMIT = val
+        return _CACHED_GIT_COMMIT
+    # 2. Ask git (works in server containers where source is git-cloned)
+    try:
+        result = subprocess.run(
+            ['git', 'rev-parse', '--short', 'HEAD'],
+            cwd=os.path.dirname(os.path.dirname(__file__)),
+            capture_output=True, text=True, timeout=3,
+        )
+        if result.returncode == 0:
+            _CACHED_GIT_COMMIT = result.stdout.strip()
+            return _CACHED_GIT_COMMIT
+    except Exception:
+        pass
+    _CACHED_GIT_COMMIT = 'unknown'
+    return _CACHED_GIT_COMMIT
 
 
 @bp.route('/')
@@ -42,7 +69,7 @@ def user_guide():
 def version():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
-    return jsonify({'version': _app_version()})
+    return jsonify({'version': _app_version(), 'commit': _git_commit(), 'env': os.environ.get('APP_ENV', 'qa')})
 
 
 @bp.route('/api/logs')

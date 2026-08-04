@@ -16822,7 +16822,22 @@ async function _addCostCategory() {
 // Load when the Configuration tab is shown
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', () => {
   if (isAdmin()) loadCostCategoriesSettings();
+  _loadSysInfo();
 });
+
+async function _loadSysInfo() {
+  try {
+    const v = await api('/__version');
+    const el = id => document.getElementById(id);
+    if (el('sysinfo-version')) el('sysinfo-version').textContent = v.version || '—';
+    if (el('sysinfo-commit'))  el('sysinfo-commit').textContent  = v.commit  || '—';
+    if (el('sysinfo-env')) {
+      const env = v.env || '—';
+      el('sysinfo-env').textContent = env;
+      el('sysinfo-env').className = env === 'prod' ? 'text-success fw-semibold' : 'text-warning fw-semibold';
+    }
+  } catch (e) { /* silently ignore — non-critical */ }
+}
 
 
 // ══════════════════════════════════════════════════════════════════════════════
