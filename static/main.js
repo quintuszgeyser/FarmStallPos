@@ -921,16 +921,21 @@ function renderProductsCards() {
   const catFilterActive = selectedCats.size > 0;
   const UNCATEGORISED = 0;  // sentinel for "no category" pill
 
-  // Extra filters (family + supplier)
-  const famFilter      = STATE.selectedFamilyId;
-  const supplierQ      = (STATE.productSupplierFilter || '').trim().toLowerCase();
+  // Extra filters (supplier)
+  const supplierQ = (STATE.productSupplierFilter || '').trim().toLowerCase();
+
+  // Build a family-id → name map for text search (families array is small)
+  const _famMap = {};
+  (STATE.families || []).forEach(f => { _famMap[f.id] = f.name.toLowerCase(); });
 
   let items = STATE.products.filter(p => {
+    const famName = p.product_family_id ? (_famMap[p.product_family_id] || '') : '';
     const matchesSearch = !q ||
       p.name.toLowerCase().includes(q) ||
       String(p.id) === q ||
       (p.barcode?.toLowerCase().includes(q)) ||
-      (STATE._productSupplierMap[p.id] || '').includes(q);
+      (STATE._productSupplierMap[p.id] || '').includes(q) ||
+      famName.includes(q);
     if (!matchesSearch) return false;
     // Category filter (multi-select; matches any selected)
     if (catFilterActive) {
@@ -940,10 +945,6 @@ function renderProductsCards() {
     // Sub-category filter (single-select, only active when a single category is selected)
     if (STATE.selectedSubCategoryId !== null) {
       if ((p.sub_category_id || null) !== STATE.selectedSubCategoryId) return false;
-    }
-    // Family filter
-    if (famFilter !== null) {
-      if ((p.product_family_id || null) !== famFilter) return false;
     }
     if (tab === 'archived')     return p.is_archived === true;
     if (tab === 'producable')   return p.is_archived !== true && p.product_type === 'recipe' && p.is_produced === true;
@@ -2266,32 +2267,8 @@ function renderCategoryFilterPills() {
     });
   });
 
-  // Populate family dropdown and show extra-filter row for admins
-  _renderFamilyFilterSelect();
 }
 
-function _renderFamilyFilterSelect() {
-  const sel = document.getElementById('products-family-filter');
-  if (!sel) return;
-  const families = STATE.families || [];
-  // Rebuild options only when family list changed (avoids losing focus mid-type on other fields)
-  const current = Array.from(sel.options).slice(1).map(o => o.value).join(',');
-  const next    = families.map(f => f.id).join(',');
-  if (current !== next) {
-    sel.innerHTML = '<option value="">All Families</option>';
-    families.forEach(f => {
-      const o = document.createElement('option');
-      o.value = f.id;
-      o.textContent = f.name + (f.variant_count ? ` (${f.variant_count})` : '');
-      if (STATE.selectedFamilyId === f.id) o.selected = true;
-      sel.appendChild(o);
-    });
-  } else {
-    // Just sync selected value
-    sel.value = STATE.selectedFamilyId ?? '';
-  }
-  _tomSelectSync('products-family-filter');
-}
 
 // ── Category API helper (used after category rename/delete/merge from product cards) ──
 async function _categoryApi(url, body) {
@@ -2535,24 +2512,15 @@ document.getElementById('btn-restore-confirm')?.addEventListener('click', async 
   } catch(e) { toast(e.message, 'error'); }
 });
 
-document.getElementById('products-family-filter')?.addEventListener('change', e => {
-  const v = parseInt(e.target.value, 10);
-  STATE.selectedFamilyId = isNaN(v) || !e.target.value ? null : v;
-  renderProductsCards();
-});
-
 document.getElementById('products-supplier-filter')?.addEventListener('input', e => {
   STATE.productSupplierFilter = e.target.value || '';
   renderProductsCards();
 });
 
 function clearExtraProductFilters() {
-  STATE.selectedFamilyId      = null;
   STATE.productSupplierFilter = '';
-  const famSel  = document.getElementById('products-family-filter');
-  const supInp  = document.getElementById('products-supplier-filter');
-  if (famSel) famSel.value  = '';
-  if (supInp) supInp.value  = '';
+  const supInp = document.getElementById('products-supplier-filter');
+  if (supInp) supInp.value = '';
   renderProductsCards();
 }
 
