@@ -4,7 +4,7 @@ from decimal import Decimal
 from datetime import datetime, date, timedelta
 from collections import defaultdict
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from sqlalchemy import func
 
 from flask import current_app
@@ -551,6 +551,118 @@ def api_transaction_print_receipt(sale_id):
         return jsonify({'error': str(e)}), 500
 
     return jsonify({'ok': True, 'status': result.get('status'), 'notes': result.get('notes')})
+
+
+@bp.route('/api/transactions/<sale_id>/browser-print-receipt', methods=['GET'])
+def api_transaction_browser_print_receipt(sale_id):
+    """Return a self-printing HTML receipt page — browser handles the printer protocol."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    from helpers import get_setting
+
+    rows = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
+    if not rows:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    product_map = {p.id: p.name for p in Product.query.filter(
+        Product.id.in_({r.product_id for r in rows})).all()}
+
+    lines = [{'name': product_map.get(r.product_id, f'Product {r.product_id}'),
+              'qty': float(r.qty), 'unit_price': float(r.unit_price),
+              'subtotal': float(Decimal(str(r.qty)) * r.unit_price)} for r in rows]
+    total = sum(ln['subtotal'] for ln in lines)
+
+    vat_registered = get_setting('vat_registered', 'false') == 'true'
+    vat_rate_pct   = float(get_setting('vat_rate', 15) or 15)
+    vat_amount     = round(total * (vat_rate_pct / 100) / (1 + vat_rate_pct / 100), 2) if vat_registered else 0
+
+    store_name  = get_setting('branding_store_name', '') or 'Farm Stall'
+    store_legal = get_setting('branding_invoice_legal', '') or ''
+    vat_number  = get_setting('vat_number', '') or ''
+    footer      = get_setting('branding_invoice_footer', '') or 'Thank you for your purchase!'
+    width_mm    = float(get_setting('receipt_width_mm', '72') or '72')
+
+    try:
+        dt = datetime.fromisoformat(rows[0].date_time.isoformat()).strftime('%Y-%m-%d %H:%M')
+    except Exception:
+        dt = str(rows[0].date_time)[:16]
+
+    def esc(s):
+        return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+    items_html = ''
+    for ln in lines:
+        items_html += f'''
+        <tr>
+          <td class="name">{esc(ln["name"])}</td>
+          <td class="price">R{ln["subtotal"]:.2f}</td>
+        </tr>'''
+        if abs(ln['qty'] - 1.0) > 0.001:
+            items_html += f'<tr><td class="detail" colspan="2">{ln["qty"]:.3f} &times; R{ln["unit_price"]:.2f}</td></tr>'
+
+    pm = (rows[0].payment_method or '').upper()
+    cash_tendered = float(rows[0].cash_tendered) if rows[0].cash_tendered else None
+    change = round(cash_tendered - total, 2) if cash_tendered else None
+
+    totals_html = f'<tr><td class="total-label"><b>TOTAL</b></td><td class="total-amount"><b>R{total:.2f}</b></td></tr>'
+    if vat_registered:
+        totals_html += f'<tr><td>VAT ({vat_rate_pct:.0f}%)</td><td>R{vat_amount:.2f}</td></tr>'
+    if pm:
+        totals_html += f'<tr><td>Payment</td><td>{esc(pm)}</td></tr>'
+    if cash_tendered:
+        totals_html += f'<tr><td>Tendered</td><td>R{cash_tendered:.2f}</td></tr>'
+    if change and change > 0:
+        totals_html += f'<tr><td>Change</td><td>R{change:.2f}</td></tr>'
+
+    legal_html   = f'<div class="sub">{esc(store_legal)}</div>' if store_legal and store_legal != store_name else ''
+    vat_num_html = f'<div class="sub">VAT No: {esc(vat_number)}</div>' if vat_registered and vat_number else ''
+
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page {{ size: {width_mm}mm auto; margin: 4mm 3mm; }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ font-family: 'Courier New', Courier, monospace; font-size: 10pt;
+          width: {width_mm - 6}mm; }}
+  .header {{ text-align: center; margin-bottom: 4pt; }}
+  .header .store {{ font-size: 12pt; font-weight: bold; }}
+  .header .sub {{ font-size: 9pt; }}
+  .meta {{ font-size: 9pt; margin-bottom: 4pt; }}
+  hr {{ border: none; border-top: 1px dashed #000; margin: 4pt 0; }}
+  table {{ width: 100%; border-collapse: collapse; font-size: 9.5pt; }}
+  td {{ vertical-align: top; padding: 1pt 0; }}
+  td.name {{ width: 70%; word-break: break-word; }}
+  td.price {{ width: 30%; text-align: right; white-space: nowrap; }}
+  td.detail {{ font-size: 8.5pt; color: #444; padding-left: 8pt; }}
+  td.total-label {{ font-size: 10.5pt; }}
+  td.total-amount {{ font-size: 10.5pt; text-align: right; }}
+  .footer {{ text-align: center; font-size: 8.5pt; margin-top: 6pt; }}
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="store">{esc(store_name)}</div>
+    {legal_html}
+    {vat_num_html}
+  </div>
+  <div class="meta">
+    <div>{esc(dt)}</div>
+    <div>Receipt: #{sale_id[:8]}</div>
+  </div>
+  <hr>
+  <table>{items_html}</table>
+  <hr>
+  <table>{totals_html}</table>
+  <hr>
+  <div class="footer">{esc(footer)}</div>
+<script>window.onload = function() {{ window.print(); }};</script>
+</body>
+</html>"""
+
+    return Response(html, mimetype='text/html')
 
 
 @bp.route('/api/transactions/<sale_id>/flag', methods=['POST'])

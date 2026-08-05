@@ -8761,10 +8761,16 @@ document.getElementById('btn-tx-void')?.addEventListener('click', async () => {
 
 // ── Print Receipt ────────────────────────────────────────────────────────────
 async function printReceipt(saleId) {
-  // Resolve configured receipt printer (falls back to default/USB auto-detect)
   const printerId = STATE._receiptPrinterId || null;
   try {
-    const result = await api(`/api/transactions/${saleId}/print-receipt`, {
+    if (!printerId) {
+      // No server-side printer configured — use browser print (works in any printer mode)
+      const win = window.open(`/api/transactions/${saleId}/browser-print-receipt`, '_blank', 'width=420,height=700');
+      if (!win) toast('Pop-up blocked — allow pop-ups for this site', 'warning');
+      else toast('Receipt sent to print dialog', 'success', 3000);
+      return;
+    }
+    await api(`/api/transactions/${saleId}/print-receipt`, {
       method: 'POST',
       body: JSON.stringify({ printer_id: printerId }),
     });
