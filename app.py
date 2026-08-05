@@ -2247,8 +2247,11 @@ def create_app():
         strong_migrate()
         try:
             from blueprints.backup import _enqueue_backup
-            from helpers import get_setting
-            if get_setting('backup_enabled', 'false') == 'true':
+            # Use engine.connect() (not ORM session) so the SELECT on settings
+            # doesn't hold an AccessShareLock that blocks ALTER TABLE in a concurrent worker.
+            with db.engine.connect() as _c:
+                _row = _c.execute(text("SELECT value FROM settings WHERE key='backup_enabled'")).fetchone()
+            if _row and _row[0] == 'true':
                 _enqueue_backup(app=app, triggered_by='pre-upgrade')
         except Exception:
             pass  # never block startup
