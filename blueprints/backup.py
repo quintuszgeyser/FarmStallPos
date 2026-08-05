@@ -8,7 +8,7 @@ import tempfile
 import threading
 import time
 from datetime import datetime
-from urllib.parse import urlparse
+from urllib.parse import urlparse, unquote
 
 import requests as _req
 from flask import Blueprint, current_app, jsonify, request
@@ -213,8 +213,8 @@ def _parse_db_url(url: str) -> dict:
     return {
         'host':     p.hostname or 'localhost',
         'port':     str(p.port or 5432),
-        'user':     p.username or 'postgres',
-        'password': p.password or '',
+        'user':     unquote(p.username or 'postgres'),
+        'password': unquote(p.password or ''),
         'dbname':   p.path.lstrip('/'),
     }
 
