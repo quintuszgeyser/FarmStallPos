@@ -2244,6 +2244,9 @@ def create_app():
 
     @app.errorhandler(Exception)
     def _handle_exception(e):
+        from werkzeug.exceptions import HTTPException
+        if isinstance(e, HTTPException):
+            return e  # pass HTTP errors (404, 405, etc.) through as-is
         logger.error('UNHANDLED EXCEPTION  %s %s\n%s',
                      request.method, request.path, traceback.format_exc())
         return jsonify({'error': 'Internal server error', 'detail': str(e)}), 500

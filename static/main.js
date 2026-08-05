@@ -2153,10 +2153,15 @@ function _updateCategoryPackagingUI(catName) {
     return;
   }
 
+  const catChanged = flagRow.dataset.catId !== String(cat.id);
   flagRow.style.display = '';
-  flagRow.dataset.catId = String(cat.id); // store ID so handler doesn't re-search by name
-  cbx.checked = !!cat.is_packaging;
-  capRow.style.display = cat.is_packaging ? '' : 'none';
+  flagRow.dataset.catId = String(cat.id);
+  if (catChanged) {
+    // Only reset checkbox state when the category actually changes — avoids clobbering
+    // user's checkbox interaction when the blur handler re-fires after a suggestion pick.
+    cbx.checked = !!cat.is_packaging;
+    capRow.style.display = cat.is_packaging ? '' : 'none';
+  }
 }
 
 // Wire the is_packaging checkbox to update the category via API
