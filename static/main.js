@@ -17271,14 +17271,14 @@ async function _renderBackupList() {
         <td class="small text-muted">${date}</td>
         <td class="small text-muted">${f.app_version || '—'}</td>
         <td class="text-end" style="white-space:nowrap">
-          <button class="btn btn-outline-secondary btn-xs btn-sm me-1" onclick="triggerVerify('${f.id}', this)">
-            <i class="bi bi-patch-check"></i>
+          <button class="btn btn-outline-secondary btn-xs btn-sm me-1" onclick="triggerVerify('${f.id}', this)" title="Verify integrity">
+            <i class="bi bi-patch-check me-1"></i>Verify
           </button>
-          <button class="btn btn-outline-primary btn-xs btn-sm me-1" onclick="openRestoreModal('${f.id}', '${f.name.replace(/'/g, '')}')">
-            <i class="bi bi-arrow-counterclockwise"></i>
+          <button class="btn btn-outline-primary btn-xs btn-sm me-1" onclick="openRestoreModal('${f.id}', '${f.name.replace(/'/g, '')}')" title="Restore from this backup">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
           </button>
-          <button class="btn btn-outline-danger btn-xs btn-sm" onclick="deleteBackup('${f.id}', this)">
-            <i class="bi bi-trash"></i>
+          <button class="btn btn-outline-danger btn-xs btn-sm" onclick="deleteBackup('${f.id}', this)" title="Delete this backup">
+            <i class="bi bi-trash me-1"></i>Delete
           </button>
         </td>
       </tr>`;
@@ -17331,7 +17331,7 @@ async function startGDriveConnect() {
     if (_gdriveAuthPollTimer) clearInterval(_gdriveAuthPollTimer);
     _gdriveAuthPollTimer = setInterval(async () => {
       try {
-        const p = await api(`/api/backup/connect/poll?nonce=${r.nonce}`);
+        const p = await api(`/api/backup/connect/poll?nonce=${r.nonce}`, {}, 30000);
         if (p.status === 'authorized') {
           clearInterval(_gdriveAuthPollTimer);
           hide(flow);
@@ -17342,7 +17342,8 @@ async function startGDriveConnect() {
           hide(flow);
           toast('Google Drive connection cancelled or expired', 'error');
         }
-      } catch (e) { clearInterval(_gdriveAuthPollTimer); }
+        // status === 'pending' or network error — keep polling
+      } catch (e) { /* network hiccup — keep polling until expires_in */ }
     }, 5000);
   } catch (e) { toast(e.message, 'error'); }
 }
