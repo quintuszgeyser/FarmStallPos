@@ -17394,7 +17394,7 @@ function _pollBackupJob(logId, btn) {
 async function triggerVerify(fileId, btn) {
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass"></i>'; }
   try {
-    const r = await api('/api/backup/verify', { method: 'POST', body: { file_id: fileId } });
+    const r = await api('/api/backup/verify', { method: 'POST', body: JSON.stringify({ file_id: fileId }) });
     if (r.ok) {
       toast(`Backup verified — ${r.object_count} objects, readable`, 'success');
     } else {
@@ -17495,11 +17495,11 @@ async function _doRestore(fileId) {
   if (doBtn) doBtn.disabled = true;
 
   try {
-    const r = await api('/api/backup/restore', { method: 'POST', body: {
+    const r = await api('/api/backup/restore', { method: 'POST', body: JSON.stringify({
       file_id:        fileId,
       restore_target: restoreTarget,
       confirmed:      true,
-    }});
+    }) });
     toast('Restore started — this may take a few minutes...', 'info');
     const modalEl = document.getElementById('_restore-modal');
     if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
