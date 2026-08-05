@@ -1084,7 +1084,7 @@ function renderProductsCards() {
               <div class="pr-mm-right">
                 ${priceDisplay ? `<span class="pr-mm-price text-success fw-semibold">${priceDisplay}</span>` : ''}
                 ${margins ? `<span class="pr-mm-cogs">${escapeHtml(margins.costLabel)}</span>` : ''}
-                ${margins ? `<span class="pr-mm-margin">${margins.margin}%</span>` : ''}
+                ${margins?.margin != null ? `<span class="pr-mm-margin">${margins.margin}%</span>` : ''}
               </div>
             </div>
             ${p.barcode ? `<span class="pr-mm-barcode">${escapeHtml(p.barcode)}</span>` : ''}
@@ -1098,8 +1098,8 @@ function renderProductsCards() {
         ${p.barcode ? `<svg id="bc-${p.id}" class="pr-barcode-svg"></svg>` : ''}
       </div>
       <div class="pr-cogs">${margins ? escapeHtml(margins.costLabel) : '<span class="text-muted">—</span>'}</div>
-      <div class="pr-markup">${margins ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
-      <div class="pr-margin">${margins ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
+      <div class="pr-markup">${margins?.markup != null ? margins.markup + '%' : '<span class="text-muted">—</span>'}</div>
+      <div class="pr-margin">${margins?.margin != null ? margins.margin + '%' : '<span class="text-muted">—</span>'}</div>
       <div class="pr-flags">
         ${p.is_produced         ? `<i class="bi bi-fire pf-icon text-warning"        title="Batch produced"></i>`             : ''}
         ${p.is_prepared         ? `<i class="bi bi-clock pf-icon text-danger"         title="Made to order (kitchen)"></i>`    : ''}
@@ -3346,10 +3346,7 @@ function calcProductMargins(p) {
     return null;
   }
 
-  if (!cost || !price || isNaN(cost) || isNaN(price) || cost <= 0 || price <= 0) return null;
-
-  const markup = ((price - cost) / cost * 100).toFixed(1);
-  const margin = ((price - cost) / price * 100).toFixed(1);
+  if (!cost || isNaN(cost) || cost <= 0) return null;
 
   // Format cost label - for by-weight products show per kg/L, for fixed products show per unit
   let costLabel;
@@ -3360,6 +3357,11 @@ function calcProductMargins(p) {
   } else {
     costLabel = `R${fmt(cost)}`;
   }
+
+  if (!price || isNaN(price) || price <= 0) return { costLabel, markup: null, margin: null };
+
+  const markup = ((price - cost) / cost * 100).toFixed(1);
+  const margin = ((price - cost) / price * 100).toFixed(1);
 
   return { markup, margin, costLabel };
 }
@@ -11805,10 +11807,11 @@ function _updateDiscountTypeUI() {
     if (inp)    inp.placeholder = 'e.g. 5.00';
   } else {
     if (label)  label.textContent = 'Percentage off (%)';
-    if (prefix) prefix.textContent = '';
+    if (prefix) { prefix.textContent = ''; prefix.classList.add('hidden'); }
     if (suffix) suffix.classList.remove('hidden');
     if (inp)    inp.placeholder = 'e.g. 10';
   }
+  if (type !== 'pct_off' && prefix) prefix.classList.remove('hidden');
 }
 document.getElementById('special-discount-type')?.addEventListener('change', _updateDiscountTypeUI);
 
