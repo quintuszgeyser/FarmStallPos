@@ -332,6 +332,82 @@ def api_labels_print_bulk():
     return jsonify({'ok': True, 'job_ids': job_ids, 'pages': total_pages})
 
 
+# ── Browser (client-side) print ──────────────────────────────────────────────
+
+@bp.route('/api/labels/browser-print', methods=['POST'])
+def api_labels_browser_print():
+    """Return a self-printing HTML page — the browser opens it and window.print() fires.
+    The label is sized with @page CSS so it prints at the exact physical dimensions
+    regardless of which printer is attached to the client device."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    data = request.json or {}
+
+    product_id = data.get('product_id')
+    tmpl_id    = data.get('template_id')
+    qty        = max(1, min(500, int(data.get('qty', 1))))
+
+    if not product_id or not tmpl_id:
+        return jsonify({'error': 'product_id and template_id required'}), 400
+
+    product = db.session.get(Product, int(product_id))
+    if not product:
+        return jsonify({'error': 'Product not found'}), 404
+    tmpl = db.session.get(LabelTemplate, int(tmpl_id))
+    if not tmpl or tmpl.is_archived:
+        return jsonify({'error': 'Template not found'}), 404
+
+    branding = _get_branding()
+    svc = LabelRenderService(branding)
+    try:
+        import base64
+        png_bytes = svc.render_png(_tmpl_dict(tmpl), product, dpr=2)
+        img_b64 = base64.b64encode(png_bytes).decode()
+    except Exception as e:
+        log.exception('Browser print render failed')
+        return jsonify({'error': str(e)}), 500
+
+    w_mm = float(tmpl.width_mm)
+    h_mm = float(tmpl.height_mm)
+    copies_html = ''.join(
+        f'<div class="label"><img src="data:image/png;base64,{img_b64}" alt="label"></div>'
+        for _ in range(qty)
+    )
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page {{ size: {w_mm}mm {h_mm}mm; margin: 0; }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ background: #fff; }}
+  .label {{ width: {w_mm}mm; height: {h_mm}mm; overflow: hidden; page-break-after: always; }}
+  .label img {{ width: 100%; height: 100%; display: block; object-fit: fill; }}
+</style>
+</head>
+<body>
+{copies_html}
+<script>window.onload = function() {{ window.print(); }};</script>
+</body>
+</html>"""
+
+    u = current_user()
+    job = LabelPrintJob(
+        template_id = tmpl.id,
+        product_id  = product.id,
+        qty         = qty,
+        printer_id  = None,
+        status      = 'browser',
+        user_id     = u.id if u else None,
+        notes       = 'browser-print',
+    )
+    db.session.add(job)
+    db.session.commit()
+
+    from flask import Response
+    return Response(html, mimetype='text/html')
+
+
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/label-print-jobs', methods=['GET'])

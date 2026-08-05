@@ -297,10 +297,16 @@ class PrintDispatchService:
         except Exception as e:
             log.warning('CUPS fallback failed: %s', e)
 
+        try:
+            return self._send_windows(tspl, printer_row)
+        except Exception as e:
+            log.warning('Windows print fallback failed: %s', e)
+
         raise RuntimeError(
             'Could not reach the printer. '
             'Check USB connection and power. '
-            'On the server run: lsusb | grep -iE "2d84|2d37"'
+            'On Windows: install the Xprinter driver, then set the printer name in Settings → Printer Settings. '
+            'On Linux: lsusb | grep -iE "2d84|2d37"'
         )
 
     # ── TSPL2 command builder ──────────────────────────────────────────────────
@@ -439,6 +445,42 @@ class PrintDispatchService:
                 os.unlink(tmp_path)
             except Exception:
                 pass
+
+    # ── Windows raw printer port (requires Xprinter driver + pywin32) ──────────
+
+    def _send_windows(self, tspl: bytes, printer_row) -> dict:
+        try:
+            import win32print
+        except ImportError:
+            raise RuntimeError('pywin32 not installed')
+
+        # Resolve printer name: use configured name, or find first Xprinter
+        printer_name = None
+        if printer_row and printer_row.name:
+            printer_name = printer_row.name
+        if not printer_name:
+            for _flags, _desc, name, _comment in win32print.EnumPrinters(
+                win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+            ):
+                nl = name.lower()
+                if 'xp' in nl or '365' in nl or 'xprinter' in nl:
+                    printer_name = name
+                    break
+        if not printer_name:
+            raise RuntimeError('No Xprinter found in Windows printers')
+
+        hp = win32print.OpenPrinter(printer_name)
+        try:
+            win32print.StartDocPrinter(hp, 1, ('label', None, 'RAW'))
+            try:
+                win32print.StartPagePrinter(hp)
+                win32print.WritePrinter(hp, tspl)
+                win32print.EndPagePrinter(hp)
+            finally:
+                win32print.EndDocPrinter(hp)
+        finally:
+            win32print.ClosePrinter(hp)
+        return {'status': 'sent', 'notes': f'Windows raw {printer_name}'}
 
     # ── Helpers ────────────────────────────────────────────────────────────────
 

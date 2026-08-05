@@ -15773,7 +15773,7 @@ function _populateTemplateSelect(selectEl, selectedId) {
 
 function _populatePrinterSelect(selectEl) {
   if (!selectEl) return;
-  selectEl.innerHTML = '<option value="">Default / Browser Print</option>';
+  selectEl.innerHTML = '<option value="browser">This device (browser print)</option>';
   LABELS.printers.forEach(p => {
     const opt = document.createElement('option');
     opt.value = p.id; opt.textContent = `${p.name} (${p.connection})`;
@@ -15834,7 +15834,7 @@ function setLabelQty(n) { const el = document.getElementById('lp-qty'); if (el) 
 async function executeLabelPrint() {
   const tmplId    = parseInt(document.getElementById('lp-template-select')?.value);
   const qty       = parseInt(document.getElementById('lp-qty')?.value) || 1;
-  const printerId = document.getElementById('lp-printer-select')?.value || null;
+  const printerVal = document.getElementById('lp-printer-select')?.value || 'browser';
   const statusEl  = document.getElementById('lp-status');
   const productId = LABELS._currentProduct?.id;
   if (!tmplId)    { toast('Select a template first', 'warning'); return; }
@@ -15842,11 +15842,27 @@ async function executeLabelPrint() {
   const btn = document.getElementById('lp-print-btn');
   btn.disabled = true; if (statusEl) statusEl.textContent = 'Sending…';
   try {
-    const result = await api('/api/labels/print', {
-      method: 'POST', body: JSON.stringify({ product_id: productId, template_id: tmplId, qty, printer_id: printerId }),
-    });
-    toast(`${qty} label${qty > 1 ? 's' : ''} sent to printer`, 'success');
-    if (statusEl) statusEl.innerHTML = `<i class="bi bi-check-lg me-1"></i>Job #${result.job_id} — ${qty} label${qty > 1 ? 's' : ''}`;
+    if (printerVal === 'browser') {
+      // Client-side: server renders the label, browser handles print dialog
+      const res = await fetch('/api/labels/browser-print', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ product_id: productId, template_id: tmplId, qty }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.error || 'Render failed'); }
+      const html = await res.text();
+      const win = window.open('', '_blank', 'width=600,height=400');
+      if (!win) { toast('Pop-up blocked — allow pop-ups for this site', 'warning'); return; }
+      win.document.write(html);
+      win.document.close();
+      toast(`${qty} label${qty > 1 ? 's' : ''} sent to print dialog`, 'success');
+      if (statusEl) statusEl.innerHTML = `<i class="bi bi-check-lg me-1"></i>${qty} label${qty > 1 ? 's' : ''} — check print dialog`;
+    } else {
+      const result = await api('/api/labels/print', {
+        method: 'POST', body: JSON.stringify({ product_id: productId, template_id: tmplId, qty, printer_id: printerVal }),
+      });
+      toast(`${qty} label${qty > 1 ? 's' : ''} sent to printer`, 'success');
+      if (statusEl) statusEl.innerHTML = `<i class="bi bi-check-lg me-1"></i>Job #${result.job_id} — ${qty} label${qty > 1 ? 's' : ''}`;
+    }
     bootstrap.Modal.getInstance(document.getElementById('labelPrintModal'))?.hide();
   } catch (e) {
     toast(`Print failed: ${e.message}`, 'error');
@@ -15923,7 +15939,7 @@ function applyBulkDefaults() {
 }
 
 async function executeBulkPrint() {
-  const printerId = document.getElementById('bulk-printer-select')?.value || null;
+  const printerVal = document.getElementById('bulk-printer-select')?.value || 'browser';
   const statusEl  = document.getElementById('bulk-status');
   const items = [];
   document.querySelectorAll('.bulk-chk:checked').forEach(chk => {
@@ -15936,11 +15952,44 @@ async function executeBulkPrint() {
   if (!items.length) { toast('Select at least one product with a template', 'warning'); return; }
   if (statusEl) statusEl.textContent = `Rendering ${items.length} product(s)…`;
   try {
-    const result = await api('/api/labels/print-bulk', {
-      method: 'POST', body: JSON.stringify({ items, printer_id: printerId }),
-    });
-    toast(`${result.pages} label${result.pages > 1 ? 's' : ''} sent to printer for ${items.length} product(s)`, 'success');
-    bootstrap.Modal.getInstance(document.getElementById('bulkLabelModal'))?.hide();
+    if (printerVal === 'browser') {
+      // Open a separate browser print window per product (one print dialog, all pages)
+      // Collect all rendered labels into one window
+      const responses = await Promise.all(items.map(item =>
+        fetch('/api/labels/browser-print', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ product_id: item.product_id, template_id: item.template_id, qty: item.qty }),
+        }).then(r => r.text())
+      ));
+      // Extract body content from each response and merge into one print window
+      const firstTmplId = items[0]?.template_id;
+      const firstTmpl   = LABELS.templates.find(t => t.id === parseInt(firstTmplId));
+      const wMm = firstTmpl?.width_mm || 50;
+      const hMm = firstTmpl?.height_mm || 50;
+      const bodyContents = responses.map(html => {
+        const m = html.match(/<body>([\s\S]*?)<script>/);
+        return m ? m[1] : '';
+      }).join('');
+      const mergedHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        @page { size: ${wMm}mm ${hMm}mm; margin: 0; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .label { width: ${wMm}mm; height: ${hMm}mm; overflow: hidden; page-break-after: always; }
+        .label img { width: 100%; height: 100%; display: block; object-fit: fill; }
+      </style></head><body>${bodyContents}<script>window.onload=function(){window.print()};<\/script></body></html>`;
+      const win = window.open('', '_blank', 'width=600,height=400');
+      if (!win) { toast('Pop-up blocked — allow pop-ups for this site', 'warning'); return; }
+      win.document.write(mergedHtml);
+      win.document.close();
+      const total = items.reduce((s, i) => s + i.qty, 0);
+      toast(`${total} label${total > 1 ? 's' : ''} sent to print dialog`, 'success');
+      bootstrap.Modal.getInstance(document.getElementById('bulkLabelModal'))?.hide();
+    } else {
+      const result = await api('/api/labels/print-bulk', {
+        method: 'POST', body: JSON.stringify({ items, printer_id: printerVal }),
+      });
+      toast(`${result.pages} label${result.pages > 1 ? 's' : ''} sent to printer for ${items.length} product(s)`, 'success');
+      bootstrap.Modal.getInstance(document.getElementById('bulkLabelModal'))?.hide();
+    }
   } catch (e) {
     toast(`Bulk print failed: ${e.message}`, 'error');
     if (statusEl) statusEl.textContent = `Error: ${e.message}`;
