@@ -2043,6 +2043,16 @@
               <span>Next: <strong id="backup-next-run">—</strong></span>
             </div>
 
+            <!-- Active database row -->
+            <div class="d-flex align-items-center gap-2 small">
+              <span class="text-muted">Active database:</span>
+              <span class="badge bg-primary" id="backup-active-db">—</span>
+              <span id="backup-active-db-override-badge" class="badge bg-warning text-dark hidden">override</span>
+              <button class="btn btn-outline-secondary btn-xs btn-sm" onclick="openSwitchDbModal()" title="Switch database">
+                <i class="bi bi-database me-1"></i>Switch
+              </button>
+            </div>
+
             <!-- Google Drive connection -->
             <div id="backup-gdrive-section">
               <div class="d-flex align-items-center gap-2 mb-2">

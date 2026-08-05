@@ -2074,8 +2074,14 @@ def create_app():
     from werkzeug.middleware.proxy_fix import ProxyFix
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
-    # DB URL
-    db_url = os.getenv('DATABASE_URL', 'sqlite:///pos.db')
+    # DB URL — runtime override written by /api/backup/switch-database takes precedence
+    _override_url = None
+    try:
+        with open('/tmp/farmpos_db_override') as _f:
+            _override_url = _f.read().strip() or None
+    except FileNotFoundError:
+        pass
+    db_url = _override_url or os.getenv('DATABASE_URL', 'sqlite:///pos.db')
     if db_url.startswith('postgres://'):
         db_url = db_url.replace('postgres://', 'postgresql+psycopg://', 1)
     elif db_url.startswith('postgresql://') and '+psycopg://' not in db_url:

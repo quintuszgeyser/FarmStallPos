@@ -17181,6 +17181,15 @@ async function loadBackupSettings() {
     const enabledCb = document.getElementById('backup-enabled-toggle');
     if (enabledCb) enabledCb.checked = !!s.enabled;
 
+    // Active database
+    const activeDbBadge    = document.getElementById('backup-active-db');
+    const overrideBadge    = document.getElementById('backup-active-db-override-badge');
+    if (activeDbBadge) activeDbBadge.textContent = s.active_db || '—';
+    if (overrideBadge) {
+      const isOverride = s.active_db && s.default_db && s.active_db !== s.default_db;
+      isOverride ? show(overrideBadge) : hide(overrideBadge);
+    }
+
     // GDrive connection state
     const connected = !!s.gdrive_connected;
     const connArea = document.getElementById('backup-gdrive-connect-area');
@@ -17524,6 +17533,11 @@ function _pollRestoreJob(logId) {
         clearInterval(timer);
         toast('Restore completed successfully', 'success');
         await loadBackupSettings();
+        if (j.restore_target_db && j.restore_target_db !== (await api('/api/backup/status').then(s => s.active_db).catch(() => ''))) {
+          if (confirm(`Restore complete into "${j.restore_target_db}". Switch the app to use this database now?`)) {
+            switchDatabase(j.restore_target_db);
+          }
+        }
       } else if (j.restore_status === 'failed') {
         clearInterval(timer);
         toast(`Restore failed: ${j.error || 'unknown error'}`, 'error', 10000);
@@ -17533,6 +17547,87 @@ function _pollRestoreJob(logId) {
     } catch (e) { /* network hiccup — keep polling */ }
   }, 3000);
 }
+
+async function openSwitchDbModal() {
+  let dbs = [];
+  try { dbs = await api('/api/backup/databases'); } catch (e) { toast(e.message, 'error'); return; }
+
+  const existing = document.getElementById('_switch-db-modal');
+  if (existing) existing.remove();
+
+  const rows = dbs.map(db => {
+    const badges = [
+      db.is_active  ? '<span class="badge bg-primary ms-1">active</span>' : '',
+      db.is_default ? '<span class="badge bg-secondary ms-1">default</span>' : '',
+      db.is_prod    ? '<span class="badge bg-danger ms-1">prod</span>' : '',
+      db.is_restore ? '<span class="badge bg-info text-dark ms-1">restore</span>' : '',
+    ].join('');
+    const switchBtn = db.is_active ? '' :
+      `<button class="btn btn-outline-primary btn-xs btn-sm" onclick="_doSwitchDb('${db.name}')">
+        <i class="bi bi-arrow-right-circle me-1"></i>Switch
+      </button>`;
+    const delBtn = db.deletable ?
+      `<button class="btn btn-outline-danger btn-xs btn-sm ms-1" onclick="_doDeleteDb('${db.name}', this)">
+        <i class="bi bi-trash"></i>
+      </button>` : '';
+    return `<div class="d-flex align-items-center gap-2 py-2 border-bottom">
+      <div class="flex-grow-1 small"><span class="fw-semibold">${escapeHtml(db.name)}</span>${badges}</div>
+      <div class="d-flex gap-1 flex-shrink-0">${switchBtn}${delBtn}</div>
+    </div>`;
+  }).join('');
+
+  const modal = document.createElement('div');
+  modal.id = '_switch-db-modal';
+  modal.className = 'modal fade';
+  modal.setAttribute('tabindex', '-1');
+  modal.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header">
+      <h5 class="modal-title"><i class="bi bi-database me-1"></i>Switch Database</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    </div>
+    <div class="modal-body p-0 px-3">${rows || '<p class="text-muted small py-3">No databases found.</p>'}</div>
+    <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Close</button></div>
+  </div></div>`;
+  document.body.appendChild(modal);
+  new bootstrap.Modal(modal).show();
+}
+
+async function switchDatabase(dbname) {
+  try {
+    await api('/api/backup/switch-database', { method: 'POST', body: JSON.stringify({ dbname }) });
+    toast(`Switching to ${dbname} — reloading…`, 'info', 6000);
+    const existing = document.getElementById('_switch-db-modal');
+    if (existing) bootstrap.Modal.getInstance(existing)?.hide();
+    // Poll until app comes back with the new DB, then reload
+    const deadline = Date.now() + 20000;
+    const poller = setInterval(async () => {
+      try {
+        const s = await api('/api/backup/status', {}, 3000);
+        if (s.active_db === dbname || Date.now() > deadline) {
+          clearInterval(poller);
+          location.reload();
+        }
+      } catch (e) { /* still restarting */ }
+    }, 1500);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// Used by inline onclick in the modal
+window._doSwitchDb = switchDatabase;
+
+async function _doDeleteDb(dbname, btn) {
+  if (!confirm(`Delete database "${dbname}"? This cannot be undone.`)) return;
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/backup/database/${encodeURIComponent(dbname)}`, { method: 'DELETE' });
+    toast(`Deleted ${dbname}`, 'success');
+    await openSwitchDbModal(); // refresh modal
+  } catch (e) {
+    toast(e.message, 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+window._doDeleteDb = _doDeleteDb;
 
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -56,6 +56,36 @@ def _clear_pending_auth():
     set_setting('backup_gdrive_pending_state', '')
 
 
+# ── Database switching ────────────────────────────────────────────────────────
+_DB_OVERRIDE_FILE = '/tmp/farmpos_db_override'
+
+def _get_active_db() -> str:
+    """Return the currently active database name."""
+    try:
+        with open(_DB_OVERRIDE_FILE) as f:
+            url = f.read().strip()
+            if url:
+                return _parse_db_url(url)['dbname']
+    except FileNotFoundError:
+        pass
+    base_url = os.environ.get('DATABASE_URL', '')
+    return _parse_db_url(base_url)['dbname'] if base_url else ''
+
+def _list_databases() -> list:
+    """Return all non-template databases on the server."""
+    import psycopg
+    base_url = os.environ.get('DATABASE_URL', '')
+    if not base_url:
+        return []
+    p = _parse_db_url(base_url)
+    with psycopg.connect(host=p['host'], port=int(p['port']), user=p['user'],
+                         password=p['password'], dbname='postgres') as conn:
+        rows = conn.execute(
+            "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
 # ── Config helpers ───────────────────────────────────────────────────────────
 def _client_id():
     return current_app.config.get('GOOGLE_CLIENT_ID', '')
@@ -641,6 +671,8 @@ def api_backup_status():
         'prev_file_size':            prev.file_size if prev else None,
         'available_restore_targets': _available_restore_targets(),
         'google_oauth_configured':   bool(current_app.config.get('GOOGLE_CLIENT_ID')),
+        'active_db':                 _get_active_db(),
+        'default_db':                _parse_db_url(os.environ.get('DATABASE_URL', ''))['dbname'] if os.environ.get('DATABASE_URL') else '',
     })
 
 
@@ -888,3 +920,94 @@ def api_backup_settings():
     if d.get('encryption_passphrase'):
         set_setting('backup_encryption_passphrase', d['encryption_passphrase'])
     return jsonify({'ok': True})
+
+
+@bp.route('/api/backup/databases', methods=['GET'])
+def api_backup_list_databases():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    try:
+        dbs       = _list_databases()
+        active    = _get_active_db()
+        base_url  = os.environ.get('DATABASE_URL', '')
+        prod_url  = os.environ.get('PROD_DATABASE_URL', '')
+        default_db = _parse_db_url(base_url)['dbname'] if base_url else ''
+        prod_db    = _parse_db_url(prod_url)['dbname'] if prod_url else None
+        return jsonify([{
+            'name':       db,
+            'is_active':  db == active,
+            'is_default': db == default_db,
+            'is_prod':    db == prod_db,
+            'is_restore': db.startswith('farm_pos_restore'),
+            'deletable':  (db != default_db and db != prod_db
+                           and db.startswith('farm_pos_') and db != active),
+        } for db in dbs])
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@bp.route('/api/backup/switch-database', methods=['POST'])
+def api_switch_database():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data   = request.get_json(silent=True) or {}
+    dbname = data.get('dbname', '').strip()
+    if not dbname:
+        return jsonify({'error': 'dbname required'}), 400
+    base_url = os.environ.get('DATABASE_URL', '')
+    if not base_url:
+        return jsonify({'error': 'DATABASE_URL not configured'}), 500
+    default_db = _parse_db_url(base_url)['dbname']
+    if dbname == default_db:
+        # Switching back to default — remove override
+        try:
+            os.remove(_DB_OVERRIDE_FILE)
+        except FileNotFoundError:
+            pass
+    else:
+        new_url = base_url.rsplit('/', 1)[0] + f'/{dbname}'
+        with open(_DB_OVERRIDE_FILE, 'w') as f:
+            f.write(new_url)
+    # Graceful worker reload — deferred so response reaches client first
+    def _reload():
+        import signal as _sig
+        time.sleep(0.4)
+        try:
+            os.kill(os.getppid(), _sig.SIGHUP)
+        except Exception:
+            pass
+    threading.Thread(target=_reload, daemon=True).start()
+    return jsonify({'ok': True, 'dbname': dbname})
+
+
+@bp.route('/api/backup/database/<dbname>', methods=['DELETE'])
+def api_delete_database(dbname):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    import psycopg
+    from psycopg import sql as pgsql
+    base_url  = os.environ.get('DATABASE_URL', '')
+    prod_url  = os.environ.get('PROD_DATABASE_URL', '')
+    active    = _get_active_db()
+    default_db = _parse_db_url(base_url)['dbname'] if base_url else ''
+    prod_db    = _parse_db_url(prod_url)['dbname'] if prod_url else None
+    if dbname == default_db:
+        return jsonify({'error': 'Cannot delete the default database'}), 400
+    if prod_db and dbname == prod_db:
+        return jsonify({'error': 'Cannot delete the production database'}), 400
+    if dbname == active:
+        return jsonify({'error': 'Cannot delete the active database — switch away first'}), 400
+    if not dbname.startswith('farm_pos_'):
+        return jsonify({'error': 'Can only delete farm_pos_* databases'}), 400
+    try:
+        p = _parse_db_url(base_url)
+        with psycopg.connect(host=p['host'], port=int(p['port']), user=p['user'],
+                             password=p['password'], dbname='postgres', autocommit=True) as conn:
+            conn.execute(
+                "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = %s",
+                (dbname,)
+            )
+            conn.execute(pgsql.SQL("DROP DATABASE IF EXISTS {}").format(pgsql.Identifier(dbname)))
+        return jsonify({'ok': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
