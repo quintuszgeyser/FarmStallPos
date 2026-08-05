@@ -3,6 +3,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import subprocess
 import tempfile
 import threading
@@ -28,9 +29,31 @@ DRIVE_FILES_URL        = 'https://www.googleapis.com/drive/v3/files'
 DRIVE_UPLOAD_URL       = 'https://www.googleapis.com/upload/drive/v3/files'
 
 # ── Module-level state ───────────────────────────────────────────────────────
-_token_cache  = {'access_token': None, 'expires_at': 0.0}
-_pending_auth = {}   # nonce → {device_code, user_code, verification_url, interval, expires_at}
-_backup_lock  = threading.Lock()  # prevents concurrent backups
+_token_cache = {'access_token': None, 'expires_at': 0.0}
+_backup_lock = threading.Lock()  # prevents concurrent backups
+
+# _pending_auth is intentionally NOT a module-level dict — gunicorn workers have
+# separate memory, so start/poll could land on different workers.  We persist the
+# pending state in two settings keys instead so all workers share the same view.
+def _set_pending_auth(nonce: str, state: dict):
+    set_setting('backup_gdrive_pending_nonce', nonce)
+    set_setting('backup_gdrive_pending_state', json.dumps(state))
+
+def _get_pending_auth(nonce: str):
+    stored = get_setting('backup_gdrive_pending_nonce', '')
+    if stored != nonce:
+        return None
+    raw = get_setting('backup_gdrive_pending_state', '')
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except Exception:
+        return None
+
+def _clear_pending_auth():
+    set_setting('backup_gdrive_pending_nonce', '')
+    set_setting('backup_gdrive_pending_state', '')
 
 
 # ── Config helpers ───────────────────────────────────────────────────────────
@@ -634,15 +657,14 @@ def api_backup_connect_start():
         }, timeout=15)
         r.raise_for_status()
         j = r.json()
-        import secrets
         nonce = secrets.token_urlsafe(16)
-        _pending_auth[nonce] = {
+        _set_pending_auth(nonce, {
             'device_code':      j['device_code'],
             'user_code':        j['user_code'],
             'verification_url': j['verification_url'],
             'interval':         j.get('interval', 5),
             'expires_at':       time.time() + j.get('expires_in', 300),
-        }
+        })
         return jsonify({
             'nonce':            nonce,
             'user_code':        j['user_code'],
@@ -658,9 +680,9 @@ def api_backup_connect_poll():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     nonce = request.args.get('nonce', '')
-    state = _pending_auth.get(nonce)
+    state = _get_pending_auth(nonce)
     if not state or time.time() > state['expires_at']:
-        _pending_auth.pop(nonce, None)
+        _clear_pending_auth()
         return jsonify({'status': 'expired'})
     try:
         r = _req.post(GOOGLE_TOKEN_URL, data={
@@ -681,11 +703,11 @@ def api_backup_connect_poll():
                     set_setting('backup_gdrive_user_email', ui.json().get('email', ''))
             except Exception:
                 pass
-            _pending_auth.pop(nonce, None)
+            _clear_pending_auth()
             return jsonify({'status': 'authorized', 'email': get_setting('backup_gdrive_user_email', '')})
         err = j.get('error', '')
         if err == 'access_denied':
-            _pending_auth.pop(nonce, None)
+            _clear_pending_auth()
             return jsonify({'status': 'denied'})
         return jsonify({'status': 'pending'})
     except Exception as e:
