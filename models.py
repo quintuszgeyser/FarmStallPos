@@ -568,11 +568,13 @@ class AuditLog(db.Model):
 
 class Special(db.Model):
     __tablename__ = 'specials'
-    id            = db.Column(db.Integer, primary_key=True)
-    name          = db.Column(db.String(120), nullable=False)
-    special_price = db.Column(Numeric(10, 2), nullable=False)
-    active        = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
-    schedule      = db.Column(db.Text, nullable=True)
+    id             = db.Column(db.Integer, primary_key=True)
+    name           = db.Column(db.String(120), nullable=False)
+    special_price  = db.Column(Numeric(10, 2), nullable=False)
+    active         = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    schedule       = db.Column(db.Text, nullable=True)
+    discount_type  = db.Column(db.String(20), nullable=False, default='fixed_price', server_default='fixed_price')
+    discount_value = db.Column(Numeric(10, 2), nullable=True)
 
 
 class Invoice(db.Model):
@@ -603,6 +605,7 @@ class SpecialLine(db.Model):
     special_id = db.Column(db.Integer, db.ForeignKey('specials.id'), nullable=False)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
     qty        = db.Column(db.Integer, nullable=False, default=1)
+    group_id   = db.Column(db.Integer, nullable=True)  # lines sharing a group_id are alternatives (OR); different group_ids are all required (AND)
 
 
 class Customer(db.Model):

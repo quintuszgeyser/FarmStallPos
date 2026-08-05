@@ -3002,20 +3002,25 @@ function openProductEditor(p) {
   if (calcSection) calcSection.style.display = isEdit ? '' : 'none';
   // Auto-fetch WAC for live price↔markup linking
   if (p?.id) {
-    const _markup = parseFloat(document.getElementById('calc-markup')?.value || '') || _globalMarkupPct;
-    const _statusEl = document.getElementById('calc-wac-status');
-    const _costEl   = document.getElementById('calc-avg-cost');
-    if (_statusEl) _statusEl.textContent = 'loading…';
-    api(`/api/products/${p.id}/suggested_price?markup=${_markup}`)
-      .then(j => {
-        _lastCalcWac = j.wac || 0;
-        if (_costEl)   _costEl.textContent   = _lastCalcWac > 0 ? `R${_lastCalcWac.toFixed(4)}` : '—';
-        if (_statusEl) _statusEl.textContent = _lastCalcWac <= 0 ? '(no stock)' : '';
-      })
-      .catch(() => {
-        _lastCalcWac = 0;
-        if (_statusEl) _statusEl.textContent = '(no stock)';
-      });
+    if (p.product_type === 'recipe') {
+      // Recipes: compute client-side immediately so price populates without a server round-trip
+      _recalcRecipeWac();
+    } else {
+      const _markup = parseFloat(document.getElementById('calc-markup')?.value || '') || _globalMarkupPct;
+      const _statusEl = document.getElementById('calc-wac-status');
+      const _costEl   = document.getElementById('calc-avg-cost');
+      if (_statusEl) _statusEl.textContent = 'loading…';
+      api(`/api/products/${p.id}/suggested_price?markup=${_markup}`)
+        .then(j => {
+          _lastCalcWac = j.wac || 0;
+          if (_costEl)   _costEl.textContent   = _lastCalcWac > 0 ? `R${_lastCalcWac.toFixed(4)}` : '—';
+          if (_statusEl) _statusEl.textContent = _lastCalcWac <= 0 ? '(no stock)' : '';
+        })
+        .catch(() => {
+          _lastCalcWac = 0;
+          if (_statusEl) _statusEl.textContent = '(no stock)';
+        });
+    }
   }
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal'));
   modal.show();
@@ -3479,6 +3484,7 @@ function renderRecipeLines() {
         });
         const totEl = document.getElementById('recipe-cost-total');
         if (totEl) totEl.textContent = total > 0 ? `Est. ingredient cost: R${total.toFixed(4)}` : '';
+        _recalcRecipeWac();
       }
     });
   });
@@ -3491,6 +3497,7 @@ function renderRecipeLines() {
 
   const totEl = document.getElementById('recipe-cost-total');
   if (totEl) totEl.textContent = totalCost > 0 ? `Est. ingredient cost: R${totalCost.toFixed(4)}` : '';
+  _recalcRecipeWac();
 }
 
 function getRecipeLinesForSubmit() {
@@ -3521,12 +3528,95 @@ document.getElementById('p-is-produced')?.addEventListener('change', () => {
   const on = document.getElementById('p-is-produced').checked;
   on ? show(document.getElementById('row-batch-size')) : hide(document.getElementById('row-batch-size'));
   on ? show(document.getElementById('section-unit-type-early')) : hide(document.getElementById('section-unit-type-early'));
+  _recalcRecipeWac();
 });
+
+document.getElementById('p-batch-size')?.addEventListener('input', _recalcRecipeWac);
+
+document.getElementById('p-stock-unit')?.addEventListener('input', _recalcRecipeWac);
 
 let _lastCalcWac = 0;         // WAC (per base unit) fetched when product editor opens
 let _syncingPriceMarkup = false; // guard against ping-pong between price ↔ markup inputs
 let _markupUserEdited = false;   // true when user or price-link changed calc-markup this session
 let _originalMarginPct = null;   // margin_pct saved when editor opened (null = follow global)
+
+// Push current WAC + markup → price field.
+// Only auto-fills when price is 0/unset — if price is already set, the calc-markup
+// input listener handles drift (user types markup → price updates). This avoids
+// silently overriding a carefully set price when opening the editor.
+function _syncPriceFromMarkup() {
+  if (_lastCalcWac <= 0) return;
+  const markup = parseFloat(document.getElementById('calc-markup')?.value || '');
+  if (isNaN(markup)) return;
+  const priceEl = document.getElementById('p-price');
+  if (!priceEl) return;
+  const currentPrice = parseFloat(priceEl.value || '0');
+  if (currentPrice > 0) return;   // price already set — let the user drive via markup input
+  const priceBase    = _lastCalcWac * (1 + markup / 100);
+  const priceDisplay = priceBase * _priceConv();
+  _syncingPriceMarkup = true;
+  priceEl.value = priceDisplay.toFixed(priceDisplay < 1 ? 4 : 2);
+  _syncingPriceMarkup = false;
+}
+
+// Recompute recipe WAC from current _recipeLines + batch-size, update display + price
+function _recalcRecipeWac() {
+  const productType = document.getElementById('p-type')?.value;
+  if (productType !== 'recipe') return;
+
+  let totalCost = 0;
+  const missingNames = [];
+
+  _recipeLines.forEach(line => {
+    if (!line.ingredient_id) return;
+    const ingr = STATE.products.find(p => p.id === line.ingredient_id);
+    if (!ingr) return;
+    const unitType = ingr?.unit_type || line.unit_type || 'weight';
+    const unit     = line.unit || ingr?.base_unit || UNITS[unitType]?.base || 'g';
+    const qtyBase  = ingr?.product_type === 'recipe'
+      ? (parseFloat(line.qty_base_display ?? line.qty_base) || 0)
+      : toBase(parseFloat(line.qty_base_display ?? line.qty_base) || 0, unit, unitType);
+    const cost = getIngredientCost(ingr.id, qtyBase);
+    if (cost <= 0 && qtyBase > 0) missingNames.push(ingr.name);
+    totalCost += cost;
+  });
+
+  const isProduced = document.getElementById('p-is-produced')?.checked;
+  const batchSize  = isProduced
+    ? (parseFloat(document.getElementById('p-batch-size')?.value || '1') || 1)
+    : 1;
+  const wac = totalCost / batchSize;
+  _lastCalcWac = wac;
+
+  const costEl    = document.getElementById('calc-avg-cost');
+  const statusEl  = document.getElementById('calc-wac-status');
+  const perUnitEl = document.getElementById('calc-per-unit');
+  const missingEl = document.getElementById('calc-missing-costs');
+
+  if (costEl)   costEl.textContent   = wac > 0 ? `R${wac.toFixed(4)}` : '—';
+  if (statusEl) statusEl.textContent = '';
+
+  if (perUnitEl) {
+    if (isProduced) {
+      const stockUnit = document.getElementById('p-stock-unit')?.value?.trim() || 'unit';
+      perUnitEl.textContent = `per ${stockUnit}`;
+    } else {
+      perUnitEl.textContent = '';
+    }
+  }
+
+  if (missingEl) {
+    if (missingNames.length > 0) {
+      missingEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i>Missing cost data: <strong>${missingNames.join(', ')}</strong> — receive stock to get real prices`;
+      missingEl.classList.remove('hidden');
+    } else {
+      missingEl.innerHTML = '';
+      missingEl.classList.add('hidden');
+    }
+  }
+
+  _syncPriceFromMarkup();
+}
 
 // Pre-fill calc markup from settings when modal opens
 function initCalcMarkup(product) {
@@ -11638,7 +11728,13 @@ function renderSpecialsList() {
   STATE.specials.forEach(s => {
     const card = document.createElement('div');
     card.className = 'product-thin-card mb-2';
-    const lineNames = s.lines.map(l => `${l.qty}× ${l.product_name}`).join(', ');
+    // Build group summary: "any Cake + any Coffee" style
+    const groups = _groupSpecialLines(s.lines || []);
+    const groupSummary = groups.map(g => {
+      const names = g.products.map(p => p.product_name || `#${p.product_id}`);
+      return names.length === 1 ? `${g.products[0].qty}× ${names[0]}` : `any of: ${names.join(', ')}`;
+    }).join(' + ');
+    const discountLabel = _discountLabel(s);
     const scheduledNow = specialIsScheduledNow(s);
     let scheduleText = '';
     if ((s.schedule || []).length > 0) {
@@ -11653,9 +11749,9 @@ function renderSpecialsList() {
       : (s.schedule?.length > 0 && !scheduledNow ? '<span class="badge bg-warning text-dark ms-1">Outside schedule</span>' : '');
     card.innerHTML = `
       <div class="product-thin-main">
-        <div class="product-title">${s.name}${activeBadge}</div>
-        <div class="product-sub">R${fmt(s.special_price)} - ${lineNames || 'No products set'}</div>
-        ${scheduleText ? `<div class="small text-muted"><i class="bi bi-clock me-1"></i>${scheduleText}</div>` : ''}
+        <div class="product-title">${escapeHtml(s.name)}${activeBadge}</div>
+        <div class="product-sub">${discountLabel} — ${groupSummary || 'No products set'}</div>
+        ${scheduleText ? `<div class="small text-muted"><i class="bi bi-clock me-1"></i>${escapeHtml(scheduleText)}</div>` : ''}
       </div>
       <div class="product-actions">
         <button class="btn btn-outline-primary btn-sm">Edit</button>
@@ -11665,25 +11761,85 @@ function renderSpecialsList() {
   });
 }
 
+function _discountLabel(s) {
+  if (s.discount_type === 'flat_off') return `R${fmt(s.discount_value || 0)} off`;
+  if (s.discount_type === 'pct_off')  return `${fmt(s.discount_value || 0)}% off`;
+  return `R${fmt(s.special_price)} bundle`;
+}
+
+// Convert flat lines array (with group_id) to [{group_id, products:[{product_id,product_name,qty}]}]
+function _groupSpecialLines(lines) {
+  const map = {};
+  lines.forEach(l => {
+    const gid = l.group_id ?? l.product_id; // fallback: treat each product as its own group
+    if (!map[gid]) map[gid] = { group_id: gid, products: [] };
+    map[gid].products.push(l);
+  });
+  return Object.values(map);
+}
+
 document.getElementById('btn-new-special')?.addEventListener('click', () => openSpecialEditor(null));
 
-let _specialLines    = [];
-let _scheduleRows    = [];   // [{days:[0..6], all_day:true, start:'', end:''}]
+// _specialGroups: [{group_id: int, products: [{product_id, product_name, qty}]}]
+let _specialGroups = [];
+let _scheduleRows  = [];   // [{days:[0..6], all_day:true, start:'', end:''}]
+let _nextGroupId   = 1;    // auto-increment for new groups
 
 const DAY_NAMES = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 
+function _updateDiscountTypeUI() {
+  const type = document.getElementById('special-discount-type')?.value || 'fixed_price';
+  const label  = document.getElementById('special-price-label');
+  const prefix = document.getElementById('special-price-prefix');
+  const suffix = document.getElementById('special-price-suffix');
+  const inp    = document.getElementById('special-price');
+  if (type === 'fixed_price') {
+    if (label)  label.textContent = 'Bundle price (R)';
+    if (prefix) prefix.textContent = 'R';
+    if (suffix) suffix.classList.add('hidden');
+    if (inp)    inp.placeholder = '0.00';
+  } else if (type === 'flat_off') {
+    if (label)  label.textContent = 'Amount off (R)';
+    if (prefix) prefix.textContent = 'R';
+    if (suffix) suffix.classList.add('hidden');
+    if (inp)    inp.placeholder = 'e.g. 5.00';
+  } else {
+    if (label)  label.textContent = 'Percentage off (%)';
+    if (prefix) prefix.textContent = '';
+    if (suffix) suffix.classList.remove('hidden');
+    if (inp)    inp.placeholder = 'e.g. 10';
+  }
+}
+document.getElementById('special-discount-type')?.addEventListener('change', _updateDiscountTypeUI);
+
 function openSpecialEditor(s) {
-  _specialLines = (s?.lines    || []).map(l => ({ ...l }));
-  _scheduleRows = (s?.schedule || []).map(r => ({ ...r }));
+  _specialGroups = _groupSpecialLines(s?.lines || []);
+  _scheduleRows  = (s?.schedule || []).map(r => ({ ...r }));
+  _nextGroupId   = (_specialGroups.length > 0
+    ? Math.max(..._specialGroups.map(g => g.group_id)) + 1
+    : 1);
+
   document.getElementById('special-id').value    = s?.id ?? '';
   document.getElementById('special-name').value  = s?.name ?? '';
-  document.getElementById('special-price').value = s?.special_price ?? '';
   document.getElementById('special-active').checked = s?.active !== false;
   document.getElementById('special-editor-title').textContent = s ? `Edit - ${s.name}` : 'New Special';
+
+  const dtype = s?.discount_type || 'fixed_price';
+  const dtSel = document.getElementById('special-discount-type');
+  if (dtSel) dtSel.value = dtype;
+  _updateDiscountTypeUI();
+
+  // Price/value field: for fixed_price show special_price, for others show discount_value
+  const priceEl = document.getElementById('special-price');
+  if (priceEl) {
+    if (dtype === 'fixed_price') priceEl.value = s?.special_price ?? '';
+    else priceEl.value = s?.discount_value ?? '';
+  }
+
   const delBtn = document.getElementById('btn-delete-special');
   s ? show(delBtn) : hide(delBtn);
   renderScheduleRows();
-  renderSpecialLines();
+  renderSpecialGroups();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('specialEditorModal')).show();
 }
 
@@ -11778,56 +11934,110 @@ function specialIsScheduledNow(special) {
   });
 }
 
-function renderSpecialLines() {
-  const tbody = document.getElementById('special-lines-body');
-  if (!tbody) return;
-  tbody.innerHTML = '';
+function renderSpecialGroups() {
+  const host = document.getElementById('special-groups-host');
+  if (!host) return;
+  host.innerHTML = '';
   const forSaleProducts = STATE.products.filter(p => p.is_for_sale && !p.is_archived);
-  _specialLines.forEach((line, idx) => {
-    const tr = document.createElement('tr');
-    let selHTML = `<select class="form-select form-select-sm" data-sl-idx="${idx}" data-sl-field="product_id">
-      <option value="">- select -</option>`;
-    forSaleProducts.forEach(p => {
-      selHTML += `<option value="${p.id}" ${p.id === line.product_id ? 'selected' : ''}>${p.name}</option>`;
+
+  _specialGroups.forEach((group, gIdx) => {
+    const card = document.createElement('div');
+    card.className = 'border rounded p-2 mb-2';
+    card.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong class="small">Group ${gIdx + 1} <span class="text-muted fw-normal">(any one product from this group)</span></strong>
+        <button class="btn btn-outline-danger btn-sm" data-rg-idx="${gIdx}"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <table class="table table-sm table-borderless mb-1">
+        <thead class="table-light"><tr><th>Product</th><th style="width:90px">Qty</th><th style="width:40px"></th></tr></thead>
+        <tbody data-grp="${gIdx}"></tbody>
+      </table>
+      <button class="btn btn-outline-secondary btn-sm" data-ap-grp="${gIdx}"><i class="bi bi-plus-lg me-1"></i>Add alternative</button>`;
+    host.appendChild(card);
+
+    const tbody = card.querySelector(`tbody[data-grp="${gIdx}"]`);
+    group.products.forEach((prod, pIdx) => {
+      const tr = document.createElement('tr');
+      let selHTML = `<select class="form-select form-select-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="product_id"><option value="">- select -</option>`;
+      forSaleProducts.forEach(p => {
+        selHTML += `<option value="${p.id}" ${p.id === prod.product_id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`;
+      });
+      selHTML += '</select>';
+      tr.innerHTML = `
+        <td>${selHTML}</td>
+        <td><input type="number" min="1" value="${prod.qty || 1}" class="form-control form-control-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="qty"></td>
+        <td><button class="btn btn-outline-danger btn-sm" data-rp-g="${gIdx}" data-rp-p="${pIdx}"><i class="bi bi-dash"></i></button></td>`;
+      tbody.appendChild(tr);
     });
-    selHTML += '</select>';
-    tr.innerHTML = `
-      <td>${selHTML}</td>
-      <td><input type="number" min="1" value="${line.qty || 1}" class="form-control form-control-sm" style="width:70px" data-sl-idx="${idx}" data-sl-field="qty"></td>
-      <td><button class="btn btn-outline-danger btn-sm" data-sl-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>`;
-    tbody.appendChild(tr);
   });
-  tbody.querySelectorAll('[data-sl-idx]').forEach(el => {
-    el.addEventListener('change', () => {
-      const idx   = parseInt(el.dataset.slIdx);
-      const field = el.dataset.slField;
-      if (field === 'product_id') _specialLines[idx].product_id = parseInt(el.value) || null;
-      if (field === 'qty') _specialLines[idx].qty = parseInt(el.value) || 1;
-    });
-  });
-  tbody.querySelectorAll('[data-sl-remove]').forEach(btn => {
+
+  // Wire up events
+  host.querySelectorAll('[data-rg-idx]').forEach(btn => {
     btn.addEventListener('click', () => {
-      _specialLines.splice(parseInt(btn.dataset.slRemove), 1);
-      renderSpecialLines();
+      _specialGroups.splice(parseInt(btn.dataset.rgIdx), 1);
+      renderSpecialGroups();
+    });
+  });
+  host.querySelectorAll('[data-sg]').forEach(el => {
+    el.addEventListener('change', () => {
+      const g = parseInt(el.dataset.sg), p = parseInt(el.dataset.sp), f = el.dataset.sf;
+      if (f === 'product_id') _specialGroups[g].products[p].product_id = parseInt(el.value) || null;
+      if (f === 'qty')        _specialGroups[g].products[p].qty = parseInt(el.value) || 1;
+    });
+  });
+  host.querySelectorAll('[data-rp-g]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const g = parseInt(btn.dataset.rpG), p = parseInt(btn.dataset.rpP);
+      _specialGroups[g].products.splice(p, 1);
+      if (_specialGroups[g].products.length === 0) _specialGroups.splice(g, 1);
+      renderSpecialGroups();
+    });
+  });
+  host.querySelectorAll('[data-ap-grp]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const g = parseInt(btn.dataset.apGrp);
+      _specialGroups[g].products.push({ product_id: null, qty: 1 });
+      renderSpecialGroups();
     });
   });
 }
 
-document.getElementById('btn-add-special-line')?.addEventListener('click', () => {
-  _specialLines.push({ product_id: null, qty: 1 });
-  renderSpecialLines();
+document.getElementById('btn-add-special-group')?.addEventListener('click', () => {
+  _specialGroups.push({ group_id: _nextGroupId++, products: [{ product_id: null, qty: 1 }] });
+  renderSpecialGroups();
 });
 
 document.getElementById('btn-save-special')?.addEventListener('click', async () => {
-  const id    = document.getElementById('special-id').value;
-  const name  = document.getElementById('special-name').value.trim();
-  const price = parseFloat(document.getElementById('special-price').value);
+  const id     = document.getElementById('special-id').value;
+  const name   = document.getElementById('special-name').value.trim();
+  const dtype  = document.getElementById('special-discount-type')?.value || 'fixed_price';
+  const dvalue = parseFloat(document.getElementById('special-price').value);
   const active = document.getElementById('special-active').checked;
-  const lines = _specialLines.filter(l => l.product_id);
-  if (!name)       return toast('Special name required', 'warning');
-  if (isNaN(price)) return toast('Special price required', 'warning');
-  if (!lines.length) return toast('Add at least one product', 'warning');
-  const payload = { name, special_price: price, active, schedule: _scheduleRows, lines };
+
+  if (!name)         return toast('Special name required', 'warning');
+  if (isNaN(dvalue)) return toast('Discount value required', 'warning');
+
+  // Flatten groups → lines with group_id
+  const lines = [];
+  let nextGid = 1;
+  _specialGroups.forEach(group => {
+    const gid = group.group_id || nextGid;
+    nextGid = gid + 1;
+    group.products.forEach(prod => {
+      if (prod.product_id) lines.push({ product_id: prod.product_id, qty: prod.qty || 1, group_id: gid });
+    });
+  });
+  if (!lines.length) return toast('Add at least one product group', 'warning');
+
+  const payload = {
+    name,
+    discount_type:  dtype,
+    discount_value: dtype !== 'fixed_price' ? dvalue : null,
+    special_price:  dtype === 'fixed_price'  ? dvalue : 0,
+    active,
+    schedule: _scheduleRows,
+    lines,
+  };
   try {
     if (id) {
       await api(`/api/specials/${id}`, { method: 'POST', body: JSON.stringify(payload) });
@@ -11880,6 +12090,9 @@ function reapplySpecials() {
 // that maximises total customer savings, subject to each product unit being used by
 // at most one special.  For a typical farm-stall scenario (< 15 specials, small qty)
 // this runs in well under a millisecond.
+//
+// Supports group-based specials: lines with the same group_id are product alternatives
+// (OR within a group). All groups must be satisfied (AND across groups).
 function _computeOptimalSpecials(cartQtyMap) {
   const active = (STATE.specials || []).filter(s => s.active && s.lines.length > 0 && specialIsScheduledNow(s));
   if (!active.length) return [];
@@ -11888,18 +12101,51 @@ function _computeOptimalSpecials(cartQtyMap) {
     return parseFloat(STATE.products.find(p => p.id === pid)?.price || 0);
   }
 
+  // Estimate savings per application (used only to prioritise in the exhaustive search).
+  // Uses minimum product price per group for a conservative estimate.
   function savingsPerApp(special) {
-    return special.lines.reduce((s, r) => s + productBase(r.product_id) * r.qty, 0)
-           - parseFloat(special.special_price);
+    const groups = _groupSpecialLines(special.lines);
+    const bundleBase = groups.reduce((sum, g) => {
+      // Use minimum base price in the group × qty as conservative estimate
+      const minPrice = Math.min(...g.products.map(p => productBase(p.product_id)));
+      const qty = g.products[0]?.qty || 1;
+      return sum + minPrice * qty;
+    }, 0);
+    if (special.discount_type === 'flat_off')   return parseFloat(special.discount_value || 0);
+    if (special.discount_type === 'pct_off')    return bundleBase * parseFloat(special.discount_value || 0) / 100;
+    return bundleBase - parseFloat(special.special_price);  // fixed_price
   }
 
+  // How many times this special can fit given remaining cart quantities.
+  // For each group: sum available qty across all products in the group (÷ group qty requirement).
+  // Min across groups = max times the special fits.
   function maxFit(special, remaining) {
-    return Math.floor(Math.min(...special.lines.map(r => (remaining[r.product_id] || 0) / r.qty)));
+    const groups = _groupSpecialLines(special.lines);
+    if (!groups.length) return 0;
+    const fits = groups.map(g => {
+      const qty = g.products[0]?.qty || 1;  // all products in a group share the same qty requirement
+      const totalAvail = g.products.reduce((s, p) => s + (remaining[p.product_id] || 0), 0);
+      return Math.floor(totalAvail / qty);
+    });
+    return Math.min(...fits);
   }
 
+  // Deduct t applications from remaining, greedily taking from the most-available product per group.
   function deduct(special, t, remaining) {
     const r = { ...remaining };
-    special.lines.forEach(req => { r[req.product_id] = (r[req.product_id] || 0) - req.qty * t; });
+    const groups = _groupSpecialLines(special.lines);
+    groups.forEach(g => {
+      const qty = g.products[0]?.qty || 1;
+      let needed = qty * t;
+      // Sort products by available qty desc (greedy: use the most available first)
+      const sorted = [...g.products].sort((a, b) => (r[b.product_id] || 0) - (r[a.product_id] || 0));
+      sorted.forEach(p => {
+        if (needed <= 0) return;
+        const take = Math.min(r[p.product_id] || 0, needed);
+        r[p.product_id] = (r[p.product_id] || 0) - take;
+        needed -= take;
+      });
+    });
     return r;
   }
 
@@ -11943,48 +12189,82 @@ function detectAndOfferSpecials() {
   const assignment = _computeOptimalSpecials(cartQtyMap);
 
   assignment.forEach(({ special, times }) => {
-    // Compute savings directly from the special definition (not from post-application price diffs)
-    const sav = special.lines.reduce((s, r) => s + parseFloat(STATE.products.find(p => p.id === r.product_id)?.price || 0) * r.qty, 0)
-                - parseFloat(special.special_price);
-    applySpecial(special, times);
-    if (sav * times > 0.005) toast(`"${special.name}" ×${times} - saving R${fmt(sav * times)}`, 'success', 3000);
+    const totalSaved = applySpecial(special, times);
+    if (totalSaved > 0.005) toast(`"${special.name}" ×${times} - saving R${fmt(totalSaved)}`, 'success', 3000);
   });
 
   renderCart();
 }
 
 function applySpecial(special, times) {
-  // Discount exactly (req.qty × times) units per required product.
-  // Uses _allocated_units / _discounted_subtotal so that a product appearing in two
-  // different specials (e.g. Coke in both "2×Coke" and "Coke+Cream Soda") is split
-  // correctly - each unit is counted towards at most one special.
-  const totalBaseForSpecial = special.lines.reduce((s, l) => {
-    return s + parseFloat(STATE.products.find(p => p.id === l.product_id)?.price || 0) * l.qty;
-  }, 0);
+  // For group-based specials: for each group greedily select cart products, then apply discount.
+  // Returns total savings for toast notification.
+  const groups = _groupSpecialLines(special.lines);
 
-  special.lines.forEach(req => {
-    let remaining = req.qty * times;
-    const base = parseFloat(STATE.products.find(p => p.id === req.product_id)?.price || 0);
-    const productShare     = totalBaseForSpecial > 0 ? (base * req.qty) / totalBaseForSpecial : 1 / special.lines.length;
-    const discPricePerUnit = (special.special_price * productShare) / req.qty;
+  // Resolve which cart products to allocate per group (greedy: most-available first)
+  // Returns [{product_id, qty_to_allocate, base_price_per_unit}] across all groups
+  const allocations = [];
+  groups.forEach(g => {
+    const groupQty = (g.products[0]?.qty || 1) * times;
+    let remaining = groupQty;
+    const sorted = [...g.products]
+      .map(p => ({ ...p, available: Object.values(STATE.cart)
+        .filter(c => c.product_id === p.product_id && !c.is_weight)
+        .reduce((s, c) => s + c.qty - (c._allocated_units || 0), 0) }))
+      .sort((a, b) => b.available - a.available);
+    sorted.forEach(p => {
+      if (remaining <= 0) return;
+      const take = Math.min(p.available, remaining);
+      if (take > 0) {
+        allocations.push({
+          product_id: p.product_id,
+          qty: take,
+          base: parseFloat(STATE.products.find(pr => pr.id === p.product_id)?.price || 0),
+        });
+      }
+      remaining -= take;
+    });
+  });
 
+  // Compute total base price for all allocated units
+  const totalBase = allocations.reduce((s, a) => s + a.base * a.qty, 0);
+
+  // Compute total discount amount
+  let totalDiscount = 0;
+  if (special.discount_type === 'flat_off') {
+    totalDiscount = parseFloat(special.discount_value || 0) * times;
+  } else if (special.discount_type === 'pct_off') {
+    totalDiscount = totalBase * parseFloat(special.discount_value || 0) / 100;
+  } else {
+    // fixed_price: discount = totalBase - special_price × times
+    totalDiscount = totalBase - parseFloat(special.special_price) * times;
+  }
+
+  if (totalDiscount <= 0) return 0;
+
+  // Distribute discount proportionally across allocated products
+  allocations.forEach(alloc => {
+    const share = totalBase > 0 ? (alloc.base * alloc.qty) / totalBase : 1 / allocations.length;
+    const discountForAlloc = totalDiscount * share;
+    const discPricePerUnit = (alloc.base * alloc.qty - discountForAlloc) / alloc.qty;
+
+    let remaining = alloc.qty;
     Object.keys(STATE.cart).forEach(k => {
       if (remaining <= 0) return;
       const item = STATE.cart[k];
-      if (item.product_id !== req.product_id || item.is_weight) return;
-
-      // Only consume units not yet allocated to another special
+      if (item.product_id !== alloc.product_id || item.is_weight) return;
       const available = item.qty - (item._allocated_units || 0);
       if (available <= 0) return;
-
       const discUnits = Math.min(available, remaining);
       item._allocated_units     = (item._allocated_units || 0) + discUnits;
       item._discounted_subtotal = (item._discounted_subtotal || 0) + discPricePerUnit * discUnits;
-      item.unit_price           = parseFloat((item._discounted_subtotal + base * (item.qty - item._allocated_units)).toFixed(2));
+      item.unit_price           = parseFloat((item._discounted_subtotal + alloc.base * (item.qty - item._allocated_units)).toFixed(2));
       item._special_applied     = special.id;
       remaining                -= discUnits;
     });
   });
+
+  return totalDiscount;
 }
 
 // ═══════════════════════════════════════════════════════

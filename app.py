@@ -2011,6 +2011,14 @@ def strong_migrate():
             END $$;
         """)
 
+        # Group-based specials: discount_type/discount_value on specials, group_id on special_lines
+        pg_try("ALTER TABLE specials ADD COLUMN IF NOT EXISTS discount_type VARCHAR(20) NOT NULL DEFAULT 'fixed_price'")
+        pg_try("ALTER TABLE specials ADD COLUMN IF NOT EXISTS discount_value NUMERIC(10,2)")
+        pg_try("ALTER TABLE special_lines ADD COLUMN IF NOT EXISTS group_id INTEGER")
+        # Migrate existing lines: each line gets a unique group_id (= its own id) so each product
+        # remains individually required (AND logic), preserving all existing special behaviour.
+        pg_try("UPDATE special_lines SET group_id = id WHERE group_id IS NULL")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 
