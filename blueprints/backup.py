@@ -788,7 +788,7 @@ def api_backup_list():
 def api_backup_verify():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    file_id = (request.json or {}).get('file_id', '')
+    file_id = (request.get_json(silent=True) or {}).get('file_id', '')
     if not file_id:
         return jsonify({'error': 'file_id required'}), 400
     log = BackupLog(started_at=datetime.utcnow(), status='running',
@@ -802,7 +802,7 @@ def api_backup_verify():
 def api_backup_restore():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    data           = request.json or {}
+    data           = request.get_json(silent=True) or {}
     file_id        = data.get('file_id', '')
     restore_target = data.get('restore_target', '')
     confirmed      = data.get('confirmed', False)
@@ -853,7 +853,7 @@ def api_backup_delete(file_id):
 def api_backup_settings():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    d = request.json or {}
+    d = request.get_json(silent=True) or {}
     set_setting('backup_enabled',            'true' if d.get('enabled') else 'false')
     set_setting('backup_provider',           d.get('provider', 'google_drive'))
     set_setting('backup_gdrive_folder_name', d.get('folder_name', 'FarmPOS Backups'))
