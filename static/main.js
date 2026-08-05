@@ -17262,30 +17262,30 @@ async function _renderBackupList() {
       return;
     }
     const rows = list.map(f => {
-      const sizeMB = f.size ? (f.size / 1048576).toFixed(1) + ' MB' : '—';
-      const date   = f.created_time ? new Date(f.created_time).toLocaleString() : '—';
-      const encIcon = f.encrypted ? '<i class="bi bi-lock-fill text-success ms-1" title="Encrypted"></i>' : '';
-      return `<tr>
-        <td class="small" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}${encIcon}</td>
-        <td class="small text-muted">${sizeMB}</td>
-        <td class="small text-muted">${date}</td>
-        <td class="small text-muted">${f.app_version || '—'}</td>
-        <td class="text-end" style="white-space:nowrap">
-          <button class="btn btn-outline-secondary btn-xs btn-sm me-1" onclick="triggerVerify('${f.id}', this)" title="Verify integrity">
-            <i class="bi bi-patch-check me-1"></i>Verify
+      const sizeMB  = f.size ? (f.size / 1048576).toFixed(1) + ' MB' : '—';
+      const date    = f.created_time ? new Date(f.created_time).toLocaleString() : '—';
+      const encIcon = f.encrypted ? ' <i class="bi bi-lock-fill text-success" title="Encrypted"></i>' : '';
+      const ver     = f.app_version ? `v${f.app_version}` : '';
+      const meta    = [sizeMB, date, ver].filter(Boolean).join(' · ');
+      return `<div class="d-flex align-items-center gap-2 py-1 border-bottom">
+        <div class="flex-grow-1 overflow-hidden">
+          <div class="small fw-semibold text-truncate" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}${encIcon}</div>
+          <div class="text-muted" style="font-size:11px">${meta}</div>
+        </div>
+        <div class="d-flex gap-1 flex-shrink-0">
+          <button class="btn btn-outline-secondary btn-xs btn-sm" onclick="triggerVerify('${f.id}', this)" title="Verify integrity">
+            <i class="bi bi-patch-check"></i>
           </button>
-          <button class="btn btn-outline-primary btn-xs btn-sm me-1" onclick="openRestoreModal('${f.id}', '${f.name.replace(/'/g, '')}')" title="Restore from this backup">
-            <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+          <button class="btn btn-outline-primary btn-xs btn-sm" onclick="openRestoreModal('${f.id}', '${f.name.replace(/'/g, '')}')" title="Restore from this backup">
+            <i class="bi bi-arrow-counterclockwise"></i>
           </button>
           <button class="btn btn-outline-danger btn-xs btn-sm" onclick="deleteBackup('${f.id}', this)" title="Delete this backup">
-            <i class="bi bi-trash me-1"></i>Delete
+            <i class="bi bi-trash"></i>
           </button>
-        </td>
-      </tr>`;
+        </div>
+      </div>`;
     }).join('');
-    container.innerHTML = `<table class="table table-sm table-hover mb-0 small">
-      <thead><tr><th>File</th><th>Size</th><th>Created</th><th>Version</th><th></th></tr></thead>
-      <tbody>${rows}</tbody></table>`;
+    container.innerHTML = `<div class="small">${rows}</div>`;
   } catch (e) {
     container.innerHTML = `<div class="text-danger small">${e.message}</div>`;
   }
