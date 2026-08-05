@@ -11971,6 +11971,8 @@ function renderSpecialGroups() {
         <td><input type="number" min="1" value="${prod.qty || 1}" class="form-control form-control-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="qty"></td>
         <td><button class="btn btn-outline-danger btn-sm" data-rp-g="${gIdx}" data-rp-p="${pIdx}"><i class="bi bi-dash"></i></button></td>`;
       tbody.appendChild(tr);
+      const sel = tr.querySelector('select[data-sf="product_id"]');
+      if (sel && window.TomSelect) new TomSelect(sel, { maxOptions: null, placeholder: '— select product —' });
     });
   });
 
