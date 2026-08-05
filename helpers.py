@@ -10,7 +10,7 @@ import random
 from decimal import Decimal
 from datetime import datetime, timedelta
 
-from flask import session
+from flask import session, abort
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
@@ -130,7 +130,7 @@ def require_role(*roles):
     u = current_user()
     if not u or not u.active:
         session.clear()
-        return False
+        abort(401)   # unauthenticated — JS api() handles 401 with re-login reload
     return bool(u.has_role(*roles))
 
 
