@@ -512,6 +512,27 @@ class Setting(db.Model):
     value = db.Column(db.String(2000), nullable=False)
 
 
+class BackupLog(db.Model):
+    __tablename__ = 'backup_log'
+    id                   = db.Column(db.Integer, primary_key=True)
+    started_at           = db.Column(db.DateTime, nullable=False)
+    completed_at         = db.Column(db.DateTime)
+    status               = db.Column(db.String(20), nullable=False)  # running / ok / failed
+    triggered_by         = db.Column(db.String(20))   # manual / schedule / pre-restore / pre-upgrade / verify
+    db_name              = db.Column(db.String(100))
+    file_name            = db.Column(db.String(250))
+    file_size            = db.Column(db.BigInteger)
+    sha256               = db.Column(db.String(64))
+    provider             = db.Column(db.String(20))
+    drive_file_id        = db.Column(db.String(200))
+    app_version          = db.Column(db.String(50))
+    schema_version       = db.Column(db.Integer)
+    error                = db.Column(db.Text)
+    restore_status       = db.Column(db.String(20))
+    restore_completed_at = db.Column(db.DateTime)
+    restore_target_db    = db.Column(db.String(100))
+
+
 class UserSession(db.Model):
     __tablename__ = 'user_sessions'
     id          = db.Column(db.Integer, primary_key=True)

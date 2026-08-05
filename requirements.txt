@@ -13,3 +13,4 @@ python-barcode==0.15.1
 qrcode[pil]==7.4.2
 pyusb==1.2.1
 pdfplumber>=0.11.0
+cryptography>=42.0.0

@@ -2028,6 +2028,132 @@
         {% endif %}
         <!-- end recognition-only cards (Face Recognition / Customer Merging / Enrollment) -->
 
+        <!-- ── Database Backup ── -->
+        <div class="card border" id="backup-card">
+          <div class="card-header fw-semibold py-2 d-flex justify-content-between align-items-center">
+            <span><i class="bi bi-cloud-arrow-up me-1"></i>Database Backup</span>
+            <span id="backup-health-badge" class="badge bg-secondary">—</span>
+          </div>
+          <div class="card-body py-3 px-3 d-flex flex-column gap-3">
+
+            <!-- Health summary row -->
+            <div class="small text-muted d-flex flex-wrap gap-3" id="backup-summary-row">
+              <span>Last backup: <strong id="backup-last-run">Never</strong></span>
+              <span id="backup-fail-badge-wrap" class="hidden">Failures: <span class="badge bg-danger" id="backup-fail-count">0</span></span>
+              <span>Next: <strong id="backup-next-run">—</strong></span>
+            </div>
+
+            <!-- Google Drive connection -->
+            <div id="backup-gdrive-section">
+              <div class="d-flex align-items-center gap-2 mb-2">
+                <span class="fw-semibold small">Google Drive</span>
+                <span id="backup-gdrive-status" class="badge bg-secondary">Not connected</span>
+              </div>
+              <div id="backup-gdrive-connect-area">
+                <button class="btn btn-outline-primary btn-sm" id="btn-gdrive-connect" onclick="startGDriveConnect()">
+                  <i class="bi bi-google me-1"></i>Connect Google Drive
+                </button>
+              </div>
+              <div id="backup-gdrive-auth-flow" class="hidden mt-2">
+                <div class="alert alert-info py-2 small mb-2">
+                  <div class="mb-1">Open this URL in a browser and enter the code:</div>
+                  <div><a id="backup-gdrive-auth-url" href="#" target="_blank" class="fw-bold"></a></div>
+                  <div class="mt-1">Code: <strong id="backup-gdrive-user-code">—</strong></div>
+                </div>
+              </div>
+              <div id="backup-gdrive-connected-area" class="hidden d-flex align-items-center gap-2">
+                <span class="small text-muted" id="backup-gdrive-email">—</span>
+                <button class="btn btn-outline-danger btn-sm btn-xs" onclick="disconnectGDrive()">Disconnect</button>
+              </div>
+            </div>
+
+            <!-- Settings form -->
+            <div>
+              <div class="row g-2 small">
+                <div class="col-12">
+                  <label class="form-label mb-1 fw-semibold">Provider</label>
+                  <select class="form-select form-select-sm" id="backup-provider" onchange="toggleBackupProviderUI()">
+                    <option value="google_drive">Google Drive</option>
+                    <option value="local_folder">Local Folder</option>
+                  </select>
+                </div>
+                <div class="col-12" id="backup-folder-name-row">
+                  <label class="form-label mb-1">Drive Folder Name</label>
+                  <input type="text" class="form-control form-control-sm" id="backup-folder-name" value="FarmPOS Backups">
+                </div>
+                <div class="col-12 hidden" id="backup-local-path-row">
+                  <label class="form-label mb-1">Local Folder Path</label>
+                  <input type="text" class="form-control form-control-sm" id="backup-local-path" placeholder="/data/backups">
+                </div>
+                <div class="col-6">
+                  <label class="form-label mb-1">Frequency</label>
+                  <select class="form-select form-select-sm" id="backup-frequency" onchange="toggleBackupFrequencyUI()">
+                    <option value="daily">Daily</option>
+                    <option value="weekly">Weekly</option>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label mb-1">Time (UTC)</label>
+                  <input type="time" class="form-control form-control-sm" id="backup-time" value="12:00">
+                </div>
+                <div class="col-6 hidden" id="backup-day-row">
+                  <label class="form-label mb-1">Day of week</label>
+                  <select class="form-select form-select-sm" id="backup-day">
+                    <option value="monday">Monday</option><option value="tuesday">Tuesday</option>
+                    <option value="wednesday">Wednesday</option><option value="thursday">Thursday</option>
+                    <option value="friday">Friday</option><option value="saturday">Saturday</option>
+                    <option value="sunday">Sunday</option>
+                  </select>
+                </div>
+                <div class="col-6">
+                  <label class="form-label mb-1">Keep (count)</label>
+                  <input type="number" class="form-control form-control-sm" id="backup-keep-count" min="1" max="365" value="30">
+                </div>
+                <div class="col-12">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="backup-encryption-enabled" onchange="toggleEncryptionUI()">
+                    <label class="form-check-label" for="backup-encryption-enabled">Encrypt backups</label>
+                  </div>
+                </div>
+                <div class="col-12 hidden" id="backup-passphrase-row">
+                  <label class="form-label mb-1">Passphrase</label>
+                  <input type="password" class="form-control form-control-sm" id="backup-passphrase" placeholder="Leave blank to keep existing">
+                  <div class="form-text text-warning"><i class="bi bi-exclamation-triangle me-1"></i>This passphrase is stored in your database. Write it in your password manager — without it you cannot decrypt your backups after a rebuild.</div>
+                </div>
+                <div class="col-12">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="backup-enabled-toggle">
+                    <label class="form-check-label" for="backup-enabled-toggle">Enable automatic backups</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action buttons -->
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn btn-primary btn-sm" id="btn-save-backup-settings" onclick="saveBackupSettings()">
+                <i class="bi bi-floppy me-1"></i>Save Settings
+              </button>
+              <button class="btn btn-outline-success btn-sm" id="btn-backup-now" onclick="triggerBackupNow()">
+                <i class="bi bi-cloud-upload me-1"></i>Backup Now
+              </button>
+            </div>
+
+            <!-- Backup list -->
+            <div>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="fw-semibold small">Backup History</span>
+                <button class="btn btn-link btn-sm p-0" onclick="loadBackupSettings()"><i class="bi bi-arrow-clockwise"></i></button>
+              </div>
+              <div id="backup-list-container">
+                <div class="text-muted small">No backups yet.</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+        <!-- end Backup card -->
+
       </div>
     </div>
 

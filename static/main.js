@@ -17107,6 +17107,7 @@ async function _addCostCategory() {
 document.querySelector('[data-bs-target="#recognition-settings"]')?.addEventListener('shown.bs.tab', () => {
   if (isAdmin()) loadCostCategoriesSettings();
   _loadSysInfo();
+  if (isAdmin()) loadBackupSettings();
 });
 
 async function _loadSysInfo() {
@@ -17121,6 +17122,406 @@ async function _loadSysInfo() {
       el('sysinfo-env').className = env === 'prod' ? 'text-success fw-semibold' : 'text-warning fw-semibold';
     }
   } catch (e) { /* silently ignore — non-critical */ }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// DATABASE BACKUP
+// ══════════════════════════════════════════════════════════════════════════════
+
+let _backupPollNonce = null;
+let _backupJobPollTimer = null;
+
+function toggleBackupProviderUI() {
+  const provider = document.getElementById('backup-provider')?.value;
+  const gdrive = document.getElementById('backup-gdrive-section');
+  const folderRow = document.getElementById('backup-folder-name-row');
+  const localRow  = document.getElementById('backup-local-path-row');
+  if (provider === 'google_drive') {
+    show(gdrive); show(folderRow); hide(localRow);
+  } else {
+    hide(gdrive); hide(folderRow); show(localRow);
+  }
+}
+
+function toggleBackupFrequencyUI() {
+  const freq = document.getElementById('backup-frequency')?.value;
+  const row = document.getElementById('backup-day-row');
+  freq === 'weekly' ? show(row) : hide(row);
+}
+
+function toggleEncryptionUI() {
+  const enabled = document.getElementById('backup-encryption-enabled')?.checked;
+  const row = document.getElementById('backup-passphrase-row');
+  enabled ? show(row) : hide(row);
+}
+
+async function loadBackupSettings() {
+  try {
+    const s = await api('/api/backup/status');
+
+    // Provider
+    const provSel = document.getElementById('backup-provider');
+    if (provSel) { provSel.value = s.provider || 'google_drive'; toggleBackupProviderUI(); }
+
+    // Settings fields
+    _setVal('backup-folder-name', s.gdrive_folder_name || 'FarmPOS Backups');
+    _setVal('backup-local-path',  s.local_path || '');
+    _setVal('backup-frequency',   s.schedule_frequency || 'daily');
+    toggleBackupFrequencyUI();
+    _setVal('backup-day',         s.schedule_day || 'monday');
+    _setVal('backup-time',        s.schedule_time || '12:00');
+    _setVal('backup-keep-count',  s.keep_count || 30);
+
+    const encCb = document.getElementById('backup-encryption-enabled');
+    if (encCb) { encCb.checked = !!s.encryption_enabled; toggleEncryptionUI(); }
+
+    const enabledCb = document.getElementById('backup-enabled-toggle');
+    if (enabledCb) enabledCb.checked = !!s.enabled;
+
+    // GDrive connection state
+    const connected = !!s.gdrive_connected;
+    const connArea = document.getElementById('backup-gdrive-connect-area');
+    const connectedArea = document.getElementById('backup-gdrive-connected-area');
+    const statusBadge = document.getElementById('backup-gdrive-status');
+    if (connected) {
+      hide(connArea); show(connectedArea);
+      if (statusBadge) { statusBadge.textContent = 'Connected'; statusBadge.className = 'badge bg-success'; }
+      _setText('backup-gdrive-email', s.gdrive_email || '');
+    } else {
+      show(connArea); hide(connectedArea);
+      if (statusBadge) { statusBadge.textContent = 'Not connected'; statusBadge.className = 'badge bg-secondary'; }
+    }
+
+    // Health badge
+    const badge = document.getElementById('backup-health-badge');
+    if (badge) {
+      if (!s.enabled) {
+        badge.textContent = 'Disabled'; badge.className = 'badge bg-secondary';
+      } else if (s.fail_count >= 3) {
+        badge.textContent = `${s.fail_count} failures`; badge.className = 'badge bg-danger';
+      } else if (!s.last_run_at) {
+        badge.textContent = 'Never run'; badge.className = 'badge bg-warning text-dark';
+      } else {
+        const ageH = Math.round((Date.now() - new Date(s.last_run_at).getTime()) / 3600000);
+        if (ageH >= 72) {
+          badge.textContent = `${Math.round(ageH/24)}d ago`; badge.className = 'badge bg-warning text-dark';
+        } else {
+          badge.textContent = 'Healthy'; badge.className = 'badge bg-success';
+        }
+      }
+    }
+
+    // Summary row
+    _setText('backup-last-run', s.last_run_at ? _fmtRelTime(s.last_run_at) : 'Never');
+    const failWrap = document.getElementById('backup-fail-badge-wrap');
+    if (failWrap) { s.fail_count > 0 ? show(failWrap) : hide(failWrap); }
+    _setText('backup-fail-count', s.fail_count || 0);
+
+    // Next scheduled time
+    const nextEl = document.getElementById('backup-next-run');
+    if (nextEl) {
+      if (!s.enabled) { nextEl.textContent = 'Disabled'; }
+      else {
+        nextEl.textContent = s.schedule_frequency === 'daily'
+          ? `Daily at ${s.schedule_time} UTC`
+          : `${_cap(s.schedule_day || '')} at ${s.schedule_time} UTC`;
+      }
+    }
+
+    // Backup list
+    await _renderBackupList();
+
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+function _setVal(id, v) { const el = document.getElementById(id); if (el) el.value = v; }
+function _setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+function _cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
+function _fmtRelTime(iso) {
+  try {
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.round(diff / 60000);
+    if (m < 2)  return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.round(h/24)}d ago`;
+  } catch (e) { return iso; }
+}
+
+async function _renderBackupList() {
+  const container = document.getElementById('backup-list-container');
+  if (!container) return;
+  try {
+    const list = await api('/api/backup/list');
+    if (!list || !list.length) {
+      container.innerHTML = '<div class="text-muted small">No backups yet.</div>';
+      return;
+    }
+    const rows = list.map(f => {
+      const sizeMB = f.size ? (f.size / 1048576).toFixed(1) + ' MB' : '—';
+      const date   = f.created_time ? new Date(f.created_time).toLocaleString() : '—';
+      const encIcon = f.encrypted ? '<i class="bi bi-lock-fill text-success ms-1" title="Encrypted"></i>' : '';
+      return `<tr>
+        <td class="small" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${f.name}">${f.name}${encIcon}</td>
+        <td class="small text-muted">${sizeMB}</td>
+        <td class="small text-muted">${date}</td>
+        <td class="small text-muted">${f.app_version || '—'}</td>
+        <td class="text-end" style="white-space:nowrap">
+          <button class="btn btn-outline-secondary btn-xs btn-sm me-1" onclick="triggerVerify('${f.id}', this)">
+            <i class="bi bi-patch-check"></i>
+          </button>
+          <button class="btn btn-outline-primary btn-xs btn-sm me-1" onclick="openRestoreModal('${f.id}', '${f.name.replace(/'/g, '')}')">
+            <i class="bi bi-arrow-counterclockwise"></i>
+          </button>
+          <button class="btn btn-outline-danger btn-xs btn-sm" onclick="deleteBackup('${f.id}', this)">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>`;
+    }).join('');
+    container.innerHTML = `<table class="table table-sm table-hover mb-0 small">
+      <thead><tr><th>File</th><th>Size</th><th>Created</th><th>Version</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table>`;
+  } catch (e) {
+    container.innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+async function saveBackupSettings() {
+  try {
+    const btn = document.getElementById('btn-save-backup-settings');
+    if (btn) btn.disabled = true;
+    await api('/api/backup/settings', { method: 'POST', body: {
+      enabled:              document.getElementById('backup-enabled-toggle')?.checked,
+      provider:             document.getElementById('backup-provider')?.value,
+      folder_name:          document.getElementById('backup-folder-name')?.value,
+      local_path:           document.getElementById('backup-local-path')?.value,
+      frequency:            document.getElementById('backup-frequency')?.value,
+      schedule_time:        document.getElementById('backup-time')?.value,
+      schedule_day:         document.getElementById('backup-day')?.value,
+      keep_count:           parseInt(document.getElementById('backup-keep-count')?.value) || 30,
+      encryption_enabled:   document.getElementById('backup-encryption-enabled')?.checked,
+      encryption_passphrase: document.getElementById('backup-passphrase')?.value || '',
+    }});
+    toast('Backup settings saved', 'success');
+    await loadBackupSettings();
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    const btn = document.getElementById('btn-save-backup-settings');
+    if (btn) btn.disabled = false;
+  }
+}
+
+let _gdriveAuthPollTimer = null;
+
+async function startGDriveConnect() {
+  try {
+    const flow = document.getElementById('backup-gdrive-auth-flow');
+    show(flow);
+    const r = await api('/api/backup/connect/start', { method: 'POST' });
+    const urlEl  = document.getElementById('backup-gdrive-auth-url');
+    const codeEl = document.getElementById('backup-gdrive-user-code');
+    if (urlEl)  { urlEl.href = r.verification_url; urlEl.textContent = r.verification_url; }
+    if (codeEl) codeEl.textContent = r.user_code;
+    if (_gdriveAuthPollTimer) clearInterval(_gdriveAuthPollTimer);
+    _gdriveAuthPollTimer = setInterval(async () => {
+      try {
+        const p = await api(`/api/backup/connect/poll?nonce=${r.nonce}`);
+        if (p.status === 'authorized') {
+          clearInterval(_gdriveAuthPollTimer);
+          hide(flow);
+          toast(`Connected to Google Drive as ${p.email}`, 'success');
+          await loadBackupSettings();
+        } else if (p.status === 'denied' || p.status === 'expired') {
+          clearInterval(_gdriveAuthPollTimer);
+          hide(flow);
+          toast('Google Drive connection cancelled or expired', 'error');
+        }
+      } catch (e) { clearInterval(_gdriveAuthPollTimer); }
+    }, 5000);
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function disconnectGDrive() {
+  if (!confirm('Disconnect Google Drive? Backups will stop until reconnected.')) return;
+  try {
+    await api('/api/backup/disconnect', { method: 'POST' });
+    toast('Google Drive disconnected', 'success');
+    await loadBackupSettings();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function triggerBackupNow() {
+  const btn = document.getElementById('btn-backup-now');
+  if (btn) btn.disabled = true;
+  try {
+    const r = await api('/api/backup/now', { method: 'POST' });
+    toast('Backup started...', 'info');
+    _pollBackupJob(r.log_id, btn);
+  } catch (e) {
+    toast(e.message, 'error');
+    if (btn) btn.disabled = false;
+  }
+}
+
+function _pollBackupJob(logId, btn) {
+  if (_backupJobPollTimer) clearInterval(_backupJobPollTimer);
+  _backupJobPollTimer = setInterval(async () => {
+    try {
+      const j = await api(`/api/backup/job/${logId}`);
+      if (j.status === 'ok') {
+        clearInterval(_backupJobPollTimer);
+        if (btn) btn.disabled = false;
+        toast('Backup completed successfully', 'success');
+        await loadBackupSettings();
+        _checkBackupHealth();
+      } else if (j.status === 'failed') {
+        clearInterval(_backupJobPollTimer);
+        if (btn) btn.disabled = false;
+        toast(`Backup failed: ${j.error || 'unknown error'}`, 'error');
+        await loadBackupSettings();
+      }
+    } catch (e) { clearInterval(_backupJobPollTimer); if (btn) btn.disabled = false; }
+  }, 3000);
+}
+
+async function triggerVerify(fileId, btn) {
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass"></i>'; }
+  try {
+    const r = await api('/api/backup/verify', { method: 'POST', body: { file_id: fileId } });
+    if (r.ok) {
+      toast(`Backup verified — ${r.object_count} objects, readable`, 'success');
+    } else {
+      toast(`Verification failed: ${r.error || 'unknown'}`, 'error');
+    }
+  } catch (e) { toast(e.message, 'error'); }
+  finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-patch-check"></i>'; }
+  }
+}
+
+async function deleteBackup(fileId, btn) {
+  if (!confirm('Delete this backup? This cannot be undone.')) return;
+  if (btn) btn.disabled = true;
+  try {
+    await api(`/api/backup/${encodeURIComponent(fileId)}`, { method: 'DELETE' });
+    toast('Backup deleted', 'success');
+    await _renderBackupList();
+  } catch (e) { toast(e.message, 'error'); if (btn) btn.disabled = false; }
+}
+
+async function openRestoreModal(fileId, fileName) {
+  let targets = [];
+  try { const s = await api('/api/backup/status'); targets = s.available_restore_targets || []; }
+  catch (e) { targets = []; }
+
+  const opts = targets.map((t, i) =>
+    `<option value="${t.value}"${i === 0 ? ' selected' : ''}>${t.label}</option>`).join('');
+
+  const body = document.body;
+  const existing = document.getElementById('_restore-modal');
+  if (existing) existing.remove();
+
+  const modal = document.createElement('div');
+  modal.id = '_restore-modal';
+  modal.className = 'modal fade';
+  modal.setAttribute('tabindex', '-1');
+  modal.innerHTML = `<div class="modal-dialog"><div class="modal-content">
+    <div class="modal-header"><h5 class="modal-title"><i class="bi bi-arrow-counterclockwise me-1"></i>Restore Backup</h5>
+      <button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+    <div class="modal-body">
+      <p class="small text-muted mb-2">File: <strong>${fileName}</strong></p>
+      <div class="mb-3">
+        <label class="form-label fw-semibold">Restore target database</label>
+        <select class="form-select" id="_restore-target">${opts}</select>
+        <div class="form-text text-warning mt-1" id="_restore-target-warning"></div>
+      </div>
+      <div class="mb-3" id="_restore-confirm-row" style="display:none">
+        <label class="form-label">Type <strong>RESTORE</strong> to confirm</label>
+        <input type="text" class="form-control" id="_restore-confirm-input" placeholder="RESTORE">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+      <button class="btn btn-danger" id="_btn-do-restore" onclick="_doRestore('${fileId}')">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>Restore
+      </button>
+    </div>
+  </div></div>`;
+  body.appendChild(modal);
+
+  const targetSel = modal.querySelector('#_restore-target');
+  const warnEl    = modal.querySelector('#_restore-target-warning');
+  const confirmRow = modal.querySelector('#_restore-confirm-row');
+
+  function updateWarning() {
+    const opt = targets[targetSel.selectedIndex];
+    if (!opt || opt.is_new) {
+      warnEl.textContent = '';
+      confirmRow.style.display = 'none';
+    } else {
+      warnEl.textContent = 'Warning: this will overwrite an existing database. A pre-restore backup will be taken first.';
+      confirmRow.style.display = '';
+    }
+  }
+  targetSel.addEventListener('change', updateWarning);
+  updateWarning();
+
+  const bsModal = new bootstrap.Modal(modal);
+  bsModal.show();
+}
+
+async function _doRestore(fileId) {
+  const targetSel   = document.getElementById('_restore-target');
+  const confirmInp  = document.getElementById('_restore-confirm-input');
+  const confirmRow  = document.getElementById('_restore-confirm-row');
+  const doBtn       = document.getElementById('_btn-do-restore');
+
+  if (confirmRow && confirmRow.style.display !== 'none') {
+    if (!confirmInp || confirmInp.value.trim().toUpperCase() !== 'RESTORE') {
+      toast('Type RESTORE to confirm overwriting the existing database', 'error');
+      return;
+    }
+  }
+
+  const restoreTarget = targetSel?.value;
+  if (!restoreTarget) { toast('Select a restore target', 'error'); return; }
+  if (doBtn) doBtn.disabled = true;
+
+  try {
+    const r = await api('/api/backup/restore', { method: 'POST', body: {
+      file_id:        fileId,
+      restore_target: restoreTarget,
+      confirmed:      true,
+    }});
+    toast('Restore started — this may take a few minutes...', 'info');
+    const modalEl = document.getElementById('_restore-modal');
+    if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
+    _pollRestoreJob(r.log_id);
+  } catch (e) {
+    toast(e.message, 'error');
+    if (doBtn) doBtn.disabled = false;
+  }
+}
+
+function _pollRestoreJob(logId) {
+  const timer = setInterval(async () => {
+    try {
+      const j = await api(`/api/backup/job/${logId}`);
+      if (j.restore_status === 'ok') {
+        clearInterval(timer);
+        toast('Restore completed successfully', 'success');
+        await loadBackupSettings();
+      } else if (j.restore_status === 'failed') {
+        clearInterval(timer);
+        toast(`Restore failed: ${j.error || 'unknown error'}`, 'error');
+        await loadBackupSettings();
+      }
+    } catch (e) { clearInterval(timer); }
+  }, 3000);
 }
 
 

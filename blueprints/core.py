@@ -70,6 +70,41 @@ def health_check():
     return jsonify({'status': 'healthy', 'version': _app_version()})
 
 
+@bp.route('/api/health')
+def api_health():
+    """Extended health for authenticated admin clients (dashboard banner, JS _checkBackupHealth)."""
+    from helpers import get_setting
+    from datetime import datetime, timedelta
+
+    backup_warning = None
+    try:
+        enabled = get_setting('backup_enabled', 'false') == 'true'
+        if enabled:
+            last_run    = get_setting('backup_last_run_at', '')
+            last_status = get_setting('backup_last_run_status', '')
+            fail_count  = int(get_setting('backup_fail_count', '0') or '0')
+            last_error  = get_setting('backup_last_error', '')
+            if fail_count >= 3:
+                backup_warning = f'Backup failed {fail_count} time(s): {last_error[:100]}'
+            elif not last_run:
+                backup_warning = 'Backups are enabled but have never run'
+            else:
+                try:
+                    age_days = (datetime.utcnow() - datetime.fromisoformat(last_run)).days
+                    if age_days >= 3:
+                        backup_warning = f'Last backup was {age_days} day(s) ago'
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    return jsonify({
+        'status':         'healthy',
+        'version':        _app_version(),
+        'backup_warning': backup_warning,
+    })
+
+
 @bp.route('/guide')
 def user_guide():
     return render_template('user_guide.html')

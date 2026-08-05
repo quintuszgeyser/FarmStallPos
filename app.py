@@ -2083,6 +2083,8 @@ def create_app():
 
     app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    app.config['GOOGLE_CLIENT_ID']     = os.getenv('GOOGLE_CLIENT_ID', '')
+    app.config['GOOGLE_CLIENT_SECRET'] = os.getenv('GOOGLE_CLIENT_SECRET', '')
     app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
         'pool_pre_ping': True,    # test connection before use — prevents mid-sale 500s on stale connections
         'pool_recycle':  1800,    # recycle connections every 30 min (before Postgres idle timeout)
@@ -2243,6 +2245,13 @@ def create_app():
     # Startup: migrate + seed
     with app.app_context():
         strong_migrate()
+        try:
+            from blueprints.backup import _enqueue_backup
+            from helpers import get_setting
+            if get_setting('backup_enabled', 'false') == 'true':
+                _enqueue_backup(app=app, triggered_by='pre-upgrade')
+        except Exception:
+            pass  # never block startup
         seed_first_admin()
         _seed_cost_categories()
         try:
@@ -2289,6 +2298,7 @@ def _register_routes(_app):
     from blueprints.subcategories   import bp as subcategories_bp
     from blueprints.families        import bp as families_bp
     from blueprints.packaging       import bp as packaging_bp
+    from blueprints.backup          import bp as backup_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -2316,14 +2326,15 @@ def _register_routes(_app):
     _app.register_blueprint(subcategories_bp)
     _app.register_blueprint(families_bp)
     _app.register_blueprint(packaging_bp)
+    _app.register_blueprint(backup_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:
         from blueprints.deploy_schedule import _start_scheduler
         _start_scheduler(_app)
 
-    # Start hourly markup-drift check (all environments)
-    from helpers import _start_markup_drift_scheduler
+    from helpers import _start_backup_scheduler, _start_markup_drift_scheduler
+    _start_backup_scheduler(_app)
     _start_markup_drift_scheduler(_app)
 
 

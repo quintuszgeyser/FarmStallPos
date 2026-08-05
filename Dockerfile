@@ -9,10 +9,18 @@
 # LC keeps deploying exactly as before. This image is for new stores only.
 FROM python:3.11-slim
 
-# System deps: libpq for psycopg, curl for the healthcheck. No git - source is COPY'd.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# System deps: libpq for psycopg, curl for healthcheck, pg client tools for backup/restore.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl gnupg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+       | gpg --dearmor -o /usr/share/keyrings/postgresql-keyring.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/postgresql-keyring.gpg] \
+       https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+       > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
         libpq5 \
-        curl \
+        postgresql-client-16 \
         fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 

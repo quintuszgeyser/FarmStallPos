@@ -366,6 +366,13 @@ def _auto_price_products(product_ids, min_drift_pct=0):
             if total_qty <= 0:
                 continue
             cost = total_cost / total_qty  # WAC — full Decimal precision
+            if cost <= 0:
+                # WAC is zero (zero-cost batches) — clear any stale pending suggestion
+                if p.pending_price is not None or p.pending_price_per_unit is not None:
+                    p.pending_price = None
+                    p.pending_price_per_unit = None
+                    changed = True
+                continue
             markup = _D(str(p.margin_pct)) if p.margin_pct is not None else global_markup
             new_price = (cost * (1 + markup / 100)).quantize(_D('0.0001'))
             if p.sold_by_weight and p.unit_type in ('weight', 'volume'):
@@ -449,6 +456,61 @@ def _start_markup_drift_scheduler(app):
 
     t = threading.Thread(target=_loop, daemon=True, name='markup-drift-check')
     t.start()
+
+
+_backup_scheduler_started = False
+
+
+def _start_backup_scheduler(app):
+    """Start the backup scheduler daemon thread. Call once from _register_routes()."""
+    global _backup_scheduler_started
+    if _backup_scheduler_started:
+        return
+    _backup_scheduler_started = True
+
+    import threading
+    import time
+
+    def _loop():
+        time.sleep(60)  # short warm-up
+        while True:
+            try:
+                with app.app_context():
+                    _run_scheduled_backup(app)
+            except Exception as e:
+                app.logger.warning(f'[backup] scheduler error: {e}')
+            time.sleep(60)  # check every minute
+
+    t = threading.Thread(target=_loop, daemon=True, name='backup-scheduler')
+    t.start()
+
+
+def _run_scheduled_backup(app):
+    from datetime import datetime
+    enabled = get_setting('backup_enabled', 'false') == 'true'
+    if not enabled:
+        return
+    frequency   = get_setting('backup_schedule_frequency', 'daily')
+    target_time = get_setting('backup_schedule_time', '12:00')
+    target_day  = get_setting('backup_schedule_day', 'monday').lower()
+    now         = datetime.utcnow()
+    hhmm        = now.strftime('%H:%M')
+    if hhmm != target_time:
+        return
+    if frequency == 'weekly':
+        day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        if day_names[now.weekday()] != target_day:
+            return
+    last_run = get_setting('backup_last_run_at', '')
+    if last_run:
+        try:
+            last_dt = datetime.fromisoformat(last_run)
+            if (now - last_dt).total_seconds() < 55:
+                return
+        except Exception:
+            pass
+    from blueprints.backup import _enqueue_backup
+    _enqueue_backup(app=app, triggered_by='schedule')
 
 
 # ---------------------------------------------------------------------------
