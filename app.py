@@ -2243,12 +2243,20 @@ def create_app():
         return jsonify({'error': 'Internal server error', 'detail': str(e)}), 500
 
     # Startup: migrate + seed
+    # IMPORTANT: call db.session.remove() after every step that touches the ORM session.
+    # strong_migrate() serialises workers via pg_advisory_xact_lock. After it commits and
+    # releases the advisory lock, a concurrent worker immediately tries to acquire it and
+    # run ALTER TABLE statements that need AccessExclusiveLock. Any ORM session left open
+    # by the step before holds an AccessShareLock on the same table, causing a deadlock.
+    # db.session.remove() closes the scoped session and releases all its Postgres locks
+    # immediately, rather than waiting for the app-context teardown handler.
     with app.app_context():
         strong_migrate()
+        db.session.remove()  # release any locks db.create_all() may have acquired
         try:
             from blueprints.backup import _enqueue_backup
-            # Use engine.connect() (not ORM session) so the SELECT on settings
-            # doesn't hold an AccessShareLock that blocks ALTER TABLE in a concurrent worker.
+            # engine.connect() auto-closes; never use get_setting() here (ORM session
+            # would hold AccessShareLock on settings, blocking ALTER TABLE in next worker).
             with db.engine.connect() as _c:
                 _row = _c.execute(text("SELECT value FROM settings WHERE key='backup_enabled'")).fetchone()
             if _row and _row[0] == 'true':
@@ -2256,7 +2264,9 @@ def create_app():
         except Exception:
             pass  # never block startup
         seed_first_admin()
+        db.session.remove()  # release AccessShareLock on users (and settings on fresh DB)
         _seed_cost_categories()
+        db.session.remove()  # release AccessShareLock on cost_categories
         try:
             _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
             with db.engine.begin() as _conn:
