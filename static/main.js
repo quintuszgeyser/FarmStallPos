@@ -17387,7 +17387,7 @@ function _pollBackupJob(logId, btn) {
         toast(`Backup failed: ${j.error || 'unknown error'}`, 'error');
         await loadBackupSettings();
       }
-    } catch (e) { clearInterval(_backupJobPollTimer); if (btn) btn.disabled = false; }
+    } catch (e) { /* network hiccup — keep polling */ }
   }, 3000);
 }
 
@@ -17511,19 +17511,26 @@ async function _doRestore(fileId) {
 }
 
 function _pollRestoreJob(logId) {
+  const deadline = Date.now() + 10 * 60 * 1000; // 10 min max
   const timer = setInterval(async () => {
+    if (Date.now() > deadline) {
+      clearInterval(timer);
+      toast('Restore is taking longer than expected — check the backup history for the final status', 'warning', 8000);
+      return;
+    }
     try {
-      const j = await api(`/api/backup/job/${logId}`);
+      const j = await api(`/api/backup/job/${logId}`, {}, 20000);
       if (j.restore_status === 'ok') {
         clearInterval(timer);
         toast('Restore completed successfully', 'success');
         await loadBackupSettings();
       } else if (j.restore_status === 'failed') {
         clearInterval(timer);
-        toast(`Restore failed: ${j.error || 'unknown error'}`, 'error');
+        toast(`Restore failed: ${j.error || 'unknown error'}`, 'error', 10000);
         await loadBackupSettings();
       }
-    } catch (e) { clearInterval(timer); }
+      // restore_status === null means still running — keep polling
+    } catch (e) { /* network hiccup — keep polling */ }
   }, 3000);
 }
 
