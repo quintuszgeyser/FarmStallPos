@@ -17295,7 +17295,7 @@ async function saveBackupSettings() {
   try {
     const btn = document.getElementById('btn-save-backup-settings');
     if (btn) btn.disabled = true;
-    await api('/api/backup/settings', { method: 'POST', body: {
+    await api('/api/backup/settings', { method: 'POST', body: JSON.stringify({
       enabled:              document.getElementById('backup-enabled-toggle')?.checked,
       provider:             document.getElementById('backup-provider')?.value,
       folder_name:          document.getElementById('backup-folder-name')?.value,
@@ -17306,7 +17306,7 @@ async function saveBackupSettings() {
       keep_count:           parseInt(document.getElementById('backup-keep-count')?.value) || 30,
       encryption_enabled:   document.getElementById('backup-encryption-enabled')?.checked,
       encryption_passphrase: document.getElementById('backup-passphrase')?.value || '',
-    }});
+    }) });
     toast('Backup settings saved', 'success');
     await loadBackupSettings();
   } catch (e) {
