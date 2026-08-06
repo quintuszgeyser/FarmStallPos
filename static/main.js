@@ -11579,6 +11579,7 @@ function _igmCellChange(id, key, val) {
   if (!row._ignored) row._ignored = {};
   delete row._ignored[key];
   row[key] = val;
+  row._touched = true;
   // Always update the list row in background
   _igmUpdateListItem(id);
   // If the edit modal is showing this row, update header + re-render body on type/unit change
@@ -12124,16 +12125,44 @@ function _igmRenderListRowHtml(row, ri) {
     ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ffc107;flex-shrink:0" title="Has warnings"></span>`
     : `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#198754;flex-shrink:0" title="Ready"></span>`;
 
-  // Group cells with per-cell highlight — untouched rows suppress warn highlights
+  // Group cells — inline editable inputs/selects; click stops propagation so the row-open handler doesn't fire
   const cellsHtml = cols.map(col => {
-    const val = row[col.key] ?? '';
-    const s   = _igmValidateCell(col, val, row);
-    let cls = '', title = '';
-    if (s === 'na')                                       { cls = 'igm-cell-na'; }
-    else if (s.startsWith('error'))                       { cls = 'igm-cell-err'; title = ` title="${_igmEsc(s.slice(6))}"${''}`; }
-    else if (s.startsWith('warn') && row._touched && !row._ignored?.[col.key]) { cls = 'igm-cell-warn'; title = ` title="${_igmEsc(s.slice(5))}"${''}`; }
-    const display = s === 'na' ? '—' : (_igmCellDisplayValue(col, val) || '<span style="color:#ccc">—</span>');
-    return `<div class="px-1 ${cls}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-top:6px;padding-bottom:6px"${title}>${display}</div>`;
+    const val     = row[col.key] ?? '';
+    const s       = _igmValidateCell(col, val, row);
+    const ignored = (row._ignored || {})[col.key];
+
+    if (s === 'na') {
+      return `<div style="font-size:12px;display:flex;align-items:center;padding:0 4px;color:#aaa" onclick="event.stopPropagation()">—</div>`;
+    }
+
+    let extraStyle = '';
+    let msg = '';
+    if (s.startsWith('error')) {
+      extraStyle = 'background:#fff0f0;outline:1.5px solid #dc3545;';
+      msg = s.slice(6);
+    } else if (s.startsWith('warn') && !ignored) {
+      extraStyle = 'outline:1.5px solid #fd7e14;';
+      msg = s.slice(5);
+    } else if (s === 'ok' && row._touched) {
+      extraStyle = 'background:#f6fff6;';
+    }
+    const tooltip = msg ? ` title="${_igmEsc(msg)}"` : '';
+
+    let input = '';
+    if (col.type === 'select' || col.type === 'bool') {
+      const optsArr = col.type === 'bool' ? _IGM_BOOL_OPTIONS : (col.options || []);
+      const opts = optsArr.map(o => `<option value="${_igmEsc(String(o.v))}" ${String(val) === String(o.v) ? 'selected' : ''}>${_igmEsc(o.label)}</option>`).join('');
+      input = `<select class="form-select form-select-sm border-0 p-0" style="font-size:12px;height:22px;background:transparent;min-width:0" onchange="_igmCellChange(${row.id},'${col.key}',this.value)">${opts}</select>`;
+    } else {
+      const ph = typeof col.placeholder === 'function' ? col.placeholder(row) : (col.placeholder || '');
+      input = `<input type="${col.type === 'number' ? 'number' : 'text'}" class="form-control form-control-sm border-0 p-0" style="font-size:12px;height:22px;background:transparent;min-width:0" value="${_igmEsc(String(val))}" placeholder="${_igmEsc(ph)}" onchange="_igmCellChange(${row.id},'${col.key}',this.value)">`;
+    }
+
+    const ignoreBtn = (s.startsWith('warn') && !ignored)
+      ? `<button class="btn btn-link p-0 text-muted" style="font-size:10px;flex-shrink:0;line-height:1" onclick="_igmIgnoreWarning(${row.id},'${col.key}')" title="Ignore"><i class="bi bi-x-lg"></i></button>`
+      : '';
+
+    return `<div style="font-size:12px;overflow:hidden;display:flex;align-items:center;gap:2px;padding:0 4px;${extraStyle}" onclick="event.stopPropagation()"${tooltip}>${input}${ignoreBtn}</div>`;
   }).join('');
 
   // Thumbnail + name
