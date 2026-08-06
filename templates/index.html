@@ -2588,11 +2588,6 @@
           <span id="igm-title">Import Products</span>
         </h5>
         <div class="ms-auto d-flex align-items-center gap-2">
-          <select id="igm-mode-select" class="form-select form-select-sm" style="width:auto">
-            <option value="import">Add &amp; Update Products</option>
-            <option value="add_only">Add New Products Only</option>
-            <option value="update_only">Update Existing Products Only</option>
-          </select>
           <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="importWorkspaceClose()"></button>
         </div>
       </div>
@@ -2641,100 +2636,6 @@
         </div>
       </div>
 
-      <!-- Phase 3: Grid -->
-      <div id="igm-phase-grid" style="display:none!important">
-
-        <!-- Sticky toolbar -->
-        <div id="igm-toolbar" class="border-bottom px-3 py-2 d-flex align-items-center gap-2 flex-wrap bg-white" style="position:sticky;top:0;z-index:10">
-          <label class="btn btn-sm btn-outline-secondary mb-0" style="cursor:pointer">
-            <i class="bi bi-upload me-1"></i>Upload<input type="file" accept=".csv" class="d-none" onchange="importWorkspaceUploadCsv(this)">
-          </label>
-          <button class="btn btn-sm btn-outline-secondary" onclick="importWorkspacePastePrompt()"><i class="bi bi-clipboard me-1"></i>Paste</button>
-          <button class="btn btn-sm btn-outline-success" onclick="importGridAddRow()"><i class="bi bi-plus-lg me-1"></i>Add Row</button>
-          <div class="dropdown">
-            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-layout-text-sidebar me-1"></i>Templates</button>
-            <ul class="dropdown-menu">
-              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('weight');return false"><i class="bi bi-plus me-1"></i>Weighted Product</a></li>
-              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('count');return false"><i class="bi bi-plus me-1"></i>Retail Product</a></li>
-              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('recipe');return false"><i class="bi bi-plus me-1"></i>Recipe / Menu Item</a></li>
-              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('consignment');return false"><i class="bi bi-plus me-1"></i>Consignment Product</a></li>
-            </ul>
-          </div>
-          <button class="btn btn-sm btn-outline-secondary" onclick="importGridExportCsv()"><i class="bi bi-download me-1"></i>Export CSV</button>
-          <div class="ms-auto d-flex gap-2 align-items-center">
-            <div class="input-group input-group-sm" style="width:180px">
-              <span class="input-group-text"><i class="bi bi-search"></i></span>
-              <input type="text" id="igm-search" class="form-control" placeholder="Search…" oninput="importGridApplyFilter()">
-            </div>
-            <select id="igm-filter-select" class="form-select form-select-sm" style="width:auto" onchange="importGridApplyFilter()">
-              <option value="all">Show: All</option>
-              <option value="error">Errors only</option>
-              <option value="warning">Warnings only</option>
-              <option value="ready">Ready only</option>
-            </select>
-            <button id="igm-clear-filter-btn" class="btn btn-sm btn-outline-secondary" style="display:none" onclick="importGridClearFilter()" title="Clear filters"><i class="bi bi-x-lg"></i></button>
-          </div>
-        </div>
-
-        <!-- Summary bar -->
-        <div id="igm-summary-bar" class="border-bottom px-3 py-1 d-flex align-items-center gap-3 bg-light small">
-          <span id="igm-sum-ready" class="text-success"><i class="bi bi-circle-fill me-1" style="font-size:8px"></i><span>0</span> ready</span>
-          <span id="igm-sum-warn" class="text-warning"><i class="bi bi-exclamation-circle me-1"></i><span>0</span> warnings</span>
-          <span id="igm-sum-err" class="text-danger"><i class="bi bi-x-circle me-1"></i><span>0</span> errors</span>
-          <span class="vr"></span>
-          <span id="igm-sum-creates" class="text-muted">Creates: <span>—</span></span>
-          <span id="igm-sum-updates" class="text-muted">Updates: <span>—</span></span>
-          <div class="ms-auto d-flex align-items-center gap-2">
-            <input type="checkbox" id="igm-select-all" class="form-check-input mt-0" title="Select all rows" onchange="importGridSelectAll(this.checked)">
-            <span id="igm-selected-count" class="text-muted" style="display:none"></span>
-            <div class="dropdown" id="igm-bulk-edit-wrap" style="display:none">
-              <button class="btn btn-sm btn-outline-warning dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-pencil-square me-1"></i>Bulk Edit</button>
-              <ul class="dropdown-menu dropdown-menu-end" id="igm-bulk-menu" style="min-width:280px"></ul>
-            </div>
-          </div>
-        </div>
-
-        <!-- LIST VIEW -->
-        <div id="igm-view-list">
-          <div class="igm-import-col-hdr">
-            <div></div>
-            <div>Product</div>
-            <div>Type &amp; Unit</div>
-            <div>Price</div>
-            <div>Category</div>
-            <div>PLU</div>
-            <div>Issues</div>
-            <div>Flags</div>
-            <div></div>
-          </div>
-          <div id="igm-list-body"></div>
-          <div class="px-3 py-2 border-top">
-            <button class="btn btn-sm btn-link text-muted" onclick="importGridAddRow()"><i class="bi bi-plus-lg me-1"></i>Add row</button>
-          </div>
-        </div>
-
-        <!-- Fuzzy warning footer -->
-        <div id="igm-fuzzy-footer" class="border-top px-3 py-2 bg-warning-subtle small" style="display:none">
-          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
-          <span id="igm-fuzzy-msg"></span>
-          <button class="btn btn-link btn-sm py-0" onclick="importGridDismissFuzzy()">Dismiss</button>
-        </div>
-
-        <!-- Footer actions -->
-        <div class="border-top px-3 py-2 d-flex justify-content-between align-items-center bg-white sticky-bottom" id="igm-grid-footer">
-          <div id="igm-photo-progress" class="text-muted small" style="display:none"></div>
-          <div class="d-flex gap-2 ms-auto">
-            <button class="btn btn-secondary" data-bs-dismiss="modal" onclick="importWorkspaceClose()">Close</button>
-            <button class="btn btn-outline-primary" id="igm-btn-validate" onclick="importGridValidateAndPreview()">
-              <i class="bi bi-check2-all me-1"></i>Validate &amp; Preview
-            </button>
-            <button class="btn btn-primary" id="igm-btn-submit" onclick="importGridSubmit()" style="display:none">
-              <i class="bi bi-cloud-upload me-1"></i><span id="igm-btn-submit-label">Import</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
       <!-- Phase 4: Confirmation -->
       <div id="igm-phase-confirm" class="flex-grow-1 d-flex flex-column align-items-center justify-content-center p-4" style="display:none!important">
         <div class="card" style="max-width:480px;width:100%">
@@ -2774,6 +2675,121 @@
       </div>
 
     </div><!-- /.modal-content -->
+  </div>
+</div>
+
+<!-- ═══════════ IMPORT GRID WORKSPACE (fullscreen) ═══════════ -->
+<div class="modal fade" id="importGridWorkspaceModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <!-- Frozen header: toolbar + summary bar -->
+      <div class="modal-header d-block p-0" style="border-bottom:2px solid var(--lc-gold-border,#c9a96e);background:var(--lc-gold-light,#fdf6e8)">
+
+        <!-- Toolbar row -->
+        <div id="igm-toolbar" class="px-3 py-2 d-flex align-items-center gap-2 flex-wrap border-bottom">
+          <span class="fw-semibold me-1" style="font-size:13px;color:var(--dd-ink,#4a3a28)"><i class="bi bi-table me-1"></i>Import Workspace</span>
+          <label class="btn btn-sm btn-outline-secondary mb-0 ms-2" style="cursor:pointer">
+            <i class="bi bi-upload me-1"></i>Upload CSV<input type="file" accept=".csv" class="d-none" onchange="importWorkspaceUploadCsv(this)">
+          </label>
+          <button class="btn btn-sm btn-outline-secondary" onclick="importWorkspacePastePrompt()"><i class="bi bi-clipboard me-1"></i>Paste</button>
+          <button class="btn btn-sm btn-outline-success" onclick="importGridAddRow()"><i class="bi bi-plus-lg me-1"></i>Add Row</button>
+          <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-layout-text-sidebar me-1"></i>Templates</button>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('weight');return false">Weighted Product</a></li>
+              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('count');return false">Retail Product</a></li>
+              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('recipe');return false">Recipe / Menu Item</a></li>
+              <li><a class="dropdown-item" href="#" onclick="importGridAddTemplate('consignment');return false">Consignment Product</a></li>
+            </ul>
+          </div>
+          <button class="btn btn-sm btn-outline-secondary" onclick="importGridExportCsv()"><i class="bi bi-download me-1"></i>Export CSV</button>
+          <div class="ms-auto d-flex gap-2 align-items-center flex-wrap">
+            <div class="input-group input-group-sm" style="width:180px">
+              <span class="input-group-text"><i class="bi bi-search"></i></span>
+              <input type="text" id="igm-search" class="form-control" placeholder="Search…" oninput="importGridApplyFilter()">
+            </div>
+            <select id="igm-filter-select" class="form-select form-select-sm" style="width:auto" onchange="importGridApplyFilter()">
+              <option value="all">Show: All</option>
+              <option value="error">Errors only</option>
+              <option value="warning">Warnings only</option>
+              <option value="ready">Ready only</option>
+            </select>
+            <button id="igm-clear-filter-btn" class="btn btn-sm btn-outline-secondary" style="display:none" onclick="importGridClearFilter()" title="Clear filters"><i class="bi bi-x-lg"></i></button>
+            <select id="igm-mode-select" class="form-select form-select-sm" style="width:auto">
+              <option value="import">Add &amp; Update Products</option>
+              <option value="add_only">Add New Products Only</option>
+              <option value="update_only">Update Existing Products Only</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Summary bar -->
+        <div id="igm-summary-bar" class="px-3 py-2 d-flex align-items-center gap-3 small flex-wrap">
+          <span id="igm-sum-ready" class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i><span>0</span> ready</span>
+          <span class="vr"></span>
+          <span id="igm-sum-warn" class="text-warning fw-semibold"><i class="bi bi-exclamation-circle-fill me-1"></i><span>0</span> warnings</span>
+          <span class="vr"></span>
+          <span id="igm-sum-err" class="text-danger fw-semibold"><i class="bi bi-x-circle-fill me-1"></i><span>0</span> errors</span>
+          <span class="vr"></span>
+          <span id="igm-sum-creates" class="text-muted">Creates: <span>—</span></span>
+          <span id="igm-sum-updates" class="text-muted">Updates: <span>—</span></span>
+          <div class="ms-auto d-flex align-items-center gap-2">
+            <input type="checkbox" id="igm-select-all" class="form-check-input mt-0" title="Select all rows" onchange="importGridSelectAll(this.checked)">
+            <span id="igm-selected-count" class="text-muted" style="display:none"></span>
+            <div class="dropdown" id="igm-bulk-edit-wrap" style="display:none">
+              <button class="btn btn-sm btn-outline-warning dropdown-toggle" data-bs-toggle="dropdown"><i class="bi bi-pencil-square me-1"></i>Bulk Edit</button>
+              <ul class="dropdown-menu dropdown-menu-end" id="igm-bulk-menu" style="min-width:280px"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scrollable body: sticky column header + rows -->
+      <div class="modal-body p-0">
+        <!-- Column header sticky within the scroll body -->
+        <div class="igm-import-col-hdr" style="position:sticky;top:0;z-index:5;background:var(--lc-gold-light,#fdf6e8)">
+          <div></div>
+          <div>Product</div>
+          <div>Type &amp; Unit</div>
+          <div>Price</div>
+          <div>Category</div>
+          <div>PLU</div>
+          <div>Issues</div>
+          <div>Flags</div>
+          <div></div>
+        </div>
+        <!-- Grid rows -->
+        <div id="igm-list-body"></div>
+        <!-- Add row footer -->
+        <div class="px-3 py-2 border-top">
+          <button class="btn btn-sm btn-link text-muted" onclick="importGridAddRow()"><i class="bi bi-plus-lg me-1"></i>Add row</button>
+        </div>
+        <!-- Photo upload progress -->
+        <div id="igm-photo-progress" class="px-3 py-1 text-muted small" style="display:none"></div>
+      </div>
+
+      <!-- Sticky footer: fuzzy warning + actions -->
+      <div class="modal-footer d-block p-0" style="border-top:2px solid var(--lc-gold-border,#c9a96e)">
+        <div id="igm-fuzzy-footer" class="px-3 py-2 bg-warning-subtle small border-bottom" style="display:none">
+          <i class="bi bi-exclamation-triangle me-1 text-warning"></i>
+          <span id="igm-fuzzy-msg"></span>
+          <button class="btn btn-link btn-sm py-0" onclick="importGridDismissFuzzy()">Dismiss</button>
+        </div>
+        <div class="px-3 py-2 d-flex justify-content-between align-items-center">
+          <button class="btn btn-sm btn-outline-secondary" onclick="_igmBackToEntry()"><i class="bi bi-arrow-left me-1"></i>Back</button>
+          <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary btn-sm" id="igm-btn-validate" onclick="importGridValidateAndPreview()">
+              <i class="bi bi-check2-all me-1"></i>Validate &amp; Preview
+            </button>
+            <button class="btn btn-primary btn-sm" id="igm-btn-submit" onclick="importGridSubmit()" style="display:none">
+              <i class="bi bi-cloud-upload me-1"></i><span id="igm-btn-submit-label">Import</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 </div>
 

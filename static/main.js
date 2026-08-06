@@ -11110,10 +11110,70 @@ function _igmModal() { return bootstrap.Modal.getOrCreateInstance(document.getEl
 
 // ── Phase helpers ─────────────────────────────────────────────────────────────
 function _igmShowPhase(phase) {
-  ['entry','mapping','grid','confirm','results'].forEach(p => {
+  if (phase === 'grid') { _igmOpenGridWorkspace(); return; }
+  ['entry','mapping','confirm','results'].forEach(p => {
     const el = document.getElementById('igm-phase-' + p);
     if (el) el.style.display = (p === phase) ? 'flex' : 'none';
   });
+}
+
+// Open the standalone fullscreen grid workspace, closing the entry modal first
+function _igmOpenGridWorkspace() {
+  const entryModalEl = document.getElementById('importGridModal');
+  const wsEl         = document.getElementById('importGridWorkspaceModal');
+  if (!wsEl) return;
+  const open = () => {
+    bootstrap.Modal.getOrCreateInstance(wsEl).show();
+    _igmRenderList();
+    _igmUpdateSummaryBar();
+    _igmRunFuzzyCheck();
+  };
+  const entryModal = bootstrap.Modal.getInstance(entryModalEl);
+  if (entryModal && entryModalEl.classList.contains('show')) {
+    entryModalEl.addEventListener('hidden.bs.modal', open, { once: true });
+    entryModal.hide();
+  } else {
+    open();
+  }
+}
+
+function _igmCloseGridWorkspace() {
+  const wsEl = document.getElementById('importGridWorkspaceModal');
+  const ws   = wsEl ? bootstrap.Modal.getInstance(wsEl) : null;
+  if (ws) ws.hide();
+}
+
+// Close workspace and return to entry modal
+function _igmBackToEntry() {
+  const wsEl       = document.getElementById('importGridWorkspaceModal');
+  const entryModalEl = document.getElementById('importGridModal');
+  if (wsEl && wsEl.classList.contains('show')) {
+    wsEl.addEventListener('hidden.bs.modal', () => {
+      bootstrap.Modal.getOrCreateInstance(entryModalEl).show();
+      _igmShowPhase('entry');
+    }, { once: true });
+    _igmCloseGridWorkspace();
+  } else {
+    bootstrap.Modal.getOrCreateInstance(entryModalEl).show();
+    _igmShowPhase('entry');
+  }
+}
+
+// Close workspace, re-open entry modal at a specific phase
+function _igmTransitionToPhase(phase) {
+  const wsEl       = document.getElementById('importGridWorkspaceModal');
+  const entryModalEl = document.getElementById('importGridModal');
+  const show = () => {
+    bootstrap.Modal.getOrCreateInstance(entryModalEl).show();
+    setTimeout(() => _igmShowPhase(phase), 50);
+  };
+  const ws = wsEl ? bootstrap.Modal.getInstance(wsEl) : null;
+  if (ws && wsEl.classList.contains('show')) {
+    wsEl.addEventListener('hidden.bs.modal', show, { once: true });
+    ws.hide();
+  } else {
+    show();
+  }
 }
 
 function openImportWorkspace() {
@@ -11140,7 +11200,7 @@ function importWorkspaceClose() {
 }
 
 function importWorkspaceShowEntry() { _igmShowPhase('entry'); }
-function importWorkspaceShowGrid()  { _igmShowPhase('grid'); _igmRenderList(); }
+function importWorkspaceShowGrid()  { _igmOpenGridWorkspace(); }
 
 // ── CSV Upload ────────────────────────────────────────────────────────────────
 function importWorkspaceUploadCsv(input) {
@@ -11253,8 +11313,7 @@ function _igmRenderMappingTable() {
 function importWorkspaceApplyMapping() {
   if (!_igmColMapping) return;
   _igmApplyMapping(_igmColMapping.mapping);
-  _igmShowPhase('grid');
-  _igmRenderAll(true);
+  _igmOpenGridWorkspace();
 }
 
 function _igmApplyMapping(mapping) {
@@ -11297,9 +11356,11 @@ async function importWorkspacePastePrompt() {
 function importGridStartBlank() {
   _igmRows = [];
   _igmSelectedId = null;
-  _igmShowPhase('grid');
-  _igmRenderList();
-  importGridAddRow();
+  const wsEl = document.getElementById('importGridWorkspaceModal');
+  if (wsEl) {
+    wsEl.addEventListener('shown.bs.modal', () => importGridAddRow(), { once: true });
+  }
+  _igmOpenGridWorkspace();
 }
 
 function importGridAddRow() {
@@ -12203,9 +12264,11 @@ function _igmNavRow(delta) {
   _igmOpenEditModal(next.id);
 }
 
-// Alt+Up / Alt+Down to navigate rows while panel is open
+// Alt+Up / Alt+Down to navigate rows while grid workspace is open
 document.addEventListener('keydown', e => {
-  if (!document.getElementById('importGridModal').classList.contains('show')) return;
+  const importEl = document.getElementById('importGridModal');
+  const wsEl     = document.getElementById('importGridWorkspaceModal');
+  if (!importEl?.classList.contains('show') && !wsEl?.classList.contains('show')) return;
   if (!_igmSelectedId) return;
   if (e.altKey && e.key === 'ArrowUp')   { e.preventDefault(); _igmNavRow(-1); }
   if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); _igmNavRow(1); }
@@ -12355,7 +12418,7 @@ function _igmShowConfirmScreen(data) {
   const lbl = document.getElementById('igm-confirm-label');
   const total = s.create + s.update;
   if (lbl) lbl.textContent = `Import ${total} Row${total !== 1 ? 's' : ''}`;
-  _igmShowPhase('confirm');
+  _igmTransitionToPhase('confirm');
 }
 
 // ── Commit ────────────────────────────────────────────────────────────────────
@@ -12403,7 +12466,7 @@ function _igmShowResults(data) {
   }).join('');
   const dlBtn = document.getElementById('igm-btn-dl-errors');
   if (dlBtn) dlBtn.style.display = s.error > 0 ? '' : 'none';
-  _igmShowPhase('results');
+  _igmTransitionToPhase('results');
 }
 
 // ── Photo upload (post-import) ────────────────────────────────────────────────
