@@ -15493,7 +15493,9 @@ document.getElementById('btn-inv-add-product')?.addEventListener('click', () => 
 
   let name, unitPrice, subtotal;
   if (isByWeight) {
-    const pricePerBase = parseFloat(p.price_per_unit || 0);
+    // price_per_unit is per base unit (g or ml); price is the user-facing per-big-unit price (kg/L)
+    let pricePerBase = parseFloat(p.price_per_unit || 0);
+    if (!pricePerBase && conv && p.price) pricePerBase = parseFloat(p.price) / conv;
     unitPrice = pricePerBase * conv;
     subtotal  = pricePerBase * qtyDisplay * conv;
     name      = p.name;
@@ -15580,6 +15582,7 @@ document.getElementById('btn-inv-save')?.addEventListener('click', async () => {
     status:           document.getElementById('inv-status').value,
     lines: _invLines.map(l => ({
       name: l.name, qty: parseFloat(l.qty) || 1,
+      unit: l.unit || 'unit',
       unit_price: parseFloat(l.unit_price) || 0,
       subtotal: parseFloat(l.subtotal) || 0,
     })),
