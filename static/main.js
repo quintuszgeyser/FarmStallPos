@@ -11096,6 +11096,16 @@ let _igmNextId = 1;
 let _igmActiveGroups = new Set(['core']); // kept for legacy export
 let _igmSelectedId = null;   // currently selected row id
 let _igmPanelTab = 'core';   // legacy panel tab (kept for old panel fns)
+
+const _IGM_GROUPS = [
+  { key:'core',    label:'Core',        cols:['name','product_type','unit_type','price','price_per_unit','is_for_sale','vat_type'] },
+  { key:'details', label:'Details',     cols:['category','sub_category','description','barcode','product_code','stock_qty','margin_pct','low_stock_threshold'] },
+  { key:'scale',   label:'Scale',       cols:['sync_to_scale','scale_tare','scale_shelf_life','scale_open_price','scale_msg1','scale_msg2'] },
+  { key:'package', label:'Package',     cols:['package_size','package_size_unit','package_unit'] },
+  { key:'online',  label:'Online',      cols:['family_name','is_default_variant','is_available_online','is_prepared'] },
+  { key:'consign', label:'Consignment', cols:['is_consignment','settlement_basis','consignment_pct'] },
+];
+let _igmActiveGroupKey = 'core';
 let _igmView = 'list';       // 'list' | 'edit'
 let _igmFilter = 'all';
 let _igmSearch = '';
@@ -11184,6 +11194,7 @@ function openImportWorkspace() {
   _igmActiveGroups = new Set(['core']);
   _igmSelectedId = null;
   _igmPanelTab = 'core';
+  _igmActiveGroupKey = 'core';
   _igmView = 'list';
   _igmFilter = 'all';
   _igmSearch = '';
@@ -11757,6 +11768,7 @@ function _igmApplyBulk(key) {
 
 // ── Summary bar ───────────────────────────────────────────────────────────────
 function _igmUpdateSummaryBar() {
+  _igmRenderGroupTabs();
   let ready = 0, warns = 0, errs = 0;
   _igmRows.forEach(row => {
     const s = _igmRowWorstStatus(row);
@@ -12006,9 +12018,82 @@ function _igmRemovePhoto(id) {
 
 // ── List render engine ────────────────────────────────────────────────────────
 
+// ── Group tabs ────────────────────────────────────────────────────────────────
+function _igmGroupErrorCounts(groupKey) {
+  const grp = _IGM_GROUPS.find(g => g.key === groupKey);
+  if (!grp) return { errors: 0, warns: 0 };
+  const cols = grp.cols.map(k => IMPORT_COLS.find(c => c.key === k)).filter(Boolean);
+  let errors = 0, warns = 0;
+  for (const row of _igmRows) {
+    if (row._skipped) continue;
+    for (const col of cols) {
+      const s = _igmValidateCell(col, row[col.key] ?? '', row);
+      if (s.startsWith('error')) errors++;
+      else if (s.startsWith('warn') && !row._ignored?.[col.key]) warns++;
+    }
+  }
+  return { errors, warns };
+}
+
+function _igmRenderGroupTabs() {
+  const el = document.getElementById('igm-group-tabs');
+  if (!el) return;
+  el.innerHTML = _IGM_GROUPS.map(g => {
+    const { errors, warns } = _igmGroupErrorCounts(g.key);
+    const badge = errors > 0
+      ? `<span class="badge bg-danger ms-1" style="font-size:10px">${errors}</span>`
+      : warns > 0
+      ? `<span class="badge bg-warning text-dark ms-1" style="font-size:10px">${warns}</span>`
+      : '';
+    const active = g.key === _igmActiveGroupKey ? 'active' : '';
+    return `<button class="btn btn-sm igm-grp-tab ${active}" onclick="igmSetActiveGroup('${g.key}')">${_igmEsc(g.label)}${badge}</button>`;
+  }).join('');
+}
+
+function igmSetActiveGroup(key) {
+  _igmActiveGroupKey = key;
+  _igmRenderList();
+}
+
+function _igmCellDisplayValue(col, val) {
+  if (val === null || val === undefined || val === '') return '';
+  if (col.type === 'bool') return String(val) === 'true' ? 'Yes' : 'No';
+  if (col.type === 'select' && col.options) {
+    const opt = col.options.find(o => (o.value ?? o.v) === String(val));
+    return opt ? (opt.label || String(val)) : String(val);
+  }
+  if (col.key === 'price' || col.key === 'price_per_unit') {
+    const n = parseFloat(val);
+    if (!isNaN(n)) return `R ${n.toFixed(2)}`;
+  }
+  if (col.key === 'margin_pct') {
+    const n = parseFloat(val);
+    if (!isNaN(n)) return `${n.toFixed(1)} %`;
+  }
+  return String(val);
+}
+
+function _igmRenderListHeader() {
+  const grp = _IGM_GROUPS.find(g => g.key === _igmActiveGroupKey);
+  const cols = (grp?.cols || []).map(k => IMPORT_COLS.find(c => c.key === k)).filter(Boolean);
+  const tpl = `32px 16px minmax(150px,1.5fr) ${cols.map(() => 'minmax(70px,1fr)').join(' ')} 32px`;
+  const colHdrs = cols.map(c =>
+    `<div class="px-1" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${_igmEsc(c.label)}">${_igmEsc(c.label)}</div>`
+  ).join('');
+  return `<div class="igm-import-col-hdr" style="grid-template-columns:${tpl}">
+    <div></div><div></div>
+    <div class="px-1">Product</div>
+    ${colHdrs}
+    <div></div>
+  </div>`;
+}
+
 function _igmRenderList() {
+  _igmRenderGroupTabs();
+  const hdrEl  = document.getElementById('igm-col-hdr-row');
   const listBody = document.getElementById('igm-list-body');
   if (!listBody) return;
+  if (hdrEl) hdrEl.innerHTML = _igmRenderListHeader();
   const term = _igmSearch.toLowerCase();
   const rows = _igmRows.filter(row => {
     if (term && !(row.name || '').toLowerCase().includes(term) &&
@@ -12026,61 +12111,58 @@ function _igmRenderList() {
 }
 
 function _igmRenderListRowHtml(row, ri) {
-  const status = _igmRowWorstStatus(row);
+  const grp  = _IGM_GROUPS.find(g => g.key === _igmActiveGroupKey);
+  const cols = (grp?.cols || []).map(k => IMPORT_COLS.find(c => c.key === k)).filter(Boolean);
+  const tpl  = `32px 16px minmax(150px,1.5fr) ${cols.map(() => 'minmax(70px,1fr)').join(' ')} 32px`;
 
-  // Issues badge
-  let issuesBadge;
-  if (status === 'error') {
-    const n = IMPORT_COLS.filter(c => _igmValidateCell(c, row[c.key]||'', row).startsWith('error')).length;
-    issuesBadge = `<span class="badge bg-danger" style="font-size:11px;white-space:nowrap"><i class="bi bi-x-circle me-1"></i>${n} error${n>1?'s':''}</span>`;
-  } else if (status === 'warn') {
-    const n = IMPORT_COLS.filter(c => { const s = _igmValidateCell(c, row[c.key]||'', row); return s.startsWith('warn') && !(row._ignored?.[c.key]); }).length;
-    issuesBadge = `<span class="badge bg-warning text-dark" style="font-size:11px;white-space:nowrap"><i class="bi bi-exclamation-triangle me-1"></i>${n} warning${n>1?'s':''}</span>`;
-  } else {
-    issuesBadge = `<span class="badge bg-success" style="font-size:11px"><i class="bi bi-check-circle me-1"></i>Ready</span>`;
-  }
+  // Overall row status dot
+  const ws = _igmRowWorstStatus(row);
+  const dot = ws === 'error'
+    ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#dc3545;flex-shrink:0" title="Has errors"></span>`
+    : ws === 'warn'
+    ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ffc107;flex-shrink:0" title="Has warnings"></span>`
+    : `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#198754;flex-shrink:0" title="Ready"></span>`;
 
-  // Flag icons
-  const flags = [];
-  if (!row.is_for_sale || row.is_for_sale === 'true') flags.push('<i class="bi bi-tag pf-icon text-success" title="For Sale"></i>');
-  else flags.push('<i class="bi bi-tag-slash pf-icon text-secondary" title="Not For Sale"></i>');
-  if (row.is_available_online === 'true') flags.push('<i class="bi bi-globe pf-icon text-primary" title="Available Online"></i>');
-  if (row.sync_to_scale === 'true') flags.push('<i class="bi bi-speedometer2 pf-icon text-info" title="Sync to Scale"></i>');
-  if (row.is_consignment === 'true') flags.push('<i class="bi bi-arrow-left-right pf-icon text-warning" title="Consignment"></i>');
-  if (row.is_prepared === 'true') flags.push('<i class="bi bi-fire pf-icon" style="color:#fd7e14" title="Prepared / Kitchen"></i>');
+  // Group cells with per-cell highlight
+  const cellsHtml = cols.map(col => {
+    const val = row[col.key] ?? '';
+    const s   = _igmValidateCell(col, val, row);
+    let cls = '', title = '';
+    if (s === 'na')                                       { cls = 'igm-cell-na'; }
+    else if (s.startsWith('error'))                       { cls = 'igm-cell-err'; title = ` title="${_igmEsc(s.slice(6))}"${''}`; }
+    else if (s.startsWith('warn') && !row._ignored?.[col.key]) { cls = 'igm-cell-warn'; title = ` title="${_igmEsc(s.slice(5))}"${''}`; }
+    const display = s === 'na' ? '—' : (_igmCellDisplayValue(col, val) || '<span style="color:#ccc">—</span>');
+    return `<div class="px-1 ${cls}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-top:6px;padding-bottom:6px"${title}>${display}</div>`;
+  }).join('');
 
-  // Thumbnail
-  const thumb = row._photo
-    ? `<img src="${row._photoUrl||''}" class="pr-thumb" alt="">`
-    : `<div class="pr-thumb d-flex align-items-center justify-content-center" style="background:#f5f0e8;border-radius:4px;border:1px dashed var(--lc-gold-border)"><i class="bi bi-image" style="color:#c9a96e;font-size:14px"></i></div>`;
+  // Thumbnail + name
+  const thumb = row._photoUrl
+    ? `<img src="${row._photoUrl}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;flex-shrink:0" alt="">`
+    : `<span style="width:28px;height:28px;border-radius:4px;background:#f0ece4;border:1px dashed var(--lc-gold-border);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0"><i class="bi bi-image" style="font-size:11px;color:#c9a96e"></i></span>`;
+  const nameHtml = row.name
+    ? `<span style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_igmEsc(row.name)}</span>`
+    : `<span class="text-muted fst-italic" style="font-size:13px">No name</span>`;
 
   const skippedCls = row._skipped ? ' is-skipped' : '';
   const selectedCls = _igmSelectedId === row.id ? ' is-selected' : '';
 
-  return `<div class="igm-import-row${skippedCls}${selectedCls}" data-row-id="${row.id}" onclick="_igmOpenEditModal(${row.id})">
-    <div class="pr-check" onclick="event.stopPropagation()">
+  return `<div class="igm-import-row${skippedCls}${selectedCls}" data-row-id="${row.id}" style="grid-template-columns:${tpl}" onclick="_igmOpenEditModal(${row.id})">
+    <div style="display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation()">
       <input type="checkbox" class="form-check-input mt-0 igm-row-cb" data-id="${row.id}" ${row._selected?'checked':''}
-        onchange="_igmRowSelect(${row.id},this.checked)">
+        onchange="_igmRowSelect(${row.id},this.checked)" style="width:16px;height:16px">
     </div>
-    <div class="pr-name">
-      ${thumb}
-      <div class="pr-name-block">
-        <span class="pr-name-text">${row.name ? _igmEsc(row.name) : '<span class="text-muted fst-italic" style="font-weight:400">No name</span>'}</span>
-      </div>
+    <div style="display:flex;align-items:center;justify-content:center">${dot}</div>
+    <div style="display:flex;align-items:center;gap:6px;overflow:hidden;padding:4px 4px 4px 0">
+      ${thumb}${nameHtml}
     </div>
-    <div style="font-size:12px">${_igmTypeBadge(row)}</div>
-    <div class="pr-price" style="font-size:13px">${_igmPriceDisplay(row) || '<span class="text-muted">—</span>'}</div>
-    <div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.category ? _igmEsc(row.category) : '<span class="text-muted">—</span>'}</div>
-    <div style="font-size:12px;color:#888">${row.product_code || '<span class="text-muted">—</span>'}</div>
-    <div>${issuesBadge}</div>
-    <div class="pr-flags">${flags.join('')}</div>
-    <div class="pr-more-wrap dropdown" onclick="event.stopPropagation()">
-      <button class="pr-more-btn" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+    ${cellsHtml}
+    <div class="dropdown" style="display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation()">
+      <button class="btn btn-sm btn-link text-muted p-0" data-bs-toggle="dropdown" style="line-height:1"><i class="bi bi-three-dots-vertical"></i></button>
       <ul class="dropdown-menu dropdown-menu-end" style="min-width:150px">
-        <li><button class="dropdown-item" onclick="_igmOpenEditModal(${row.id})"><i class="bi bi-pencil me-2"></i>Edit</button></li>
-        <li><button class="dropdown-item" onclick="_igmToggleSkipRowById(${row.id})">${row._skipped ? '<i class="bi bi-arrow-counterclockwise me-2"></i>Restore Row' : '<i class="bi bi-skip-forward me-2"></i>Skip Row'}</button></li>
+        <li><button class="dropdown-item small" onclick="_igmOpenEditModal(${row.id})"><i class="bi bi-pencil me-2"></i>Edit</button></li>
+        <li><button class="dropdown-item small" onclick="_igmToggleSkipRowById(${row.id})">${row._skipped ? '<i class="bi bi-arrow-counterclockwise me-2"></i>Restore Row' : '<i class="bi bi-skip-forward me-2"></i>Skip Row'}</button></li>
         <li><hr class="dropdown-divider"></li>
-        <li><button class="dropdown-item text-danger" onclick="importGridDeleteRow(${row.id})"><i class="bi bi-trash me-2"></i>Remove</button></li>
+        <li><button class="dropdown-item small text-danger" onclick="importGridDeleteRow(${row.id})"><i class="bi bi-trash me-2"></i>Remove</button></li>
       </ul>
     </div>
   </div>`;

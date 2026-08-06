@@ -465,15 +465,11 @@
     .product-row.is-archived { opacity: .65; }
 
     /* ── Import workspace list view ── */
-    .igm-import-row,
     .igm-import-col-hdr {
       display: grid;
-      grid-template-columns: 28px minmax(160px,1fr) 110px 80px 100px 60px 110px 70px 36px;
       column-gap: clamp(.25rem,.6vw,.5rem);
       align-items: center;
-      padding: clamp(4px,.8vw,6px) clamp(6px,1.2vw,10px);
-    }
-    .igm-import-col-hdr {
+      padding: 5px clamp(6px,1.2vw,10px);
       background: var(--lc-gold-light);
       border-bottom: 2px solid var(--lc-gold-border);
       font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
@@ -481,7 +477,11 @@
       position: sticky; top: 0; z-index: 5;
     }
     .igm-import-row {
-      min-height: 48px;
+      display: grid;
+      column-gap: clamp(.25rem,.6vw,.5rem);
+      align-items: center;
+      padding: 0 clamp(6px,1.2vw,10px);
+      min-height: 44px;
       border-bottom: 1px solid #ede8df;
       background: var(--dd-paper);
       transition: background .1s;
@@ -490,6 +490,23 @@
     .igm-import-row:hover { background: #fffbf0; }
     .igm-import-row.is-selected { background: var(--lc-gold-light); }
     .igm-import-row.is-skipped { opacity: .4; }
+    .igm-cell-err  { background: #fef2f2; color: #dc3545; }
+    .igm-cell-warn { background: #fffbeb; color: #92400e; }
+    .igm-cell-na   { color: #ccc; }
+    .igm-grp-tab {
+      font-size: 12px; padding: 3px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--lc-gold-border, #c9a96e);
+      background: transparent;
+      color: var(--dd-ink, #5a4a38);
+      transition: background .12s;
+    }
+    .igm-grp-tab:hover { background: var(--lc-gold-light, #fdf6e8); }
+    .igm-grp-tab.active {
+      background: var(--lc-gold, #927f57);
+      color: #fff;
+      border-color: var(--lc-gold, #927f57);
+    }
     .is-warning-igm {
       border-color: #ffc107 !important;
       box-shadow: 0 0 0 0.2rem rgba(255,193,7,.25) !important;
@@ -2728,6 +2745,11 @@
           </div>
         </div>
 
+        <!-- Group tab bar -->
+        <div id="igm-group-tabs" class="px-3 py-2 d-flex gap-2 flex-wrap border-bottom" style="background:var(--dd-paper,#fdf6e3)">
+          <!-- rendered by _igmRenderGroupTabs() -->
+        </div>
+
         <!-- Summary bar -->
         <div id="igm-summary-bar" class="px-3 py-2 d-flex align-items-center gap-3 small flex-wrap">
           <span id="igm-sum-ready" class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i><span>0</span> ready</span>
@@ -2751,18 +2773,8 @@
 
       <!-- Scrollable body: sticky column header + rows -->
       <div class="modal-body p-0">
-        <!-- Column header sticky within the scroll body -->
-        <div class="igm-import-col-hdr" style="position:sticky;top:0;z-index:5;background:var(--lc-gold-light,#fdf6e8)">
-          <div></div>
-          <div>Product</div>
-          <div>Type &amp; Unit</div>
-          <div>Price</div>
-          <div>Category</div>
-          <div>PLU</div>
-          <div>Issues</div>
-          <div>Flags</div>
-          <div></div>
-        </div>
+        <!-- Column header — rendered by _igmRenderListHeader() -->
+        <div id="igm-col-hdr-row"></div>
         <!-- Grid rows -->
         <div id="igm-list-body"></div>
         <!-- Add row footer -->
