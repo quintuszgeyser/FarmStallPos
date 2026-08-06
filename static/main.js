@@ -17622,7 +17622,7 @@ async function _doRestore(fileId) {
       file_id:        fileId,
       restore_target: restoreTarget,
       confirmed:      true,
-    }) });
+    }) }, 360000); // 6 min — server blocks on pre-restore backup before returning
     toast('Restore started — this may take a few minutes...', 'info');
     const modalEl = document.getElementById('_restore-modal');
     if (modalEl) bootstrap.Modal.getInstance(modalEl)?.hide();
