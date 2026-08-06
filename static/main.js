@@ -11841,10 +11841,13 @@ function _igmSelectRow(id) {
   document.querySelectorAll('.igm-list-row').forEach(el => {
     const rid = parseInt(el.dataset.rowId);
     const sel = rid === id;
-    el.style.background = sel ? '#eef2ff' : '';
-    el.style.borderLeft = sel ? '3px solid #6366f1' : '3px solid transparent';
+    el.style.background  = sel ? '#eef2ff' : '';
+    el.style.borderLeft  = sel ? '3px solid #6366f1' : '3px solid transparent';
   });
   _igmRenderPanel(id);
+  // Ensure the selected item is visible in the list pane
+  const el = document.querySelector(`.igm-list-row[data-row-id="${id}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest' });
 }
 
 function _igmRenderPanel(id) {
@@ -11876,6 +11879,9 @@ function _igmRenderPanelHeader(row) {
   const dotCls  = status === 'error' ? 'text-danger'  : status === 'warn' ? 'text-warning'  : 'text-success';
   const dotIcon = status === 'error' ? 'bi-x-circle-fill' : status === 'warn' ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill';
   const rowIdx  = _igmRows.indexOf(row) + 1;
+  const total   = _igmRows.length;
+  const hasPrev = rowIdx > 1;
+  const hasNext = rowIdx < total;
   const photoHtml = row._photo
     ? `<img src="${row._photoUrl||''}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;cursor:pointer;flex-shrink:0" onclick="_igmPickPhoto(${row.id})" title="Click to replace">`
     : `<button class="btn p-0 flex-shrink-0" onclick="_igmPickPhoto(${row.id})" title="Add photo" style="width:48px;height:48px;border-radius:6px;border:1px dashed #ccc;color:#bbb;background:#fafafa"><i class="bi bi-camera" style="font-size:18px"></i></button>`;
@@ -11886,9 +11892,13 @@ function _igmRenderPanelHeader(row) {
         <i class="bi ${dotIcon} ${dotCls}" style="font-size:14px;flex-shrink:0"></i>
         <span style="font-size:14px;font-weight:600;word-break:break-word">${row.name ? _igmEsc(row.name) : '<span class="text-muted fst-italic">No name</span>'}</span>
       </div>
-      <div class="text-muted" style="font-size:11px">Row ${rowIdx}</div>
+      <div class="text-muted" style="font-size:11px">Row ${rowIdx} of ${total}</div>
     </div>
-    <button class="btn btn-sm btn-link text-danger flex-shrink-0 ms-1" onclick="importGridDeleteRow(${row.id})" title="Delete row"><i class="bi bi-trash"></i></button>`;
+    <div class="d-flex align-items-center gap-1 flex-shrink-0">
+      <button class="btn btn-sm btn-outline-secondary p-1" onclick="_igmNavRow(-1)" title="Previous row (Alt+↑)" ${hasPrev?'':'disabled'} style="line-height:1"><i class="bi bi-chevron-up"></i></button>
+      <button class="btn btn-sm btn-outline-secondary p-1" onclick="_igmNavRow(1)"  title="Next row (Alt+↓)"     ${hasNext?'':'disabled'} style="line-height:1"><i class="bi bi-chevron-down"></i></button>
+      <button class="btn btn-sm btn-link text-danger ms-1" onclick="importGridDeleteRow(${row.id})" title="Delete row"><i class="bi bi-trash"></i></button>
+    </div>`;
 }
 
 const _IGM_PANEL_GROUPS = [
@@ -11899,6 +11909,26 @@ const _IGM_PANEL_GROUPS = [
   { key:'family',      label:'Online & Family' },
   { key:'consignment', label:'Consignment' },
 ];
+
+function _igmNavRow(delta) {
+  if (!_igmSelectedId) return;
+  const idx = _igmRows.findIndex(r => r.id === _igmSelectedId);
+  if (idx < 0) return;
+  const next = _igmRows[idx + delta];
+  if (!next) return;
+  _igmSelectRow(next.id);
+  // Scroll the list item into view
+  const el = document.querySelector(`.igm-list-row[data-row-id="${next.id}"]`);
+  if (el) el.scrollIntoView({ block: 'nearest' });
+}
+
+// Alt+Up / Alt+Down to navigate rows while panel is open
+document.addEventListener('keydown', e => {
+  if (!document.getElementById('importGridModal').classList.contains('show')) return;
+  if (!_igmSelectedId) return;
+  if (e.altKey && e.key === 'ArrowUp')   { e.preventDefault(); _igmNavRow(-1); }
+  if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); _igmNavRow(1); }
+});
 
 function _igmRenderPanelTabs(row) {
   const tabsEl = document.getElementById('igm-panel-tabs');
