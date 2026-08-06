@@ -11088,7 +11088,9 @@ const _IGM_COL_ALIASES = {
 // ── State ─────────────────────────────────────────────────────────────────────
 let _igmRows = [];         // [{id, _photo, _photoFile, name, product_type, ...}]
 let _igmNextId = 1;
-let _igmActiveGroups = new Set(['core']);
+let _igmActiveGroups = new Set(['core']); // kept for legacy export; panel uses _igmPanelTab
+let _igmSelectedId = null;   // currently selected row id for the detail panel
+let _igmPanelTab = 'core';   // active panel group tab
 let _igmFilter = 'all';
 let _igmSearch = '';
 let _igmColMapping = null;   // {csvHeaders: [], mapping: {csvIdx → colKey|null}}
@@ -11113,6 +11115,8 @@ function openImportWorkspace() {
   _igmRows = [];
   _igmNextId = 1;
   _igmActiveGroups = new Set(['core']);
+  _igmSelectedId = null;
+  _igmPanelTab = 'core';
   _igmFilter = 'all';
   _igmSearch = '';
   _igmColMapping = null;
@@ -11130,7 +11134,7 @@ function importWorkspaceClose() {
 }
 
 function importWorkspaceShowEntry() { _igmShowPhase('entry'); }
-function importWorkspaceShowGrid()  { _igmShowPhase('grid'); _igmRenderAll(); }
+function importWorkspaceShowGrid()  { _igmShowPhase('grid'); _igmRenderAll(true); }
 
 // ── CSV Upload ────────────────────────────────────────────────────────────────
 function importWorkspaceUploadCsv(input) {
@@ -11238,7 +11242,8 @@ function importWorkspaceApplyMapping() {
   if (!_igmColMapping) return;
   _igmApplyMapping(_igmColMapping.mapping);
   _igmShowPhase('grid');
-  _igmRenderAll();
+  _igmRenderAll(true);
+  if (_igmRows.length > 0) _igmSelectRow(_igmRows[0].id);
 }
 
 function _igmApplyMapping(mapping) {
@@ -11280,15 +11285,18 @@ async function importWorkspacePastePrompt() {
 // ── Grid start modes ──────────────────────────────────────────────────────────
 function importGridStartBlank() {
   _igmRows = [];
-  importGridAddRow();
+  _igmSelectedId = null;
   _igmShowPhase('grid');
-  _igmRenderAll();
+  importGridAddRow();
 }
 
 function importGridAddRow() {
   _igmPushUndo();
-  _igmRows.push({ id: _igmNextId++, _photo: null, _selected: false });
-  _igmRenderAll();
+  const newId = _igmNextId++;
+  _igmRows.push({ id: newId, _photo: null, _selected: false });
+  _igmRenderList();
+  _igmUpdateSummaryBar();
+  _igmSelectRow(newId);
 }
 
 function importGridAddTemplate(type) {
@@ -11299,17 +11307,24 @@ function importGridAddTemplate(type) {
     recipe:      { product_type:'recipe',     is_for_sale:'true',  is_prepared:'true' },
     consignment: { product_type:'stock_item', unit_type:'count',   is_for_sale:'true', is_consignment:'true', settlement_basis:'PCT_OF_SALE' },
   };
-  _igmRows.push({ id: _igmNextId++, _photo: null, _selected: false, ...(templates[type] || {}) });
-  if (!['igm-phase-grid'].some(id => document.getElementById(id).style.display !== 'none')) {
-    _igmShowPhase('grid');
-  }
-  _igmRenderAll();
+  const newId = _igmNextId++;
+  _igmRows.push({ id: newId, _photo: null, _selected: false, ...(templates[type] || {}) });
+  if (document.getElementById('igm-phase-grid').style.display === 'none') _igmShowPhase('grid');
+  _igmRenderList();
+  _igmUpdateSummaryBar();
+  _igmSelectRow(newId);
 }
 
 function importGridDeleteRow(id) {
   _igmPushUndo();
   _igmRows = _igmRows.filter(r => r.id !== id);
-  _igmRenderAll();
+  if (_igmSelectedId === id) {
+    _igmSelectedId = null;
+    _igmRenderPanel(null);
+  }
+  _igmRenderList();
+  _igmUpdateSummaryBar();
+  _igmRunFuzzyCheck();
 }
 
 // ── Undo ──────────────────────────────────────────────────────────────────────
@@ -11323,7 +11338,8 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (_igmUndoStack.length) {
       _igmRows = JSON.parse(_igmUndoStack.pop());
-      _igmRenderAll();
+      if (_igmSelectedId && !_igmRows.find(r => r.id === _igmSelectedId)) _igmSelectedId = null;
+      _igmRenderAll(true);
     }
   }
 });
@@ -11473,9 +11489,14 @@ function _igmCellChange(id, key, val) {
   const row = _igmRows.find(r => r.id === id);
   if (!row) return;
   if (!row._ignored) row._ignored = {};
-  delete row._ignored[key]; // reset ignore on change
+  delete row._ignored[key];
   row[key] = val;
-  _igmRerenderRow(id);
+  _igmUpdateListItem(id);
+  if (_igmSelectedId === id) {
+    _igmRenderPanelHeader(row);
+    _igmRenderPanelTabs(row);
+    // panel body NOT re-rendered here — preserve active input focus
+  }
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
 }
@@ -11485,20 +11506,22 @@ function _igmIgnoreWarning(id, key) {
   if (!row) return;
   if (!row._ignored) row._ignored = {};
   row._ignored[key] = true;
-  _igmRerenderRow(id);
+  _igmUpdateListItem(id);
   _igmUpdateSummaryBar();
+  if (_igmSelectedId === id) {
+    _igmRenderPanelHeader(row);
+    _igmRenderPanelTabs(row);
+    _igmRenderPanelBody(row); // safe to re-render (button click, no text input active)
+  }
 }
 
 function _igmRerenderRow(id) {
-  const row = _igmRows.find(r => r.id === id);
-  if (!row) return;
-  const tr = document.querySelector(`tr[data-row-id="${id}"]`);
-  if (!tr) { _igmRenderBody(); return; }
-  const cols = _igmVisibleCols();
-  const newHtml = _igmRenderBody_row(row, _igmRows.indexOf(row), cols);
-  const tmp = document.createElement('tbody');
-  tmp.innerHTML = newHtml;
-  tr.replaceWith(tmp.firstElementChild);
+  // Legacy shim — kept for any internal callers; routes to new list-item update
+  _igmUpdateListItem(id);
+  if (_igmSelectedId === id) {
+    const row = _igmRows.find(r => r.id === id);
+    if (row) { _igmRenderPanelHeader(row); _igmRenderPanelTabs(row); }
+  }
 }
 
 function _igmRenderBody_row(row, ri, cols) {
@@ -11532,7 +11555,8 @@ function _igmPhotoSelected(id, input) {
   if (!row) return;
   row._photo = file;
   row._photoUrl = URL.createObjectURL(file);
-  _igmRerenderRow(id);
+  _igmUpdateListItem(id);
+  if (_igmSelectedId === id) _igmRenderPanelHeader(row);
 }
 
 // ── Selection + bulk edit ─────────────────────────────────────────────────────
@@ -11590,8 +11614,12 @@ function _igmApplyBulk(key) {
   const val = el.value;
   _igmPushUndo();
   _igmRows.filter(r => r._selected).forEach(r => { r[key] = val; });
-  _igmRenderBody();
+  _igmRenderList();
   _igmUpdateSummaryBar();
+  if (_igmSelectedId) {
+    const row = _igmRows.find(r => r.id === _igmSelectedId);
+    if (row && row._selected) _igmRenderPanel(_igmSelectedId);
+  }
 }
 
 // ── Summary bar ───────────────────────────────────────────────────────────────
@@ -11625,7 +11653,7 @@ function importGridApplyFilter() {
   const hasFilter = _igmFilter !== 'all' || _igmSearch;
   const clearBtn = document.getElementById('igm-clear-filter-btn');
   if (clearBtn) clearBtn.style.display = hasFilter ? '' : 'none';
-  _igmRenderBody();
+  _igmRenderList();
 }
 
 function importGridClearFilter() {
@@ -11636,7 +11664,7 @@ function importGridClearFilter() {
   const inp = document.getElementById('igm-search');
   if (inp) inp.value = '';
   document.getElementById('igm-clear-filter-btn').style.display = 'none';
-  _igmRenderBody();
+  _igmRenderList();
 }
 
 // ── Fuzzy name check ──────────────────────────────────────────────────────────
@@ -11707,11 +11735,256 @@ function importGridExportCsv() {
 }
 
 // ── Render all ────────────────────────────────────────────────────────────────
-function _igmRenderAll() {
-  _igmRenderHead();
-  _igmRenderBody();
+function _igmRenderAll(fullPanel = false) {
+  _igmRenderList();
+  if (_igmSelectedId) {
+    const row = _igmRows.find(r => r.id === _igmSelectedId);
+    if (row) {
+      _igmRenderPanelHeader(row);
+      _igmRenderPanelTabs(row);
+      if (fullPanel) _igmRenderPanelBody(row);
+    } else {
+      _igmSelectedId = null;
+      _igmRenderPanel(null);
+    }
+  }
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
+}
+
+// ── List + panel render engine ────────────────────────────────────────────────
+
+function _igmRenderList() {
+  const listBody = document.getElementById('igm-list-body');
+  if (!listBody) return;
+  const term = _igmSearch.toLowerCase();
+  const rows = _igmRows.filter(row => {
+    if (term && !(row.name || '').toLowerCase().includes(term) &&
+        !(row.category || '').toLowerCase().includes(term)) return false;
+    if (_igmFilter === 'error')   return _igmRowWorstStatus(row) === 'error';
+    if (_igmFilter === 'warning') return _igmRowWorstStatus(row) === 'warn';
+    if (_igmFilter === 'ready')   return _igmRowWorstStatus(row) === 'ok';
+    return true;
+  });
+  if (!rows.length) {
+    listBody.innerHTML = `<div class="text-center text-muted py-5" style="font-size:13px">No rows${_igmFilter !== 'all' || _igmSearch ? ' match the current filter' : ''}.</div>`;
+    return;
+  }
+  listBody.innerHTML = rows.map((row, ri) => _igmRenderListRowHtml(row, ri)).join('');
+}
+
+function _igmRenderListRowHtml(row, ri) {
+  const status  = _igmRowWorstStatus(row);
+  const dotCls  = status === 'error' ? 'text-danger'  : status === 'warn' ? 'text-warning'  : 'text-success';
+  const dotIcon = status === 'error' ? 'bi-x-circle-fill' : status === 'warn' ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill';
+  const isSel   = _igmSelectedId === row.id;
+  const nameHtml = row.name ? _igmEsc(row.name) : '<span class="fst-italic" style="color:#bbb">No name</span>';
+  const priceStr  = _igmPriceDisplay(row);
+  const typeBadge = _igmTypeBadge(row);
+  const thumb = row._photo
+    ? `<img src="${row._photoUrl||''}" style="width:30px;height:30px;object-fit:cover;border-radius:3px;flex-shrink:0" title="Has photo">`
+    : '';
+  return `<div class="igm-list-row d-flex align-items-center px-2 py-2 gap-2"
+    data-row-id="${row.id}"
+    style="cursor:pointer;border-bottom:1px solid #f0f0f0;min-height:50px;${isSel ? 'background:#eef2ff;border-left:3px solid #6366f1;' : 'border-left:3px solid transparent;'}"
+    onclick="_igmSelectRow(${row.id})">
+    <i class="bi ${dotIcon} ${dotCls} flex-shrink-0" style="font-size:13px"></i>
+    <span style="width:20px;flex-shrink:0;font-size:11px;color:#999">${ri+1}</span>
+    <div style="flex:1;min-width:0;overflow:hidden">
+      <div class="text-truncate" style="font-size:13px;font-weight:500">${nameHtml}</div>
+      <div class="d-flex align-items-center gap-1" style="margin-top:2px">
+        ${typeBadge}${priceStr ? `<span style="font-size:11px;color:#888">${priceStr}</span>` : ''}
+      </div>
+    </div>
+    ${thumb}
+    <input type="checkbox" class="form-check-input mt-0 igm-row-cb flex-shrink-0"
+      data-id="${row.id}" ${row._selected?'checked':''}
+      onclick="event.stopPropagation()"
+      onchange="_igmRowSelect(${row.id},this.checked)">
+    <button class="btn btn-link p-0 flex-shrink-0" style="color:#dc3545;font-size:13px;line-height:1"
+      onclick="event.stopPropagation();importGridDeleteRow(${row.id})"
+      title="Remove row"><i class="bi bi-x-lg"></i></button>
+  </div>`;
+}
+
+function _igmTypeBadge(row) {
+  const ut = row.unit_type, pt = row.product_type;
+  if (pt === 'recipe') return '<span style="font-size:10px;padding:1px 5px;background:#cfe2ff;color:#0a58ca;border-radius:8px">Recipe</span> ';
+  if (ut === 'weight') return '<span style="font-size:10px;padding:1px 5px;background:#e2e3e5;color:#495057;border-radius:8px">Weight</span> ';
+  if (ut === 'volume') return '<span style="font-size:10px;padding:1px 5px;background:#e2e3e5;color:#495057;border-radius:8px">Volume</span> ';
+  if (ut === 'count')  return '<span style="font-size:10px;padding:1px 5px;background:#d1e7dd;color:#0f5132;border-radius:8px">Retail</span> ';
+  return '<span style="font-size:10px;padding:1px 5px;background:#f8d7da;color:#842029;border-radius:8px">?</span> ';
+}
+
+function _igmPriceDisplay(row) {
+  try {
+    if (row.unit_type === 'weight' && row.price_per_unit) return `R${parseFloat(row.price_per_unit).toFixed(2)}/kg`;
+    if (row.unit_type === 'volume' && row.price_per_unit) return `R${parseFloat(row.price_per_unit).toFixed(2)}/L`;
+    if (row.price) return `R${parseFloat(row.price).toFixed(2)}`;
+  } catch(_) {}
+  return '';
+}
+
+function _igmUpdateListItem(id) {
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  const el = document.querySelector(`.igm-list-row[data-row-id="${id}"]`);
+  if (!el) { _igmRenderList(); return; }
+  const ri = _igmRows.indexOf(row);
+  const tmp = document.createElement('div');
+  tmp.innerHTML = _igmRenderListRowHtml(row, ri);
+  el.replaceWith(tmp.firstElementChild);
+}
+
+function _igmSelectRow(id) {
+  _igmSelectedId = id;
+  document.querySelectorAll('.igm-list-row').forEach(el => {
+    const rid = parseInt(el.dataset.rowId);
+    const sel = rid === id;
+    el.style.background = sel ? '#eef2ff' : '';
+    el.style.borderLeft = sel ? '3px solid #6366f1' : '3px solid transparent';
+  });
+  _igmRenderPanel(id);
+}
+
+function _igmRenderPanel(id) {
+  const panelEmpty   = document.getElementById('igm-panel-empty');
+  const panelContent = document.getElementById('igm-panel-content');
+  if (!panelEmpty || !panelContent) return;
+  if (!id) {
+    panelEmpty.style.display   = 'flex';
+    panelContent.style.display = 'none';
+    return;
+  }
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) {
+    panelEmpty.style.display   = 'flex';
+    panelContent.style.display = 'none';
+    return;
+  }
+  panelEmpty.style.display   = 'none';
+  panelContent.style.display = 'flex';
+  _igmRenderPanelHeader(row);
+  _igmRenderPanelTabs(row);
+  _igmRenderPanelBody(row);
+}
+
+function _igmRenderPanelHeader(row) {
+  const hdr = document.getElementById('igm-panel-header');
+  if (!hdr) return;
+  const status  = _igmRowWorstStatus(row);
+  const dotCls  = status === 'error' ? 'text-danger'  : status === 'warn' ? 'text-warning'  : 'text-success';
+  const dotIcon = status === 'error' ? 'bi-x-circle-fill' : status === 'warn' ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill';
+  const rowIdx  = _igmRows.indexOf(row) + 1;
+  const photoHtml = row._photo
+    ? `<img src="${row._photoUrl||''}" style="width:48px;height:48px;object-fit:cover;border-radius:6px;cursor:pointer;flex-shrink:0" onclick="_igmPickPhoto(${row.id})" title="Click to replace">`
+    : `<button class="btn p-0 flex-shrink-0" onclick="_igmPickPhoto(${row.id})" title="Add photo" style="width:48px;height:48px;border-radius:6px;border:1px dashed #ccc;color:#bbb;background:#fafafa"><i class="bi bi-camera" style="font-size:18px"></i></button>`;
+  hdr.innerHTML = `${photoHtml}
+    <input type="file" accept="image/*" class="d-none" id="igm-photo-${row.id}" onchange="_igmPhotoSelected(${row.id},this)">
+    <div class="flex-grow-1 ms-2" style="min-width:0">
+      <div class="d-flex align-items-center gap-1">
+        <i class="bi ${dotIcon} ${dotCls}" style="font-size:14px;flex-shrink:0"></i>
+        <span style="font-size:14px;font-weight:600;word-break:break-word">${row.name ? _igmEsc(row.name) : '<span class="text-muted fst-italic">No name</span>'}</span>
+      </div>
+      <div class="text-muted" style="font-size:11px">Row ${rowIdx}</div>
+    </div>
+    <button class="btn btn-sm btn-link text-danger flex-shrink-0 ms-1" onclick="importGridDeleteRow(${row.id})" title="Delete row"><i class="bi bi-trash"></i></button>`;
+}
+
+const _IGM_PANEL_GROUPS = [
+  { key:'core',        label:'Core' },
+  { key:'details',     label:'Details' },
+  { key:'scale',       label:'Scale' },
+  { key:'package',     label:'Package' },
+  { key:'family',      label:'Online & Family' },
+  { key:'consignment', label:'Consignment' },
+];
+
+function _igmRenderPanelTabs(row) {
+  const tabsEl = document.getElementById('igm-panel-tabs');
+  if (!tabsEl) return;
+  tabsEl.innerHTML = _IGM_PANEL_GROUPS.map(g => {
+    const cols = IMPORT_COLS.filter(c => c.group === g.key);
+    if (!cols.length) return '';
+    const isActive = _igmPanelTab === g.key;
+    let errCount = 0, warnCount = 0;
+    cols.forEach(c => {
+      const s = _igmValidateCell(c, row[c.key] || '', row);
+      if (s.startsWith('error')) errCount++;
+      else if (s.startsWith('warn') && !(row._ignored?.[c.key])) warnCount++;
+    });
+    const badge = errCount > 0
+      ? `<span class="badge bg-danger ms-1" style="font-size:9px">${errCount}</span>`
+      : warnCount > 0
+      ? `<span class="badge bg-warning text-dark ms-1" style="font-size:9px">${warnCount}</span>`
+      : '';
+    return `<li class="nav-item">
+      <a href="#" class="nav-link py-2 px-3 ${isActive?'active':''}" style="font-size:12px"
+        onclick="_igmPanelSetTab('${g.key}');return false">${g.label}${badge}</a>
+    </li>`;
+  }).join('');
+}
+
+function _igmPanelSetTab(tab) {
+  _igmPanelTab = tab;
+  const row = _igmRows.find(r => r.id === _igmSelectedId);
+  if (!row) return;
+  _igmRenderPanelTabs(row);
+  _igmRenderPanelBody(row);
+}
+
+function _igmRenderPanelBody(row) {
+  const bodyEl = document.getElementById('igm-panel-body');
+  if (!bodyEl) return;
+  const cols = IMPORT_COLS.filter(c => c.group === _igmPanelTab);
+  if (!cols.length) {
+    bodyEl.innerHTML = '<p class="text-muted small">No fields in this section.</p>';
+    return;
+  }
+  bodyEl.innerHTML = cols.map(col => _igmPanelField(col, row)).join('');
+}
+
+function _igmPanelField(col, row) {
+  const val    = row[col.key] || '';
+  const status = _igmValidateCell(col, val, row);
+  const ignored = (row._ignored || {})[col.key];
+  const na     = status === 'na';
+
+  let cls = (col.type === 'select' || col.type === 'bool') ? 'form-select' : 'form-control';
+  if (!na) {
+    if (status.startsWith('error')) cls += ' is-invalid';
+    else if (status.startsWith('warn') && !ignored) cls += ' border-warning';
+    else if (status === 'ok') cls += ' is-valid';
+  }
+
+  let inputHtml;
+  if (col.type === 'select' || col.type === 'bool') {
+    const options = col.type === 'bool' ? _IGM_BOOL_OPTIONS : (col.options || []);
+    const optHtml = `<option value=""></option>` + options.map(o => `<option value="${o.v}" ${val===o.v?'selected':''}>${o.label}</option>`).join('');
+    inputHtml = `<select class="${cls}" ${na?'disabled':''} onchange="_igmCellChange(${row.id},'${col.key}',this.value)">${optHtml}</select>`;
+  } else {
+    const ph    = typeof col.placeholder === 'function' ? col.placeholder(row) : (col.placeholder || '');
+    const itype = col.type === 'number' ? 'number' : 'text';
+    inputHtml   = `<input type="${itype}" class="${cls}" value="${_igmEsc(val)}" placeholder="${ph}" ${na?'disabled':''} oninput="_igmCellChange(${row.id},'${col.key}',this.value)">`;
+  }
+
+  let feedbackHtml = '';
+  if (!na && status.startsWith('error')) {
+    feedbackHtml = `<div class="invalid-feedback d-block" style="font-size:12px">${_igmEsc(status.slice(6))}</div>`;
+  } else if (!na && status.startsWith('warn') && !ignored) {
+    feedbackHtml = `<div class="d-flex align-items-center gap-1 mt-1" style="font-size:12px;color:#856404">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>${_igmEsc(status.slice(5))}</span>
+      <button type="button" class="btn btn-link btn-sm py-0 ms-1" style="font-size:11px" onclick="_igmIgnoreWarning(${row.id},'${col.key}')">Ignore</button>
+    </div>`;
+  }
+
+  const req = col.required(row) && !na ? '<span class="text-danger ms-1">*</span>' : '';
+  return `<div class="mb-3${na ? ' opacity-50' : ''}">
+    <label class="form-label mb-1" style="font-size:12px;font-weight:600;color:#555">${_igmEsc(col.label)}${req}</label>
+    ${inputHtml}
+    ${feedbackHtml}
+  </div>`;
 }
 
 // ── Server validate + confirm screen ─────────────────────────────────────────
@@ -11730,7 +12003,7 @@ async function importGridValidateAndPreview() {
     if (!resp.ok) { toast(data.error || 'Validation failed', 'danger'); return; }
     _igmServerPreview = data;
     _igmMergeServerErrors(data);
-    _igmRenderAll();
+    _igmRenderAll(true);
     _igmShowConfirmScreen(data);
   } catch(e) {
     toast('Validation failed: ' + e.message, 'danger');
