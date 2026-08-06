@@ -12836,8 +12836,10 @@ function _igmGetServerMode() {
 }
 
 function _igmMergeServerErrors(data) {
+  // Must use the same subset that was sent to the server (active rows, errors excluded)
+  const usedRows = _igmActiveRows().filter(r => _igmRowWorstStatus(r) !== 'error');
   (data.rows || []).forEach(sr => {
-    const row = _igmRows[sr.row - 2]; // server row index is 1-based, -1 for header
+    const row = usedRows[sr.row - 2]; // sr.row is 1-based; row 1 = header, row 2 = first data row
     if (!row || !sr.error) return;
     if (!row._serverErrors) row._serverErrors = [];
     row._serverErrors.push(sr.error);
@@ -12847,7 +12849,7 @@ function _igmMergeServerErrors(data) {
 function _igmShowConfirmScreen(data) {
   const s = data.summary;
   const mode = document.getElementById('igm-mode-select')?.value || 'import';
-  const withPhotos = _igmRows.filter(r => r._photo).length;
+  const withPhotos = _igmActiveRows().filter(r => r._photo).length;
   const modeLabel = mode === 'add_only' ? 'Add New Products' : mode === 'update_only' ? 'Update Existing' : 'Add & Update';
   const tbody = document.getElementById('igm-confirm-body');
   tbody.innerHTML = `
@@ -12935,11 +12937,18 @@ async function _igmUploadPhotos(importData) {
 }
 
 // ── Build CSV blob ────────────────────────────────────────────────────────────
+// Returns selected rows if any are selected, otherwise all rows.
+function _igmActiveRows() {
+  const sel = _igmRows.filter(r => r._selected);
+  return sel.length ? sel : _igmRows;
+}
+
 function _igmBuildCsvBlob(validOnly) {
   const allCols = IMPORT_COLS;
   const header = allCols.map(c => c.key).join(',');
   const lines = [`# version=1`, header];
-  const rows = validOnly ? _igmRows.filter(r => _igmRowWorstStatus(r) !== 'error') : _igmRows;
+  const source = _igmActiveRows();
+  const rows = validOnly ? source.filter(r => _igmRowWorstStatus(r) !== 'error') : source;
   rows.forEach(row => {
     const vals = allCols.map(c => {
       if (!c.applicable(row)) return '';
