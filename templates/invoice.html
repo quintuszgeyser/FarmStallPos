@@ -232,17 +232,17 @@
     <thead>
       <tr>
         <th style="width:45%">Description</th>
-        <th class="right" style="width:15%">Qty</th>
-        <th class="right" style="width:20%">Unit Price</th>
-        <th class="right" style="width:20%">Subtotal</th>
+        <th class="right" style="width:18%">Qty</th>
+        <th class="right" style="width:18%">Unit Price</th>
+        <th class="right" style="width:19%">Subtotal</th>
       </tr>
     </thead>
     <tbody>
       {% for line in lines %}
       <tr>
         <td>{{ line.name }}</td>
-        <td class="right">{{ line.qty }}</td>
-        <td class="right">R{{ '%.2f'|format(line.unit_price|float) }}</td>
+        <td class="right">{{ line.qty }}{% if line.unit and line.unit != 'unit' %} {{ line.unit }}{% endif %}</td>
+        <td class="right">R{{ '%.2f'|format(line.unit_price|float) }}{% if line.unit and line.unit not in ('unit', None) %}<span style="font-size:11px;color:#888"> /{{ line.unit }}</span>{% endif %}</td>
         <td class="right">R{{ '%.2f'|format(line.subtotal|float) }}</td>
       </tr>
       {% endfor %}
