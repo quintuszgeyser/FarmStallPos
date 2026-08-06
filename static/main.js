@@ -11088,9 +11088,10 @@ const _IGM_COL_ALIASES = {
 // ── State ─────────────────────────────────────────────────────────────────────
 let _igmRows = [];         // [{id, _photo, _photoFile, name, product_type, ...}]
 let _igmNextId = 1;
-let _igmActiveGroups = new Set(['core']); // kept for legacy export; panel uses _igmPanelTab
-let _igmSelectedId = null;   // currently selected row id for the detail panel
-let _igmPanelTab = 'core';   // active panel group tab
+let _igmActiveGroups = new Set(['core']); // kept for legacy export
+let _igmSelectedId = null;   // currently selected row id
+let _igmPanelTab = 'core';   // legacy panel tab (kept for old panel fns)
+let _igmView = 'list';       // 'list' | 'edit'
 let _igmFilter = 'all';
 let _igmSearch = '';
 let _igmColMapping = null;   // {csvHeaders: [], mapping: {csvIdx → colKey|null}}
@@ -11117,6 +11118,7 @@ function openImportWorkspace() {
   _igmActiveGroups = new Set(['core']);
   _igmSelectedId = null;
   _igmPanelTab = 'core';
+  _igmView = 'list';
   _igmFilter = 'all';
   _igmSearch = '';
   _igmColMapping = null;
@@ -11134,7 +11136,7 @@ function importWorkspaceClose() {
 }
 
 function importWorkspaceShowEntry() { _igmShowPhase('entry'); }
-function importWorkspaceShowGrid()  { _igmShowPhase('grid'); _igmRenderAll(true); }
+function importWorkspaceShowGrid()  { _igmView = 'list'; _igmShowPhase('grid'); _igmShowView('list'); }
 
 // ── CSV Upload ────────────────────────────────────────────────────────────────
 function importWorkspaceUploadCsv(input) {
@@ -11241,9 +11243,9 @@ function _igmRenderMappingTable() {
 function importWorkspaceApplyMapping() {
   if (!_igmColMapping) return;
   _igmApplyMapping(_igmColMapping.mapping);
+  _igmView = 'list';
   _igmShowPhase('grid');
-  _igmRenderAll(true);
-  if (_igmRows.length > 0) _igmSelectRow(_igmRows[0].id);
+  _igmShowView('list');
 }
 
 function _igmApplyMapping(mapping) {
@@ -11286,6 +11288,7 @@ async function importWorkspacePastePrompt() {
 function importGridStartBlank() {
   _igmRows = [];
   _igmSelectedId = null;
+  _igmView = 'list';
   _igmShowPhase('grid');
   importGridAddRow();
 }
@@ -11294,9 +11297,10 @@ function importGridAddRow() {
   _igmPushUndo();
   const newId = _igmNextId++;
   _igmRows.push({ id: newId, _photo: null, _selected: false });
-  _igmRenderList();
+  _igmSelectedId = newId;
+  _igmShowPhase('grid');
+  _igmShowView('edit');
   _igmUpdateSummaryBar();
-  _igmSelectRow(newId);
 }
 
 function importGridAddTemplate(type) {
@@ -11309,10 +11313,10 @@ function importGridAddTemplate(type) {
   };
   const newId = _igmNextId++;
   _igmRows.push({ id: newId, _photo: null, _selected: false, ...(templates[type] || {}) });
-  if (document.getElementById('igm-phase-grid').style.display === 'none') _igmShowPhase('grid');
-  _igmRenderList();
+  _igmSelectedId = newId;
+  _igmShowPhase('grid');
+  _igmShowView('edit');
   _igmUpdateSummaryBar();
-  _igmSelectRow(newId);
 }
 
 function importGridDeleteRow(id) {
@@ -11320,9 +11324,11 @@ function importGridDeleteRow(id) {
   _igmRows = _igmRows.filter(r => r.id !== id);
   if (_igmSelectedId === id) {
     _igmSelectedId = null;
-    _igmRenderPanel(null);
+    _igmView = 'list';
+    _igmShowView('list');
+  } else if (_igmView === 'list') {
+    _igmRenderList();
   }
-  _igmRenderList();
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
 }
@@ -11491,11 +11497,10 @@ function _igmCellChange(id, key, val) {
   if (!row._ignored) row._ignored = {};
   delete row._ignored[key];
   row[key] = val;
-  _igmUpdateListItem(id);
-  if (_igmSelectedId === id) {
-    _igmRenderPanelHeader(row);
-    _igmRenderPanelTabs(row);
-    // panel body NOT re-rendered here — preserve active input focus
+  if (_igmView === 'list') {
+    _igmUpdateListItem(id);
+  } else if (_igmView === 'edit' && _igmSelectedId === id) {
+    _igmRenderEditNav(row); // update status — no full form re-render (preserves input focus)
   }
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
@@ -11506,21 +11511,20 @@ function _igmIgnoreWarning(id, key) {
   if (!row) return;
   if (!row._ignored) row._ignored = {};
   row._ignored[key] = true;
-  _igmUpdateListItem(id);
   _igmUpdateSummaryBar();
-  if (_igmSelectedId === id) {
-    _igmRenderPanelHeader(row);
-    _igmRenderPanelTabs(row);
-    _igmRenderPanelBody(row); // safe to re-render (button click, no text input active)
+  if (_igmView === 'edit' && _igmSelectedId === id) {
+    _igmRenderEditNav(row);
+    _igmRenderEditForm(row); // safe — button click, no text input is active
+  } else {
+    _igmUpdateListItem(id);
   }
 }
 
 function _igmRerenderRow(id) {
-  // Legacy shim — kept for any internal callers; routes to new list-item update
-  _igmUpdateListItem(id);
-  if (_igmSelectedId === id) {
+  if (_igmView === 'list') { _igmUpdateListItem(id); }
+  else if (_igmView === 'edit' && _igmSelectedId === id) {
     const row = _igmRows.find(r => r.id === id);
-    if (row) { _igmRenderPanelHeader(row); _igmRenderPanelTabs(row); }
+    if (row) _igmRenderEditNav(row);
   }
 }
 
@@ -11555,8 +11559,8 @@ function _igmPhotoSelected(id, input) {
   if (!row) return;
   row._photo = file;
   row._photoUrl = URL.createObjectURL(file);
-  _igmUpdateListItem(id);
-  if (_igmSelectedId === id) _igmRenderPanelHeader(row);
+  if (_igmView === 'edit' && _igmSelectedId === id) _igmRenderEditForm(row);
+  else _igmUpdateListItem(id);
 }
 
 // ── Selection + bulk edit ─────────────────────────────────────────────────────
@@ -11735,24 +11739,156 @@ function importGridExportCsv() {
 }
 
 // ── Render all ────────────────────────────────────────────────────────────────
-function _igmRenderAll(fullPanel = false) {
-  _igmRenderList();
-  if (_igmSelectedId) {
+function _igmRenderAll(fullRender = false) {
+  if (_igmView === 'list') {
+    _igmRenderList();
+  } else if (_igmView === 'edit' && _igmSelectedId) {
     const row = _igmRows.find(r => r.id === _igmSelectedId);
-    if (row) {
-      _igmRenderPanelHeader(row);
-      _igmRenderPanelTabs(row);
-      if (fullPanel) _igmRenderPanelBody(row);
-    } else {
-      _igmSelectedId = null;
-      _igmRenderPanel(null);
-    }
+    if (!row) { _igmView = 'list'; _igmShowView('list'); }
+    else { _igmRenderEditNav(row); if (fullRender) _igmRenderEditForm(row); }
   }
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
 }
 
-// ── List + panel render engine ────────────────────────────────────────────────
+// ── Show view (list / edit) ────────────────────────────────────────────────────
+function _igmShowView(view) {
+  _igmView = view;
+  const listView = document.getElementById('igm-view-list');
+  const editView = document.getElementById('igm-view-edit');
+  if (!listView || !editView) return;
+  listView.style.display = view === 'list' ? '' : 'none';
+  editView.style.display = view === 'edit' ? '' : 'none';
+  if (view === 'list') {
+    _igmRenderList();
+  } else if (view === 'edit' && _igmSelectedId) {
+    const row = _igmRows.find(r => r.id === _igmSelectedId);
+    if (row) { _igmRenderEditNav(row); _igmRenderEditForm(row); }
+  }
+  document.querySelector('.modal.show')?.scrollTo({ top: 0 });
+}
+
+// ── Edit view ─────────────────────────────────────────────────────────────────
+function _igmRenderEditNav(row) {
+  const navEl = document.getElementById('igm-edit-nav');
+  if (!navEl) return;
+  const idx     = _igmRows.indexOf(row);
+  const total   = _igmRows.length;
+  const rowNum  = idx + 1;
+  const status  = _igmRowWorstStatus(row);
+  const dotCls  = status === 'error' ? 'text-danger' : status === 'warn' ? 'text-warning' : 'text-success';
+  const dotIcon = status === 'error' ? 'bi-x-circle-fill' : status === 'warn' ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill';
+  navEl.innerHTML = `
+    <button class="btn btn-sm btn-outline-secondary" onclick="_igmShowView('list')"><i class="bi bi-arrow-left me-1"></i>Back to list</button>
+    <span class="vr mx-1"></span>
+    <i class="bi ${dotIcon} ${dotCls}" style="font-size:14px"></i>
+    <span class="fw-semibold ms-1" style="font-size:14px">${row.name ? _igmEsc(row.name) : '<span class="text-muted fst-italic">Row ' + rowNum + '</span>'}</span>
+    <span class="text-muted small ms-2">Row ${rowNum} of ${total}</span>
+    <div class="d-flex gap-1 ms-auto">
+      <button class="btn btn-sm btn-outline-secondary px-2" onclick="_igmNavRow(-1)" title="Previous row (Alt+↑)" ${idx===0?'disabled':''}><i class="bi bi-chevron-up"></i></button>
+      <button class="btn btn-sm btn-outline-secondary px-2" onclick="_igmNavRow(1)"  title="Next row (Alt+↓)"     ${idx===total-1?'disabled':''}><i class="bi bi-chevron-down"></i></button>
+      <button class="btn btn-sm btn-link text-danger ms-2" onclick="importGridDeleteRow(${row.id})" title="Delete row"><i class="bi bi-trash"></i></button>
+    </div>`;
+}
+
+const _IGM_EDIT_SECTIONS = [
+  { key:'core',        label:'Core' },
+  { key:'details',     label:'Details' },
+  { key:'scale',       label:'Scale' },
+  { key:'package',     label:'Package' },
+  { key:'family',      label:'Online & Family' },
+  { key:'consignment', label:'Consignment' },
+];
+
+function _igmRenderEditForm(row) {
+  const formEl = document.getElementById('igm-edit-form');
+  if (!formEl) return;
+  const photoHtml = `<div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom">
+    ${row._photo
+      ? `<img src="${row._photoUrl||''}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;flex-shrink:0" onclick="_igmPickPhoto(${row.id})" title="Click to replace">`
+      : `<button class="btn p-0 flex-shrink-0" onclick="_igmPickPhoto(${row.id})" style="width:72px;height:72px;border-radius:8px;border:2px dashed #ccc;color:#bbb;background:#fafafa"><i class="bi bi-camera" style="font-size:24px"></i></button>`
+    }
+    <input type="file" accept="image/*" class="d-none" id="igm-photo-${row.id}" onchange="_igmPhotoSelected(${row.id},this)">
+    <div>
+      <div class="text-muted small">${row._photo ? 'Product photo — click to replace' : 'No photo — click to add'}</div>
+      ${row._photo ? `<button class="btn btn-link btn-sm text-danger p-0 mt-1" onclick="_igmRemovePhoto(${row.id})"><i class="bi bi-x me-1"></i>Remove photo</button>` : ''}
+    </div>
+  </div>`;
+  const sectionsHtml = _IGM_EDIT_SECTIONS.map(section => {
+    const cols  = IMPORT_COLS.filter(c => c.group === section.key);
+    if (!cols.length) return '';
+    const allNA = cols.every(c => _igmValidateCell(c, row[c.key]||'', row) === 'na');
+    const errs  = cols.filter(c => _igmValidateCell(c, row[c.key]||'', row).startsWith('error')).length;
+    const warns = cols.filter(c => { const s = _igmValidateCell(c, row[c.key]||'', row); return s.startsWith('warn') && !(row._ignored?.[c.key]); }).length;
+    const badge = errs  > 0 ? `<span class="badge bg-danger ms-2 fw-normal" style="font-size:10px">${errs} error${errs>1?'s':''}</span>`
+                : warns > 0 ? `<span class="badge bg-warning text-dark ms-2 fw-normal" style="font-size:10px">${warns} warning${warns>1?'s':''}</span>` : '';
+    const naNote = allNA ? `<span class="text-muted ms-2 fw-normal" style="font-size:11px;text-transform:none">— not applicable for this product type</span>` : '';
+    return `<div class="mb-4${allNA?' opacity-50':''}">
+      <h6 class="mb-3 pb-2" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#999;border-bottom:1px solid #e9ecef">
+        ${section.label}${badge}${naNote}
+      </h6>
+      <div class="row g-3">
+        ${cols.map(col => {
+          const wide = col.key === 'name' || col.key === 'description' || col.key.startsWith('scale_msg') || col.key === 'family_name';
+          return `<div class="${wide ? 'col-12' : 'col-md-6'}">${_igmEditField(col, row)}</div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+  formEl.innerHTML = photoHtml + sectionsHtml;
+}
+
+function _igmEditField(col, row) {
+  const val     = row[col.key] || '';
+  const status  = _igmValidateCell(col, val, row);
+  const ignored = (row._ignored || {})[col.key];
+  const na      = status === 'na';
+  let cls = (col.type === 'select' || col.type === 'bool') ? 'form-select' : 'form-control';
+  if (!na) {
+    if (status.startsWith('error')) cls += ' is-invalid';
+    else if (status.startsWith('warn') && !ignored) cls += ' border-warning';
+    else if (status === 'ok') cls += ' is-valid';
+  }
+  let inputHtml;
+  if (col.type === 'select' || col.type === 'bool') {
+    const options = col.type === 'bool' ? _IGM_BOOL_OPTIONS : (col.options || []);
+    const optHtml = `<option value=""></option>` + options.map(o => `<option value="${o.v}" ${val===o.v?'selected':''}>${o.label}</option>`).join('');
+    inputHtml = `<select class="${cls}" ${na?'disabled':''} onchange="_igmCellChange(${row.id},'${col.key}',this.value)">${optHtml}</select>`;
+  } else if (col.key === 'description') {
+    inputHtml = `<textarea class="${cls}" rows="2" ${na?'disabled':''} oninput="_igmCellChange(${row.id},'${col.key}',this.value)">${_igmEsc(val)}</textarea>`;
+  } else {
+    const ph    = typeof col.placeholder === 'function' ? col.placeholder(row) : (col.placeholder || '');
+    const itype = col.type === 'number' ? 'number' : 'text';
+    inputHtml   = `<input type="${itype}" class="${cls}" value="${_igmEsc(val)}" placeholder="${ph}" ${na?'disabled':''} oninput="_igmCellChange(${row.id},'${col.key}',this.value)">`;
+  }
+  let feedbackHtml = '';
+  if (!na && status.startsWith('error')) {
+    feedbackHtml = `<div class="invalid-feedback d-block" style="font-size:12px">${_igmEsc(status.slice(6))}</div>`;
+  } else if (!na && status.startsWith('warn') && !ignored) {
+    feedbackHtml = `<div class="d-flex align-items-center gap-1 mt-1" style="font-size:12px;color:#856404">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>${_igmEsc(status.slice(5))}</span>
+      <button type="button" class="btn btn-link btn-sm py-0 ms-1" style="font-size:11px" onclick="_igmIgnoreWarning(${row.id},'${col.key}')">Ignore</button>
+    </div>`;
+  }
+  const req = col.required(row) && !na ? '<span class="text-danger ms-1">*</span>' : '';
+  return `<div>
+    <label class="form-label mb-1" style="font-size:12px;font-weight:600;color:#555">${_igmEsc(col.label)}${req}</label>
+    ${inputHtml}
+    ${feedbackHtml}
+  </div>`;
+}
+
+function _igmRemovePhoto(id) {
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  row._photo = null;
+  row._photoUrl = null;
+  if (_igmView === 'edit' && _igmSelectedId === id) _igmRenderEditForm(row);
+  else _igmUpdateListItem(id);
+}
+
+// ── List render engine ────────────────────────────────────────────────────────
 
 function _igmRenderList() {
   const listBody = document.getElementById('igm-list-body');
@@ -11838,16 +11974,7 @@ function _igmUpdateListItem(id) {
 
 function _igmSelectRow(id) {
   _igmSelectedId = id;
-  document.querySelectorAll('.igm-list-row').forEach(el => {
-    const rid = parseInt(el.dataset.rowId);
-    const sel = rid === id;
-    el.style.background  = sel ? '#eef2ff' : '';
-    el.style.borderLeft  = sel ? '3px solid #6366f1' : '3px solid transparent';
-  });
-  _igmRenderPanel(id);
-  // Ensure the selected item is visible in the list pane
-  const el = document.querySelector(`.igm-list-row[data-row-id="${id}"]`);
-  if (el) el.scrollIntoView({ block: 'nearest' });
+  _igmShowView('edit');
 }
 
 function _igmRenderPanel(id) {
@@ -11916,10 +12043,10 @@ function _igmNavRow(delta) {
   if (idx < 0) return;
   const next = _igmRows[idx + delta];
   if (!next) return;
-  _igmSelectRow(next.id);
-  // Scroll the list item into view
-  const el = document.querySelector(`.igm-list-row[data-row-id="${next.id}"]`);
-  if (el) el.scrollIntoView({ block: 'nearest' });
+  _igmSelectedId = next.id;
+  _igmRenderEditNav(next);
+  _igmRenderEditForm(next);
+  document.querySelector('.modal.show')?.scrollTo({ top: 0 });
 }
 
 // Alt+Up / Alt+Down to navigate rows while panel is open
