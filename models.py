@@ -38,6 +38,7 @@ class Product(db.Model):
     base_unit     = db.Column(db.String(10), nullable=True)
     sold_by_weight      = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     is_for_sale         = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    vat_type            = db.Column(db.String(20), nullable=False, default='standard', server_default="'standard'")
     price_per_unit      = db.Column(Numeric(10, 4), nullable=True)
     low_stock_threshold = db.Column(Numeric(10, 4), nullable=True)
     package_size        = db.Column(Numeric(10, 4), nullable=True)

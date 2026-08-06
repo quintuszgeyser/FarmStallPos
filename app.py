@@ -2019,6 +2019,9 @@ def strong_migrate():
         # remains individually required (AND logic), preserving all existing special behaviour.
         pg_try("UPDATE special_lines SET group_id = id WHERE group_id IS NULL")
 
+        # VAT type per product (standard / zero_rated / exempt)
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_type VARCHAR(20) NOT NULL DEFAULT 'standard'")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 

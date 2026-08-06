@@ -10873,128 +10873,1002 @@ async function rollbackNow() {
   } catch (e) { toast('Rollback failed: ' + e.message, 'danger'); }
 }
 
-// ═══════════════════════════════════════════════════════
-// CSV PRODUCT IMPORT
-// ═══════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// PRODUCT IMPORT WORKSPACE
+// ═══════════════════════════════════════════════════════════════════════════════
 
-let _importPreviewData = null;
+// ── Column definitions ──────────────────────────────────────────────────────
+// Each column: { key, label, group, width, type, options, required(row), applicable(row), validate(val,row) }
+// type: 'text' | 'select' | 'bool' | 'number' | 'readonly'
+// applicable(row) returning false → grey cell, not validated, not serialised
+// required(row) → value must be non-empty
+// validate(val, row) → null|'error msg' (errors) or { warn: 'msg' } (warnings)
 
-function openImportModal() {
-  _importPreviewData = null;
-  document.getElementById('import-file').value = '';
-  document.getElementById('import-preview-section').style.display = 'none';
-  document.getElementById('import-loading').style.display = 'none';
-  document.getElementById('btn-import-valid').style.display = 'none';
-  document.getElementById('btn-import-strict').style.display = 'none';
-  bootstrap.Modal.getOrCreateInstance(document.getElementById('importModal')).show();
+const _IGM_BOOL_OPTIONS = [{v:'', label:'(default)'}, {v:'true', label:'Yes'}, {v:'false', label:'No'}];
+const _IGM_VAT_OPTIONS  = [{v:'', label:'(default — Standard)'}, {v:'standard', label:'Standard Rated (15%)'}, {v:'zero_rated', label:'Zero Rated'}, {v:'exempt', label:'Exempt'}];
+const _IGM_TYPE_OPTIONS = [{v:'', label:'— choose —'}, {v:'stock_item', label:'Stock Item'}, {v:'recipe', label:'Recipe / Menu Item'}];
+const _IGM_UNIT_OPTIONS = [{v:'', label:'— choose —'}, {v:'weight', label:'Weight (kg/g)'}, {v:'volume', label:'Volume (ml/L)'}, {v:'count', label:'Count (fixed price)'}];
+const _IGM_PKG_UNIT_OPTIONS = [{v:'', label:'—'}, {v:'g', label:'g'}, {v:'kg', label:'kg'}, {v:'ml', label:'ml'}, {v:'L', label:'L'}, {v:'unit', label:'unit'}];
+const _IGM_SETTLE_OPTIONS = [{v:'', label:'(default — Fixed Cost)'}, {v:'FIXED_COST', label:'Fixed Cost'}, {v:'PCT_OF_SALE', label:'% of Sale'}];
+
+function _igmIsSbw(row) { return row.product_type === 'stock_item' && (row.unit_type === 'weight' || row.unit_type === 'volume'); }
+function _igmIsCount(row) { return row.product_type === 'stock_item' && row.unit_type === 'count'; }
+function _igmIsRecipe(row) { return row.product_type === 'recipe'; }
+function _igmNeedPrice(row) { return _igmIsCount(row) || _igmIsRecipe(row); }
+function _igmNeedPpu(row) { return _igmIsSbw(row); }
+
+const IMPORT_COLS = [
+  // ── Core ──────────────────────────────────────────────────────────────────
+  { key:'name', label:'Name', group:'core', width:200, type:'text',
+    required: ()=>true,
+    applicable: ()=>true,
+    validate: (v)=> !v.trim() ? 'Name is required' : v.trim().length > 120 ? 'Max 120 characters' : null
+  },
+  { key:'product_type', label:'Type', group:'core', width:160, type:'select', options:_IGM_TYPE_OPTIONS,
+    required: ()=>true,
+    applicable: ()=>true,
+    validate: (v)=> !v ? 'Product type is required' : !['stock_item','recipe'].includes(v) ? 'Must be stock_item or recipe' : null
+  },
+  { key:'unit_type', label:'Unit', group:'core', width:150, type:'select', options:_IGM_UNIT_OPTIONS,
+    required: (row)=> row.product_type === 'stock_item',
+    applicable: (row)=> row.product_type !== 'recipe',
+    validate: (v, row)=> {
+      if (row.product_type === 'stock_item' && !v) return 'Unit type required for stock item';
+      if (v && !['weight','volume','count'].includes(v)) return 'Must be weight, volume, or count';
+      return null;
+    }
+  },
+  { key:'vat_type', label:'VAT', group:'core', width:160, type:'select', options:_IGM_VAT_OPTIONS,
+    required: ()=>false,
+    applicable: ()=>true,
+    validate: (v)=> v && !['standard','zero_rated','exempt'].includes(v) ? 'Must be standard, zero_rated, or exempt' : null,
+    warnIfEmpty: "Will default to Standard Rated (15%)"
+  },
+  { key:'price', label:'Price (R)', group:'core', width:100, type:'number',
+    required: (row)=> _igmNeedPrice(row),
+    applicable: (row)=> !_igmIsSbw(row),
+    validate: (v, row)=> {
+      if (_igmNeedPrice(row) && (!v || parseFloat(v) <= 0)) return 'Price required and > 0';
+      if (v && parseFloat(v) < 0) return 'Price cannot be negative';
+      return null;
+    },
+    placeholder: (row)=> _igmIsSbw(row) ? '— use Price/kg' : ''
+  },
+  { key:'price_per_unit', label:'Price/kg or /L', group:'core', width:110, type:'number',
+    required: (row)=> _igmNeedPpu(row),
+    applicable: (row)=> _igmIsSbw(row),
+    validate: (v, row)=> {
+      if (_igmNeedPpu(row) && (!v || parseFloat(v) <= 0)) return 'Price/kg required and > 0';
+      return null;
+    },
+    placeholder: ()=>''
+  },
+  { key:'is_for_sale', label:'For Sale', group:'core', width:90, type:'bool', options:_IGM_BOOL_OPTIONS,
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  { key:'category', label:'Category', group:'core', width:160, type:'text',
+    required: ()=>false, applicable: ()=>true, validate: ()=>null,
+    warnIfEmpty: 'No category set'
+  },
+  // ── Details ───────────────────────────────────────────────────────────────
+  { key:'description', label:'Description', group:'details', width:220, type:'text',
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  { key:'margin_pct', label:'Margin %', group:'details', width:90, type:'number',
+    required: ()=>false, applicable: ()=>true,
+    validate: (v)=> v && (parseFloat(v) < 0 || parseFloat(v) > 100) ? 'Must be 0–100' : null,
+    warnIfEmpty: 'Margin not set'
+  },
+  { key:'low_stock_threshold', label:'Low Stock Alert', group:'details', width:120, type:'number',
+    required: ()=>false, applicable: ()=>true,
+    validate: (v)=> v && parseFloat(v) < 0 ? 'Must be >= 0' : null
+  },
+  { key:'barcode', label:'Barcode', group:'details', width:130, type:'text',
+    required: ()=>false,
+    applicable: (row)=> !_igmIsSbw(row),
+    validate: (v)=> {
+      if (!v) return null;
+      if (!/^\d+$/.test(v)) return { warn: 'Barcode should be digits only' };
+      if (![8,12,13,14].includes(v.length)) return { warn: `Barcode length ${v.length} unusual (8/12/13/14 expected)` };
+      return null;
+    }
+  },
+  { key:'product_code', label:'PLU Code', group:'details', width:100, type:'number',
+    required: ()=>false, applicable: ()=>true,
+    validate: (v, row)=> {
+      if (!v) return null;
+      const n = parseInt(v);
+      if (isNaN(n) || n <= 0 || n > 99999) return 'Must be 1–99999';
+      // PLU range check
+      const utype = row.unit_type || '';
+      const sbw = _igmIsSbw(row);
+      if (sbw && !(n >= 1 && n <= 19999)) return `Weight/volume PLU must be 1–19999`;
+      if (utype === 'count' && !(n >= 20000 && n <= 29999)) return `Count PLU must be 20000–29999`;
+      if (row.product_type === 'recipe' && !(n >= 40000 && n <= 49999)) return `Recipe PLU must be 40000–49999`;
+      return null;
+    }
+  },
+  { key:'stock_qty', label:'Opening Stock', group:'details', width:110, type:'number',
+    required: ()=>false, applicable: ()=>true,
+    validate: (v)=> v && parseInt(v) < 0 ? 'Must be >= 0' : null
+  },
+  { key:'sub_category', label:'Sub-Category', group:'details', width:140, type:'text',
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  // ── Scale ─────────────────────────────────────────────────────────────────
+  { key:'sync_to_scale', label:'Sync to Scale', group:'scale', width:110, type:'bool', options:_IGM_BOOL_OPTIONS,
+    required: ()=>false, applicable: (row)=> _igmIsSbw(row), validate: ()=>null
+  },
+  { key:'scale_tare', label:'Tare (g)', group:'scale', width:90, type:'number',
+    required: ()=>false, applicable: (row)=> _igmIsSbw(row),
+    validate: (v)=> v && parseFloat(v) < 0 ? 'Must be >= 0' : null
+  },
+  { key:'scale_shelf_life', label:'Shelf Life (days)', group:'scale', width:120, type:'number',
+    required: ()=>false, applicable: (row)=> _igmIsSbw(row),
+    validate: (v)=> v && parseInt(v) < 0 ? 'Must be >= 0' : null
+  },
+  { key:'scale_open_price', label:'Open Price', group:'scale', width:100, type:'bool', options:_IGM_BOOL_OPTIONS,
+    required: ()=>false, applicable: (row)=> _igmIsSbw(row), validate: ()=>null
+  },
+  { key:'scale_msg1', label:'Scale Msg 1', group:'scale', width:160, type:'text',
+    required: ()=>false, applicable: (row)=> _igmIsSbw(row),
+    validate: (v)=> v && v.length > 80 ? 'Max 80 characters' : null
+  },
+  { key:'scale_msg2', label:'Scale Msg 2', group:'scale', width:160, type:'text',
+    required: ()=>false, applicable: (row)=> _igmIsSbw(row),
+    validate: (v)=> v && v.length > 80 ? 'Max 80 characters' : null
+  },
+  // ── Package ───────────────────────────────────────────────────────────────
+  { key:'package_size', label:'Pkg Size', group:'package', width:90, type:'number',
+    required: ()=>false, applicable: ()=>true,
+    validate: (v)=> v && parseFloat(v) <= 0 ? 'Must be > 0' : null
+  },
+  { key:'package_size_unit', label:'Pkg Unit', group:'package', width:90, type:'select', options:_IGM_PKG_UNIT_OPTIONS,
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  { key:'package_unit', label:'Pkg Label', group:'package', width:130, type:'text',
+    required: ()=>false, applicable: ()=>true,
+    validate: (v)=> v && v.length > 30 ? 'Max 30 characters' : null
+  },
+  // ── Family ────────────────────────────────────────────────────────────────
+  { key:'family_name', label:'Family Name', group:'family', width:150, type:'text',
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  { key:'is_default_variant', label:'Default Variant', group:'family', width:120, type:'bool', options:_IGM_BOOL_OPTIONS,
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  { key:'is_available_online', label:'Online', group:'family', width:80, type:'bool', options:_IGM_BOOL_OPTIONS,
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  { key:'is_prepared', label:'Prepared', group:'family', width:90, type:'bool', options:_IGM_BOOL_OPTIONS,
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  // ── Consignment ───────────────────────────────────────────────────────────
+  { key:'is_consignment', label:'Consignment', group:'consignment', width:110, type:'bool', options:_IGM_BOOL_OPTIONS,
+    required: ()=>false, applicable: ()=>true, validate: ()=>null
+  },
+  { key:'settlement_basis', label:'Settlement', group:'consignment', width:130, type:'select', options:_IGM_SETTLE_OPTIONS,
+    required: ()=>false, applicable: (row)=> row.is_consignment === 'true',
+    validate: (v, row)=> row.is_consignment === 'true' && v && !['FIXED_COST','PCT_OF_SALE'].includes(v) ? 'Use FIXED_COST or PCT_OF_SALE' : null
+  },
+  { key:'consignment_pct', label:'Supplier %', group:'consignment', width:100, type:'number',
+    required: (row)=> row.is_consignment === 'true' && row.settlement_basis === 'PCT_OF_SALE',
+    applicable: (row)=> row.is_consignment === 'true' && row.settlement_basis === 'PCT_OF_SALE',
+    validate: (v, row)=> {
+      if (row.is_consignment === 'true' && row.settlement_basis === 'PCT_OF_SALE') {
+        const n = parseFloat(v);
+        if (!v || isNaN(n) || n <= 0 || n > 100) return 'Must be 1–100';
+      }
+      return null;
+    }
+  },
+];
+
+// col key → IMPORT_COLS index
+const _IGM_COL_IDX = Object.fromEntries(IMPORT_COLS.map((c,i) => [c.key, i]));
+
+// Column alias mapping for CSV upload auto-match
+const _IGM_COL_ALIASES = {
+  name: ['name','product name','item description','description name','item name','product'],
+  product_type: ['product_type','type','product type','item type'],
+  unit_type: ['unit_type','unit','unit type','selling unit','uom','sold by'],
+  price: ['price','selling price','retail price','sale price'],
+  price_per_unit: ['price_per_unit','price per unit','price/kg','price per kg','price/l','price per litre'],
+  product_code: ['product_code','plu','sku','item code','code','product code','item number'],
+  barcode: ['barcode','ean','upc','barcode number','scan code'],
+  vat_type: ['vat_type','vat','tax','vat type','tax type'],
+  category: ['category','department','cat','product category'],
+  sub_category: ['sub_category','subcategory','sub category'],
+  description: ['description','desc','product description','item description'],
+  margin_pct: ['margin_pct','margin','margin %','gross margin'],
+  stock_qty: ['stock_qty','stock','quantity','opening stock','qty'],
+  is_for_sale: ['is_for_sale','for sale','active'],
+};
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let _igmRows = [];         // [{id, _photo, _photoFile, name, product_type, ...}]
+let _igmNextId = 1;
+let _igmActiveGroups = new Set(['core']);
+let _igmFilter = 'all';
+let _igmSearch = '';
+let _igmColMapping = null;   // {csvHeaders: [], mapping: {csvIdx → colKey|null}}
+let _igmRawCsvRows = [];     // raw rows from CSV before mapping
+let _igmFuzzyDismissed = new Set();
+let _igmUndoStack = [];
+let _igmServerPreview = null; // result from last server preview
+let _igmLastImportResults = null;
+
+// ── Bootstrap modal handle ────────────────────────────────────────────────────
+function _igmModal() { return bootstrap.Modal.getOrCreateInstance(document.getElementById('importGridModal')); }
+
+// ── Phase helpers ─────────────────────────────────────────────────────────────
+function _igmShowPhase(phase) {
+  ['entry','mapping','grid','confirm','results'].forEach(p => {
+    const el = document.getElementById('igm-phase-' + p);
+    if (el) el.style.display = (p === phase) ? 'flex' : 'none';
+  });
 }
 
-document.getElementById('import-file')?.addEventListener('change', async function() {
-  if (!this.files[0]) return;
-  await previewImport();
-});
-
-async function previewImport() {
-  const fileEl = document.getElementById('import-file');
-  if (!fileEl.files[0]) return;
-
-  document.getElementById('import-loading').style.display = '';
-  document.getElementById('import-preview-section').style.display = 'none';
-  document.getElementById('btn-import-valid').style.display = 'none';
-  document.getElementById('btn-import-strict').style.display = 'none';
-
-  try {
-    const formData = new FormData();
-    formData.append('file', fileEl.files[0]);
-    const allowName = document.getElementById('import-allow-name-match').checked;
-    const resp = await fetch(`/api/products/import?mode=preview&allow_name_match=${allowName}`, {
-      method: 'POST', body: formData,
-    });
-    const data = await resp.json();
-    if (!resp.ok) { toast(data.error || 'Preview failed', 'danger'); return; }
-
-    _importPreviewData = data;
-    renderImportPreview(data);
-  } catch (e) {
-    toast('Preview failed: ' + e.message, 'danger');
-  } finally {
-    document.getElementById('import-loading').style.display = 'none';
-  }
+function openImportWorkspace() {
+  _igmRows = [];
+  _igmNextId = 1;
+  _igmActiveGroups = new Set(['core']);
+  _igmFilter = 'all';
+  _igmSearch = '';
+  _igmColMapping = null;
+  _igmRawCsvRows = [];
+  _igmFuzzyDismissed = new Set();
+  _igmUndoStack = [];
+  _igmServerPreview = null;
+  _igmShowPhase('entry');
+  document.getElementById('igm-title').textContent = 'Import Products';
+  _igmModal().show();
 }
 
-function renderImportPreview(data) {
-  const s = data.summary;
-  const summaryEl = document.getElementById('import-summary');
-  summaryEl.innerHTML = `
-    <strong>${data.rows?.length || 0} rows parsed</strong> -
-    <span class="text-success"><i class="bi bi-circle-fill me-1"></i>${s.create} create</span>
-    <span class="text-warning ms-2"><i class="bi bi-circle-fill me-1"></i>${s.update} update</span>
-    <span class="text-secondary ms-2"><i class="bi bi-circle me-1"></i>${s.unchanged} unchanged</span>
-    <span class="text-danger ms-2"><i class="bi bi-circle-fill me-1"></i>${s.error} errors</span>
-    ${s.skip ? `<span class="text-muted ms-2"><i class="bi bi-skip-forward me-1"></i>${s.skip} skip</span>` : ''}
-  `;
+function importWorkspaceClose() {
+  // nothing to clean up — just let Bootstrap close it
+}
 
-  const dupWarn = document.getElementById('import-duplicate-warning');
-  if (data.duplicate_warning) {
-    dupWarn.innerHTML = '<i class="bi bi-exclamation-triangle me-1"></i>' + data.duplicate_warning;
-    dupWarn.style.display = '';
+function importWorkspaceShowEntry() { _igmShowPhase('entry'); }
+function importWorkspaceShowGrid()  { _igmShowPhase('grid'); _igmRenderAll(); }
+
+// ── CSV Upload ────────────────────────────────────────────────────────────────
+function importWorkspaceUploadCsv(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    _igmParseCsvText(text, true);
+  };
+  reader.readAsText(file);
+}
+
+function _igmParseCsvText(text, showMapping) {
+  // Strip comment lines
+  const lines = text.split('\n').filter(l => !l.trim().startsWith('#') && l.trim());
+  if (!lines.length) { toast('CSV file appears empty', 'warning'); return; }
+
+  const parseRow = line => {
+    const result = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else { inQ = !inQ; } }
+      else if (ch === ',' && !inQ) { result.push(cur); cur = ''; }
+      else cur += ch;
+    }
+    result.push(cur);
+    return result;
+  };
+
+  const headers = parseRow(lines[0]).map(h => h.trim().toLowerCase());
+  const rows = lines.slice(1).map(l => parseRow(l));
+
+  _igmRawCsvRows = rows.map(r => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (r[i] || '').trim(); });
+    return obj;
+  });
+
+  if (showMapping) {
+    _igmBuildMapping(headers);
+    _igmShowPhase('mapping');
+    _igmRenderMappingTable();
   } else {
-    dupWarn.style.display = 'none';
+    _igmApplyMapping({});
   }
+}
 
-  const tbody = document.getElementById('import-preview-body');
-  tbody.innerHTML = (data.rows || []).map(r => {
-    const actionClass = r.action === 'error' ? 'table-danger' : r.action === 'update' ? 'table-warning' :
-      r.action === 'create' ? 'table-success' : '';
-    const actionBadge = r.action === 'error' ? '<span class="badge bg-danger">Error</span>'
-      : r.action === 'update' ? '<span class="badge bg-warning text-dark">Update</span>'
-      : r.action === 'create' ? '<span class="badge bg-success">Create</span>'
-      : r.action === 'unchanged' ? '<span class="badge bg-secondary">Unchanged</span>'
-      : '<span class="badge bg-light text-dark">Skip</span>';
-    const detail = r.action === 'error'
-      ? `<span class="text-danger">${r.error}</span>`
-      : r.changes ? Object.entries(r.changes).map(([k,v]) => `<small><b>${k}:</b> ${v}</small>`).join(' &nbsp; ')
-      : '';
-    const warnings = (r.warnings || []).length ? `<small class="text-warning ms-1"><i class="bi bi-exclamation-triangle me-1"></i>${r.warnings.join(', ')}</small>` : '';
-    return `<tr class="${actionClass}">
-      <td class="text-muted small">${r.row}</td>
-      <td>${r.name || ''}</td>
-      <td>${actionBadge}</td>
-      <td>${detail}${warnings}</td>
+function _igmBuildMapping(headers) {
+  const mapping = {};
+  headers.forEach((h, i) => {
+    // Try exact match, then alias match
+    const norm = h.replace(/[^a-z0-9]/g, '');
+    let matched = null;
+    for (const [key, aliases] of Object.entries(_IGM_COL_ALIASES)) {
+      if (aliases.some(a => a.replace(/[^a-z0-9]/g, '') === norm)) { matched = key; break; }
+    }
+    // Cost price → always ignore
+    if (/cost/.test(h)) matched = '__ignore__';
+    mapping[i] = matched;
+  });
+  _igmColMapping = { headers, mapping };
+}
+
+function _igmRenderMappingTable() {
+  if (!_igmColMapping) return;
+  const { headers, mapping } = _igmColMapping;
+  const allColOptions = [
+    '<option value="__ignore__">— Ignore —</option>',
+    ...IMPORT_COLS.map(c => `<option value="${c.key}">${c.label}</option>`)
+  ].join('');
+
+  const rows = headers.map((h, i) => {
+    const val = mapping[i];
+    const status = val === '__ignore__' ? '<span class="text-muted small">Ignore</span>'
+      : val ? '<span class="text-success small"><i class="bi bi-check-circle me-1"></i>Auto-matched</span>'
+      : '<span class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>Review</span>';
+    return `<tr>
+      <td class="text-muted">"${h}"</td>
+      <td><span class="text-muted">→</span></td>
+      <td>
+        <select class="form-select form-select-sm" onchange="_igmColMapping.mapping[${i}]=this.value">
+          ${allColOptions}
+        </select>
+      </td>
+      <td>${status}</td>
     </tr>`;
   }).join('');
 
-  document.getElementById('import-preview-section').style.display = '';
-  if (s.create + s.update > 0) {
-    document.getElementById('btn-import-valid').style.display = '';
-    document.getElementById('btn-import-strict').style.display = '';
+  document.getElementById('igm-mapping-table-wrap').innerHTML = `
+    <table class="table table-sm">
+      <thead class="table-light"><tr><th>Your column</th><th></th><th>System field</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+
+  // Set select values
+  headers.forEach((h, i) => {
+    const sel = document.querySelectorAll('#igm-mapping-table-wrap select')[i];
+    if (sel && mapping[i]) sel.value = mapping[i];
+  });
+}
+
+function importWorkspaceApplyMapping() {
+  if (!_igmColMapping) return;
+  _igmApplyMapping(_igmColMapping.mapping);
+  _igmShowPhase('grid');
+  _igmRenderAll();
+}
+
+function _igmApplyMapping(mapping) {
+  const newRows = _igmRawCsvRows.map(raw => {
+    const row = { id: _igmNextId++, _photo: null };
+    if (mapping && Object.keys(mapping).length) {
+      // mapping is colIdx → colKey
+      _igmColMapping.headers.forEach((h, i) => {
+        const key = mapping[i];
+        if (key && key !== '__ignore__') row[key] = raw[h] || '';
+      });
+    } else {
+      // direct key match
+      IMPORT_COLS.forEach(c => { row[c.key] = raw[c.key] || ''; });
+    }
+    return row;
+  });
+  _igmPushUndo();
+  _igmRows.push(...newRows);
+}
+
+// ── Paste from Excel ──────────────────────────────────────────────────────────
+async function importWorkspacePastePrompt() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text.trim()) { toast('Clipboard is empty', 'warning'); return; }
+    if (text.includes('\t')) {
+      // Tab-separated — convert to CSV for parsing
+      const csv = text.split('\n').map(r => r.split('\t').map(c => `"${c.replace(/"/g,'""')}"`).join(',')).join('\n');
+      _igmParseCsvText(csv, true);
+    } else {
+      toast('No tab-separated data found in clipboard. Copy rows from Excel first.', 'warning');
+    }
+  } catch(e) {
+    toast('Cannot read clipboard: ' + e.message + '. Try Ctrl+V in a grid cell.', 'warning');
   }
 }
 
-async function doImport(mode) {
-  const fileEl = document.getElementById('import-file');
-  if (!fileEl.files[0]) return;
-  if (!confirm(`${mode === 'strict' ? 'Strict import (all-or-nothing)' : 'Import valid rows'}?\nErrors will be ${mode === 'strict' ? 'rejected (nothing saved)' : 'skipped'}.`)) return;
+// ── Grid start modes ──────────────────────────────────────────────────────────
+function importGridStartBlank() {
+  _igmRows = [];
+  importGridAddRow();
+  _igmShowPhase('grid');
+  _igmRenderAll();
+}
 
-  const formData = new FormData();
-  formData.append('file', fileEl.files[0]);
-  const allowName = document.getElementById('import-allow-name-match').checked;
+function importGridAddRow() {
+  _igmPushUndo();
+  _igmRows.push({ id: _igmNextId++, _photo: null, _selected: false });
+  _igmRenderAll();
+}
 
-  try {
-    const resp = await fetch(`/api/products/import?mode=${mode}&allow_name_match=${allowName}`, {
-      method: 'POST', body: formData,
+function importGridAddTemplate(type) {
+  _igmPushUndo();
+  const templates = {
+    weight:      { product_type:'stock_item', unit_type:'weight',  is_for_sale:'true', sync_to_scale:'true' },
+    count:       { product_type:'stock_item', unit_type:'count',   is_for_sale:'true' },
+    recipe:      { product_type:'recipe',     is_for_sale:'true',  is_prepared:'true' },
+    consignment: { product_type:'stock_item', unit_type:'count',   is_for_sale:'true', is_consignment:'true', settlement_basis:'PCT_OF_SALE' },
+  };
+  _igmRows.push({ id: _igmNextId++, _photo: null, _selected: false, ...(templates[type] || {}) });
+  if (!['igm-phase-grid'].some(id => document.getElementById(id).style.display !== 'none')) {
+    _igmShowPhase('grid');
+  }
+  _igmRenderAll();
+}
+
+function importGridDeleteRow(id) {
+  _igmPushUndo();
+  _igmRows = _igmRows.filter(r => r.id !== id);
+  _igmRenderAll();
+}
+
+// ── Undo ──────────────────────────────────────────────────────────────────────
+function _igmPushUndo() {
+  _igmUndoStack.push(JSON.stringify(_igmRows));
+  if (_igmUndoStack.length > 50) _igmUndoStack.shift();
+}
+
+document.addEventListener('keydown', e => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z' && document.getElementById('importGridModal').classList.contains('show')) {
+    e.preventDefault();
+    if (_igmUndoStack.length) {
+      _igmRows = JSON.parse(_igmUndoStack.pop());
+      _igmRenderAll();
+    }
+  }
+});
+
+// ── Validation ────────────────────────────────────────────────────────────────
+function _igmValidateCell(col, val, row) {
+  if (!col.applicable(row)) return 'na';
+  if (!val && col.required(row)) return 'error:This field is required';
+  if (!val && col.warnIfEmpty) return 'warn:' + col.warnIfEmpty;
+  if (val || col.required(row)) {
+    const result = col.validate(val || '', row);
+    if (!result) return val ? 'ok' : 'empty';
+    if (typeof result === 'string') return 'error:' + result;
+    if (result.warn) return 'warn:' + result.warn;
+  }
+  return val ? 'ok' : 'empty';
+}
+
+function _igmRowWorstStatus(row) {
+  for (const col of IMPORT_COLS) {
+    const s = _igmValidateCell(col, row[col.key] || '', row);
+    if (s.startsWith('error')) return 'error';
+  }
+  for (const col of IMPORT_COLS) {
+    const s = _igmValidateCell(col, row[col.key] || '', row);
+    if (s.startsWith('warn') && !row._ignored?.[col.key]) return 'warn';
+  }
+  return 'ok';
+}
+
+// ── Group toggle ──────────────────────────────────────────────────────────────
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.igm-grp-btn');
+  if (!btn) return;
+  const grp = btn.dataset.grp;
+  if (_igmActiveGroups.has(grp)) {
+    if (_igmActiveGroups.size > 1) _igmActiveGroups.delete(grp);
+  } else {
+    _igmActiveGroups.add(grp);
+  }
+  document.querySelectorAll('.igm-grp-btn').forEach(b => {
+    b.classList.toggle('active', _igmActiveGroups.has(b.dataset.grp));
+    b.classList.toggle('btn-primary', _igmActiveGroups.has(b.dataset.grp));
+    b.classList.toggle('btn-outline-secondary', !_igmActiveGroups.has(b.dataset.grp));
+  });
+  _igmRenderHead();
+  _igmRenderBody();
+});
+
+// ── Render head ───────────────────────────────────────────────────────────────
+function _igmVisibleCols() {
+  return IMPORT_COLS.filter(c => _igmActiveGroups.has(c.group));
+}
+
+function _igmRenderHead() {
+  const cols = _igmVisibleCols();
+  document.getElementById('igm-grid-head').innerHTML = `<tr>
+    <th style="width:32px"></th>
+    <th style="width:28px"><input type="checkbox" id="igm-select-all-th" class="form-check-input mt-0" onchange="importGridSelectAll(this.checked)"></th>
+    <th style="width:36px" class="text-muted small">#</th>
+    <th style="width:52px;text-align:center" title="Photo"><i class="bi bi-camera"></i></th>
+    ${cols.map(c => `<th style="width:${c.width}px;min-width:${c.width}px" class="small">${c.label}</th>`).join('')}
+    <th style="width:36px"></th>
+  </tr>`;
+}
+
+// ── Render body ───────────────────────────────────────────────────────────────
+function _igmRenderBody() {
+  const cols = _igmVisibleCols();
+  const term = _igmSearch.toLowerCase();
+  const rows = _igmRows.filter(row => {
+    if (term && !(row.name || '').toLowerCase().includes(term) &&
+        !(row.category || '').toLowerCase().includes(term)) return false;
+    if (_igmFilter === 'error') return _igmRowWorstStatus(row) === 'error';
+    if (_igmFilter === 'warning') return _igmRowWorstStatus(row) === 'warn';
+    if (_igmFilter === 'ready') return _igmRowWorstStatus(row) === 'ok';
+    return true;
+  });
+
+  document.getElementById('igm-grid-body').innerHTML = rows.map((row, ri) => {
+    const status = _igmRowWorstStatus(row);
+    const dotCls = status === 'error' ? 'text-danger' : status === 'warn' ? 'text-warning' : 'text-success';
+    const dotIcon = status === 'error' ? 'bi-x-circle-fill' : status === 'warn' ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill';
+    const cells = cols.map(col => _igmRenderCell(col, row)).join('');
+    const thumb = row._photo
+      ? `<td style="width:52px;padding:2px"><img src="${row._photoUrl||''}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="_igmPickPhoto(${row.id})" title="Click to replace"><input type="file" accept="image/*" class="d-none" id="igm-photo-${row.id}" onchange="_igmPhotoSelected(${row.id},this)"></td>`
+      : `<td style="width:52px;padding:2px;text-align:center"><button class="btn btn-sm btn-link text-muted p-0" onclick="_igmPickPhoto(${row.id})" title="Add photo" style="border:1px dashed #aaa;width:40px;height:40px;border-radius:4px"><i class="bi bi-camera"></i></button><input type="file" accept="image/*" class="d-none" id="igm-photo-${row.id}" onchange="_igmPhotoSelected(${row.id},this)"></td>`;
+
+    return `<tr data-row-id="${row.id}">
+      <td style="width:32px;vertical-align:middle;text-align:center" class="${dotCls}"><i class="bi ${dotIcon}"></i></td>
+      <td style="width:28px;vertical-align:middle"><input type="checkbox" class="form-check-input mt-0 igm-row-cb" data-id="${row.id}" ${row._selected?'checked':''} onchange="_igmRowSelect(${row.id},this.checked)"></td>
+      <td class="text-muted small" style="width:36px;vertical-align:middle">${ri+1}</td>
+      ${thumb}
+      ${cells}
+      <td style="width:36px;vertical-align:middle"><button class="btn btn-sm btn-link text-danger p-0" onclick="importGridDeleteRow(${row.id})" title="Remove row"><i class="bi bi-x-lg"></i></button></td>
+    </tr>`;
+  }).join('');
+}
+
+function _igmRenderCell(col, row) {
+  const val = row[col.key] || '';
+  const status = _igmValidateCell(col, val, row);
+  const ignored = (row._ignored || {})[col.key];
+
+  let cellStyle = `width:${col.width}px;min-width:${col.width}px;padding:2px 4px;vertical-align:middle;position:relative;`;
+  let cellClass = '';
+  let msg = '';
+
+  if (status === 'na') {
+    cellStyle += 'background:#f5f5f5;color:#aaa;';
+    return `<td style="${cellStyle}" class="${cellClass}"><span style="font-size:11px">—</span></td>`;
+  }
+  if (status.startsWith('error')) {
+    cellStyle += 'background:#fff0f0;outline:1.5px solid #dc3545;';
+    msg = status.slice(6);
+  } else if (status.startsWith('warn') && !ignored) {
+    cellStyle += 'outline:1.5px solid #fd7e14;';
+    msg = status.slice(5);
+  } else if (status === 'ok') {
+    cellStyle += 'background:#f6fff6;outline:1px solid #198754;';
+  }
+
+  let input = '';
+  if (col.type === 'select') {
+    const opts = (col.options || []).map(o => `<option value="${o.v}" ${val===o.v?'selected':''}>${o.label}</option>`).join('');
+    input = `<select class="form-select form-select-sm border-0 p-0" style="font-size:12px;height:24px;background:transparent" onchange="_igmCellChange(${row.id},'${col.key}',this.value)">${opts}</select>`;
+  } else if (col.type === 'bool') {
+    const opts = (_IGM_BOOL_OPTIONS).map(o => `<option value="${o.v}" ${val===o.v?'selected':''}>${o.label}</option>`).join('');
+    input = `<select class="form-select form-select-sm border-0 p-0" style="font-size:12px;height:24px;background:transparent" onchange="_igmCellChange(${row.id},'${col.key}',this.value)">${opts}</select>`;
+  } else {
+    const ph = typeof col.placeholder === 'function' ? col.placeholder(row) : (col.placeholder || '');
+    input = `<input type="${col.type === 'number' ? 'number' : 'text'}" class="form-control form-control-sm border-0 p-0" style="font-size:12px;height:24px;background:transparent" value="${_igmEsc(val)}" placeholder="${ph}" oninput="_igmCellChange(${row.id},'${col.key}',this.value)">`;
+  }
+
+  const ignoreBtn = (status.startsWith('warn') && !ignored)
+    ? `<button class="btn btn-link p-0 text-muted" style="font-size:10px;position:absolute;top:2px;right:2px;line-height:1" onclick="_igmIgnoreWarning(${row.id},'${col.key}')" title="Ignore this warning"><i class="bi bi-x-lg"></i></button>`
+    : '';
+  const tooltip = msg ? ` title="${_igmEsc(msg)}"` : '';
+
+  return `<td style="${cellStyle}" ${tooltip}>${input}${ignoreBtn}</td>`;
+}
+
+function _igmEsc(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+// ── Cell change ───────────────────────────────────────────────────────────────
+function _igmCellChange(id, key, val) {
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  if (!row._ignored) row._ignored = {};
+  delete row._ignored[key]; // reset ignore on change
+  row[key] = val;
+  _igmRerenderRow(id);
+  _igmUpdateSummaryBar();
+  _igmRunFuzzyCheck();
+}
+
+function _igmIgnoreWarning(id, key) {
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  if (!row._ignored) row._ignored = {};
+  row._ignored[key] = true;
+  _igmRerenderRow(id);
+  _igmUpdateSummaryBar();
+}
+
+function _igmRerenderRow(id) {
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  const tr = document.querySelector(`tr[data-row-id="${id}"]`);
+  if (!tr) { _igmRenderBody(); return; }
+  const cols = _igmVisibleCols();
+  const newHtml = _igmRenderBody_row(row, _igmRows.indexOf(row), cols);
+  const tmp = document.createElement('tbody');
+  tmp.innerHTML = newHtml;
+  tr.replaceWith(tmp.firstElementChild);
+}
+
+function _igmRenderBody_row(row, ri, cols) {
+  const status = _igmRowWorstStatus(row);
+  const dotCls = status === 'error' ? 'text-danger' : status === 'warn' ? 'text-warning' : 'text-success';
+  const dotIcon = status === 'error' ? 'bi-x-circle-fill' : status === 'warn' ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill';
+  const cells = cols.map(col => _igmRenderCell(col, row)).join('');
+  const thumb = row._photo
+    ? `<td style="width:52px;padding:2px"><img src="${row._photoUrl||''}" style="width:40px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer" onclick="_igmPickPhoto(${row.id})" title="Click to replace"><input type="file" accept="image/*" class="d-none" id="igm-photo-${row.id}" onchange="_igmPhotoSelected(${row.id},this)"></td>`
+    : `<td style="width:52px;padding:2px;text-align:center"><button class="btn btn-sm btn-link text-muted p-0" onclick="_igmPickPhoto(${row.id})" title="Add photo" style="border:1px dashed #aaa;width:40px;height:40px;border-radius:4px"><i class="bi bi-camera"></i></button><input type="file" accept="image/*" class="d-none" id="igm-photo-${row.id}" onchange="_igmPhotoSelected(${row.id},this)"></td>`;
+  return `<tr data-row-id="${row.id}">
+    <td style="width:32px;vertical-align:middle;text-align:center" class="${dotCls}"><i class="bi ${dotIcon}"></i></td>
+    <td style="width:28px;vertical-align:middle"><input type="checkbox" class="form-check-input mt-0 igm-row-cb" data-id="${row.id}" ${row._selected?'checked':''} onchange="_igmRowSelect(${row.id},this.checked)"></td>
+    <td class="text-muted small" style="width:36px;vertical-align:middle">${ri+1}</td>
+    ${thumb}
+    ${cells}
+    <td style="width:36px;vertical-align:middle"><button class="btn btn-sm btn-link text-danger p-0" onclick="importGridDeleteRow(${row.id})" title="Remove row"><i class="bi bi-x-lg"></i></button></td>
+  </tr>`;
+}
+
+// ── Photo ─────────────────────────────────────────────────────────────────────
+function _igmPickPhoto(id) {
+  document.getElementById('igm-photo-' + id)?.click();
+}
+
+function _igmPhotoSelected(id, input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (file.size > 8 * 1024 * 1024) { toast('Photo too large (max 8 MB)', 'warning'); return; }
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  row._photo = file;
+  row._photoUrl = URL.createObjectURL(file);
+  _igmRerenderRow(id);
+}
+
+// ── Selection + bulk edit ─────────────────────────────────────────────────────
+function importGridSelectAll(checked) {
+  _igmRows.forEach(r => r._selected = checked);
+  document.querySelectorAll('.igm-row-cb').forEach(cb => cb.checked = checked);
+  const allTh = document.getElementById('igm-select-all-th');
+  if (allTh) allTh.checked = checked;
+  _igmUpdateSelectionUI();
+}
+
+function _igmRowSelect(id, checked) {
+  const row = _igmRows.find(r => r.id === id);
+  if (row) row._selected = checked;
+  _igmUpdateSelectionUI();
+}
+
+function _igmUpdateSelectionUI() {
+  const sel = _igmRows.filter(r => r._selected);
+  const cntEl = document.getElementById('igm-selected-count');
+  const bulkWrap = document.getElementById('igm-bulk-edit-wrap');
+  if (sel.length > 0) {
+    cntEl.textContent = sel.length + (sel.length === 1 ? ' row selected' : ' rows selected');
+    cntEl.style.display = '';
+    bulkWrap.style.display = '';
+    _igmBuildBulkMenu();
+  } else {
+    cntEl.style.display = 'none';
+    bulkWrap.style.display = 'none';
+  }
+}
+
+function _igmBuildBulkMenu() {
+  const bulkFields = [
+    { key:'category', label:'Category', type:'text' },
+    { key:'vat_type', label:'VAT Type', type:'select', options:_IGM_VAT_OPTIONS },
+    { key:'product_type', label:'Product Type', type:'select', options:_IGM_TYPE_OPTIONS },
+    { key:'unit_type', label:'Unit Type', type:'select', options:_IGM_UNIT_OPTIONS },
+    { key:'margin_pct', label:'Margin %', type:'number' },
+    { key:'is_for_sale', label:'For Sale', type:'select', options:_IGM_BOOL_OPTIONS },
+    { key:'is_available_online', label:'Available Online', type:'select', options:_IGM_BOOL_OPTIONS },
+  ];
+  const menu = document.getElementById('igm-bulk-menu');
+  menu.innerHTML = bulkFields.map(f => {
+    const ctrl = f.type === 'select'
+      ? `<select class="form-select form-select-sm" id="igm-bulk-${f.key}">${f.options.map(o=>`<option value="${o.v}">${o.label}</option>`).join('')}</select>`
+      : `<input type="${f.type === 'number' ? 'number' : 'text'}" class="form-control form-control-sm" id="igm-bulk-${f.key}" placeholder="${f.label}">`;
+    return `<li class="px-3 py-2 border-bottom"><div class="small fw-bold mb-1">${f.label}</div><div class="d-flex gap-1">${ctrl}<button class="btn btn-sm btn-warning" onclick="_igmApplyBulk('${f.key}')">Apply</button></div></li>`;
+  }).join('');
+}
+
+function _igmApplyBulk(key) {
+  const el = document.getElementById('igm-bulk-' + key);
+  if (!el) return;
+  const val = el.value;
+  _igmPushUndo();
+  _igmRows.filter(r => r._selected).forEach(r => { r[key] = val; });
+  _igmRenderBody();
+  _igmUpdateSummaryBar();
+}
+
+// ── Summary bar ───────────────────────────────────────────────────────────────
+function _igmUpdateSummaryBar() {
+  let ready = 0, warns = 0, errs = 0;
+  _igmRows.forEach(row => {
+    const s = _igmRowWorstStatus(row);
+    if (s === 'ok') ready++;
+    else if (s === 'warn') warns++;
+    else errs++;
+  });
+  document.querySelector('#igm-sum-ready span').textContent = ready;
+  document.querySelector('#igm-sum-warn span').textContent = warns;
+  document.querySelector('#igm-sum-err span').textContent = errs;
+
+  const validCount = ready + warns;
+  const btn = document.getElementById('igm-btn-submit');
+  const lbl = document.getElementById('igm-btn-submit-label');
+  if (btn && lbl) {
+    btn.style.display = validCount > 0 ? '' : 'none';
+    const mode = document.getElementById('igm-mode-select')?.value || 'import';
+    const modeLabel = mode === 'add_only' ? 'Add' : mode === 'update_only' ? 'Update' : 'Import';
+    lbl.textContent = `${modeLabel} ${validCount} Row${validCount !== 1 ? 's' : ''}`;
+  }
+}
+
+// ── Filter ────────────────────────────────────────────────────────────────────
+function importGridApplyFilter() {
+  _igmFilter = document.getElementById('igm-filter-select')?.value || 'all';
+  _igmSearch = document.getElementById('igm-search')?.value || '';
+  const hasFilter = _igmFilter !== 'all' || _igmSearch;
+  const clearBtn = document.getElementById('igm-clear-filter-btn');
+  if (clearBtn) clearBtn.style.display = hasFilter ? '' : 'none';
+  _igmRenderBody();
+}
+
+function importGridClearFilter() {
+  _igmFilter = 'all';
+  _igmSearch = '';
+  const sel = document.getElementById('igm-filter-select');
+  if (sel) sel.value = 'all';
+  const inp = document.getElementById('igm-search');
+  if (inp) inp.value = '';
+  document.getElementById('igm-clear-filter-btn').style.display = 'none';
+  _igmRenderBody();
+}
+
+// ── Fuzzy name check ──────────────────────────────────────────────────────────
+function _igmNormalise(s) { return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim(); }
+
+function _igmLevenshtein(a, b) {
+  const dp = Array.from({length: b.length+1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let prev = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cur = a[i-1] === b[j-1] ? dp[j-1] : 1 + Math.min(dp[j-1], dp[j], prev);
+      dp[j-1] = prev;
+      prev = cur;
+    }
+    dp[b.length] = prev;
+  }
+  return dp[b.length];
+}
+
+function _igmRunFuzzyCheck() {
+  const pairs = [];
+  const names = _igmRows.map(r => _igmNormalise(r.name)).filter(Boolean);
+  const seen = new Set();
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i+1; j < names.length; j++) {
+      const key = names[i] + '|||' + names[j];
+      if (seen.has(key) || _igmFuzzyDismissed.has(key)) continue;
+      seen.add(key);
+      if (names[i] === names[j]) continue; // exact dups handled as errors
+      if (_igmLevenshtein(names[i], names[j]) <= 3) {
+        pairs.push({ a: _igmRows[i].name, b: _igmRows[j].name, key });
+      }
+    }
+  }
+  const footer = document.getElementById('igm-fuzzy-footer');
+  const msg = document.getElementById('igm-fuzzy-msg');
+  if (pairs.length > 0) {
+    footer.style.display = '';
+    footer._currentKey = pairs[0].key;
+    msg.textContent = `Similar names: "${pairs[0].a}" and "${pairs[0].b}" — are these the same product?`;
+  } else {
+    footer.style.display = 'none';
+  }
+}
+
+function importGridDismissFuzzy() {
+  const footer = document.getElementById('igm-fuzzy-footer');
+  if (footer._currentKey) _igmFuzzyDismissed.add(footer._currentKey);
+  _igmRunFuzzyCheck();
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────────
+function importGridExportCsv() {
+  const allCols = IMPORT_COLS;
+  const header = allCols.map(c => c.key).join(',');
+  const lines = [`# version=1`, header];
+  _igmRows.forEach(row => {
+    const vals = allCols.map(c => {
+      const v = row[c.key] || '';
+      return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g,'""')}"` : v;
     });
+    lines.push(vals.join(','));
+  });
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'products_export.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ── Render all ────────────────────────────────────────────────────────────────
+function _igmRenderAll() {
+  _igmRenderHead();
+  _igmRenderBody();
+  _igmUpdateSummaryBar();
+  _igmRunFuzzyCheck();
+}
+
+// ── Server validate + confirm screen ─────────────────────────────────────────
+async function importGridValidateAndPreview() {
+  if (!_igmRows.length) { toast('No rows to validate', 'warning'); return; }
+  const btn = document.getElementById('igm-btn-validate');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Validating…';
+  try {
+    const csv = _igmBuildCsvBlob(true);
+    const mode = _igmGetServerMode();
+    const fd = new FormData();
+    fd.append('file', new File([csv], 'import.csv', {type:'text/csv'}));
+    const resp = await fetch(`/api/products/import?mode=preview&allow_name_match=true`, {method:'POST', body:fd});
+    const data = await resp.json();
+    if (!resp.ok) { toast(data.error || 'Validation failed', 'danger'); return; }
+    _igmServerPreview = data;
+    _igmMergeServerErrors(data);
+    _igmRenderAll();
+    _igmShowConfirmScreen(data);
+  } catch(e) {
+    toast('Validation failed: ' + e.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check2-all me-1"></i>Validate &amp; Preview';
+  }
+}
+
+function _igmGetServerMode() {
+  const sel = document.getElementById('igm-mode-select')?.value || 'import';
+  return sel === 'add_only' ? 'import' : sel === 'update_only' ? 'import' : 'import';
+}
+
+function _igmMergeServerErrors(data) {
+  (data.rows || []).forEach(sr => {
+    const row = _igmRows[sr.row - 2]; // server row index is 1-based, -1 for header
+    if (!row || !sr.error) return;
+    if (!row._serverErrors) row._serverErrors = [];
+    row._serverErrors.push(sr.error);
+  });
+}
+
+function _igmShowConfirmScreen(data) {
+  const s = data.summary;
+  const mode = document.getElementById('igm-mode-select')?.value || 'import';
+  const withPhotos = _igmRows.filter(r => r._photo).length;
+  const modeLabel = mode === 'add_only' ? 'Add New Products' : mode === 'update_only' ? 'Update Existing' : 'Add & Update';
+  const tbody = document.getElementById('igm-confirm-body');
+  tbody.innerHTML = `
+    <tr><td class="text-muted">Mode</td><td><strong>${modeLabel}</strong></td></tr>
+    <tr><td class="text-muted">Creates</td><td><strong class="text-success">${s.create} new products</strong>${withPhotos ? ` &nbsp;<span class="text-muted small">(${Math.min(withPhotos, s.create)} with photos)</span>` : ''}</td></tr>
+    <tr><td class="text-muted">Updates</td><td><strong class="text-warning">${s.update} existing products</strong></td></tr>
+    ${s.skip ? `<tr><td class="text-muted">Skipped</td><td class="text-muted">${s.skip} (not matching mode)</td></tr>` : ''}
+    ${s.unchanged ? `<tr><td class="text-muted">Unchanged</td><td class="text-muted">${s.unchanged}</td></tr>` : ''}
+    <tr><td class="text-muted">Errors</td><td class="${s.error > 0 ? 'text-danger' : 'text-muted'}">${s.error} (will not be imported)</td></tr>
+  `;
+  const lbl = document.getElementById('igm-confirm-label');
+  const total = s.create + s.update;
+  if (lbl) lbl.textContent = `Import ${total} Row${total !== 1 ? 's' : ''}`;
+  _igmShowPhase('confirm');
+}
+
+// ── Commit ────────────────────────────────────────────────────────────────────
+async function importGridSubmit() {
+  await importGridValidateAndPreview();
+}
+
+async function importGridDoCommit() {
+  const btn = document.getElementById('igm-btn-confirm');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Importing…';
+  try {
+    const csv = _igmBuildCsvBlob(true);
+    const mode = _igmGetServerMode();
+    const fd = new FormData();
+    fd.append('file', new File([csv], 'import.csv', {type:'text/csv'}));
+    const resp = await fetch(`/api/products/import?mode=${mode}&allow_name_match=true`, {method:'POST', body:fd});
     const data = await resp.json();
     if (!resp.ok) { toast(data.error || 'Import failed', 'danger'); return; }
-
-    const s = data.summary;
-    toast(`Import done: ${s.create} created, ${s.update} updated, ${s.error} errors (${data.duration_ms}ms)`,
-      s.error > 0 ? 'warning' : 'success', 5000);
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('importModal')).hide();
+    _igmLastImportResults = data;
+    _igmShowResults(data);
+    await _igmUploadPhotos(data);
     await loadProducts();
-  } catch (e) {
+  } catch(e) {
     toast('Import failed: ' + e.message, 'danger');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cloud-upload me-1"></i><span id="igm-confirm-label">Import</span>';
   }
+}
+
+function _igmShowResults(data) {
+  const s = data.summary;
+  const summEl = document.getElementById('igm-results-summary');
+  summEl.className = 'alert ' + (s.error > 0 ? 'alert-warning' : 'alert-success');
+  summEl.innerHTML = `Import complete: <strong>${s.create} created</strong>, <strong>${s.update} updated</strong>, ${s.unchanged} unchanged, <span class="${s.error > 0 ? 'text-danger' : ''}">${s.error} errors</span> (${data.duration_ms}ms)`;
+  const tbody = document.getElementById('igm-results-body');
+  tbody.innerHTML = (data.rows || []).map((r, i) => {
+    const cls = r.action === 'error' ? 'table-danger' : r.action === 'create' ? 'table-success' : r.action === 'update' ? 'table-warning' : '';
+    const badge = r.action === 'error' ? '<span class="badge bg-danger">Error</span>'
+      : r.action === 'create' ? '<span class="badge bg-success">Created</span>'
+      : r.action === 'update' ? '<span class="badge bg-warning text-dark">Updated</span>'
+      : '<span class="badge bg-secondary">Unchanged</span>';
+    return `<tr class="${cls}"><td>${r.row}</td><td>${r.name||''}</td><td>${badge}</td><td class="small">${r.error||''}</td></tr>`;
+  }).join('');
+  const dlBtn = document.getElementById('igm-btn-dl-errors');
+  if (dlBtn) dlBtn.style.display = s.error > 0 ? '' : 'none';
+  _igmShowPhase('results');
+}
+
+// ── Photo upload (post-import) ────────────────────────────────────────────────
+async function _igmUploadPhotos(importData) {
+  const photoRows = _igmRows.filter(r => r._photo);
+  if (!photoRows.length) return;
+  const progressEl = document.getElementById('igm-photo-progress');
+  let done = 0;
+  for (const row of photoRows) {
+    const serverRow = (importData.rows || []).find(sr => (sr.name || '').toLowerCase() === (row.name || '').toLowerCase());
+    const pid = serverRow?.product_id;
+    if (!pid) { done++; continue; }
+    try {
+      const fd = new FormData();
+      fd.append('image', row._photo);
+      await fetch(`/api/products/${pid}/images`, {method:'POST', body:fd});
+    } catch(_) {}
+    done++;
+    if (progressEl) progressEl.textContent = `Uploading photos ${done}/${photoRows.length}…`;
+    progressEl.style.display = '';
+  }
+  if (progressEl) { progressEl.textContent = `Photos uploaded (${done})`; setTimeout(()=>progressEl.style.display='none', 3000); }
+}
+
+// ── Build CSV blob ────────────────────────────────────────────────────────────
+function _igmBuildCsvBlob(validOnly) {
+  const allCols = IMPORT_COLS;
+  const header = allCols.map(c => c.key).join(',');
+  const lines = [`# version=1`, header];
+  const rows = validOnly ? _igmRows.filter(r => _igmRowWorstStatus(r) !== 'error') : _igmRows;
+  rows.forEach(row => {
+    const vals = allCols.map(c => {
+      if (!c.applicable(row)) return '';
+      const v = row[c.key] || '';
+      return v.includes(',') || v.includes('"') || v.includes('\n') ? `"${v.replace(/"/g,'""')}"` : v;
+    });
+    lines.push(vals.join(','));
+  });
+  return lines.join('\n');
+}
+
+// ── Download failure report ───────────────────────────────────────────────────
+function importGridDownloadErrors() {
+  if (!_igmLastImportResults) return;
+  const errors = (_igmLastImportResults.rows || []).filter(r => r.action === 'error');
+  const lines = ['row,name,error'];
+  errors.forEach(r => lines.push(`${r.row},"${(r.name||'').replace(/"/g,'""')}","${(r.error||'').replace(/"/g,'""')}"`));
+  const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'import_errors.csv'; a.click();
 }
 
 // ── Opening Stock Import (ISSUE-34) ─────────────────────────────────────────
