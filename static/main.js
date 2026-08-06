@@ -15236,7 +15236,7 @@ function renderInvoicesList() {
   }
 
   host.innerHTML = `
-    <table class="table table-sm table-hover">
+    <table class="table table-sm table-hover align-middle">
       <thead class="table-light">
         <tr><th>#</th><th>Date</th><th>Customer</th><th>Total</th><th>Status</th><th></th><th></th><th></th></tr>
       </thead>
@@ -15247,15 +15247,19 @@ function renderInvoicesList() {
             <td class="text-muted small">${i.created_at ? new Date(i.created_at).toLocaleDateString() : ''}</td>
             <td>${i.customer_name || '<span class="text-muted">-</span>'}${i.customer_id ? ' <span class="badge" style="font-size:0.6rem;background:#7c3aed;color:#fff" title="Linked to POS customer"><i class="bi bi-link-45deg"></i></span>' : ''}</td>
             <td class="fw-semibold">R${fmt(i.total)}</td>
-            <td>${statusBadge(i.status)}</td>
-            <td>
+            <td onclick="event.stopPropagation()">
               ${i.status === 'finalised'
                 ? `<span class="badge bg-dark">Finalised <i class="bi bi-check-lg ms-1"></i></span>`
-                : i.sale_id
-                  ? `<span class="text-muted small">Stock deducted</span>`
-                  : (i.status !== 'draft'
-                    ? `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`
-                    : '<span class="text-muted small">-</span>')}
+                : `<select class="form-select form-select-sm" style="width:110px" onchange="_invChangeStatus(${i.id}, this.value, this)">
+                    <option value="draft"${i.status==='draft'?' selected':''}>Draft</option>
+                    <option value="sent"${i.status==='sent'?' selected':''}>Sent</option>
+                    <option value="paid"${i.status==='paid'?' selected':''}>Paid</option>
+                  </select>`}
+            </td>
+            <td>
+              ${i.status === 'finalised' || i.sale_id
+                ? `<span class="text-muted small">${i.sale_id ? 'Finalised' : ''}</span>`
+                : `<button class="btn btn-success btn-sm" onclick="event.stopPropagation();_invFinaliseFromList(${i.id})">Finalise</button>`}
             </td>
             <td><a href="/invoices/${i.id}/print" target="_blank" class="btn btn-outline-secondary btn-sm" onclick="event.stopPropagation()">Print</a></td>
             <td><button class="btn btn-outline-danger btn-sm" onclick="event.stopPropagation();_invDeleteFromList(${i.id}, '${i.invoice_number}')">Delete</button></td>
@@ -15289,6 +15293,20 @@ async function _invUndoFromList(invId) {
     toast('Order undone — stock restored. Order is now Draft.', 'warning');
     await loadInvoices();
   } catch(e) { toast(e.message, 'error'); }
+}
+
+async function _invChangeStatus(invId, newStatus, selectEl) {
+  const prev = selectEl.dataset.prev || selectEl.value;
+  try {
+    await api(`/api/invoices/${invId}`, { method: 'POST', body: JSON.stringify({ status: newStatus }) });
+    selectEl.dataset.prev = newStatus;
+    const inv = _invoices.find(i => i.id === invId);
+    if (inv) inv.status = newStatus;
+    toast(`Status updated to ${newStatus}`, 'success', 2000);
+  } catch(e) {
+    selectEl.value = prev;
+    toast(e.message, 'error');
+  }
 }
 
 function _invRecalc() {
@@ -15446,7 +15464,7 @@ function openInvoiceEditor(invId) {
         if (addLineBtn) addLineBtn.disabled = false;
         if (undoBtn) hide(undoBtn);
       }
-      if (!inv.sale_id && inv.status !== 'draft') {
+      if (!inv.sale_id) {
         // Ready to finalise (will deduct stock)
         if (finaliseBtn) { finaliseBtn.disabled = false; finaliseBtn.textContent = 'Finalise Sale'; finaliseBtn.className = 'btn btn-success btn-sm'; show(finaliseBtn); }
       }

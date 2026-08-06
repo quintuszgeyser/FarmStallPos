@@ -250,4 +250,17 @@ def invoice_print(inv_id):
     if not require_login(): return 'Unauthorized', 401
     inv = db.session.get(Invoice, inv_id)
     if not inv: return 'Not found', 404
-    return render_template('invoice.html', inv=inv, lines=_json.loads(inv.lines_json or '[]'))
+    lines = _json.loads(inv.lines_json or '[]')
+    # Enrich lines missing a unit by looking up the product name
+    names = {l['name'] for l in lines if not l.get('unit') or l.get('unit') == 'unit'}
+    if names:
+        prods = {p.name: p for p in Product.query.filter(Product.name.in_(names)).all()}
+        for l in lines:
+            if not l.get('unit') or l.get('unit') == 'unit':
+                p = prods.get(l.get('name', ''))
+                if p:
+                    if p.sold_by_weight or p.unit_type == 'weight':
+                        l['unit'] = 'kg'
+                    elif p.unit_type == 'volume':
+                        l['unit'] = 'L'
+    return render_template('invoice.html', inv=inv, lines=lines)
