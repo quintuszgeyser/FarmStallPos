@@ -2269,7 +2269,16 @@ def create_app():
             with db.engine.connect() as _c:
                 _row = _c.execute(text("SELECT value FROM settings WHERE key='backup_enabled'")).fetchone()
             if _row and _row[0] == 'true':
-                _enqueue_backup(app=app, triggered_by='pre-upgrade')
+                # Guard against duplicate startup backups from multiple gunicorn workers.
+                # _backup_lock is process-local, so each worker would otherwise fire independently.
+                # Skip if a pre-upgrade backup was already started in the last 60 seconds.
+                with db.engine.connect() as _c:
+                    _recent = _c.execute(text(
+                        "SELECT 1 FROM backup_logs WHERE triggered_by='pre-upgrade'"
+                        " AND started_at > NOW() - INTERVAL '60 seconds' LIMIT 1"
+                    )).fetchone()
+                if not _recent:
+                    _enqueue_backup(app=app, triggered_by='pre-upgrade')
         except Exception:
             pass  # never block startup
         seed_first_admin()
