@@ -10983,9 +10983,9 @@ const IMPORT_COLS = [
       // PLU range check
       const utype = row.unit_type || '';
       const sbw = _igmIsSbw(row);
-      if (sbw && !(n >= 1 && n <= 19999)) return `Weight/volume PLU must be 1–19999`;
-      if (utype === 'count' && !(n >= 20000 && n <= 29999)) return `Count PLU must be 20000–29999`;
-      if (row.product_type === 'recipe' && !(n >= 40000 && n <= 49999)) return `Recipe PLU must be 40000–49999`;
+      if (sbw && !(n >= 1 && n <= 19999)) return { warn: `Weight/volume PLU outside expected range 1–19999` };
+      if (utype === 'count' && !(n >= 20000 && n <= 29999)) return { warn: `Count PLU outside expected range 20000–29999` };
+      if (row.product_type === 'recipe' && !(n >= 40000 && n <= 49999)) return { warn: `Recipe PLU outside expected range 40000–49999` };
       return null;
     }
   },
@@ -11379,7 +11379,7 @@ function importGridStartBlank() {
 function importGridAddRow() {
   _igmPushUndo();
   const newId = _igmNextId++;
-  _igmRows.push({ id: newId, _photo: null, _selected: false });
+  _igmRows.push({ id: newId, _photo: null, _selected: false, _touched: false });
   _igmRenderList();
   _igmOpenEditModal(newId);
   _igmUpdateSummaryBar();
@@ -11394,7 +11394,7 @@ function importGridAddTemplate(type) {
     consignment: { product_type:'stock_item', unit_type:'count',   is_for_sale:'true', is_consignment:'true', settlement_basis:'PCT_OF_SALE' },
   };
   const newId = _igmNextId++;
-  _igmRows.push({ id: newId, _photo: null, _selected: false, ...(templates[type] || {}) });
+  _igmRows.push({ id: newId, _photo: null, _selected: false, _touched: false, ...(templates[type] || {}) });
   _igmRenderList();
   _igmOpenEditModal(newId);
   _igmUpdateSummaryBar();
@@ -11436,7 +11436,7 @@ document.addEventListener('keydown', e => {
 function _igmValidateCell(col, val, row) {
   if (!col.applicable(row)) return 'na';
   if (!val && col.required(row)) return 'error:This field is required';
-  if (!val && col.warnIfEmpty) return 'warn:' + col.warnIfEmpty;
+  if (!val && col.warnIfEmpty && row._touched) return 'warn:' + col.warnIfEmpty;
   if (val || col.required(row)) {
     const result = col.validate(val || '', row);
     if (!result) return val ? 'ok' : 'empty';
@@ -12115,22 +12115,23 @@ function _igmRenderListRowHtml(row, ri) {
   const cols = (grp?.cols || []).map(k => IMPORT_COLS.find(c => c.key === k)).filter(Boolean);
   const tpl  = `32px 16px minmax(150px,1.5fr) ${cols.map(() => 'minmax(70px,1fr)').join(' ')} 32px`;
 
-  // Overall row status dot
+  // Overall row status dot — for untouched rows, downgrade warn → ok
   const ws = _igmRowWorstStatus(row);
-  const dot = ws === 'error'
+  const dotStatus = (!row._touched && ws === 'warn') ? 'ok' : ws;
+  const dot = dotStatus === 'error'
     ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#dc3545;flex-shrink:0" title="Has errors"></span>`
-    : ws === 'warn'
+    : dotStatus === 'warn'
     ? `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#ffc107;flex-shrink:0" title="Has warnings"></span>`
     : `<span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:#198754;flex-shrink:0" title="Ready"></span>`;
 
-  // Group cells with per-cell highlight
+  // Group cells with per-cell highlight — untouched rows suppress warn highlights
   const cellsHtml = cols.map(col => {
     const val = row[col.key] ?? '';
     const s   = _igmValidateCell(col, val, row);
     let cls = '', title = '';
     if (s === 'na')                                       { cls = 'igm-cell-na'; }
     else if (s.startsWith('error'))                       { cls = 'igm-cell-err'; title = ` title="${_igmEsc(s.slice(6))}"${''}`; }
-    else if (s.startsWith('warn') && !row._ignored?.[col.key]) { cls = 'igm-cell-warn'; title = ` title="${_igmEsc(s.slice(5))}"${''}`; }
+    else if (s.startsWith('warn') && row._touched && !row._ignored?.[col.key]) { cls = 'igm-cell-warn'; title = ` title="${_igmEsc(s.slice(5))}"${''}`; }
     const display = s === 'na' ? '—' : (_igmCellDisplayValue(col, val) || '<span style="color:#ccc">—</span>');
     return `<div class="px-1 ${cls}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-top:6px;padding-bottom:6px"${title}>${display}</div>`;
   }).join('');
@@ -12433,6 +12434,7 @@ function _igmAttachProductEditorLiveValidation(rowId, signal) {
 function _igmOpenProductEditorForRow(rowId) {
   const row = _igmRows.find(r => r.id === rowId);
   if (!row) return;
+  row._touched = true;
   _igmSelectedId = rowId;
   _igmProductEditorMode = rowId;
   _igmUpdateListItem(rowId);
