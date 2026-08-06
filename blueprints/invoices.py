@@ -146,6 +146,34 @@ def api_invoices_delete(inv_id):
     return jsonify({'ok': True})
 
 
+@bp.route('/api/invoices/<int:inv_id>/copy', methods=['POST'])
+def api_invoices_copy(inv_id):
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+    src = db.session.get(Invoice, inv_id)
+    if not src: return jsonify({'error': 'Not found'}), 404
+    bank = get_setting('invoice_bank_details') or src.bank_details
+    copy = Invoice(
+        invoice_number=_next_invoice_number(),
+        created_at=datetime.utcnow(),
+        due_date=None,
+        customer_name=src.customer_name,
+        customer_phone=src.customer_phone,
+        customer_email=src.customer_email,
+        customer_address=src.customer_address,
+        notes=src.notes,
+        bank_details=bank,
+        lines_json=src.lines_json,
+        subtotal=src.subtotal,
+        discount_pct=src.discount_pct,
+        total=src.total,
+        status='draft',
+        created_by=current_user().id if current_user() else None,
+        customer_id=src.customer_id,
+    )
+    db.session.add(copy); db.session.commit()
+    return jsonify({'id': copy.id, 'invoice_number': copy.invoice_number})
+
+
 @bp.route('/api/invoices/<int:inv_id>/finalise', methods=['POST'])
 def api_invoices_finalise(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403

@@ -15392,10 +15392,12 @@ function openInvoiceEditor(invId) {
   document.getElementById('inv-id').value = invId || '';
   document.getElementById('invoiceEditorTitle').textContent = invId ? 'Edit Order' : 'New Order';
   const printBtn    = document.getElementById('btn-inv-print');
+  const copyBtn     = document.getElementById('btn-inv-copy');
   const delBtn      = document.getElementById('btn-inv-delete');
   const finaliseBtn = document.getElementById('btn-inv-finalise');
   const undoBtn     = document.getElementById('btn-inv-undo');
   [finaliseBtn, undoBtn].forEach(b => b && hide(b));
+  if (copyBtn) { hide(copyBtn); copyBtn.onclick = null; }
 
   // Populate dropdowns fresh
   _invPopulateCustomers();
@@ -15404,6 +15406,19 @@ function openInvoiceEditor(invId) {
   if (invId) {
     if (printBtn) { printBtn.disabled = false; printBtn.onclick = () => window.open(`/invoices/${invId}/print`, '_blank'); }
     if (delBtn) show(delBtn);
+    if (copyBtn) {
+      show(copyBtn);
+      copyBtn.onclick = async () => {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('invoiceEditorModal'));
+        if (modal) modal.hide();
+        try {
+          const res = await api(`/api/invoices/${invId}/copy`, { method: 'POST' });
+          toast(`Copied as ${res.invoice_number}`, 'success');
+          loadInvoices();
+          openInvoiceEditor(res.id);
+        } catch (e) { toast(e.message, 'error'); }
+      };
+    }
     api(`/api/invoices/${invId}`).then(inv => {
       document.getElementById('inv-due-date').value        = inv.due_date || '';
       document.getElementById('inv-notes').value           = inv.notes || '';
