@@ -11067,6 +11067,10 @@ const IMPORT_COLS = [
 // col key → IMPORT_COLS index
 const _IGM_COL_IDX = Object.fromEntries(IMPORT_COLS.map((c,i) => [c.key, i]));
 
+function _igmNormHeader(value) {
+  return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 // Column alias mapping for CSV upload auto-match
 const _IGM_COL_ALIASES = {
   name: ['name','product name','item description','description name','item name','product'],
@@ -11136,7 +11140,7 @@ function importWorkspaceClose() {
 }
 
 function importWorkspaceShowEntry() { _igmShowPhase('entry'); }
-function importWorkspaceShowGrid()  { _igmView = 'list'; _igmShowPhase('grid'); _igmShowView('list'); }
+function importWorkspaceShowGrid()  { _igmShowPhase('grid'); _igmRenderList(); }
 
 // ── CSV Upload ────────────────────────────────────────────────────────────────
 function importWorkspaceUploadCsv(input) {
@@ -11189,11 +11193,17 @@ function _igmParseCsvText(text, showMapping) {
 function _igmBuildMapping(headers) {
   const mapping = {};
   headers.forEach((h, i) => {
-    // Try exact match, then alias match
-    const norm = h.replace(/[^a-z0-9]/g, '');
+    const norm = _igmNormHeader(h);
     let matched = null;
+    // Try alias table first
     for (const [key, aliases] of Object.entries(_IGM_COL_ALIASES)) {
-      if (aliases.some(a => a.replace(/[^a-z0-9]/g, '') === norm)) { matched = key; break; }
+      if (aliases.some(a => _igmNormHeader(a) === norm)) { matched = key; break; }
+    }
+    // Fallback: exact match on IMPORT_COLS key (covers all 27+ system field names)
+    if (!matched) {
+      for (const col of IMPORT_COLS) {
+        if (_igmNormHeader(col.key) === norm) { matched = col.key; break; }
+      }
     }
     // Cost price → always ignore
     if (/cost/.test(h)) matched = '__ignore__';
@@ -11243,9 +11253,8 @@ function _igmRenderMappingTable() {
 function importWorkspaceApplyMapping() {
   if (!_igmColMapping) return;
   _igmApplyMapping(_igmColMapping.mapping);
-  _igmView = 'list';
   _igmShowPhase('grid');
-  _igmShowView('list');
+  _igmRenderAll(true);
 }
 
 function _igmApplyMapping(mapping) {
@@ -11288,8 +11297,8 @@ async function importWorkspacePastePrompt() {
 function importGridStartBlank() {
   _igmRows = [];
   _igmSelectedId = null;
-  _igmView = 'list';
   _igmShowPhase('grid');
+  _igmRenderList();
   importGridAddRow();
 }
 
@@ -11297,9 +11306,8 @@ function importGridAddRow() {
   _igmPushUndo();
   const newId = _igmNextId++;
   _igmRows.push({ id: newId, _photo: null, _selected: false });
-  _igmSelectedId = newId;
-  _igmShowPhase('grid');
-  _igmShowView('edit');
+  _igmRenderList();
+  _igmOpenEditModal(newId);
   _igmUpdateSummaryBar();
 }
 
@@ -11313,9 +11321,8 @@ function importGridAddTemplate(type) {
   };
   const newId = _igmNextId++;
   _igmRows.push({ id: newId, _photo: null, _selected: false, ...(templates[type] || {}) });
-  _igmSelectedId = newId;
-  _igmShowPhase('grid');
-  _igmShowView('edit');
+  _igmRenderList();
+  _igmOpenEditModal(newId);
   _igmUpdateSummaryBar();
 }
 
@@ -11324,11 +11331,12 @@ function importGridDeleteRow(id) {
   _igmRows = _igmRows.filter(r => r.id !== id);
   if (_igmSelectedId === id) {
     _igmSelectedId = null;
-    _igmView = 'list';
-    _igmShowView('list');
-  } else if (_igmView === 'list') {
-    _igmRenderList();
+    const editModalEl = document.getElementById('igmRowEditModal');
+    if (editModalEl?.classList.contains('show')) {
+      bootstrap.Modal.getOrCreateInstance(editModalEl).hide();
+    }
   }
+  _igmRenderList();
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
 }
@@ -11497,10 +11505,19 @@ function _igmCellChange(id, key, val) {
   if (!row._ignored) row._ignored = {};
   delete row._ignored[key];
   row[key] = val;
-  if (_igmView === 'list') {
-    _igmUpdateListItem(id);
-  } else if (_igmView === 'edit' && _igmSelectedId === id) {
-    _igmRenderEditNav(row); // update status — no full form re-render (preserves input focus)
+  // Always update the list row in background
+  _igmUpdateListItem(id);
+  // If the edit modal is showing this row, update header + re-render body on type/unit change
+  const editModalEl = document.getElementById('igmRowEditModal');
+  if (editModalEl?.classList.contains('show') && _igmSelectedId === id) {
+    _igmUpdateEditModalStatus(row);
+    if (key === 'name') {
+      const titleEl = document.getElementById('igm-edit-modal-title');
+      if (titleEl) titleEl.textContent = row.name || 'New Row';
+    }
+    if (key === 'product_type' || key === 'unit_type' || key === 'is_consignment' || key === 'settlement_basis') {
+      _igmRenderEditModalBody(row);
+    }
   }
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
@@ -11512,20 +11529,16 @@ function _igmIgnoreWarning(id, key) {
   if (!row._ignored) row._ignored = {};
   row._ignored[key] = true;
   _igmUpdateSummaryBar();
-  if (_igmView === 'edit' && _igmSelectedId === id) {
-    _igmRenderEditNav(row);
-    _igmRenderEditForm(row); // safe — button click, no text input is active
-  } else {
-    _igmUpdateListItem(id);
+  _igmUpdateListItem(id);
+  const editModalEl = document.getElementById('igmRowEditModal');
+  if (editModalEl?.classList.contains('show') && _igmSelectedId === id) {
+    _igmUpdateEditModalStatus(row);
+    _igmRenderEditModalBody(row);
   }
 }
 
 function _igmRerenderRow(id) {
-  if (_igmView === 'list') { _igmUpdateListItem(id); }
-  else if (_igmView === 'edit' && _igmSelectedId === id) {
-    const row = _igmRows.find(r => r.id === id);
-    if (row) _igmRenderEditNav(row);
-  }
+  _igmUpdateListItem(id);
 }
 
 function _igmRenderBody_row(row, ri, cols) {
@@ -11559,8 +11572,9 @@ function _igmPhotoSelected(id, input) {
   if (!row) return;
   row._photo = file;
   row._photoUrl = URL.createObjectURL(file);
-  if (_igmView === 'edit' && _igmSelectedId === id) _igmRenderEditForm(row);
-  else _igmUpdateListItem(id);
+  _igmUpdateListItem(id);
+  const editModalEl = document.getElementById('igmRowEditModal');
+  if (editModalEl?.classList.contains('show') && _igmSelectedId === id) _igmRenderEditModalBody(row);
 }
 
 // ── Selection + bulk edit ─────────────────────────────────────────────────────
@@ -11620,10 +11634,6 @@ function _igmApplyBulk(key) {
   _igmRows.filter(r => r._selected).forEach(r => { r[key] = val; });
   _igmRenderList();
   _igmUpdateSummaryBar();
-  if (_igmSelectedId) {
-    const row = _igmRows.find(r => r.id === _igmSelectedId);
-    if (row && row._selected) _igmRenderPanel(_igmSelectedId);
-  }
 }
 
 // ── Summary bar ───────────────────────────────────────────────────────────────
@@ -11740,32 +11750,14 @@ function importGridExportCsv() {
 
 // ── Render all ────────────────────────────────────────────────────────────────
 function _igmRenderAll(fullRender = false) {
-  if (_igmView === 'list') {
-    _igmRenderList();
-  } else if (_igmView === 'edit' && _igmSelectedId) {
-    const row = _igmRows.find(r => r.id === _igmSelectedId);
-    if (!row) { _igmView = 'list'; _igmShowView('list'); }
-    else { _igmRenderEditNav(row); if (fullRender) _igmRenderEditForm(row); }
-  }
+  _igmRenderList();
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
 }
 
-// ── Show view (list / edit) ────────────────────────────────────────────────────
+// ── Show view (kept for backwards-compat call sites) ──────────────────────────
 function _igmShowView(view) {
-  _igmView = view;
-  const listView = document.getElementById('igm-view-list');
-  const editView = document.getElementById('igm-view-edit');
-  if (!listView || !editView) return;
-  listView.style.display = view === 'list' ? '' : 'none';
-  editView.style.display = view === 'edit' ? '' : 'none';
-  if (view === 'list') {
-    _igmRenderList();
-  } else if (view === 'edit' && _igmSelectedId) {
-    const row = _igmRows.find(r => r.id === _igmSelectedId);
-    if (row) { _igmRenderEditNav(row); _igmRenderEditForm(row); }
-  }
-  document.querySelector('.modal.show')?.scrollTo({ top: 0 });
+  _igmRenderList();
 }
 
 // ── Edit view ─────────────────────────────────────────────────────────────────
@@ -11884,8 +11876,9 @@ function _igmRemovePhoto(id) {
   if (!row) return;
   row._photo = null;
   row._photoUrl = null;
-  if (_igmView === 'edit' && _igmSelectedId === id) _igmRenderEditForm(row);
-  else _igmUpdateListItem(id);
+  _igmUpdateListItem(id);
+  const editModalEl = document.getElementById('igmRowEditModal');
+  if (editModalEl?.classList.contains('show') && _igmSelectedId === id) _igmRenderEditModalBody(row);
 }
 
 // ── List render engine ────────────────────────────────────────────────────────
@@ -11910,46 +11903,73 @@ function _igmRenderList() {
 }
 
 function _igmRenderListRowHtml(row, ri) {
-  const status  = _igmRowWorstStatus(row);
-  const dotCls  = status === 'error' ? 'text-danger'  : status === 'warn' ? 'text-warning'  : 'text-success';
-  const dotIcon = status === 'error' ? 'bi-x-circle-fill' : status === 'warn' ? 'bi-exclamation-circle-fill' : 'bi-check-circle-fill';
-  const isSel   = _igmSelectedId === row.id;
-  const nameHtml = row.name ? _igmEsc(row.name) : '<span class="fst-italic" style="color:#bbb">No name</span>';
-  const priceStr  = _igmPriceDisplay(row);
-  const typeBadge = _igmTypeBadge(row);
+  const status = _igmRowWorstStatus(row);
+
+  // Issues badge
+  let issuesBadge;
+  if (status === 'error') {
+    const n = IMPORT_COLS.filter(c => _igmValidateCell(c, row[c.key]||'', row).startsWith('error')).length;
+    issuesBadge = `<span class="badge bg-danger" style="font-size:11px;white-space:nowrap"><i class="bi bi-x-circle me-1"></i>${n} error${n>1?'s':''}</span>`;
+  } else if (status === 'warn') {
+    const n = IMPORT_COLS.filter(c => { const s = _igmValidateCell(c, row[c.key]||'', row); return s.startsWith('warn') && !(row._ignored?.[c.key]); }).length;
+    issuesBadge = `<span class="badge bg-warning text-dark" style="font-size:11px;white-space:nowrap"><i class="bi bi-exclamation-triangle me-1"></i>${n} warning${n>1?'s':''}</span>`;
+  } else {
+    issuesBadge = `<span class="badge bg-success" style="font-size:11px"><i class="bi bi-check-circle me-1"></i>Ready</span>`;
+  }
+
+  // Flag icons
+  const flags = [];
+  if (!row.is_for_sale || row.is_for_sale === 'true') flags.push('<i class="bi bi-tag pf-icon text-success" title="For Sale"></i>');
+  else flags.push('<i class="bi bi-tag-slash pf-icon text-secondary" title="Not For Sale"></i>');
+  if (row.is_available_online === 'true') flags.push('<i class="bi bi-globe pf-icon text-primary" title="Available Online"></i>');
+  if (row.sync_to_scale === 'true') flags.push('<i class="bi bi-speedometer2 pf-icon text-info" title="Sync to Scale"></i>');
+  if (row.is_consignment === 'true') flags.push('<i class="bi bi-arrow-left-right pf-icon text-warning" title="Consignment"></i>');
+  if (row.is_prepared === 'true') flags.push('<i class="bi bi-fire pf-icon" style="color:#fd7e14" title="Prepared / Kitchen"></i>');
+
+  // Thumbnail
   const thumb = row._photo
-    ? `<img src="${row._photoUrl||''}" style="width:30px;height:30px;object-fit:cover;border-radius:3px;flex-shrink:0" title="Has photo">`
-    : '';
-  return `<div class="igm-list-row d-flex align-items-center px-2 py-2 gap-2"
-    data-row-id="${row.id}"
-    style="cursor:pointer;border-bottom:1px solid #f0f0f0;min-height:50px;${isSel ? 'background:#eef2ff;border-left:3px solid #6366f1;' : 'border-left:3px solid transparent;'}"
-    onclick="_igmSelectRow(${row.id})">
-    <i class="bi ${dotIcon} ${dotCls} flex-shrink-0" style="font-size:13px"></i>
-    <span style="width:20px;flex-shrink:0;font-size:11px;color:#999">${ri+1}</span>
-    <div style="flex:1;min-width:0;overflow:hidden">
-      <div class="text-truncate" style="font-size:13px;font-weight:500">${nameHtml}</div>
-      <div class="d-flex align-items-center gap-1" style="margin-top:2px">
-        ${typeBadge}${priceStr ? `<span style="font-size:11px;color:#888">${priceStr}</span>` : ''}
+    ? `<img src="${row._photoUrl||''}" class="pr-thumb" alt="">`
+    : `<div class="pr-thumb d-flex align-items-center justify-content-center" style="background:#f5f0e8;border-radius:4px;border:1px dashed var(--lc-gold-border)"><i class="bi bi-image" style="color:#c9a96e;font-size:14px"></i></div>`;
+
+  const skippedCls = row._skipped ? ' is-skipped' : '';
+  const selectedCls = _igmSelectedId === row.id ? ' is-selected' : '';
+
+  return `<div class="igm-import-row${skippedCls}${selectedCls}" data-row-id="${row.id}" onclick="_igmOpenEditModal(${row.id})">
+    <div class="pr-check" onclick="event.stopPropagation()">
+      <input type="checkbox" class="form-check-input mt-0 igm-row-cb" data-id="${row.id}" ${row._selected?'checked':''}
+        onchange="_igmRowSelect(${row.id},this.checked)">
+    </div>
+    <div class="pr-name">
+      ${thumb}
+      <div class="pr-name-block">
+        <span class="pr-name-text">${row.name ? _igmEsc(row.name) : '<span class="text-muted fst-italic" style="font-weight:400">No name</span>'}</span>
       </div>
     </div>
-    ${thumb}
-    <input type="checkbox" class="form-check-input mt-0 igm-row-cb flex-shrink-0"
-      data-id="${row.id}" ${row._selected?'checked':''}
-      onclick="event.stopPropagation()"
-      onchange="_igmRowSelect(${row.id},this.checked)">
-    <button class="btn btn-link p-0 flex-shrink-0" style="color:#dc3545;font-size:13px;line-height:1"
-      onclick="event.stopPropagation();importGridDeleteRow(${row.id})"
-      title="Remove row"><i class="bi bi-x-lg"></i></button>
+    <div style="font-size:12px">${_igmTypeBadge(row)}</div>
+    <div class="pr-price" style="font-size:13px">${_igmPriceDisplay(row) || '<span class="text-muted">—</span>'}</div>
+    <div style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${row.category ? _igmEsc(row.category) : '<span class="text-muted">—</span>'}</div>
+    <div style="font-size:12px;color:#888">${row.product_code || '<span class="text-muted">—</span>'}</div>
+    <div>${issuesBadge}</div>
+    <div class="pr-flags">${flags.join('')}</div>
+    <div class="pr-more-wrap dropdown" onclick="event.stopPropagation()">
+      <button class="pr-more-btn" data-bs-toggle="dropdown" aria-expanded="false"><i class="bi bi-three-dots-vertical"></i></button>
+      <ul class="dropdown-menu dropdown-menu-end" style="min-width:150px">
+        <li><button class="dropdown-item" onclick="_igmOpenEditModal(${row.id})"><i class="bi bi-pencil me-2"></i>Edit</button></li>
+        <li><button class="dropdown-item" onclick="_igmToggleSkipRowById(${row.id})">${row._skipped ? '<i class="bi bi-arrow-counterclockwise me-2"></i>Restore Row' : '<i class="bi bi-skip-forward me-2"></i>Skip Row'}</button></li>
+        <li><hr class="dropdown-divider"></li>
+        <li><button class="dropdown-item text-danger" onclick="importGridDeleteRow(${row.id})"><i class="bi bi-trash me-2"></i>Remove</button></li>
+      </ul>
+    </div>
   </div>`;
 }
 
 function _igmTypeBadge(row) {
   const ut = row.unit_type, pt = row.product_type;
-  if (pt === 'recipe') return '<span style="font-size:10px;padding:1px 5px;background:#cfe2ff;color:#0a58ca;border-radius:8px">Recipe</span> ';
-  if (ut === 'weight') return '<span style="font-size:10px;padding:1px 5px;background:#e2e3e5;color:#495057;border-radius:8px">Weight</span> ';
-  if (ut === 'volume') return '<span style="font-size:10px;padding:1px 5px;background:#e2e3e5;color:#495057;border-radius:8px">Volume</span> ';
-  if (ut === 'count')  return '<span style="font-size:10px;padding:1px 5px;background:#d1e7dd;color:#0f5132;border-radius:8px">Retail</span> ';
-  return '<span style="font-size:10px;padding:1px 5px;background:#f8d7da;color:#842029;border-radius:8px">?</span> ';
+  if (pt === 'recipe') return '<span class="badge" style="font-size:11px;background:#cfe2ff;color:#0a58ca">Recipe</span>';
+  if (ut === 'weight') return '<span class="badge" style="font-size:11px;background:#e2e3e5;color:#495057">Stock &middot; Weight</span>';
+  if (ut === 'volume') return '<span class="badge" style="font-size:11px;background:#e2e3e5;color:#495057">Stock &middot; Volume</span>';
+  if (ut === 'count')  return '<span class="badge" style="font-size:11px;background:#d1e7dd;color:#0f5132">Stock &middot; Count</span>';
+  return '<span class="badge" style="font-size:11px;background:#f8d7da;color:#842029">Type not set</span>';
 }
 
 function _igmPriceDisplay(row) {
@@ -11964,7 +11984,7 @@ function _igmPriceDisplay(row) {
 function _igmUpdateListItem(id) {
   const row = _igmRows.find(r => r.id === id);
   if (!row) return;
-  const el = document.querySelector(`.igm-list-row[data-row-id="${id}"]`);
+  const el = document.querySelector(`.igm-import-row[data-row-id="${id}"]`);
   if (!el) { _igmRenderList(); return; }
   const ri = _igmRows.indexOf(row);
   const tmp = document.createElement('div');
@@ -11973,8 +11993,145 @@ function _igmUpdateListItem(id) {
 }
 
 function _igmSelectRow(id) {
+  _igmOpenEditModal(id);
+}
+
+// ── Row edit modal ────────────────────────────────────────────────────────────
+
+function _igmOpenEditModal(id) {
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
   _igmSelectedId = id;
-  _igmShowView('edit');
+  _igmUpdateListItem(id); // refresh selection highlight
+  const titleEl = document.getElementById('igm-edit-modal-title');
+  if (titleEl) titleEl.textContent = row.name || 'New Row';
+  _igmUpdateEditModalStatus(row);
+  _igmRenderEditModalBody(row);
+  const skipBtn = document.getElementById('igm-edit-modal-skip-btn');
+  if (skipBtn) skipBtn.innerHTML = row._skipped
+    ? '<i class="bi bi-arrow-counterclockwise me-1"></i>Restore Row'
+    : '<i class="bi bi-skip-forward me-1"></i>Skip Row';
+  const modalEl = document.getElementById('igmRowEditModal');
+  bootstrap.Modal.getOrCreateInstance(modalEl).show();
+  modalEl.addEventListener('shown.bs.modal', function onShown() {
+    const firstErr = modalEl.querySelector('.is-invalid');
+    if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    modalEl.removeEventListener('shown.bs.modal', onShown);
+  }, { once: true });
+}
+
+function _igmCloseEditModal() {
+  const modalEl = document.getElementById('igmRowEditModal');
+  bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+  if (_igmSelectedId) _igmUpdateListItem(_igmSelectedId);
+}
+
+function _igmSaveEditModal() {
+  if (_igmSelectedId) _igmUpdateListItem(_igmSelectedId);
+  _igmCloseEditModal();
+}
+
+function _igmToggleSkipRow() {
+  const row = _igmRows.find(r => r.id === _igmSelectedId);
+  if (!row) return;
+  row._skipped = !row._skipped;
+  _igmUpdateListItem(_igmSelectedId);
+  const skipBtn = document.getElementById('igm-edit-modal-skip-btn');
+  if (skipBtn) skipBtn.innerHTML = row._skipped
+    ? '<i class="bi bi-arrow-counterclockwise me-1"></i>Restore Row'
+    : '<i class="bi bi-skip-forward me-1"></i>Skip Row';
+  _igmUpdateSummaryBar();
+}
+
+function _igmToggleSkipRowById(id) {
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  row._skipped = !row._skipped;
+  _igmUpdateListItem(id);
+  _igmUpdateSummaryBar();
+}
+
+function _igmUpdateEditModalStatus(row) {
+  const statusEl = document.getElementById('igm-edit-modal-status');
+  if (!statusEl) return;
+  const status = _igmRowWorstStatus(row);
+  if (status === 'error') {
+    const n = IMPORT_COLS.filter(c => _igmValidateCell(c, row[c.key]||'', row).startsWith('error')).length;
+    statusEl.innerHTML = `<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>${n} error${n>1?'s':''}</span>`;
+  } else if (status === 'warn') {
+    const n = IMPORT_COLS.filter(c => { const s = _igmValidateCell(c, row[c.key]||'', row); return s.startsWith('warn') && !(row._ignored?.[c.key]); }).length;
+    statusEl.innerHTML = `<span class="badge bg-warning text-dark"><i class="bi bi-exclamation-triangle me-1"></i>${n} warning${n>1?'s':''}</span>`;
+  } else {
+    statusEl.innerHTML = `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Ready to import</span>`;
+  }
+}
+
+// Layout definition for the edit modal body
+const _IGM_MODAL_SECTIONS = [
+  { key:'core',        label:'Core Details',       boxed:false, hideIfNaAndEmpty:false,
+    layout:[['product_type','unit_type'],['name'],['category','sub_category'],['vat_type','is_for_sale'],['price','price_per_unit']] },
+  { key:'details',     label:'Inventory & Barcode', boxed:false, hideIfNaAndEmpty:false,
+    layout:[['description'],['margin_pct','low_stock_threshold'],['barcode','product_code'],['stock_qty']] },
+  { key:'scale',       label:'Scale Settings',      boxed:true,  hideIfNaAndEmpty:true,
+    layout:[['sync_to_scale','scale_open_price'],['scale_tare','scale_shelf_life'],['scale_msg1'],['scale_msg2']] },
+  { key:'package',     label:'Packaging',           boxed:true,  hideIfNaAndEmpty:false,
+    layout:[['package_size','package_size_unit'],['package_unit']] },
+  { key:'family',      label:'Online & Variants',   boxed:true,  hideIfNaAndEmpty:false,
+    layout:[['family_name','is_default_variant'],['is_available_online','is_prepared']] },
+  { key:'consignment', label:'Consignment',         boxed:true,  hideIfNaAndEmpty:true,
+    layout:[['is_consignment'],['settlement_basis','consignment_pct']] },
+];
+
+function _igmRenderEditModalBody(row) {
+  const bodyEl = document.getElementById('igm-edit-modal-body');
+  if (!bodyEl) return;
+
+  // Photo section
+  const photoHtml = `<div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom">
+    ${row._photo
+      ? `<img src="${row._photoUrl||''}" style="width:72px;height:72px;object-fit:cover;border-radius:8px;cursor:pointer;flex-shrink:0" onclick="_igmPickPhoto(${row.id})" title="Click to replace">`
+      : `<button class="btn p-0 flex-shrink-0" onclick="_igmPickPhoto(${row.id})" style="width:72px;height:72px;border-radius:8px;border:2px dashed var(--lc-gold-border,#c9a96e);color:#bbb;background:var(--lc-gold-light,#f8f3e8)"><i class="bi bi-camera" style="font-size:24px"></i></button>`
+    }
+    <input type="file" accept="image/*" class="d-none" id="igm-photo-${row.id}" onchange="_igmPhotoSelected(${row.id},this)">
+    <div>
+      <div class="text-muted small">${row._photo ? 'Product photo — click to replace' : 'No photo — click to add'}</div>
+      ${row._photo ? `<button class="btn btn-link btn-sm text-danger p-0 mt-1" onclick="_igmRemovePhoto(${row.id})"><i class="bi bi-x me-1"></i>Remove photo</button>` : ''}
+    </div>
+  </div>`;
+
+  const sectionHtmls = _IGM_MODAL_SECTIONS.map(section => {
+    const sectionCols = IMPORT_COLS.filter(c => c.group === section.key);
+    if (!sectionCols.length) return null;
+
+    const allNA    = sectionCols.every(c => _igmValidateCell(c, row[c.key]||'', row) === 'na');
+    const hasData  = sectionCols.some(c => row[c.key] && row[c.key] !== '');
+    if (section.hideIfNaAndEmpty && allNA && !hasData) return null;
+
+    const errs  = sectionCols.filter(c => _igmValidateCell(c, row[c.key]||'', row).startsWith('error')).length;
+    const warns = sectionCols.filter(c => { const s = _igmValidateCell(c, row[c.key]||'', row); return s.startsWith('warn') && !(row._ignored?.[c.key]); }).length;
+    const badge = errs  > 0 ? `<span class="badge bg-danger ms-2 fw-normal" style="font-size:10px">${errs} error${errs>1?'s':''}</span>`
+                : warns > 0 ? `<span class="badge bg-warning text-dark ms-2 fw-normal" style="font-size:10px">${warns} warning${warns>1?'s':''}</span>` : '';
+    const naNote = allNA ? `<span class="text-muted ms-2 fw-normal" style="font-size:11px;text-transform:none">— not applicable for this type</span>` : '';
+
+    const header = `<div class="mb-3 pb-1" style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#999;border-bottom:1px solid #e9ecef">
+      ${_igmEsc(section.label)}${badge}${naNote}
+    </div>`;
+
+    const fieldsHtml = section.layout.map(keys => {
+      const cols = keys.map(k => IMPORT_COLS.find(c => c.key === k)).filter(Boolean);
+      if (!cols.length) return '';
+      if (cols.length === 1) return `<div class="row g-2 mb-2"><div class="col-12">${_igmEditField(cols[0], row)}</div></div>`;
+      return `<div class="row g-2 mb-2">${cols.map(col => `<div class="col-md-6">${_igmEditField(col, row)}</div>`).join('')}</div>`;
+    }).join('');
+
+    const fadeCls = allNA ? ' opacity-50' : '';
+    if (section.boxed) {
+      return `<div class="border rounded p-3 mb-1${fadeCls}" style="background:#fafaf8">${header}${fieldsHtml}</div>`;
+    }
+    return `<div class="mb-1${fadeCls}">${header}${fieldsHtml}</div>`;
+  }).filter(Boolean);
+
+  bodyEl.innerHTML = photoHtml + sectionHtmls.join('<hr class="my-3">');
 }
 
 function _igmRenderPanel(id) {
@@ -12043,10 +12200,7 @@ function _igmNavRow(delta) {
   if (idx < 0) return;
   const next = _igmRows[idx + delta];
   if (!next) return;
-  _igmSelectedId = next.id;
-  _igmRenderEditNav(next);
-  _igmRenderEditForm(next);
-  document.querySelector('.modal.show')?.scrollTo({ top: 0 });
+  _igmOpenEditModal(next.id);
 }
 
 // Alt+Up / Alt+Down to navigate rows while panel is open

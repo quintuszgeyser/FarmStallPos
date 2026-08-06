@@ -464,6 +464,33 @@
     .product-row:last-child { border-radius: 0 0 var(--dd-radius) var(--dd-radius); }
     .product-row.is-archived { opacity: .65; }
 
+    /* ── Import workspace list view ── */
+    .igm-import-row,
+    .igm-import-col-hdr {
+      display: grid;
+      grid-template-columns: 28px minmax(160px,1fr) 110px 80px 100px 60px 110px 70px 36px;
+      column-gap: clamp(.25rem,.6vw,.5rem);
+      align-items: center;
+      padding: clamp(4px,.8vw,6px) clamp(6px,1.2vw,10px);
+    }
+    .igm-import-col-hdr {
+      background: var(--lc-gold-light);
+      border-bottom: 2px solid var(--lc-gold-border);
+      font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+      color: var(--dd-ink);
+      position: sticky; top: 0; z-index: 5;
+    }
+    .igm-import-row {
+      min-height: 48px;
+      border-bottom: 1px solid #ede8df;
+      background: var(--dd-paper);
+      transition: background .1s;
+      cursor: pointer;
+    }
+    .igm-import-row:hover { background: #fffbf0; }
+    .igm-import-row.is-selected { background: var(--lc-gold-light); }
+    .igm-import-row.is-skipped { opacity: .4; }
+
     /* cells */
     .pr-check   { display: flex; align-items: center; }
     .pr-check input[type=checkbox] { width: 22px; height: 22px; cursor: pointer; accent-color: var(--lc-gold-border); touch-action: manipulation; }
@@ -2669,18 +2696,21 @@
 
         <!-- LIST VIEW -->
         <div id="igm-view-list">
+          <div class="igm-import-col-hdr">
+            <div></div>
+            <div>Product</div>
+            <div>Type &amp; Unit</div>
+            <div>Price</div>
+            <div>Category</div>
+            <div>PLU</div>
+            <div>Issues</div>
+            <div>Flags</div>
+            <div></div>
+          </div>
           <div id="igm-list-body"></div>
           <div class="px-3 py-2 border-top">
             <button class="btn btn-sm btn-link text-muted" onclick="importGridAddRow()"><i class="bi bi-plus-lg me-1"></i>Add row</button>
           </div>
-        </div>
-
-        <!-- EDIT VIEW (single-row editor) -->
-        <div id="igm-view-edit" style="display:none">
-          <!-- Edit nav bar -->
-          <div id="igm-edit-nav" class="border-bottom px-3 py-2 d-flex align-items-center gap-2 bg-light flex-wrap"></div>
-          <!-- Edit form -->
-          <div id="igm-edit-form" class="p-4 pb-2" style="max-width:860px"></div>
         </div>
 
         <!-- Fuzzy warning footer -->
@@ -2744,6 +2774,31 @@
       </div>
 
     </div><!-- /.modal-content -->
+  </div>
+</div>
+
+<!-- ═══════════ IMPORT ROW EDIT MODAL ═══════════ -->
+<div class="modal fade" id="igmRowEditModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header py-2" style="background:var(--lc-gold-light);border-bottom:2px dashed var(--lc-gold-border)">
+        <div>
+          <h5 class="modal-title mb-0 small fw-bold" id="igm-edit-modal-title">Edit Row</h5>
+          <div id="igm-edit-modal-status" class="mt-1"></div>
+        </div>
+        <button type="button" class="btn-close ms-3" onclick="_igmCloseEditModal()"></button>
+      </div>
+      <div class="modal-body p-4" id="igm-edit-modal-body"></div>
+      <div class="modal-footer" style="border-top:2px dashed var(--lc-gold-border)">
+        <button class="btn btn-outline-secondary me-auto btn-sm" id="igm-edit-modal-skip-btn" onclick="_igmToggleSkipRow()">
+          <i class="bi bi-skip-forward me-1"></i>Skip Row
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="_igmCloseEditModal()">Close</button>
+        <button class="btn btn-success btn-sm" onclick="_igmSaveEditModal()">
+          <i class="bi bi-check-lg me-1"></i>Save Changes
+        </button>
+      </div>
+    </div>
   </div>
 </div>
 
