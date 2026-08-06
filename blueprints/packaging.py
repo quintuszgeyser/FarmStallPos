@@ -3,13 +3,15 @@ import logging
 from flask import Blueprint, jsonify, request
 
 from helpers import require_login, qty_bucket
-from models import db, Product, Category, PackagingUsage
+from models import db, Product, Category, PackagingUsage, ProductImage
 
 bp = Blueprint('packaging', __name__)
 logger = logging.getLogger('pos')
 
 
 def _serialize_pkg(p):
+    img = ProductImage.query.filter_by(product_id=p.id, is_primary=True).first() or \
+          ProductImage.query.filter_by(product_id=p.id).order_by(ProductImage.display_order).first()
     return {
         'id':                 p.id,
         'name':               p.name,
@@ -17,6 +19,7 @@ def _serialize_pkg(p):
         'category_id':        p.category_id,
         'packaging_capacity': p.packaging_capacity,
         'stock_qty':          p.stock_qty,
+        'img':                img.filename if img else None,
     }
 
 

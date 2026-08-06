@@ -693,8 +693,9 @@ function _qtyBucket(qty) {
 }
 
 async function openPackagingModal(cartKey, productId, qty) {
-  const titleEl = document.getElementById('pkg-modal-title');
-  const body    = document.getElementById('pkg-modal-body');
+  const titleEl  = document.getElementById('pkg-modal-title');
+  const body     = document.getElementById('pkg-modal-body');
+  const searchEl = document.getElementById('pkg-search');
   if (!titleEl || !body) return;
 
   if (cartKey) {
@@ -706,61 +707,62 @@ async function openPackagingModal(cartKey, productId, qty) {
   }
 
   body.innerHTML = '<div class="text-center py-2 text-muted"><i class="bi bi-hourglass-split"></i></div>';
+  if (searchEl) { searchEl.value = ''; searchEl.oninput = null; }
   const modal = bootstrap.Modal.getOrCreateInstance(document.getElementById('packagingModal'));
   modal.show();
+  if (searchEl) setTimeout(() => searchEl.focus(), 300);
 
   try {
     const pid = productId || 0;
     const q   = qty || 1;
     const data = await api(`/api/packaging/suggestions?product_id=${pid}&qty=${q}`);
     const suggestedIds = new Set((data.suggestions || []).map(s => s.id));
-    const rest = STATE.packagingProducts.filter(p => !suggestedIds.has(p.id));
 
-    const renderItem = (p, useCount) => {
+    // Merge: suggestions first (with useCount), then the rest
+    const suggested = (data.suggestions || []).map(s => {
+      const p = STATE.packagingProducts.find(x => x.id === s.id);
+      return p ? { ...p, useCount: s.use_count } : null;
+    }).filter(Boolean);
+    const rest = STATE.packagingProducts.filter(p => !suggestedIds.has(p.id)).map(p => ({ ...p, useCount: 0 }));
+    const allItems = [...suggested, ...rest];
+
+    const renderItem = (p) => {
       let capacityHint = '';
       if (p.packaging_capacity && qty) {
-        if (p.packaging_capacity >= qty)
-          capacityHint = `<span class="badge bg-success ms-1">Fits all ${qty}</span>`;
-        else
-          capacityHint = `<span class="badge bg-secondary ms-1">Need ${Math.ceil(qty / p.packaging_capacity)}</span>`;
+        capacityHint = p.packaging_capacity >= qty
+          ? `<span class="badge bg-success ms-1" style="font-size:10px">Fits all</span>`
+          : `<span class="badge bg-secondary ms-1" style="font-size:10px">Need ${Math.ceil(qty / p.packaging_capacity)}</span>`;
       }
-      const countBadge = useCount ? `<span class="badge bg-info text-dark ms-1">${useCount}×</span>` : '';
+      const countBadge = p.useCount ? `<span class="badge bg-info text-dark ms-1" style="font-size:10px">${p.useCount}×</span>` : '';
+      const imgHtml = p.img
+        ? `<img src="/static/product_images/${p.img.replace(/\.jpg$/,'')}_thumb.jpg" onerror="this.style.display='none'" style="width:40px;height:40px;object-fit:cover;border-radius:4px;flex-shrink:0">`
+        : `<span style="width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:#f0ece4;border-radius:4px;flex-shrink:0"><i class="bi bi-box-seam text-muted"></i></span>`;
       const btn = document.createElement('button');
-      btn.className = 'btn btn-outline-secondary btn-sm w-100 text-start mb-1';
-      btn.innerHTML = `<i class="bi bi-box-seam me-1"></i>${escapeHtml(p.name)}<span class="text-muted ms-1 small">R${fmt(p.price)}</span>${countBadge}${capacityHint}`;
-      btn.onclick = () => {
-        addToCart(p);
-        modal.hide();
-      };
+      btn.className = 'btn btn-outline-secondary btn-sm w-100 text-start mb-1 d-flex align-items-center gap-2';
+      btn.dataset.pkgName = p.name.toLowerCase();
+      btn.innerHTML = `${imgHtml}<span class="flex-grow-1"><span class="fw-semibold">${escapeHtml(p.name)}</span><br><span class="text-muted small">R${fmt(p.price)}${countBadge}${capacityHint}</span></span>`;
+      btn.onclick = () => { addToCart(p); modal.hide(); };
       return btn;
     };
 
-    body.innerHTML = '';
-
-    if (data.suggestions && data.suggestions.length) {
-      const hdr = document.createElement('div');
-      hdr.className = 'small text-muted mb-1 fw-semibold';
-      hdr.textContent = 'Often used:';
-      body.appendChild(hdr);
-      data.suggestions.forEach(s => {
-        const p = STATE.packagingProducts.find(x => x.id === s.id);
-        if (p) body.appendChild(renderItem(p, s.use_count));
-      });
-    }
-
-    if (rest.length) {
-      if (data.suggestions && data.suggestions.length) {
-        const hdr2 = document.createElement('div');
-        hdr2.className = 'small text-muted mt-2 mb-1 fw-semibold';
-        hdr2.textContent = 'All packaging:';
-        body.appendChild(hdr2);
+    const rebuildList = (filter) => {
+      body.innerHTML = '';
+      if (!allItems.length) {
+        body.innerHTML = '<p class="small text-muted mb-0">No packaging products. Mark a category as Packaging in admin.</p>';
+        return;
       }
-      rest.forEach(p => body.appendChild(renderItem(p, 0)));
-    }
+      const q = (filter || '').trim().toLowerCase();
+      const visible = q ? allItems.filter(p => p.name.toLowerCase().includes(q)) : allItems;
+      if (!visible.length) {
+        body.innerHTML = `<p class="small text-muted mb-0">No match for "${escapeHtml(filter)}"</p>`;
+        return;
+      }
+      visible.forEach(p => body.appendChild(renderItem(p)));
+    };
 
-    if (!STATE.packagingProducts.length) {
-      body.innerHTML = '<p class="small text-muted mb-0">No packaging products. Mark a category as Packaging in admin.</p>';
-    }
+    rebuildList('');
+    if (searchEl) searchEl.oninput = () => rebuildList(searchEl.value);
+
   } catch (e) {
     body.innerHTML = '<p class="small text-danger mb-0">Could not load packaging.</p>';
   }
