@@ -1,6 +1,7 @@
 import logging
 
 from flask import Blueprint, jsonify, request
+from sqlalchemy import text
 
 from helpers import require_login, qty_bucket
 from models import db, Product, Category, PackagingUsage, ProductImage
@@ -83,3 +84,35 @@ def api_packaging_suggestions():
             suggestions.append(s)
 
     return jsonify({'suggestions': suggestions})
+
+
+@bp.route('/api/packaging/record', methods=['POST'])
+def api_packaging_record():
+    """Record that a specific packaging was chosen for a specific product (or cart).
+
+    Called at the moment the user picks a package from the modal, so the pairing
+    is exact — not inferred from completed-sale co-occurrence.
+    product_id=0 means cart-level (till packaging button).
+    """
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    data = request.get_json(silent=True) or {}
+    try:
+        product_id         = int(data.get('product_id', 0))
+        packaging_product_id = int(data['packaging_product_id'])
+        qty                = float(data.get('qty', 1) or 1)
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'packaging_product_id required'}), 400
+    bucket = qty_bucket(qty)
+    try:
+        db.session.execute(text("""
+            INSERT INTO packaging_usage (product_id, qty_bucket, packaging_product_id, use_count, last_used_at)
+            VALUES (:pid, :bucket, :pkg_pid, 1, NOW())
+            ON CONFLICT (product_id, qty_bucket, packaging_product_id)
+            DO UPDATE SET use_count = packaging_usage.use_count + 1, last_used_at = NOW()
+        """), {'pid': product_id, 'bucket': bucket, 'pkg_pid': packaging_product_id})
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+    return jsonify({'ok': True})

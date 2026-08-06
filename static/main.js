@@ -741,7 +741,16 @@ async function openPackagingModal(cartKey, productId, qty) {
       btn.className = 'btn btn-outline-secondary btn-sm w-100 text-start mb-1 d-flex align-items-center gap-2';
       btn.dataset.pkgName = p.name.toLowerCase();
       btn.innerHTML = `${imgHtml}<span class="flex-grow-1"><span class="fw-semibold">${escapeHtml(p.name)}</span><br><span class="text-muted small">R${fmt(p.price)}${countBadge}${capacityHint}</span></span>`;
-      btn.onclick = () => { addToCart(p); modal.hide(); };
+      btn.onclick = () => {
+        addToCart(p);
+        modal.hide();
+        // Record exact pairing: this package was deliberately chosen for this product/cart
+        api('/api/packaging/record', { method: 'POST', body: JSON.stringify({
+          product_id: pid,
+          packaging_product_id: p.id,
+          qty: q,
+        }) }).catch(() => {});
+      };
       return btn;
     };
 

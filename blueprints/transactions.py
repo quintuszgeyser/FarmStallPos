@@ -453,7 +453,6 @@ def api_transactions_post():
     for pos, (ko_product, ko_qty, ko_ingredients) in enumerate(all_kitchen):
         db.session.add(KitchenOrder(sale_id=sale_uuid, product_id=ko_product.id, product_name=ko_product.name, qty=ko_qty, ingredients=_json.dumps(ko_ingredients), status='pending', sort_order=max_sort + pos + 1, queued_at=now, teller_id=u.id if u else None))
     db.session.commit()
-    _record_packaging_usage(sale_uuid)
     return jsonify({'ok': True, 'transaction_id': sale_uuid, 'kitchen_orders': len(all_kitchen)})
 
 
