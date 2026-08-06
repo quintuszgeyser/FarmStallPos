@@ -38,13 +38,13 @@ def _cleanup_empty_taxonomies(old_category_id=None, old_sub_category_id=None, ol
                 db.session.delete(sub)
     if old_category_id:
         if not Product.query.filter_by(category_id=old_category_id, is_archived=False).count():
-            # Null out FK on any remaining (archived) products before deleting the row
-            db.session.execute(
-                text("UPDATE products SET category_id = NULL WHERE category_id = :cid"),
-                {'cid': old_category_id},
-            )
             cat = db.session.get(Category, old_category_id)
-            if cat:
+            # Never auto-delete packaging categories — the is_packaging flag is manually set
+            if cat and not cat.is_packaging:
+                db.session.execute(
+                    text("UPDATE products SET category_id = NULL WHERE category_id = :cid"),
+                    {'cid': old_category_id},
+                )
                 db.session.delete(cat)
     if old_family_id:
         if not Product.query.filter_by(product_family_id=old_family_id, is_archived=False).count():
