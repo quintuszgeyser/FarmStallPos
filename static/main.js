@@ -11331,7 +11331,7 @@ function importWorkspaceApplyMapping() {
 
 function _igmApplyMapping(mapping) {
   const newRows = _igmRawCsvRows.map(raw => {
-    const row = { id: _igmNextId++, _photo: null };
+    const row = { id: _igmNextId++, _photo: null, _touched: false };
     if (mapping && Object.keys(mapping).length) {
       // mapping is colIdx → colKey
       _igmColMapping.headers.forEach((h, i) => {
@@ -12029,7 +12029,7 @@ function _igmGroupErrorCounts(groupKey) {
     for (const col of cols) {
       const s = _igmValidateCell(col, row[col.key] ?? '', row);
       if (s.startsWith('error')) errors++;
-      else if (s.startsWith('warn') && !row._ignored?.[col.key]) warns++;
+      else if (s.startsWith('warn') && !row._ignored?.[col.key] && row._touched) warns++;
     }
   }
   return { errors, warns };
@@ -12450,8 +12450,8 @@ function _igmOpenProductEditorForRow(rowId) {
     price_per_unit: row.price_per_unit != null ? row.price_per_unit : '',
     barcode: row.barcode || '',
     product_code: row.product_code || '',
-    category: row.category || '',
-    sub_category: row.sub_category || '',
+    category_name: row.category || '',
+    // sub_category and family_name use ID-based population — set via setTimeout below
     description: row.description || '',
     is_for_sale: row.is_for_sale !== 'false' && row.is_for_sale !== false,
     is_prepared: bool(row.is_prepared),
@@ -12468,7 +12468,7 @@ function _igmOpenProductEditorForRow(rowId) {
     package_size: row.package_size != null ? row.package_size : '',
     package_size_unit: row.package_size_unit || '',
     package_unit: row.package_unit || '',
-    family_name: row.family_name || '',
+    // family_name set via setTimeout — openProductEditor uses product_family_id
     is_default_variant: bool(row.is_default_variant),
     is_consignment: bool(row.is_consignment),
     settlement_basis: row.settlement_basis || 'FIXED_COST',
@@ -12476,6 +12476,13 @@ function _igmOpenProductEditorForRow(rowId) {
   };
 
   openProductEditor(prod);
+  // Fields that use ID-based population in openProductEditor — override with text values after population completes
+  setTimeout(() => {
+    const subCatEl = document.getElementById('p-sub-category');
+    if (subCatEl) subCatEl.value = row.sub_category || '';
+    const familyEl = document.getElementById('p-family');
+    if (familyEl) familyEl.value = row.family_name || '';
+  }, 80);
 
   const modalEl = document.getElementById('productEditorModal');
   let _validationAbort = null;
