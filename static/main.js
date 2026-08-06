@@ -2172,12 +2172,11 @@ function _updateCategoryPackagingUI(catName) {
   const cbx = document.getElementById('p-cat-is-packaging');
   if (!cbx || cbx._pkgBound) return;
   cbx.addEventListener('change', async () => {
-    const flagRow = document.getElementById('row-packaging-flags');
-    const catId = parseInt(flagRow?.dataset.catId || '0', 10);
-    const cat = catId ? (STATE.categories || []).find(c => c.id === catId) : null;
+    const catName = document.getElementById('p-category')?.value?.trim();
+    const cat = catName ? (STATE.categories || []).find(c => c.name.toLowerCase() === catName.toLowerCase()) : null;
     if (!cat) {
       cbx.checked = !cbx.checked;
-      toast('Save the product first, then mark the category as packaging.', 'warning');
+      toast('Select an existing category first before marking it as packaging.', 'warning');
       return;
     }
     try {
