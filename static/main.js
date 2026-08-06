@@ -3941,6 +3941,7 @@ async function runMarkupDriftCheck() {
 
 // ── Save / Update / Delete ──
 document.getElementById('btn-add-product')?.addEventListener('click', async () => {
+  if (_igmProductEditorMode !== null) { _igmSaveFromProductEditor(); return; }
   const payload = buildProductPayload();
   if (!payload || payload._blocked) return;
   try {
@@ -11104,6 +11105,7 @@ let _igmFuzzyDismissed = new Set();
 let _igmUndoStack = [];
 let _igmServerPreview = null; // result from last server preview
 let _igmLastImportResults = null;
+let _igmProductEditorMode = null; // rowId when editing an import row via #productEditorModal
 
 // ── Bootstrap modal handle ────────────────────────────────────────────────────
 function _igmModal() { return bootstrap.Modal.getOrCreateInstance(document.getElementById('importGridModal')); }
@@ -12120,26 +12122,7 @@ function _igmSelectRow(id) {
 // ── Row edit modal ────────────────────────────────────────────────────────────
 
 function _igmOpenEditModal(id) {
-  const row = _igmRows.find(r => r.id === id);
-  if (!row) return;
-  _igmSelectedId = id;
-  _igmUpdateListItem(id); // refresh selection highlight
-  const titleEl = document.getElementById('igm-edit-modal-title');
-  if (titleEl) titleEl.textContent = row.name || 'New Row';
-  _igmUpdateEditModalStatus(row);
-  _igmRenderEditModalBody(row);
-  const skipBtn = document.getElementById('igm-edit-modal-skip-btn');
-  if (skipBtn) skipBtn.innerHTML = row._skipped
-    ? '<i class="bi bi-arrow-counterclockwise me-1"></i>Restore Row'
-    : '<i class="bi bi-skip-forward me-1"></i>Skip Row';
-  const modalEl = document.getElementById('igmRowEditModal');
-  bootstrap.Modal.getOrCreateInstance(modalEl).show();
-  modalEl.addEventListener('shown.bs.modal', function onShown() {
-    const firstErr  = modalEl.querySelector('.is-invalid');
-    const firstWarn = modalEl.querySelector('.has-warning');
-    const scrollTo  = firstErr || firstWarn;
-    if (scrollTo) scrollTo.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, { once: true });
+  _igmOpenProductEditorForRow(id);
 }
 
 function _igmCloseEditModal() {
@@ -12171,6 +12154,285 @@ function _igmToggleSkipRowById(id) {
   row._skipped = !row._skipped;
   _igmUpdateListItem(id);
   _igmUpdateSummaryBar();
+}
+
+// ── Import row → product editor reuse ─────────────────────────────────────────
+
+// col key → product editor field ID
+const _IGM_FIELD_MAP = {
+  name: 'p-name',
+  product_type: 'p-type',
+  unit_type: 'p-unit-type',
+  price: 'p-price',
+  price_per_unit: 'p-price',
+  is_for_sale: 'p-is-for-sale',
+  category: 'p-category',
+  description: 'p-description',
+  low_stock_threshold: 'p-low-stock',
+  barcode: 'p-barcode',
+  product_code: 'p-product-code',
+  stock_qty: 'p-stock',
+  sub_category: 'p-sub-category',
+  sync_to_scale: 'p-sync-to-scale',
+  scale_tare: 'p-scale-tare',
+  scale_shelf_life: 'p-scale-shelf-life',
+  scale_msg1: 'p-scale-msg1',
+  scale_msg2: 'p-scale-msg2',
+  scale_open_price: 'p-scale-open-price',
+  package_size: 'p-pkg-size',
+  package_size_unit: 'p-pkg-size-unit',
+  package_unit: 'p-pkg-unit',
+  family_name: 'p-family',
+  is_default_variant: 'p-is-default-variant',
+  is_available_online: 'p-is-available-online',
+  is_prepared: 'p-is-prepared',
+  is_consignment: 'p-is-consignment',
+  consignment_pct: 'p-consignment-pct',
+};
+// reverse map: field ID → col key (one-to-one; price_per_unit shares 'p-price' — handle separately)
+const _IGM_FIELD_MAP_REV = Object.fromEntries(
+  Object.entries(_IGM_FIELD_MAP).filter(([k]) => k !== 'price_per_unit').map(([k,v]) => [v, k])
+);
+
+function _igmReadFormRow() {
+  const boolVal = id => document.getElementById(id)?.checked ? 'true' : 'false';
+  const txtVal  = id => document.getElementById(id)?.value || '';
+  return {
+    name: txtVal('p-name').trim(),
+    product_type: txtVal('p-type'),
+    unit_type: txtVal('p-unit-type'),
+    price: txtVal('p-price'),
+    price_per_unit: txtVal('p-price-per-unit'),
+    barcode: txtVal('p-barcode'),
+    product_code: txtVal('p-product-code'),
+    category: txtVal('p-category'),
+    sub_category: txtVal('p-sub-category'),
+    description: txtVal('p-description'),
+    is_for_sale: boolVal('p-is-for-sale'),
+    is_prepared: boolVal('p-is-prepared'),
+    is_available_online: boolVal('p-is-available-online'),
+    low_stock_threshold: txtVal('p-low-stock'),
+    stock_qty: txtVal('p-stock'),
+    sync_to_scale: boolVal('p-sync-to-scale'),
+    scale_tare: txtVal('p-scale-tare'),
+    scale_shelf_life: txtVal('p-scale-shelf-life'),
+    scale_msg1: txtVal('p-scale-msg1'),
+    scale_msg2: txtVal('p-scale-msg2'),
+    scale_open_price: boolVal('p-scale-open-price'),
+    package_size: txtVal('p-pkg-size'),
+    package_size_unit: txtVal('p-pkg-size-unit'),
+    package_unit: txtVal('p-pkg-unit'),
+    family_name: txtVal('p-family'),
+    is_default_variant: boolVal('p-is-default-variant'),
+    is_consignment: boolVal('p-is-consignment'),
+    settlement_basis: document.getElementById('p-basis-pct')?.checked ? 'PCT_OF_SALE' : 'FIXED_COST',
+    consignment_pct: txtVal('p-consignment-pct'),
+  };
+}
+
+function _igmApplyProductEditorHighlights(row) {
+  document.querySelectorAll('.igm-import-field-feedback').forEach(el => el.remove());
+  document.querySelectorAll('.is-warning-igm').forEach(el => el.classList.remove('is-warning-igm'));
+
+  let firstIssue = null;
+
+  for (const col of IMPORT_COLS) {
+    const fieldId = _IGM_FIELD_MAP[col.key];
+    if (!fieldId) continue;
+    const el = document.getElementById(fieldId);
+    if (!el) continue;
+
+    const status = _igmValidateCell(col, row[col.key] ?? '', row);
+    el.classList.remove('is-invalid', 'is-warning-igm');
+    // Remove existing feedback for this field
+    const next = el.nextElementSibling;
+    if (next?.classList.contains('igm-import-field-feedback')) next.remove();
+
+    if (status.startsWith('error:')) {
+      el.classList.add('is-invalid');
+      const fb = document.createElement('div');
+      fb.className = 'invalid-feedback igm-import-field-feedback';
+      fb.textContent = status.slice(6);
+      el.insertAdjacentElement('afterend', fb);
+      if (!firstIssue) firstIssue = el;
+    } else if (status.startsWith('warn:') && !row._ignored?.[col.key]) {
+      el.classList.add('is-warning-igm');
+      const fb = document.createElement('div');
+      fb.className = 'text-warning small mt-1 igm-import-field-feedback';
+      fb.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>${_igmEsc(status.slice(5))}`;
+      el.insertAdjacentElement('afterend', fb);
+      if (!firstIssue) firstIssue = el;
+    }
+  }
+
+  if (firstIssue) firstIssue.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function _igmUpdateProductEditorFieldState(colKey, currentFormRow) {
+  const fieldId = _IGM_FIELD_MAP[colKey];
+  if (!fieldId) return;
+  const el = document.getElementById(fieldId);
+  if (!el) return;
+  const col = IMPORT_COLS.find(c => c.key === colKey);
+  if (!col) return;
+
+  el.classList.remove('is-invalid', 'is-warning-igm');
+  const next = el.nextElementSibling;
+  if (next?.classList.contains('igm-import-field-feedback')) next.remove();
+
+  const status = _igmValidateCell(col, currentFormRow[colKey] ?? '', currentFormRow);
+  if (status.startsWith('error:')) {
+    el.classList.add('is-invalid');
+    const fb = document.createElement('div');
+    fb.className = 'invalid-feedback igm-import-field-feedback';
+    fb.textContent = status.slice(6);
+    el.insertAdjacentElement('afterend', fb);
+  } else if (status.startsWith('warn:') && !currentFormRow._ignored?.[colKey]) {
+    el.classList.add('is-warning-igm');
+    const fb = document.createElement('div');
+    fb.className = 'text-warning small mt-1 igm-import-field-feedback';
+    fb.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>${_igmEsc(status.slice(5))}`;
+    el.insertAdjacentElement('afterend', fb);
+  }
+}
+
+const _IGM_STRUCTURAL_KEYS = new Set(['product_type', 'unit_type', 'is_consignment', 'settlement_basis']);
+
+function _igmAttachProductEditorLiveValidation(rowId, signal) {
+  const row = _igmRows.find(r => r.id === rowId);
+  if (!row) return;
+
+  for (const [colKey, fieldId] of Object.entries(_IGM_FIELD_MAP)) {
+    const el = document.getElementById(fieldId);
+    if (!el) continue;
+
+    const eventType = (el.type === 'checkbox' || el.tagName === 'SELECT') ? 'change' : 'input';
+
+    el.addEventListener(eventType, () => {
+      const currentFormRow = { ..._igmReadFormRow(), _ignored: row._ignored, _skipped: row._skipped };
+      const changedKey = _IGM_FIELD_MAP_REV[fieldId] || colKey;
+
+      // Write back to _igmRows immediately
+      if (changedKey in currentFormRow) {
+        row[changedKey] = currentFormRow[changedKey];
+      }
+      // Also sync price_per_unit since it shares 'p-price' field mapping
+      row.price_per_unit = currentFormRow.price_per_unit;
+      row.settlement_basis = currentFormRow.settlement_basis;
+
+      if (_IGM_STRUCTURAL_KEYS.has(changedKey)) {
+        // Re-apply all highlights since applicability may change
+        _igmApplyProductEditorHighlights(currentFormRow);
+      } else {
+        // Update only this field (and cross-dependent fields)
+        _igmUpdateProductEditorFieldState(changedKey, currentFormRow);
+        // price / price_per_unit are cross-dependent
+        if (changedKey === 'price') _igmUpdateProductEditorFieldState('price_per_unit', currentFormRow);
+        if (changedKey === 'price_per_unit') _igmUpdateProductEditorFieldState('price', currentFormRow);
+      }
+
+      _igmUpdateListItem(rowId);
+      _igmUpdateSummaryBar();
+    }, { signal });
+  }
+
+  // settlement_basis radios need separate handling (not in _IGM_FIELD_MAP)
+  document.querySelectorAll('input[name="consignment-basis"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const currentFormRow = { ..._igmReadFormRow(), _ignored: row._ignored };
+      row.settlement_basis = currentFormRow.settlement_basis;
+      _igmApplyProductEditorHighlights(currentFormRow);
+      _igmUpdateListItem(rowId);
+      _igmUpdateSummaryBar();
+    }, { signal });
+  });
+}
+
+function _igmOpenProductEditorForRow(rowId) {
+  const row = _igmRows.find(r => r.id === rowId);
+  if (!row) return;
+  _igmSelectedId = rowId;
+  _igmProductEditorMode = rowId;
+  _igmUpdateListItem(rowId);
+
+  const bool = v => v === true || v === 'true';
+  const prod = {
+    id: null,
+    name: row.name || '',
+    product_type: row.product_type || 'stock_item',
+    unit_type: row.unit_type || 'weight',
+    sold_by_weight: row.unit_type === 'weight' || row.unit_type === 'volume',
+    price: row.price != null ? row.price : '',
+    price_per_unit: row.price_per_unit != null ? row.price_per_unit : '',
+    barcode: row.barcode || '',
+    product_code: row.product_code || '',
+    category: row.category || '',
+    sub_category: row.sub_category || '',
+    description: row.description || '',
+    is_for_sale: row.is_for_sale !== 'false' && row.is_for_sale !== false,
+    is_prepared: bool(row.is_prepared),
+    is_available_online: bool(row.is_available_online),
+    margin_pct: row.margin_pct != null ? row.margin_pct : '',
+    low_stock_threshold: row.low_stock_threshold != null ? row.low_stock_threshold : '',
+    stock_qty: row.stock_qty != null ? row.stock_qty : '',
+    sync_to_scale: bool(row.sync_to_scale),
+    scale_tare: row.scale_tare != null ? row.scale_tare : '',
+    scale_shelf_life: row.scale_shelf_life != null ? row.scale_shelf_life : '',
+    scale_msg1: row.scale_msg1 || '',
+    scale_msg2: row.scale_msg2 || '',
+    scale_open_price: bool(row.scale_open_price),
+    package_size: row.package_size != null ? row.package_size : '',
+    package_size_unit: row.package_size_unit || '',
+    package_unit: row.package_unit || '',
+    family_name: row.family_name || '',
+    is_default_variant: bool(row.is_default_variant),
+    is_consignment: bool(row.is_consignment),
+    settlement_basis: row.settlement_basis || 'FIXED_COST',
+    consignment_pct: row.consignment_pct != null ? row.consignment_pct : '',
+  };
+
+  openProductEditor(prod);
+
+  const modalEl = document.getElementById('productEditorModal');
+  let _validationAbort = null;
+
+  modalEl.addEventListener('shown.bs.modal', function onShown() {
+    const addBtn = document.getElementById('btn-add-product');
+    if (addBtn) { addBtn.dataset.igmOrigLabel = addBtn.textContent; addBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>Save to Import'; }
+
+    _igmApplyProductEditorHighlights(row);
+
+    _validationAbort = new AbortController();
+    _igmAttachProductEditorLiveValidation(rowId, _validationAbort.signal);
+
+    modalEl.removeEventListener('shown.bs.modal', onShown);
+  }, { once: true });
+
+  modalEl.addEventListener('hidden.bs.modal', function onHide() {
+    const addBtn = document.getElementById('btn-add-product');
+    if (addBtn?.dataset.igmOrigLabel) { addBtn.textContent = addBtn.dataset.igmOrigLabel; delete addBtn.dataset.igmOrigLabel; }
+    if (_validationAbort) { _validationAbort.abort(); _validationAbort = null; }
+    if (_igmProductEditorMode === rowId) _igmProductEditorMode = null;
+    if (_igmSelectedId === rowId) _igmUpdateListItem(rowId);
+    modalEl.removeEventListener('hidden.bs.modal', onHide);
+  }, { once: true });
+}
+
+function _igmSaveFromProductEditor() {
+  const rowId = _igmProductEditorMode;
+  const row = _igmRows.find(r => r.id === rowId);
+  if (!row) return;
+  _igmProductEditorMode = null;
+
+  const saved = _igmReadFormRow();
+  Object.assign(row, saved);
+
+  const modalEl = document.getElementById('productEditorModal');
+  bootstrap.Modal.getInstance(modalEl)?.hide();
+
+  _igmUpdateListItem(rowId);
+  _igmUpdateSummaryBar();
+  toast('Row updated', 'success', 1500);
 }
 
 function _igmUpdateEditModalStatus(row) {
