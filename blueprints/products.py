@@ -1367,6 +1367,84 @@ def api_products_delete(name):
     return jsonify({'ok': True})
 
 
+@bp.route('/api/products/<int:pid>/copy', methods=['POST'])
+def api_product_copy(pid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    src = db.session.get(Product, pid)
+    if not src:
+        return jsonify({'error': 'Not found'}), 404
+
+    # Unique name: "Name (Copy)", then "Name (Copy 2)", etc.
+    base_name = f'{src.name} (Copy)'
+    new_name  = base_name
+    suffix    = 2
+    while Product.query.filter_by(name=new_name).first():
+        new_name = f'{base_name} {suffix}'
+        suffix  += 1
+
+    # New product_code and barcode (same rules as create)
+    try:
+        new_code = _assign_product_code(src.sold_by_weight, src.unit_type, src.product_type)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+
+    if src.sold_by_weight or src.unit_type == 'volume':
+        new_barcode = None   # scale generates dynamically
+    else:
+        new_barcode = _gen_barcode_from_code(new_code)
+
+    copy = Product(
+        name=new_name,
+        barcode=new_barcode,
+        product_code=new_code,
+        stock_qty=0,
+        price=src.price,
+        product_type=src.product_type,
+        unit_type=src.unit_type,
+        base_unit=src.base_unit,
+        sold_by_weight=src.sold_by_weight,
+        is_for_sale=src.is_for_sale,
+        is_available_online=src.is_available_online,
+        description=src.description,
+        is_prepared=src.is_prepared,
+        price_per_unit=src.price_per_unit,
+        low_stock_threshold=src.low_stock_threshold,
+        package_size=src.package_size,
+        package_size_unit=src.package_size_unit,
+        package_unit=src.package_unit,
+        margin_pct=src.margin_pct,
+        category_id=src.category_id,
+        sub_category_id=src.sub_category_id,
+        product_family_id=src.product_family_id,
+        is_default_variant=False,
+        sync_to_scale=src.sync_to_scale,
+        scale_tare=src.scale_tare,
+        scale_shelf_life=src.scale_shelf_life,
+        scale_open_price=src.scale_open_price,
+        scale_msg1=src.scale_msg1,
+        scale_msg2=src.scale_msg2,
+        stat_unit_size=src.stat_unit_size,
+        is_produced=src.is_produced,
+        batch_size=src.batch_size,
+        stock_unit=src.stock_unit,
+        is_consignment=src.is_consignment,
+        settlement_basis=src.settlement_basis,
+        consignment_pct=src.consignment_pct,
+        auto_price=src.auto_price,
+        packaging_capacity=src.packaging_capacity,
+        inventory_policy=src.inventory_policy,
+    )
+    db.session.add(copy)
+    db.session.flush()
+
+    for rl in RecipeLine.query.filter_by(product_id=src.id).all():
+        db.session.add(RecipeLine(product_id=copy.id, ingredient_id=rl.ingredient_id, qty_base=rl.qty_base))
+
+    db.session.commit()
+    return jsonify({'ok': True, 'id': copy.id, 'name': copy.name})
+
+
 @bp.route('/api/products/<int:product_id>/delete', methods=['DELETE'])
 def api_product_permanent_delete(product_id):
     if not require_role('admin'):

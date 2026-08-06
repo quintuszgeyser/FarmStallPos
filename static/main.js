@@ -1261,6 +1261,24 @@ document.querySelectorAll('[data-bulk-action]').forEach(btn => {
   btn.addEventListener('click', () => _openBulkAction(btn.dataset.bulkAction));
 });
 
+async function _bulkCopyProducts(products) {
+  if (!confirm(`Copy ${products.length} product${products.length > 1 ? 's' : ''}? Each will get a new name "(Copy)" and a new barcode.`)) return;
+  let copied = 0, failed = [];
+  for (const p of products) {
+    try {
+      const r = await api(`/api/products/${p.id}/copy`, { method: 'POST' });
+      toast(`Copied → "${r.name}"`, 'success', 3000);
+      copied++;
+    } catch (e) {
+      failed.push(`${p.name}: ${e.message}`);
+    }
+  }
+  if (failed.length) toast(`${failed.length} failed: ${failed[0]}`, 'error', 8000);
+  STATE._selectedProductIds.clear();
+  _updateSelectionBar();
+  await loadProducts();
+}
+
 function _buildUnitOptionsHtml(unitType, packageSize, packageUnit) {
   return buildUnitOptions(unitType, packageSize, packageUnit)
     .map(o => `<option value="${escapeHtml(o.value)}" data-conv="${o.conv}">${escapeHtml(o.label)}</option>`)
@@ -1287,6 +1305,11 @@ function _openBulkAction(action) {
 
   if (action === 'labels') {
     openBulkLabelModal(products.map(p => p.id));
+    return;
+  }
+
+  if (action === 'copy') {
+    _bulkCopyProducts(products);
     return;
   }
 
