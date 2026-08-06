@@ -11577,11 +11577,67 @@ function _igmCellChange(id, key, val) {
       if (titleEl) titleEl.textContent = row.name || 'New Row';
     }
     if (key === 'product_type' || key === 'unit_type' || key === 'is_consignment' || key === 'settlement_basis') {
+      // Structural change — which fields are N/A may have changed, full re-render needed
       _igmRenderEditModalBody(row);
+    } else {
+      // Non-structural: update only this field's validation state in-place (preserves focus)
+      _igmLiveValidateField(id, key);
     }
   }
   _igmUpdateSummaryBar();
   _igmRunFuzzyCheck();
+}
+
+// Update a single field's validation state in the edit modal without re-rendering (preserves focus)
+function _igmLiveValidateField(id, key) {
+  const editModalEl = document.getElementById('igmRowEditModal');
+  if (!editModalEl?.classList.contains('show')) return;
+  const row = _igmRows.find(r => r.id === id);
+  if (!row) return;
+  const col = IMPORT_COLS.find(c => c.key === key);
+  if (!col) return;
+  const wrapper = editModalEl.querySelector(`[data-igm-field="${key}"]`);
+  if (!wrapper) return;
+
+  const val     = row[key] || '';
+  const status  = _igmValidateCell(col, val, row);
+  const ignored = (row._ignored || {})[key];
+  const na      = status === 'na';
+
+  // Wrapper has-warning class
+  wrapper.classList.toggle('has-warning', !!(status.startsWith('warn') && !ignored && !na));
+
+  // Input element classes
+  const inputEl = wrapper.querySelector('input, select, textarea');
+  if (inputEl) {
+    inputEl.classList.remove('is-invalid', 'is-valid', 'border-warning');
+    if (!na) {
+      if (status.startsWith('error'))             inputEl.classList.add('is-invalid');
+      else if (status.startsWith('warn') && !ignored) inputEl.classList.add('border-warning');
+      else if (status === 'ok')                   inputEl.classList.add('is-valid');
+    }
+  }
+
+  // Feedback div — find existing or append one
+  let fbEl = wrapper.querySelector('.igm-field-fb');
+  if (!fbEl) { fbEl = document.createElement('div'); fbEl.className = 'igm-field-fb'; wrapper.appendChild(fbEl); }
+  if (!na && status.startsWith('error')) {
+    fbEl.className = 'igm-field-fb invalid-feedback d-block';
+    fbEl.style.cssText = 'font-size:12px';
+    fbEl.innerHTML = _igmEsc(status.slice(6));
+  } else if (!na && status.startsWith('warn') && !ignored) {
+    fbEl.className = 'igm-field-fb';
+    fbEl.style.cssText = 'font-size:12px;color:#856404';
+    fbEl.innerHTML = `<div class="d-flex align-items-center gap-1 mt-1">
+      <i class="bi bi-exclamation-triangle-fill"></i>
+      <span>${_igmEsc(status.slice(5))}</span>
+      <button type="button" class="btn btn-link btn-sm py-0 ms-1" style="font-size:11px" onclick="_igmIgnoreWarning(${id},'${key}')">Ignore</button>
+    </div>`;
+  } else {
+    fbEl.className = 'igm-field-fb';
+    fbEl.style.cssText = '';
+    fbEl.innerHTML = '';
+  }
 }
 
 function _igmIgnoreWarning(id, key) {
@@ -11914,18 +11970,22 @@ function _igmEditField(col, row) {
     const itype = col.type === 'number' ? 'number' : 'text';
     inputHtml   = `<input type="${itype}" class="${cls}" value="${_igmEsc(val)}" placeholder="${ph}" ${na?'disabled':''} oninput="_igmCellChange(${row.id},'${col.key}',this.value)">`;
   }
-  let feedbackHtml = '';
+  // Always render feedback container with class igm-field-fb so live updates can target it
+  let feedbackHtml;
   if (!na && status.startsWith('error')) {
-    feedbackHtml = `<div class="invalid-feedback d-block" style="font-size:12px">${_igmEsc(status.slice(6))}</div>`;
+    feedbackHtml = `<div class="igm-field-fb invalid-feedback d-block" style="font-size:12px">${_igmEsc(status.slice(6))}</div>`;
   } else if (!na && status.startsWith('warn') && !ignored) {
-    feedbackHtml = `<div class="d-flex align-items-center gap-1 mt-1" style="font-size:12px;color:#856404">
+    feedbackHtml = `<div class="igm-field-fb d-flex align-items-center gap-1 mt-1" style="font-size:12px;color:#856404">
       <i class="bi bi-exclamation-triangle-fill"></i>
       <span>${_igmEsc(status.slice(5))}</span>
       <button type="button" class="btn btn-link btn-sm py-0 ms-1" style="font-size:11px" onclick="_igmIgnoreWarning(${row.id},'${col.key}')">Ignore</button>
     </div>`;
+  } else {
+    feedbackHtml = `<div class="igm-field-fb"></div>`;
   }
-  const req = col.required(row) && !na ? '<span class="text-danger ms-1">*</span>' : '';
-  return `<div>
+  const req      = col.required(row) && !na ? '<span class="text-danger ms-1">*</span>' : '';
+  const warnCls  = (status.startsWith('warn') && !ignored && !na) ? ' has-warning' : '';
+  return `<div data-igm-field="${col.key}"${warnCls ? ` class="${warnCls.trim()}"` : ''}>
     <label class="form-label mb-1" style="font-size:12px;font-weight:600;color:#555">${_igmEsc(col.label)}${req}</label>
     ${inputHtml}
     ${feedbackHtml}
@@ -12075,9 +12135,10 @@ function _igmOpenEditModal(id) {
   const modalEl = document.getElementById('igmRowEditModal');
   bootstrap.Modal.getOrCreateInstance(modalEl).show();
   modalEl.addEventListener('shown.bs.modal', function onShown() {
-    const firstErr = modalEl.querySelector('.is-invalid');
-    if (firstErr) firstErr.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    modalEl.removeEventListener('shown.bs.modal', onShown);
+    const firstErr  = modalEl.querySelector('.is-invalid');
+    const firstWarn = modalEl.querySelector('.has-warning');
+    const scrollTo  = firstErr || firstWarn;
+    if (scrollTo) scrollTo.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, { once: true });
 }
 
