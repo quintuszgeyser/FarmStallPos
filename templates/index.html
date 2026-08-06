@@ -2119,6 +2119,18 @@
                   <label class="form-label mb-1">Keep (count)</label>
                   <input type="number" class="form-control form-control-sm" id="backup-keep-count" min="1" max="365" value="30">
                 </div>
+                <div class="col-6">
+                  <label class="form-label mb-1">Catch-up if no backup for (hours)</label>
+                  <input type="number" class="form-control form-control-sm" id="backup-catchup-hours" min="1" max="168" value="24">
+                </div>
+                <div class="col-6">
+                  <label class="form-label mb-1">Retries on failure</label>
+                  <input type="number" class="form-control form-control-sm" id="backup-retry-count" min="0" max="10" value="4">
+                </div>
+                <div class="col-6">
+                  <label class="form-label mb-1">Retry interval (minutes)</label>
+                  <input type="number" class="form-control form-control-sm" id="backup-retry-interval" min="5" max="1440" value="30">
+                </div>
                 <div class="col-12">
                   <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="backup-encryption-enabled" onchange="toggleEncryptionUI()">

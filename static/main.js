@@ -410,10 +410,13 @@ async function api(path, opts = {}, timeoutMs = 10000) {
       signal: controller.signal,
     }, opts));
     if (res.status === 401) {
-      // Session expired — persist cart so it survives the re-login page load
       _saveCartToSession();
-      toast('Session expired — please log in again', 'warning', 5000);
-      setTimeout(() => location.reload(), 1500);
+      if (STATE.user) {
+        // Was actively logged in — show toast and reload to reset UI back to login state
+        toast('Session expired — please log in again', 'warning', 5000);
+        STATE.user = null;
+        setTimeout(() => location.reload(), 1500);
+      }
       throw new Error('Session expired');
     }
     if (!res.ok) {
@@ -8768,20 +8771,18 @@ document.getElementById('btn-tx-void')?.addEventListener('click', async () => {
 async function printReceipt(saleId) {
   const printerId = STATE._receiptPrinterId || null;
   try {
-    if (!printerId) {
-      // No server-side printer configured — use browser print (works in any printer mode)
-      const win = window.open(`/api/transactions/${saleId}/browser-print-receipt`, '_blank', 'width=420,height=700');
-      if (!win) toast('Pop-up blocked — allow pop-ups for this site', 'warning');
-      else toast('Receipt sent to print dialog', 'success', 3000);
-      return;
-    }
+    // Always try server-side first — auto-detects local USB printer on Windows,
+    // falls back to browser popup if no printer found on the server.
     await api(`/api/transactions/${saleId}/print-receipt`, {
       method: 'POST',
-      body: JSON.stringify({ printer_id: printerId }),
+      body: JSON.stringify({ printer_id: printerId || null }),
     });
     toast('Receipt sent to printer', 'success', 3000);
   } catch (e) {
-    toast('Receipt print failed: ' + e.message, 'error');
+    // Server couldn't reach a printer — open browser print dialog as fallback
+    const win = window.open(`/api/transactions/${saleId}/browser-print-receipt`, '_blank', 'width=420,height=700');
+    if (!win) toast('Pop-up blocked — allow pop-ups for this site', 'warning');
+    else toast('Receipt sent to print dialog', 'success', 3000);
   }
 }
 
@@ -11377,10 +11378,10 @@ async function loadSettings() {
     const j = await api('/api/settings');
     _globalMarkupPct = parseFloat(j.markup_percent) || 40;
     _globalVatPct    = parseFloat(j.vat_rate)        || 15;
-    // Load receipt printer preference into STATE
     if (j.receipt_printer_id) {
       STATE._receiptPrinterId = parseInt(j.receipt_printer_id) || null;
     }
+    _startKioskInactivityTimer(parseInt(j.kiosk_inactivity_minutes) || 0);
   } catch {}
 }
 
@@ -11710,6 +11711,7 @@ document.addEventListener('shown.bs.tab', async (evt) => {
       await loadStats();
       await loadUsers();
       await loadSpecials();
+      _startBackupWatcher();
     }
   }
 })();
@@ -14570,13 +14572,7 @@ function _startKioskInactivityTimer(minutes) {
   _resetKioskInactivity();
 }
 
-// Bootstrap inactivity timer on page load from server setting
-(async () => {
-  try {
-    const s = await api('/api/settings');
-    _startKioskInactivityTimer(parseInt(s.kiosk_inactivity_minutes) || 0);
-  } catch {}
-})();
+// Kiosk inactivity timer is now started inside loadSettings() after login
 
 
 // ═══════════════════════════════════════════════════════
@@ -17194,6 +17190,46 @@ async function _loadSysInfo() {
 let _backupPollNonce = null;
 let _backupJobPollTimer = null;
 
+// Background watcher — toasts when a scheduled backup starts or finishes
+const _backupWatcher = { lastLogId: null, lastStatus: null, timer: null };
+function _startBackupWatcher() {
+  if (_backupWatcher.timer) return;
+  _backupWatcher.timer = setInterval(async () => {
+    try {
+      const s = await api('/api/backup/status', {}, 5000);
+      const log = s.latest_log;
+      if (!log) return;
+      const id = log.id, status = log.status, by = log.triggered_by;
+      const isAuto = by === 'schedule' || by === 'catchup' || by === 'retry';
+      if (id !== _backupWatcher.lastLogId) {
+        // New log entry — only toast for automatic backups (manual has its own poller)
+        if (isAuto && status === 'running') {
+          const label = by === 'catchup' ? 'Catch-up backup started…'
+                      : by === 'retry'   ? 'Retrying failed backup…'
+                      :                    'Scheduled backup started…';
+          toast(label, 'info');
+        }
+        _backupWatcher.lastLogId = id;
+        _backupWatcher.lastStatus = status;
+      } else if (status !== _backupWatcher.lastStatus) {
+        // Same log, status changed (running → ok/failed)
+        if (isAuto) {
+          if (status === 'ok') {
+            const label = by === 'catchup' ? 'Catch-up backup completed successfully'
+                        : by === 'retry'   ? 'Retry backup completed successfully'
+                        :                    'Scheduled backup completed successfully';
+            toast(label, 'success');
+            if (document.getElementById('backup-list-container')) await loadBackupSettings();
+          } else if (status === 'failed') {
+            toast(`Backup failed (${by}): ${log.error || 'unknown error'}`, 'error', 8000);
+          }
+        }
+        _backupWatcher.lastStatus = status;
+      }
+    } catch (e) { /* network hiccup — silent */ }
+  }, 60000);
+}
+
 function toggleBackupProviderUI() {
   const provider = document.getElementById('backup-provider')?.value;
   const gdrive = document.getElementById('backup-gdrive-section');
@@ -17233,7 +17269,10 @@ async function loadBackupSettings() {
     toggleBackupFrequencyUI();
     _setVal('backup-day',         s.schedule_day || 'monday');
     _setVal('backup-time',        s.schedule_time || '12:00');
-    _setVal('backup-keep-count',  s.keep_count || 30);
+    _setVal('backup-keep-count',      s.keep_count || 30);
+    _setVal('backup-catchup-hours',   s.catchup_hours ?? 24);
+    _setVal('backup-retry-count',     s.retry_count ?? 4);
+    _setVal('backup-retry-interval',  s.retry_interval_minutes ?? 30);
 
     const encCb = document.getElementById('backup-encryption-enabled');
     if (encCb) { encCb.checked = !!s.encryption_enabled; toggleEncryptionUI(); }
@@ -17274,7 +17313,9 @@ async function loadBackupSettings() {
       } else if (!s.last_run_at) {
         badge.textContent = 'Never run'; badge.className = 'badge bg-warning text-dark';
       } else {
-        const ageH = Math.round((Date.now() - new Date(s.last_run_at).getTime()) / 3600000);
+        const _lra = s.last_run_at;
+        const _lraUtc = (_lra.endsWith('Z') || _lra.includes('+')) ? _lra : _lra + 'Z';
+        const ageH = Math.round((Date.now() - new Date(_lraUtc).getTime()) / 3600000);
         if (ageH >= 72) {
           badge.textContent = `${Math.round(ageH/24)}d ago`; badge.className = 'badge bg-warning text-dark';
         } else {
@@ -17295,8 +17336,8 @@ async function loadBackupSettings() {
       if (!s.enabled) { nextEl.textContent = 'Disabled'; }
       else {
         nextEl.textContent = s.schedule_frequency === 'daily'
-          ? `Daily at ${s.schedule_time} UTC`
-          : `${_cap(s.schedule_day || '')} at ${s.schedule_time} UTC`;
+          ? `Daily at ${_fmtScheduleTime(s.schedule_time)}`
+          : `${_cap(s.schedule_day || '')} at ${_fmtScheduleTime(s.schedule_time)}`;
       }
     }
 
@@ -17311,7 +17352,9 @@ function _setText(id, v) { const el = document.getElementById(id); if (el) el.te
 function _cap(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : s; }
 function _fmtRelTime(iso) {
   try {
-    const diff = Date.now() - new Date(iso).getTime();
+    // Server stores UTC without 'Z' — append it so the browser parses as UTC, not local time
+    const utc = (iso.endsWith('Z') || iso.includes('+')) ? iso : iso + 'Z';
+    const diff = Date.now() - new Date(utc).getTime();
     const m = Math.round(diff / 60000);
     if (m < 2)  return 'just now';
     if (m < 60) return `${m}m ago`;
@@ -17319,6 +17362,14 @@ function _fmtRelTime(iso) {
     if (h < 24) return `${h}h ago`;
     return `${Math.round(h/24)}d ago`;
   } catch (e) { return iso; }
+}
+function _fmtScheduleTime(utcHHMM) {
+  try {
+    const [h, m] = utcHHMM.split(':').map(Number);
+    const d = new Date();
+    d.setUTCHours(h, m, 0, 0);
+    return d.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
+  } catch (e) { return utcHHMM; }
 }
 
 async function _renderBackupList() {
@@ -17372,7 +17423,10 @@ async function saveBackupSettings() {
       frequency:            document.getElementById('backup-frequency')?.value,
       schedule_time:        document.getElementById('backup-time')?.value,
       schedule_day:         document.getElementById('backup-day')?.value,
-      keep_count:           parseInt(document.getElementById('backup-keep-count')?.value) || 30,
+      keep_count:              parseInt(document.getElementById('backup-keep-count')?.value) || 30,
+      catchup_hours:           parseInt(document.getElementById('backup-catchup-hours')?.value) || 24,
+      retry_count:             parseInt(document.getElementById('backup-retry-count')?.value) ?? 4,
+      retry_interval_minutes:  parseInt(document.getElementById('backup-retry-interval')?.value) || 30,
       encryption_enabled:   document.getElementById('backup-encryption-enabled')?.checked,
       encryption_passphrase: document.getElementById('backup-passphrase')?.value || '',
     }) });

@@ -546,7 +546,7 @@ def api_transaction_print_receipt(sale_id):
         img, h   = svc.render(receipt_data, width_mm=width_mm)
         dispatch = PrintDispatchService()
         result   = dispatch.send(img, printer_id=printer_id,
-                                 width_mm=width_mm, height_mm=h)
+                                 width_mm=width_mm, height_mm=h, gap_mm=0)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 

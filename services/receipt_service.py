@@ -174,13 +174,15 @@ class ReceiptRenderService:
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     def _chars_per_line(self, width_mm: float) -> int:
-        # Monospace font: roughly 6px per char at 203 DPI on 72mm paper
+        # Match the font size from _load_font: w_px/32 px per char ≈ w_px/32 * 0.6 width ratio
         w_px = width_mm * MM_TO_PX
-        return max(24, int(w_px / 6.5))
+        font_px = max(18, int(w_px / 32))
+        char_w = font_px * 0.6   # monospace char width ≈ 60% of font height
+        return max(20, int((w_px - 8) / char_w))
 
     def _load_font(self, w_px: int, bold: bool = False) -> tuple:
-        # Font size: aim for ~42 chars across the paper
-        font_px = max(14, int(w_px / 42))
+        # Font size: aim for ~32 chars across the paper (larger = sharper on thermal)
+        font_px = max(18, int(w_px / 32))
         candidates_bold   = ['DejaVuSansMono-Bold.ttf', 'cour.ttf', 'courbd.ttf', 'arialbd.ttf']
         candidates_normal = ['DejaVuSansMono.ttf', 'DejaVuSans-Mono.ttf', 'cour.ttf', 'arial.ttf', 'Courier_New.ttf']
         candidates = candidates_bold if bold else candidates_normal

@@ -318,6 +318,7 @@ def _enqueue_backup(app=None, triggered_by='manual'):
         app = current_app._get_current_object()
     log = BackupLog(started_at=datetime.utcnow(), status='running', triggered_by=triggered_by)
     db.session.add(log)
+    set_setting('backup_last_attempt_at', datetime.utcnow().isoformat())
     db.session.commit()
     log_id = log.id
     threading.Thread(
@@ -667,6 +668,9 @@ def api_backup_status():
         'last_run_status':           get_setting('backup_last_run_status', ''),
         'last_error':                get_setting('backup_last_error', ''),
         'fail_count':                int(get_setting('backup_fail_count', '0') or 0),
+        'retry_count':               int(get_setting('backup_retry_count', '4') or 4),
+        'retry_interval_minutes':    int(get_setting('backup_retry_interval_minutes', '30') or 30),
+        'catchup_hours':             int(get_setting('backup_catchup_hours', '24') or 24),
         'latest_log':                latest_data,
         'prev_file_size':            prev.file_size if prev else None,
         'available_restore_targets': _available_restore_targets(),
@@ -915,7 +919,10 @@ def api_backup_settings():
     set_setting('backup_schedule_frequency', d.get('frequency', 'daily'))
     set_setting('backup_schedule_time',      d.get('schedule_time', '12:00'))
     set_setting('backup_schedule_day',       d.get('schedule_day', 'monday'))
-    set_setting('backup_keep_count',         str(int(d.get('keep_count', 30) or 30)))
+    set_setting('backup_keep_count',               str(int(d.get('keep_count', 30) or 30)))
+    set_setting('backup_retry_count',              str(int(d.get('retry_count', 4) or 4)))
+    set_setting('backup_retry_interval_minutes',   str(int(d.get('retry_interval_minutes', 30) or 30)))
+    set_setting('backup_catchup_hours',            str(int(d.get('catchup_hours', 24) or 24)))
     set_setting('backup_encryption_enabled', 'true' if d.get('encryption_enabled') else 'false')
     if d.get('encryption_passphrase'):
         set_setting('backup_encryption_passphrase', d['encryption_passphrase'])

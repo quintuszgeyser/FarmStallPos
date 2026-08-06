@@ -486,31 +486,87 @@ def _start_backup_scheduler(app):
 
 
 def _run_scheduled_backup(app):
-    from datetime import datetime
+    from datetime import datetime, timedelta
+    from sqlalchemy import text
     enabled = get_setting('backup_enabled', 'false') == 'true'
     if not enabled:
         return
-    frequency   = get_setting('backup_schedule_frequency', 'daily')
-    target_time = get_setting('backup_schedule_time', '12:00')
-    target_day  = get_setting('backup_schedule_day', 'monday').lower()
-    now         = datetime.utcnow()
-    hhmm        = now.strftime('%H:%M')
-    if hhmm != target_time:
-        return
-    if frequency == 'weekly':
-        day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-        if day_names[now.weekday()] != target_day:
-            return
-    last_run = get_setting('backup_last_run_at', '')
-    if last_run:
+
+    frequency        = get_setting('backup_schedule_frequency', 'daily')
+    target_time      = get_setting('backup_schedule_time', '12:00')
+    target_day       = get_setting('backup_schedule_day', 'monday').lower()
+    retry_max        = int(get_setting('backup_retry_count', '4') or 4)
+    retry_interval   = int(get_setting('backup_retry_interval_minutes', '30') or 30)
+    catchup_hours    = int(get_setting('backup_catchup_hours', '24') or 24)
+    last_success_at  = get_setting('backup_last_run_at', '')       # set only on success
+    last_attempt_at  = get_setting('backup_last_attempt_at', '')   # set on every attempt
+    last_status      = get_setting('backup_last_run_status', '')
+    fail_count       = int(get_setting('backup_fail_count', '0') or 0)
+    now              = datetime.utcnow()
+
+    def _parse(s):
         try:
-            last_dt = datetime.fromisoformat(last_run)
-            if (now - last_dt).total_seconds() < 55:
-                return
+            return datetime.fromisoformat(s) if s else None
+        except Exception:
+            return None
+
+    last_success_dt = _parse(last_success_at)
+    last_attempt_dt = _parse(last_attempt_at)
+
+    # Helper: seconds since a datetime (None → infinity)
+    def _age(dt):
+        return (now - dt).total_seconds() if dt else float('inf')
+
+    triggered_by = None
+
+    # 1. Scheduled time
+    hhmm = now.strftime('%H:%M')
+    if hhmm == target_time:
+        if frequency == 'daily':
+            triggered_by = 'schedule'
+        elif frequency == 'weekly':
+            day_names = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+            if day_names[now.weekday()] == target_day:
+                triggered_by = 'schedule'
+
+    # 2. Catch-up: last successful backup is older than catchup_hours
+    if triggered_by is None and catchup_hours > 0:
+        if _age(last_success_dt) > catchup_hours * 3600:
+            # Only catch-up if we're not mid-retry sequence (fail_count == 0 means last attempt succeeded or never ran)
+            if fail_count == 0 or last_success_dt is None:
+                triggered_by = 'catchup'
+
+    # 3. Retry: last backup failed, under the retry limit, enough time since last attempt
+    if triggered_by is None and last_status == 'failed' and 0 < fail_count <= retry_max:
+        if _age(last_attempt_dt) >= retry_interval * 60:
+            triggered_by = 'retry'
+
+    if triggered_by is None:
+        return
+
+    # Dedup: don't fire if last attempt was < 55s ago (catches scheduler drift on exact-time match)
+    if _age(last_attempt_dt) < 55:
+        return
+
+    # Cross-worker guard: pg advisory lock ensures only one of N workers enqueues.
+    # pg_try_advisory_xact_lock is atomic and auto-releases on commit/rollback.
+    try:
+        locked = db.session.execute(text("SELECT pg_try_advisory_xact_lock(557700)")).scalar()
+        if not locked:
+            return
+        # Re-check last_attempt_at inside the lock to close the TOCTOU window
+        if _age(_parse(get_setting('backup_last_attempt_at', ''))) < 55:
+            db.session.commit()
+            return
+        from blueprints.backup import _enqueue_backup
+        _enqueue_backup(app=app, triggered_by=triggered_by)
+        db.session.commit()
+    except Exception as e:
+        app.logger.warning(f'[backup] scheduler lock error: {e}')
+        try:
+            db.session.rollback()
         except Exception:
             pass
-    from blueprints.backup import _enqueue_backup
-    _enqueue_backup(app=app, triggered_by='schedule')
 
 
 # ---------------------------------------------------------------------------

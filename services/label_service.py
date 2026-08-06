@@ -264,9 +264,9 @@ class PrintDispatchService:
     XPRINTER_VIDS = [0x2D84, 0x2D37]
 
     def send(self, image, printer_id=None, width_mm: float = 40,
-             height_mm: float = 20) -> dict:
+             height_mm: float = 20, gap_mm: float = 3) -> dict:
         printer_row = db_get_printer(printer_id)
-        tspl = self._build_tspl2(image, width_mm, height_mm)
+        tspl = self._build_tspl2(image, width_mm, height_mm, gap_mm=gap_mm)
 
         try:
             return self._send_usb(tspl, printer_row)
@@ -311,13 +311,18 @@ class PrintDispatchService:
 
     # ── TSPL2 command builder ──────────────────────────────────────────────────
 
-    def _build_tspl2(self, image, width_mm: float, height_mm: float) -> bytes:
+    def _build_tspl2(self, image, width_mm: float, height_mm: float,
+                     gap_mm: float = 3) -> bytes:
         """
         Convert PIL Image to a complete TSPL2 print job.
         BITMAP x,y,bytes_per_row,height_dots,mode,<binary data>
         mode 1 = overwrite.  Bit=1 → black dot (MSB first per byte).
+        gap_mm=0 for continuous receipt paper; 3 for die-cut labels.
         """
-        bw     = image.convert('1')
+        # Threshold to hard black/white first (no Floyd-Steinberg dithering).
+        # Dithering scatters antialiased grey pixels into dot noise on thermal paper.
+        gray   = image.convert('L')
+        bw     = gray.point(lambda p: 0 if p < 180 else 255).convert('1', dither=0)
         w_dots = bw.width
         h_dots = bw.height
         bpr    = (w_dots + 7) // 8
@@ -330,9 +335,10 @@ class PrintDispatchService:
                 if pixels[x, y] == 0:   # black pixel in PIL mode '1'
                     bitmap[row + x // 8] |= (0x80 >> (x % 8))
 
+        gap_line = f'GAP {gap_mm:.1f} mm, 0 mm\r\n' if gap_mm > 0 else 'GAP 0 mm, 0 mm\r\n'
         header = (
             f'SIZE {width_mm:.1f} mm, {height_mm:.1f} mm\r\n'
-            f'GAP 3 mm, 0 mm\r\n'
+            + gap_line +
             f'DIRECTION 0\r\n'
             f'REFERENCE 0,0\r\n'
             f'OFFSET 0 mm\r\n'
