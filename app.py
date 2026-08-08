@@ -22,6 +22,7 @@ from models import (
     ScaleSyncRun, ScaleSnapshot, ScalePluLog, ScaleKeyboardPreset, ScaleAdvertMessage,
     ProductImportRun, DeploySchedule, TillSession,
     LabelTemplate, LabelPrintJob, LabelPrinter,
+    CustomisationRule,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 from helpers import (
@@ -2021,6 +2022,20 @@ def strong_migrate():
 
         # VAT type per product (standard / zero_rated / exempt)
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_type VARCHAR(20) NOT NULL DEFAULT 'standard'")
+
+        # Category-based flat-price rules for recipe customisations (swaps / extras)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS customisation_rules (
+              id            SERIAL PRIMARY KEY,
+              rule_type     VARCHAR(10)   NOT NULL,
+              from_category VARCHAR(120),
+              to_category   VARCHAR(120)  NOT NULL,
+              price_adj     NUMERIC(10,2) NOT NULL DEFAULT 0,
+              label         VARCHAR(200),
+              active        BOOLEAN       NOT NULL DEFAULT TRUE,
+              sort_order    INTEGER       NOT NULL DEFAULT 0
+            )
+        """)
 
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.

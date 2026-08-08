@@ -43,6 +43,7 @@ let STATE = {
   packagingProducts:    [],   // from GET /api/packaging — all packaging products
   packagingCategoryIds: new Set(), // category IDs where is_packaging=true
   packagingHints:       {},   // cache: `${productId}_${bucket}` → suggestion object|null
+  _customisationRules:  [],   // flat-price rules for recipe swaps / extras
 };
 
 // Load persisted cart counts from localStorage
@@ -606,6 +607,8 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
       await loadSuppliers();    // pre-load for receive stock dropdown
       await loadSpecials();
       startKitchenBadgePoll();  // keep badge count live across all tabs
+      // Load customisation pricing rules (non-blocking — used by subsModal)
+      fetch('/api/customisation-rules').then(r => r.ok ? r.json() : []).then(rules => { STATE._customisationRules = rules || []; }).catch(() => {});
     }
   } catch (e) {
     const s = document.getElementById('login-status');
@@ -14505,42 +14508,74 @@ function _qtyBaseFromDisplay(qtyDisplay, unit, unitType) {
   return toBase(parseFloat(qtyDisplay) || 0, unit, unitType || 'count');
 }
 
+function _subsMatchRule(fromCat, toCat, ruleType) {
+  const rules = STATE._customisationRules || [];
+  for (const r of rules) {
+    if (!r.active || r.rule_type !== ruleType) continue;
+    if (ruleType === 'swap') {
+      const fromOk = !r.from_category || r.from_category.toLowerCase() === (fromCat || '').toLowerCase();
+      const toOk   = r.to_category.toLowerCase() === (toCat || '').toLowerCase();
+      if (fromOk && toOk) return r;
+    } else if (ruleType === 'extra') {
+      if (r.to_category.toLowerCase() === (toCat || '').toLowerCase()) return r;
+    }
+  }
+  return null;
+}
+
 function updateSubsPriceDelta() {
-  let delta = 0;
+  let ruleAdj  = 0;   // flat rule prices — already retail, no markup applied
+  let fifoCost = 0;   // FIFO cost delta — markup applied below
+  const ruleLabels = [];
+
   _subsIngredients.forEach(ing => {
     if (ing.removed) return;
     if (ing.replaced_by_id && ing.replaced_by_id !== ing.ingredient_id) {
-      // Default ingredient cost at the original qty_base
-      const defaultCost = (STATE._productCostMap?.[ing.ingredient_id] || 0) * (ing.qty_base || 0);
-      // Swap ingredient cost - use edited qty if provided, else original qty_base
-      const rep         = _subsAlts.find(a => a.id === ing.replaced_by_id);
-      const swapQtyBase = (ing.qty_display !== undefined)
-        ? _qtyBaseFromDisplay(ing.qty_display, ing.unit || rep?.base_unit, rep?.unit_type)
-        : (ing.qty_base || 0);
-      const swapCost    = (STATE._productCostMap?.[ing.replaced_by_id] || 0) * swapQtyBase;
-      delta += Math.max(0, swapCost - defaultCost);
-    }
-  });
-  _subsExtras.forEach(ex => {
-    if (ex.ingredient_id && (ex.qty_display > 0 || ex.qty_base > 0)) {
-      const alt      = _subsAlts.find(a => a.id === ex.ingredient_id);
-      const qtyBase  = _qtyBaseFromDisplay(ex.qty_display ?? ex.qty_base ?? 0, ex.unit || alt?.base_unit, alt?.unit_type);
-      delta += (STATE._productCostMap?.[ex.ingredient_id] || 0) * qtyBase;
+      const rep     = _subsAlts.find(a => a.id === ing.replaced_by_id);
+      const fromCat = ing.category || '';
+      const toCat   = rep?.category || '';
+      const rule    = _subsMatchRule(fromCat, toCat, 'swap');
+      if (rule) {
+        ruleAdj += parseFloat(rule.price_adj) || 0;
+        if (rule.label) ruleLabels.push(rule.label);
+      } else {
+        const defaultCost = (STATE._productCostMap?.[ing.ingredient_id] || 0) * (ing.qty_base || 0);
+        const swapQtyBase = (ing.qty_display !== undefined)
+          ? _qtyBaseFromDisplay(ing.qty_display, ing.unit || rep?.base_unit, rep?.unit_type)
+          : (ing.qty_base || 0);
+        fifoCost += Math.max(0, (STATE._productCostMap?.[ing.replaced_by_id] || 0) * swapQtyBase - defaultCost);
+      }
     }
   });
 
+  _subsExtras.forEach(ex => {
+    if (!ex.ingredient_id || !(ex.qty_display > 0 || ex.qty_base > 0)) return;
+    const alt   = _subsAlts.find(a => a.id === ex.ingredient_id);
+    const toCat = alt?.category || '';
+    const rule  = _subsMatchRule('', toCat, 'extra');
+    if (rule) {
+      ruleAdj += parseFloat(rule.price_adj) || 0;
+      if (rule.label) ruleLabels.push(rule.label);
+    } else {
+      const qtyBase = _qtyBaseFromDisplay(ex.qty_display ?? ex.qty_base ?? 0, ex.unit || alt?.base_unit, alt?.unit_type);
+      fifoCost += (STATE._productCostMap?.[ex.ingredient_id] || 0) * qtyBase;
+    }
+  });
+
+  const markup   = parseFloat(document.getElementById('calc-markup')?.value || '50') / 100;
+  const fifoAdj  = fifoCost * (1 + (markup > 0 ? markup : 0.5));
+  const priceAdj = ruleAdj + fifoAdj;
+
   const el = document.getElementById('subs-price-delta');
   if (!el) return;
-  if (delta === 0) {
+  if (priceAdj === 0) {
     el.textContent = 'No change';
-    el.className = 'text-muted';
-    el._priceAdj = 0;
+    el.className   = 'text-muted';
+    el._priceAdj   = 0;
   } else {
-    const markup   = parseFloat(document.getElementById('calc-markup')?.value || '50') / 100;
-    const priceAdj = delta * (1 + (markup > 0 ? markup : 0.5));
-    el.textContent = `+R${fmt(priceAdj)}`;
-    el.className = 'text-danger fw-bold';
-    el._priceAdj = priceAdj;
+    el.textContent = `+R${fmt(priceAdj)}` + (ruleLabels.length ? ` · ${ruleLabels.join(', ')}` : '');
+    el.className   = 'text-danger fw-bold';
+    el._priceAdj   = priceAdj;
   }
 }
 
@@ -20359,4 +20394,98 @@ function _negStockProduce(productId) {
 function _negStockAdjust(productId) {
   const p = STATE.products.find(x => x.id === productId);
   if (p) openStocktakeModal(p);
+}
+
+// ── Customisation Pricing Rules Admin ────────────────────────────────────────
+async function loadCustomisationRules() {
+  try {
+    const rules = await api('/api/customisation-rules');
+    STATE._customisationRules = rules || [];
+    renderCustomisationRules();
+  } catch(e) { toast('Failed to load customisation rules: ' + e.message, 'danger'); }
+}
+
+function renderCustomisationRules() {
+  const rules = STATE._customisationRules || [];
+  const tbody = document.getElementById('cust-rules-tbody');
+  if (!tbody) return;
+  if (!rules.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted small py-3">No rules yet. Add one below.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rules.map(r => `
+    <tr class="${r.active ? '' : 'text-muted'}">
+      <td><span class="badge ${r.rule_type === 'swap' ? 'bg-primary' : 'bg-success'}">${r.rule_type}</span></td>
+      <td class="small">${r.rule_type === 'swap' ? (r.from_category || '<span class="text-muted fst-italic">any</span>') : '—'}</td>
+      <td class="small">${r.to_category}</td>
+      <td class="small fw-semibold">+R${parseFloat(r.price_adj).toFixed(2)}</td>
+      <td class="small">${r.label || ''}</td>
+      <td>
+        <div class="d-flex gap-1">
+          <button class="btn btn-sm btn-outline-secondary py-0 px-1" onclick="editCustomisationRule(${r.id})" title="Edit"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="deleteCustomisationRule(${r.id})" title="Delete"><i class="bi bi-trash"></i></button>
+        </div>
+      </td>
+    </tr>`).join('');
+}
+
+async function saveCustomisationRule() {
+  const id       = document.getElementById('cust-rule-id')?.value;
+  const ruleType = document.getElementById('cust-rule-type')?.value;
+  const fromCat  = document.getElementById('cust-rule-from')?.value.trim();
+  const toCat    = document.getElementById('cust-rule-to')?.value.trim();
+  const priceAdj = parseFloat(document.getElementById('cust-rule-price')?.value) || 0;
+  const label    = document.getElementById('cust-rule-label')?.value.trim();
+  if (!toCat) { toast('To Category is required', 'warning'); return; }
+  const body = { rule_type: ruleType, from_category: fromCat, to_category: toCat, price_adj: priceAdj, label, active: true };
+  try {
+    if (id) {
+      await api(`/api/customisation-rules/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    } else {
+      await api('/api/customisation-rules', { method: 'POST', body: JSON.stringify(body) });
+    }
+    clearCustomisationRuleForm();
+    await loadCustomisationRules();
+    toast('Rule saved', 'success');
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function editCustomisationRule(id) {
+  const r = (STATE._customisationRules || []).find(r => r.id === id);
+  if (!r) return;
+  document.getElementById('cust-rule-id').value    = r.id;
+  document.getElementById('cust-rule-type').value  = r.rule_type;
+  document.getElementById('cust-rule-from').value  = r.from_category || '';
+  document.getElementById('cust-rule-to').value    = r.to_category;
+  document.getElementById('cust-rule-price').value = r.price_adj;
+  document.getElementById('cust-rule-label').value = r.label || '';
+  _custRuleTypeChanged();
+  document.getElementById('cust-rule-save-btn').textContent = 'Update Rule';
+  document.getElementById('cust-rule-to')?.focus();
+}
+
+async function deleteCustomisationRule(id) {
+  if (!confirm('Delete this rule?')) return;
+  try {
+    await api(`/api/customisation-rules/${id}`, { method: 'DELETE' });
+    await loadCustomisationRules();
+    toast('Rule deleted', 'success');
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function clearCustomisationRuleForm() {
+  document.getElementById('cust-rule-id').value    = '';
+  document.getElementById('cust-rule-type').value  = 'swap';
+  document.getElementById('cust-rule-from').value  = '';
+  document.getElementById('cust-rule-to').value    = '';
+  document.getElementById('cust-rule-price').value = '';
+  document.getElementById('cust-rule-label').value = '';
+  document.getElementById('cust-rule-save-btn').textContent = 'Add Rule';
+  _custRuleTypeChanged();
+}
+
+function _custRuleTypeChanged() {
+  const isSwap  = document.getElementById('cust-rule-type')?.value === 'swap';
+  const fromRow = document.getElementById('cust-rule-from-row');
+  if (fromRow) fromRow.style.display = isSwap ? '' : 'none';
 }

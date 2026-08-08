@@ -1697,8 +1697,19 @@ def api_product_substitutions(pid):
     for rl in lines:
         ing = db.session.get(Product, rl.ingredient_id)
         if not ing: continue
-        default_ingredients.append({'ingredient_id': rl.ingredient_id, 'ingredient_name': ing.name, 'qty_base': float(rl.qty_base), 'unit_type': ing.unit_type, 'base_unit': ing.base_unit})
-    alternatives = [{'id': a.id, 'name': a.name, 'unit_type': a.unit_type, 'base_unit': a.base_unit} for a in Product.query.filter_by(product_type='stock_item', is_archived=False).order_by(Product.name.asc()).all()]
+        default_ingredients.append({
+            'ingredient_id': rl.ingredient_id,
+            'ingredient_name': ing.name,
+            'qty_base': float(rl.qty_base),
+            'unit_type': ing.unit_type,
+            'base_unit': ing.base_unit,
+            'category': ing.category.name if ing.category else '',
+        })
+    alternatives = [{
+        'id': a.id, 'name': a.name,
+        'unit_type': a.unit_type, 'base_unit': a.base_unit,
+        'category': a.category.name if a.category else '',
+    } for a in Product.query.filter_by(product_type='stock_item', is_archived=False).order_by(Product.name.asc()).all()]
     history = {}
     try:
         rows = db.session.execute(text("SELECT sub_log FROM sales WHERE product_id = :pid AND sub_log IS NOT NULL LIMIT 500"), {'pid': pid}).fetchall()

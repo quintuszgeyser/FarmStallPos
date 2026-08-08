@@ -865,3 +865,18 @@ class ProductPurchaseOption(db.Model):
     package_size_unit = db.Column(db.String(10), nullable=False, default='g')
     package_unit      = db.Column(db.String(30), nullable=True)
     sort_order        = db.Column(db.Integer, nullable=False, default=0)
+
+
+class CustomisationRule(db.Model):
+    """Flat-price rules for recipe customisations at the teller (swap / extra).
+    Rules take priority over FIFO cost-based pricing when a category match is found.
+    """
+    __tablename__ = 'customisation_rules'
+    id            = db.Column(db.Integer, primary_key=True)
+    rule_type     = db.Column(db.String(10), nullable=False)     # 'swap' | 'extra'
+    from_category = db.Column(db.String(120), nullable=True)     # swap: original ingredient category (null = any)
+    to_category   = db.Column(db.String(120), nullable=False)    # swap: replacement category; extra: added ingredient category
+    price_adj     = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    label         = db.Column(db.String(200), nullable=True)     # shown to teller e.g. "Oat milk surcharge"
+    active        = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    sort_order    = db.Column(db.Integer, nullable=False, default=0, server_default='0')

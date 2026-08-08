@@ -4,6 +4,7 @@ import re
 from flask import Blueprint, jsonify, request
 
 from helpers import get_setting, set_setting, require_role
+from models import db, CustomisationRule
 
 bp = Blueprint('settings', __name__)
 
@@ -156,3 +157,100 @@ def api_settings():
         saved[key] = v
 
     return jsonify({'ok': True, 'saved': saved})
+
+
+# ── Customisation Rules ────────────────────────────────────────────────────────
+
+@bp.route('/api/customisation-rules', methods=['GET'])
+def api_customisation_rules_list():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    rules = CustomisationRule.query.order_by(
+        CustomisationRule.sort_order.asc(), CustomisationRule.id.asc()
+    ).all()
+    return jsonify([{
+        'id': r.id, 'rule_type': r.rule_type,
+        'from_category': r.from_category or '',
+        'to_category': r.to_category,
+        'price_adj': float(r.price_adj),
+        'label': r.label or '',
+        'active': r.active,
+        'sort_order': r.sort_order,
+    } for r in rules])
+
+
+@bp.route('/api/customisation-rules', methods=['POST'])
+def api_customisation_rules_create():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    d = request.json or {}
+    if d.get('rule_type') not in ('swap', 'extra'):
+        return jsonify({'error': 'rule_type must be swap or extra'}), 400
+    if not d.get('to_category', '').strip():
+        return jsonify({'error': 'to_category is required'}), 400
+    try:
+        price_adj = float(d.get('price_adj', 0))
+        if price_adj < 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        return jsonify({'error': 'price_adj must be a non-negative number'}), 400
+    r = CustomisationRule(
+        rule_type=d['rule_type'],
+        from_category=(d.get('from_category') or '').strip() or None,
+        to_category=d['to_category'].strip(),
+        price_adj=price_adj,
+        label=(d.get('label') or '').strip() or None,
+        active=bool(d.get('active', True)),
+        sort_order=int(d.get('sort_order', 0)),
+    )
+    db.session.add(r)
+    db.session.commit()
+    return jsonify({'id': r.id, 'ok': True})
+
+
+@bp.route('/api/customisation-rules/<int:rid>', methods=['PUT'])
+def api_customisation_rules_update(rid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    r = db.session.get(CustomisationRule, rid)
+    if not r:
+        return jsonify({'error': 'Not found'}), 404
+    d = request.json or {}
+    if 'rule_type' in d:
+        if d['rule_type'] not in ('swap', 'extra'):
+            return jsonify({'error': 'rule_type must be swap or extra'}), 400
+        r.rule_type = d['rule_type']
+    if 'from_category' in d:
+        r.from_category = (d['from_category'] or '').strip() or None
+    if 'to_category' in d:
+        if not d['to_category'].strip():
+            return jsonify({'error': 'to_category is required'}), 400
+        r.to_category = d['to_category'].strip()
+    if 'price_adj' in d:
+        try:
+            pa = float(d['price_adj'])
+            if pa < 0:
+                raise ValueError()
+            r.price_adj = pa
+        except (ValueError, TypeError):
+            return jsonify({'error': 'price_adj must be a non-negative number'}), 400
+    if 'label' in d:
+        r.label = (d['label'] or '').strip() or None
+    if 'active' in d:
+        r.active = bool(d['active'])
+    if 'sort_order' in d:
+        r.sort_order = int(d.get('sort_order', 0))
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/customisation-rules/<int:rid>', methods=['DELETE'])
+def api_customisation_rules_delete(rid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    r = db.session.get(CustomisationRule, rid)
+    if not r:
+        return jsonify({'error': 'Not found'}), 404
+    db.session.delete(r)
+    db.session.commit()
+    return jsonify({'ok': True})
