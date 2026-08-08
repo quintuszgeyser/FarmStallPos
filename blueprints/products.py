@@ -1291,7 +1291,7 @@ def api_product_archive(pid):
 def api_product_restore(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     p    = db.session.get(Product, pid)
     if not p:
         return jsonify({'error': 'Not found'}), 404
