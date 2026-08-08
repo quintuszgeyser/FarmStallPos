@@ -208,9 +208,15 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
         prod = db.session.get(Product, ingredient_id)
         if not (prod and prod.is_produced):
             # Made-to-order recipe: consume raw ingredients recursively.
+            # qty_needed is in "portions/units" of the recipe output.
+            # batch_size defines how many portions one recipe run produces, so divide to get
+            # the correct fraction of ingredients (default batch_size=1 preserves old behaviour).
+            batch_sz = Decimal(str(prod.batch_size or 1)) if prod else Decimal('1')
+            if batch_sz <= 0:
+                batch_sz = Decimal('1')
             total_cost = Decimal('0')
             for sub in sub_lines:
-                sub_qty = sub.qty_base * qty_needed
+                sub_qty = sub.qty_base * qty_needed / batch_sz
                 total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1)
             return total_cost
         # Batch-produced recipe: fall through to consume from its own finished-goods batch.

@@ -3012,10 +3012,9 @@ function openProductEditor(p) {
   if (_wacCostEl)   _wacCostEl.textContent   = '—';
   initCalcMarkup(p);
   updateProductTypeSections(p?.product_type ?? 'stock_item');
-  // Sync batch-size visibility after type sections are built
+  // Sync batch-size labels after type sections are built
   const _ypEl = document.getElementById('p-is-produced');
-  const _yuEl = document.getElementById('row-batch-size');
-  if (_ypEl && _yuEl) { _ypEl.checked ? show(_yuEl) : hide(_yuEl); }
+  if (_ypEl) _updateBatchSizeLabels(_ypEl.checked);
 
   // Restore price display unit after sections are built
   const savedPriceUnit = document.getElementById('p-price')?.dataset?.displayUnit;
@@ -3353,7 +3352,10 @@ function getIngredientCost(productId, qty, _depth = 0) {
     return parseFloat(qty) * (STATE._productCostMap?.[productId] || 0);
   }
   if (p.product_type === 'recipe') {
-    const perUnit = p.is_produced ? (p.batch_size || 1) : 1;
+    // batch_size defines how many portions one recipe run produces.
+    // Divide qty by batch_size so "N portions" correctly maps to N/batch_size recipe runs worth of ingredients.
+    // Default batch_size=1 preserves existing behaviour for new recipes.
+    const perUnit = Math.max(1, p.batch_size || 1);
     const lines = p.recipe_lines || [];
     return lines.reduce((sum, rl) => {
       return sum + getIngredientCost(rl.ingredient_id, rl.qty_base * qty / perUnit, _depth + 1);
@@ -3572,10 +3574,28 @@ document.getElementById('btn-add-recipe-line')?.addEventListener('click', () => 
 
 document.getElementById('p-is-produced')?.addEventListener('change', () => {
   const on = document.getElementById('p-is-produced').checked;
-  on ? show(document.getElementById('row-batch-size')) : hide(document.getElementById('row-batch-size'));
+  _updateBatchSizeLabels(on);
   on ? show(document.getElementById('section-unit-type-early')) : hide(document.getElementById('section-unit-type-early'));
   _recalcRecipeWac();
 });
+
+function _updateBatchSizeLabels(isProduced) {
+  const labelEl   = document.getElementById('batch-size-label');
+  const descEl    = document.getElementById('batch-size-desc');
+  const descMain  = document.getElementById('p-is-produced-desc');
+  const unitDesc  = document.getElementById('stock-unit-desc');
+  if (isProduced) {
+    if (labelEl)  labelEl.textContent  = 'Batch size (units produced per batch)';
+    if (descEl)   descEl.textContent   = 'How many finished units one produce run creates. Used to calculate cost per unit.';
+    if (descMain) descMain.textContent = 'Baked, brewed, or prepared in advance. Stock is added when you produce a batch; teller sells from finished stock.';
+    if (unitDesc) unitDesc.textContent = 'What to call one finished unit. Leave blank for "unit".';
+  } else {
+    if (labelEl)  labelEl.textContent  = 'Recipe yield (portions this recipe makes per run)';
+    if (descEl)   descEl.textContent   = 'How many portions one run of this recipe produces. Used to scale ingredient costs when this recipe is used as an ingredient in another recipe.';
+    if (descMain) descMain.textContent = 'Made fresh on demand — no pre-made stock. When another recipe lists this as an ingredient, the system divides the quantity by this yield to determine the correct proportion of raw ingredients to consume.';
+    if (unitDesc) unitDesc.textContent = 'What to call one portion of this recipe. Used when this recipe is an ingredient in other recipes.';
+  }
+}
 
 document.getElementById('p-batch-size')?.addEventListener('input', _recalcRecipeWac);
 
@@ -3628,8 +3648,10 @@ function _recalcRecipeWac() {
   });
 
   const isProduced = document.getElementById('p-is-produced')?.checked;
+  // WAC is per SOLD UNIT: batch-produced divides by batch_size (N finished items per run);
+  // made-to-order uses 1 because "1 unit sold" = the full recipe run output.
   const batchSize  = isProduced
-    ? (parseFloat(document.getElementById('p-batch-size')?.value || '1') || 1)
+    ? Math.max(1, parseFloat(document.getElementById('p-batch-size')?.value || '1') || 1)
     : 1;
   const wac = totalCost / batchSize;
   _lastCalcWac = wac;
@@ -3643,7 +3665,7 @@ function _recalcRecipeWac() {
   if (statusEl) statusEl.textContent = '';
 
   if (perUnitEl) {
-    if (isProduced) {
+    if (isProduced || (parseFloat(document.getElementById('p-batch-size')?.value || '1') || 1) > 1) {
       const stockUnit = document.getElementById('p-stock-unit')?.value?.trim() || 'unit';
       perUnitEl.textContent = `per ${stockUnit}`;
     } else {
@@ -19473,7 +19495,7 @@ async function _renderBackupList() {
           <button class="btn btn-outline-secondary btn-xs btn-sm" onclick="triggerVerify('${f.id}', this)" title="Verify integrity">
             <i class="bi bi-patch-check"></i>
           </button>
-          <button class="btn btn-outline-primary btn-xs btn-sm" onclick="openRestoreModal('${f.id}', '${f.name.replace(/'/g, '')}')" title="Restore from this backup">
+          <button class="btn btn-outline-primary btn-xs btn-sm" onclick="openBackupRestoreModal('${f.id}', '${f.name.replace(/'/g, '')}')" title="Restore from this backup">
             <i class="bi bi-arrow-counterclockwise"></i>
           </button>
           <button class="btn btn-outline-danger btn-xs btn-sm" onclick="deleteBackup('${f.id}', this)" title="Delete this backup">
@@ -19616,7 +19638,7 @@ async function deleteBackup(fileId, btn) {
   } catch (e) { toast(e.message, 'error'); if (btn) btn.disabled = false; }
 }
 
-async function openRestoreModal(fileId, fileName) {
+async function openBackupRestoreModal(fileId, fileName) {
   let targets = [];
   try { const s = await api('/api/backup/status'); targets = s.available_restore_targets || []; }
   catch (e) { targets = []; }
