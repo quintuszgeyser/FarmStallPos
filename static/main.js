@@ -13753,21 +13753,9 @@ document.addEventListener('shown.bs.tab', async (evt) => {
 // APP INIT
 // ═══════════════════════════════════════════════════════
 (async function init() {
+  updateVisibility(); // show login card immediately — STATE.user is null at startup
   try { await api('/api/logout', { method: 'POST' }); } catch {}
-  updateVisibility();
-  await refreshMe();
-  if (STATE.user) {
-    await loadProducts();
-    await loadPackaging();
-    await loadTransactions();
-    if (isAdmin()) {
-      await loadSettings();
-      await loadStats();
-      await loadUsers();
-      await loadSpecials();
-      _startBackupWatcher();
-    }
-  }
+  // No refreshMe() needed — we just logged out, user must log in fresh
 })();
 
 // ═══════════════════════════════════════════════════════
