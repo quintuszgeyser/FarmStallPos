@@ -639,7 +639,7 @@ document.getElementById('btn-logout-top')?.addEventListener('click', doLogout);
 async function loadProducts() {
   if (!STATE.user) return;
   try {
-    const _productsResp = await api('/api/products?full=1');
+    const _productsResp = await api('/api/products?full=1', {}, 30000);
     if (!Array.isArray(_productsResp)) throw new Error('Products response was not an array — possible tunnel/proxy misconfiguration');
     STATE.products = _productsResp;
     // Build supplier map from all-time batch data included in the products response
