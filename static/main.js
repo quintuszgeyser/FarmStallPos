@@ -16702,6 +16702,7 @@ function stopCustomerPolling() {
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', startCustomerPolling);
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('hidden.bs.tab', stopCustomerPolling);
 document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', () => setTimeout(_focusTrap, 200));
+document.querySelector('[data-bs-target="#teller"]')?.addEventListener('shown.bs.tab', () => { if (STATE.products.length) renderTellerGrid(); });
 
 function _sizeTellerScreen() {
   const el = document.getElementById('teller-screen');
