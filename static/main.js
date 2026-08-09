@@ -588,7 +588,6 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
   try {
     hide(_loginCard); show(_loginLoading); _setLoginMsg('Signing in…');
     const _loginResp = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }, 30000);
-    _setLoginMsg('Loading products…');
     await refreshMe();
     // Always land on the Teller tab after login
     const tellerTab = document.querySelector('[data-bs-target="#teller"]');
@@ -596,13 +595,19 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     setTimeout(_focusTrap, 400);
     initSerialSupport();
     _loadCostCategories();   // non-blocking: populates type dropdown for cost entry
-    // Products are bundled in the login response — no second round-trip needed
     if (Array.isArray(_loginResp?.products)) {
-      await _applyProductsResponse(_loginResp.products);
+      // Products bundled in login response — render teller immediately, no extra round-trip
+      STATE.products = _loginResp.products;
+      STATE._productSupplierMap = {};
+      STATE.products.forEach(p => { if (p.supplier_names) STATE._productSupplierMap[p.id] = p.supplier_names.toLowerCase(); });
+      renderTellerGrid();
+      hide(_loginLoading);  // teller is visible — spinner gone, no extra delay
+      loadCategories().then(() => renderProductsCards()).catch(() => {});
     } else {
+      _setLoginMsg('Loading products…');
       await loadProducts();
+      hide(_loginLoading);
     }
-    hide(_loginLoading);
     await loadPackaging();
     _restoreCartFromSession();  // restore cart if session expired mid-sale
     await loadTransactions();
