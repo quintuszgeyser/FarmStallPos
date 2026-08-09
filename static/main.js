@@ -608,21 +608,15 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
       await loadProducts();
       hide(_loginLoading);
     }
-    await loadPackaging();
+    await Promise.all([loadPackaging(), loadTransactions(), loadSpecials()]);
     _restoreCartFromSession();  // restore cart if session expired mid-sale
-    await loadTransactions();
-    await loadSpecials();
     startKitchenBadgePoll();  // badge visible to all users
     startCustomerVisitPoll(); // greet returning customers on teller screen
     const _loginRoles = STATE.user?.roles || [STATE.user?.role];
     if (_loginRoles.includes('admin')) {
-      await loadSettings();
+      await loadSettings();   // must complete first — populateStatsProductFilter reads it
       _populateStatsProductFilter();
-      await loadStats();
-      await loadUsers();
-      await loadIngredients();  // pre-load cost map for recipe editor
-      await loadSuppliers();    // pre-load for receive stock dropdown
-      await loadSpecials();
+      await Promise.all([loadStats(), loadUsers(), loadIngredients(), loadSuppliers(), loadSpecials()]);
       startKitchenBadgePoll();  // keep badge count live across all tabs
       // Load customisation pricing rules (non-blocking — used by subsModal)
       fetch('/api/customisation-rules').then(r => r.ok ? r.json() : []).then(rules => { STATE._customisationRules = rules || []; }).catch(() => {});

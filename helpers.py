@@ -751,7 +751,8 @@ def _parse_dt(value: str, is_end: bool = False):
 
 
 def _serialize_product(p, include_recipe=False, include_packages=False, image_cache=None, supplier_cache=None,
-                        stock_cache=None, purchase_options_cache=None, latest_batch_cache=None, purchase_cost_cache=None):
+                        stock_cache=None, purchase_options_cache=None, latest_batch_cache=None, purchase_cost_cache=None,
+                        recipe_lines_cache=None, sell_packages_cache=None):
     d = {
         'id':           p.id,
         'name':         p.name,
@@ -861,7 +862,7 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
             ).filter(Purchase.product_id == p.id).one()
             d['unit_cost'] = float(total_value) / float(total_qty) if total_qty else None
     if include_recipe and p.product_type in ('recipe',):
-        lines = RecipeLine.query.filter_by(product_id=p.id).all()
+        lines = recipe_lines_cache[p.id] if recipe_lines_cache is not None else RecipeLine.query.filter_by(product_id=p.id).all()
         d['recipe_lines'] = []
         for ln in lines:
             ing = db.session.get(Product, ln.ingredient_id)
@@ -873,16 +874,18 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
                 'qty_base':        float(ln.qty_base),
             })
     if include_packages and p.product_type == 'stock_item':
-        pkgs = Product.query.filter_by(parent_stock_item_id=p.id).all()
+        pkgs = sell_packages_cache[p.id] if sell_packages_cache is not None else Product.query.filter_by(parent_stock_item_id=p.id).all()
         d['sell_packages'] = []
         for pkg in pkgs:
-            rl = RecipeLine.query.filter_by(product_id=pkg.id).first()
+            pkg_rl = (sell_packages_cache.get('_rl', {}).get(pkg.id)
+                      if sell_packages_cache is not None
+                      else RecipeLine.query.filter_by(product_id=pkg.id).first())
             d['sell_packages'].append({
                 'id':       pkg.id,
                 'name':     pkg.name,
                 'price':    float(pkg.price) if pkg.price is not None else None,
                 'barcode':  pkg.barcode,
-                'qty_base': float(rl.qty_base) if rl else None,
+                'qty_base': float(pkg_rl.qty_base) if pkg_rl else None,
             })
     return d
 
@@ -944,11 +947,28 @@ def build_full_products_list():
     ).filter(Purchase.product_id.in_(pid_list)).group_by(Purchase.product_id).all()):
         purchase_cost_cache[pid] = float(total_value) / float(total_qty) if total_qty else None
 
+    recipe_lines_cache = defaultdict(list)
+    for rl in RecipeLine.query.filter(RecipeLine.product_id.in_(pid_list)).all():
+        recipe_lines_cache[rl.product_id].append(rl)
+
+    # sell_packages_cache: product_id → [Package products]; '_rl' key → {pkg_id: RecipeLine}
+    sell_packages_cache = defaultdict(list)
+    sell_packages_cache['_rl'] = {}
+    pkg_ids = []
+    for pkg in Product.query.filter(Product.parent_stock_item_id.in_(pid_list)).all():
+        sell_packages_cache[pkg.parent_stock_item_id].append(pkg)
+        pkg_ids.append(pkg.id)
+    if pkg_ids:
+        for rl in RecipeLine.query.filter(RecipeLine.product_id.in_(pkg_ids)).all():
+            sell_packages_cache['_rl'][rl.product_id] = rl
+
     return [_serialize_product(p, include_recipe=True, include_packages=True,
                                image_cache=image_cache,
                                supplier_cache=supplier_cache,
                                stock_cache=stock_cache,
                                purchase_options_cache=purchase_options_cache,
                                latest_batch_cache=latest_batch_cache,
-                               purchase_cost_cache=purchase_cost_cache)
+                               purchase_cost_cache=purchase_cost_cache,
+                               recipe_lines_cache=recipe_lines_cache,
+                               sell_packages_cache=sell_packages_cache)
             for p in products]
