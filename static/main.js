@@ -582,7 +582,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
   const username = document.getElementById('login-username').value.trim();
   const password = document.getElementById('login-password').value;
   try {
-    await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+    const _loginResp = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }, 30000);
     await refreshMe();
     // Always land on the Teller tab after login
     const tellerTab = document.querySelector('[data-bs-target="#teller"]');
@@ -590,7 +590,12 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     setTimeout(_focusTrap, 400);
     initSerialSupport();
     _loadCostCategories();   // non-blocking: populates type dropdown for cost entry
-    await loadProducts();
+    // Products are bundled in the login response — no second round-trip needed
+    if (Array.isArray(_loginResp?.products)) {
+      await _applyProductsResponse(_loginResp.products);
+    } else {
+      await loadProducts();
+    }
     await loadPackaging();
     _restoreCartFromSession();  // restore cart if session expired mid-sale
     await loadTransactions();
@@ -636,20 +641,23 @@ document.getElementById('btn-logout-top')?.addEventListener('click', doLogout);
 // ═══════════════════════════════════════════════════════
 // PRODUCTS
 // ═══════════════════════════════════════════════════════
+async function _applyProductsResponse(productsArray) {
+  STATE.products = productsArray;
+  STATE._productSupplierMap = {};
+  STATE.products.forEach(p => {
+    if (p.supplier_names) STATE._productSupplierMap[p.id] = p.supplier_names.toLowerCase();
+  });
+  renderTellerGrid();
+  await loadCategories();
+  renderProductsCards();
+}
+
 async function loadProducts() {
   if (!STATE.user) return;
   try {
     const _productsResp = await api('/api/products?full=1', {}, 30000);
     if (!Array.isArray(_productsResp)) throw new Error('Products response was not an array — possible tunnel/proxy misconfiguration');
-    STATE.products = _productsResp;
-    // Build supplier map from all-time batch data included in the products response
-    STATE._productSupplierMap = {};
-    STATE.products.forEach(p => {
-      if (p.supplier_names) STATE._productSupplierMap[p.id] = p.supplier_names.toLowerCase();
-    });
-    renderTellerGrid();  // teller needs no category data — show immediately
-    await loadCategories();
-    renderProductsCards();
+    await _applyProductsResponse(_productsResp);
   } catch (e) { console.error('loadProducts', e); }
 }
 

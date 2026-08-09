@@ -25,6 +25,7 @@ from models import (
     Sale, Purchase,
     ConsignmentLiability,
     ProductPurchaseOption,
+    Supplier,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
 
@@ -884,3 +885,70 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
                 'qty_base': float(rl.qty_base) if rl else None,
             })
     return d
+
+
+def build_full_products_list():
+    """Serialize all products with bulk caches — same result as GET /api/products?full=1.
+    Used by the login endpoint so the client gets products in one round-trip."""
+    from collections import defaultdict
+
+    products = Product.query.order_by(Product.name.asc()).all()
+    if not products:
+        return []
+    pid_list = [p.id for p in products]
+
+    all_images = (ProductImage.query
+                  .filter(ProductImage.product_id.in_(pid_list))
+                  .order_by(ProductImage.product_id, ProductImage.display_order).all())
+    image_cache = defaultdict(list)
+    for img in all_images:
+        image_cache[img.product_id].append({
+            'id': img.id, 'filename': img.filename,
+            'is_primary': img.is_primary, 'display_order': img.display_order,
+        })
+
+    supplier_cache: dict = {}
+    for pid, sname in (db.session.query(StockBatch.product_id, Supplier.name)
+                       .join(Supplier, Supplier.id == StockBatch.supplier_id)
+                       .filter(StockBatch.supplier_id.isnot(None)).all()):
+        if pid not in supplier_cache:
+            supplier_cache[pid] = []
+        if sname and sname not in supplier_cache[pid]:
+            supplier_cache[pid].append(sname)
+
+    stock_cache = defaultdict(float)
+    for pid, total in (db.session.query(StockBatch.product_id, func.sum(StockBatch.qty_remaining_base))
+                       .filter(StockBatch.product_id.in_(pid_list))
+                       .group_by(StockBatch.product_id).all()):
+        stock_cache[pid] = float(total or 0)
+
+    purchase_options_cache = defaultdict(list)
+    for opt in ProductPurchaseOption.query.filter(
+            ProductPurchaseOption.product_id.in_(pid_list)).all():
+        purchase_options_cache[opt.product_id].append(opt)
+
+    subq = (db.session.query(StockBatch.product_id, func.max(StockBatch.id).label('max_id'))
+            .filter(StockBatch.product_id.in_(pid_list))
+            .group_by(StockBatch.product_id).subquery())
+    latest_batch_cache: dict = {}
+    for pid, cost in (db.session.query(StockBatch.product_id, StockBatch.cost_per_base_unit)
+                      .join(subq, (StockBatch.product_id == subq.c.product_id) &
+                                  (StockBatch.id == subq.c.max_id)).all()):
+        latest_batch_cache[pid] = float(cost) if cost else None
+
+    purchase_cost_cache: dict = {}
+    for pid, total_value, total_qty in (db.session.query(
+        Purchase.product_id,
+        func.coalesce(func.sum(Purchase.qty_added * Purchase.purchase_price), 0),
+        func.coalesce(func.sum(Purchase.qty_added), 0),
+    ).filter(Purchase.product_id.in_(pid_list)).group_by(Purchase.product_id).all()):
+        purchase_cost_cache[pid] = float(total_value) / float(total_qty) if total_qty else None
+
+    return [_serialize_product(p, include_recipe=True, include_packages=True,
+                               image_cache=image_cache,
+                               supplier_cache=supplier_cache,
+                               stock_cache=stock_cache,
+                               purchase_options_cache=purchase_options_cache,
+                               latest_batch_cache=latest_batch_cache,
+                               purchase_cost_cache=purchase_cost_cache)
+            for p in products]
