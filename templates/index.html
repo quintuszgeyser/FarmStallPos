@@ -800,6 +800,11 @@
   </div>
 
   <!-- Login -->
+  <div id="login-loading" class="hidden text-center py-4">
+    <div class="spinner-border text-success mb-2" role="status"></div>
+    <div id="login-loading-msg" class="text-muted small">Signing in…</div>
+  </div>
+
   <div id="login-card" class="card mb-3">
     <div class="card-body">
       <h5 class="card-title">Login</h5>
@@ -4336,7 +4341,7 @@
 </script>
 <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260809-login-bundle"></script>
+<script src="/static/main.js?v=20260809-login-spinner"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">

@@ -581,8 +581,14 @@ async function _checkBackupHealth() {
 document.getElementById('btn-login')?.addEventListener('click', async () => {
   const username = document.getElementById('login-username').value.trim();
   const password = document.getElementById('login-password').value;
+  const _loginLoading = document.getElementById('login-loading');
+  const _loginLoadingMsg = document.getElementById('login-loading-msg');
+  const _loginCard = document.getElementById('login-card');
+  const _setLoginMsg = (msg) => { if (_loginLoadingMsg) _loginLoadingMsg.textContent = msg; };
   try {
+    hide(_loginCard); show(_loginLoading); _setLoginMsg('Signing in…');
     const _loginResp = await api('/api/login', { method: 'POST', body: JSON.stringify({ username, password }) }, 30000);
+    _setLoginMsg('Loading products…');
     await refreshMe();
     // Always land on the Teller tab after login
     const tellerTab = document.querySelector('[data-bs-target="#teller"]');
@@ -596,6 +602,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
     } else {
       await loadProducts();
     }
+    hide(_loginLoading);
     await loadPackaging();
     _restoreCartFromSession();  // restore cart if session expired mid-sale
     await loadTransactions();
@@ -616,6 +623,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
       fetch('/api/customisation-rules').then(r => r.ok ? r.json() : []).then(rules => { STATE._customisationRules = rules || []; }).catch(() => {});
     }
   } catch (e) {
+    hide(_loginLoading); show(_loginCard);
     const s = document.getElementById('login-status');
     if (s) s.textContent = e.message;
   }
