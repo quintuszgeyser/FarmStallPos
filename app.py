@@ -2348,6 +2348,7 @@ def _register_routes(_app):
     from blueprints.families        import bp as families_bp
     from blueprints.packaging       import bp as packaging_bp
     from blueprints.backup          import bp as backup_bp
+    from blueprints.cctv            import bp as cctv_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -2376,6 +2377,7 @@ def _register_routes(_app):
     _app.register_blueprint(families_bp)
     _app.register_blueprint(packaging_bp)
     _app.register_blueprint(backup_bp)
+    _app.register_blueprint(cctv_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

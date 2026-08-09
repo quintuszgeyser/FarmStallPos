@@ -9128,7 +9128,7 @@ function fillUserEditor(u) {
   document.getElementById('u-username').value = u.username;
   document.getElementById('u-password').value = '';
   const userRoles = u.roles || (u.role ? u.role.split(',').map(r=>r.trim()) : ['teller']);
-  ['admin','teller','developer'].forEach(r => {
+  ['admin','teller','developer','cctv'].forEach(r => {
     const cb = document.getElementById(`u-role-${r}`); if (cb) cb.checked = userRoles.includes(r);
   });
   const act = document.getElementById('u-active'); if (act) act.checked = !!u.active;
@@ -9150,13 +9150,13 @@ function _setUserFormMode(mode) {
 
 function _clearUserForm() {
   ['u-username','u-password'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  ['admin','teller','developer'].forEach(r => { const cb = document.getElementById(`u-role-${r}`); if(cb) cb.checked = r==='teller'; });
+  ['admin','teller','developer','cctv'].forEach(r => { const cb = document.getElementById(`u-role-${r}`); if(cb) cb.checked = r==='teller'; });
   const act = document.getElementById('u-active'); if (act) act.checked = true;
   _setUserFormMode('add');
 }
 
 function getSelectedRoles() {
-  return ['admin','teller','developer']
+  return ['admin','teller','developer','cctv']
     .filter(r => document.getElementById(`u-role-${r}`)?.checked)
     .join(',') || 'teller';
 }

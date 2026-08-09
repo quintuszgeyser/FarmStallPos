@@ -92,7 +92,7 @@ def api_users_post():
     password = data.get('password', '').strip()
     if not username or not password:
         return jsonify({'error': 'Username and password required'}), 400
-    valid_roles = {'admin', 'teller', 'developer'}
+    valid_roles = {'admin', 'teller', 'developer', 'cctv'}
     role_set = {r.strip() for r in role.split(',') if r.strip()}
     if not role_set or not role_set.issubset(valid_roles):
         return jsonify({'error': f'Invalid role(s). Valid: {", ".join(sorted(valid_roles))}'}), 400
@@ -119,7 +119,7 @@ def api_users_update():
     if not u:
         return jsonify({'error': 'User not found'}), 404
     if role:
-        valid_roles = {'admin', 'teller', 'developer'}
+        valid_roles = {'admin', 'teller', 'developer', 'cctv'}
         role_set = {r.strip() for r in role.split(',') if r.strip()}
         if role_set and role_set.issubset(valid_roles):
             u.role = ','.join(sorted(role_set))
@@ -149,26 +149,6 @@ def api_users_delete(username):
     db.session.commit()
     return jsonify({'ok': True})
 
-
-@bp.route('/api/cctv-auth', methods=['GET'])
-def api_cctv_auth():
-    """nginx auth_request endpoint for cctv.ladycoleen.co.za.
-    Validates HTTP Basic Auth credentials against the POS user table.
-    Returns 200 if valid, 401 otherwise."""
-    import base64
-    auth_header = request.headers.get('Authorization', '')
-    if not auth_header.startswith('Basic '):
-        return ('', 401, {'WWW-Authenticate': 'Basic realm="Lady Coleen CCTV"'})
-    try:
-        credentials = base64.b64decode(auth_header[6:]).decode('utf-8')
-        username, password = credentials.split(':', 1)
-    except Exception:
-        return ('', 401, {'WWW-Authenticate': 'Basic realm="Lady Coleen CCTV"'})
-    user = User.query.filter_by(username=username, active=True).first()
-    dummy = user.password_hash if user else generate_password_hash('dummy-constant')
-    if not user or not check_password_hash(dummy, password):
-        return ('', 401, {'WWW-Authenticate': 'Basic realm="Lady Coleen CCTV"'})
-    return ('', 200)
 
 
 @bp.route('/api/users/change_password', methods=['POST'])
