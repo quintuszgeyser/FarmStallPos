@@ -175,8 +175,12 @@ def api_products_get():
             'id': img.id, 'filename': img.filename,
             'is_primary': img.is_primary, 'display_order': img.display_order,
         })
-    # Build supplier cache: product_id → list of unique supplier names (all batches, all time)
-    from models import StockBatch, Supplier as _Sup
+    from models import StockBatch, Supplier as _Sup, ProductPurchaseOption, Purchase
+    from sqlalchemy import func
+
+    pid_list = [p.id for p in products]
+
+    # Supplier cache: product_id → list of unique supplier names
     supplier_cache: dict = {}
     if products:
         for pid, sname in (db.session.query(StockBatch.product_id, _Sup.name)
@@ -188,10 +192,57 @@ def api_products_get():
             if sname and sname not in supplier_cache[pid]:
                 supplier_cache[pid].append(sname)
 
+    # Stock level cache: product_id → float (sum of remaining batch qty)
+    stock_cache = defaultdict(float)
+    if products:
+        for pid, total in (db.session.query(StockBatch.product_id, func.sum(StockBatch.qty_remaining_base))
+                           .filter(StockBatch.product_id.in_(pid_list))
+                           .group_by(StockBatch.product_id).all()):
+            stock_cache[pid] = float(total or 0)
+
+    # Purchase options cache: product_id → list of ProductPurchaseOption
+    purchase_options_cache = defaultdict(list)
+    if products:
+        for opt in ProductPurchaseOption.query.filter(
+            ProductPurchaseOption.product_id.in_(pid_list)
+        ).all():
+            purchase_options_cache[opt.product_id].append(opt)
+
+    # Latest batch cost cache: product_id → float|None (most recent batch cost_per_base_unit)
+    latest_batch_cache: dict = {}
+    if products:
+        # Use a subquery to get the row with max purchased_at + max id per product
+        subq = (db.session.query(
+            StockBatch.product_id,
+            func.max(StockBatch.id).label('max_id'),
+        ).filter(StockBatch.product_id.in_(pid_list))
+         .group_by(StockBatch.product_id)
+         .subquery())
+        for pid, cost in (db.session.query(StockBatch.product_id, StockBatch.cost_per_base_unit)
+                          .join(subq, (StockBatch.product_id == subq.c.product_id) &
+                                      (StockBatch.id == subq.c.max_id))
+                          .all()):
+            latest_batch_cache[pid] = float(cost) if cost else None
+
+    # Weighted-average purchase cost cache for simple products: product_id → float|None
+    purchase_cost_cache: dict = {}
+    if products:
+        for pid, total_value, total_qty in (db.session.query(
+            Purchase.product_id,
+            func.coalesce(func.sum(Purchase.qty_added * Purchase.purchase_price), 0),
+            func.coalesce(func.sum(Purchase.qty_added), 0),
+        ).filter(Purchase.product_id.in_(pid_list))
+         .group_by(Purchase.product_id).all()):
+            purchase_cost_cache[pid] = float(total_value) / float(total_qty) if total_qty else None
+
     return jsonify([_serialize_product(p, include_recipe=include_recipe,
                                        include_packages=include_recipe,
                                        image_cache=image_cache,
-                                       supplier_cache=supplier_cache) for p in products])
+                                       supplier_cache=supplier_cache,
+                                       stock_cache=stock_cache,
+                                       purchase_options_cache=purchase_options_cache,
+                                       latest_batch_cache=latest_batch_cache,
+                                       purchase_cost_cache=purchase_cost_cache) for p in products])
 
 
 @bp.route('/api/products/<int:pid>', methods=['GET'])

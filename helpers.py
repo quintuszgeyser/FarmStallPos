@@ -749,7 +749,8 @@ def _parse_dt(value: str, is_end: bool = False):
         return None
 
 
-def _serialize_product(p, include_recipe=False, include_packages=False, image_cache=None, supplier_cache=None):
+def _serialize_product(p, include_recipe=False, include_packages=False, image_cache=None, supplier_cache=None,
+                        stock_cache=None, purchase_options_cache=None, latest_batch_cache=None, purchase_cost_cache=None):
     d = {
         'id':           p.id,
         'name':         p.name,
@@ -820,13 +821,17 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
                 'sort_order':       opt.sort_order,
             }
             for opt in sorted(
-                ProductPurchaseOption.query.filter_by(product_id=p.id).all(),
+                purchase_options_cache[p.id] if purchase_options_cache is not None
+                else ProductPurchaseOption.query.filter_by(product_id=p.id).all(),
                 key=lambda o: (o.sort_order, o.id)
             )
         ],
-        'cost_per_base_unit':     (lambda _b: float(_b.cost_per_base_unit) if _b and _b.cost_per_base_unit else None)(
-            StockBatch.query.filter_by(product_id=p.id)
-            .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).first()
+        'cost_per_base_unit':     (
+            latest_batch_cache.get(p.id) if latest_batch_cache is not None
+            else (lambda _b: float(_b.cost_per_base_unit) if _b and _b.cost_per_base_unit else None)(
+                StockBatch.query.filter_by(product_id=p.id)
+                .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc()).first()
+            )
         ),
         'images': image_cache[p.id] if image_cache is not None else [{
             'id':            img.id,
@@ -836,21 +841,24 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         } for img in ProductImage.query.filter_by(product_id=p.id).order_by(ProductImage.display_order).all()],
     }
     if p.product_type == 'stock_item':
-        d['stock_level'] = get_stock_level(p.id)
+        d['stock_level'] = stock_cache[p.id] if stock_cache is not None else get_stock_level(p.id)
         d['low_stock']   = (
             p.low_stock_threshold is not None and
             d['stock_level'] < float(p.low_stock_threshold)
         )
     if p.product_type == 'recipe' and p.is_produced:
-        d['stock_level'] = get_stock_level(p.id)
+        d['stock_level'] = stock_cache[p.id] if stock_cache is not None else get_stock_level(p.id)
     if p.product_type == 'simple':
         # Weighted-average purchase cost per unit - lets the product page show
         # margin/markup for resale goods (no stock batches, costed from purchases).
-        total_value, total_qty = db.session.query(
-            func.coalesce(func.sum(Purchase.qty_added * Purchase.purchase_price), 0),
-            func.coalesce(func.sum(Purchase.qty_added), 0),
-        ).filter(Purchase.product_id == p.id).one()
-        d['unit_cost'] = float(total_value) / float(total_qty) if total_qty else None
+        if purchase_cost_cache is not None:
+            d['unit_cost'] = purchase_cost_cache.get(p.id)
+        else:
+            total_value, total_qty = db.session.query(
+                func.coalesce(func.sum(Purchase.qty_added * Purchase.purchase_price), 0),
+                func.coalesce(func.sum(Purchase.qty_added), 0),
+            ).filter(Purchase.product_id == p.id).one()
+            d['unit_cost'] = float(total_value) / float(total_qty) if total_qty else None
     if include_recipe and p.product_type in ('recipe',):
         lines = RecipeLine.query.filter_by(product_id=p.id).all()
         d['recipe_lines'] = []
