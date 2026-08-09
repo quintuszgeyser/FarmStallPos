@@ -235,8 +235,14 @@ def _match_condition(p, cond, supplier_map=None):
     return True
 
 
-def _filter_products(conditions, include_archived=False, exclude_ids=None):
+def _filter_products(conditions, include_archived=False, exclude_ids=None, include_ids=None):
     q = Product.query
+    if include_ids is not None:
+        # Explicit ID list (pre-selected products) — ignore conditions and archived flag
+        q = q.filter(Product.id.in_(include_ids))
+        if exclude_ids:
+            q = q.filter(~Product.id.in_(exclude_ids))
+        return q.order_by(Product.name.asc()).all()
     if not include_archived:
         q = q.filter(Product.is_archived == False)
     if exclude_ids:
@@ -419,8 +425,9 @@ def api_bulk_preview():
     actions    = data.get('actions', [])
     include_archived = bool(data.get('include_archived', False))
     exclude_ids = [int(i) for i in data.get('exclude_ids', []) if str(i).isdigit()]
+    product_ids = [int(i) for i in data.get('product_ids', []) if str(i).isdigit()] or None
 
-    matched = _filter_products(conditions, include_archived, exclude_ids or None)
+    matched = _filter_products(conditions, include_archived, exclude_ids or None, include_ids=product_ids)
     changes = []
     for p in matched[:500]:  # cap preview at 500 products
         product_changes = []
@@ -527,11 +534,12 @@ def api_bulk_apply():
     description = (data.get('description') or '').strip()[:200] or None
     include_archived = bool(data.get('include_archived', False))
     exclude_ids = [int(i) for i in data.get('exclude_ids', []) if str(i).isdigit()]
+    product_ids = [int(i) for i in data.get('product_ids', []) if str(i).isdigit()] or None
 
     if not actions:
         return jsonify({'error': 'No actions specified'}), 400
 
-    matched = _filter_products(conditions, include_archived, exclude_ids or None)
+    matched = _filter_products(conditions, include_archived, exclude_ids or None, include_ids=product_ids)
     if not matched:
         return jsonify({'ok': True, 'affected': 0, 'run_id': None})
 

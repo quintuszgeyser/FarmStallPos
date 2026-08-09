@@ -18727,6 +18727,7 @@ let _bulkMatched  = 0;    // count from last filter run
 let _bulkPreviewData = null; // last preview result
 let _bulkFilteredProducts = []; // products returned by last filter run
 let _bulkExcludedIds = new Set(); // product IDs unchecked by user
+let _bulkPreselectedIds = null; // explicit ID list when opened from product selection
 
 async function _bulkEnsureFields() {
   if (_bulkFields) return _bulkFields;
@@ -18739,9 +18740,11 @@ function openBulkEditor(preselectedIds) {
   modal.show();
   _bulkEnsureFields();
   _bulkExcludedIds = new Set();
+  _bulkPreselectedIds = null;
 
   if (preselectedIds && preselectedIds.size > 0) {
     // Products already chosen — skip filter, jump straight to Actions
+    _bulkPreselectedIds = [...preselectedIds]; // send to server so only these are affected
     const matched = (STATE.products || []).filter(p => preselectedIds.has(p.id));
     _bulkFilteredProducts = matched.map(p => ({ id: p.id, name: p.name, product_type: p.product_type, price: p.price }));
     const n = matched.length;
@@ -19039,11 +19042,10 @@ async function bulkRunPreview() {
 
   try {
     const excludeIds = [..._bulkExcludedIds];
-    const resp = await api('/api/products/bulk/preview', {
-      method: 'POST',
-      body: JSON.stringify({ conditions, actions, include_archived: includeArchived, exclude_ids: excludeIds }),
-    });
-    _bulkPreviewData = { conditions, actions, includeArchived, excludeIds };
+    const body = { conditions, actions, include_archived: includeArchived, exclude_ids: excludeIds };
+    if (_bulkPreselectedIds) body.product_ids = _bulkPreselectedIds;
+    const resp = await api('/api/products/bulk/preview', { method: 'POST', body: JSON.stringify(body) });
+    _bulkPreviewData = { conditions, actions, includeArchived, excludeIds, productIds: _bulkPreselectedIds };
 
     const summaryEl = document.getElementById('bulk-preview-summary');
     summaryEl.innerHTML = `
@@ -19075,16 +19077,15 @@ async function bulkRunPreview() {
 
 async function bulkApply() {
   if (!_bulkPreviewData) { toast('Run Preview first', 'warning'); return; }
-  const { conditions, actions, includeArchived, excludeIds } = _bulkPreviewData;
+  const { conditions, actions, includeArchived, excludeIds, productIds } = _bulkPreviewData;
   const description = document.getElementById('bulk-description')?.value?.trim() || '';
   const statusEl = document.getElementById('bulk-apply-status');
   statusEl.textContent = 'Applying…';
   document.getElementById('bulk-apply-btn').disabled = true;
   try {
-    const resp = await api('/api/products/bulk/apply', {
-      method: 'POST',
-      body: JSON.stringify({ conditions, actions, include_archived: includeArchived, description, exclude_ids: excludeIds || [] }),
-    });
+    const body = { conditions, actions, include_archived: includeArchived, description, exclude_ids: excludeIds || [] };
+    if (productIds) body.product_ids = productIds;
+    const resp = await api('/api/products/bulk/apply', { method: 'POST', body: JSON.stringify(body) });
     statusEl.textContent = `Done — ${resp.affected} product${resp.affected !== 1 ? 's' : ''} updated.`;
     toast(`Bulk edit applied — ${resp.affected} products updated`, 'success');
     await loadProducts();
