@@ -647,9 +647,9 @@ async function loadProducts() {
     STATE.products.forEach(p => {
       if (p.supplier_names) STATE._productSupplierMap[p.id] = p.supplier_names.toLowerCase();
     });
+    renderTellerGrid();  // teller needs no category data — show immediately
     await loadCategories();
     renderProductsCards();
-    renderTellerGrid();
   } catch (e) { console.error('loadProducts', e); }
 }
 
