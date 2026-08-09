@@ -608,19 +608,16 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
       await loadProducts();
       hide(_loginLoading);
     }
-    await Promise.all([loadPackaging(), loadTransactions(), loadSpecials()]);
     _restoreCartFromSession();  // restore cart if session expired mid-sale
-    startKitchenBadgePoll();  // badge visible to all users
-    startCustomerVisitPoll(); // greet returning customers on teller screen
-    const _loginRoles = STATE.user?.roles || [STATE.user?.role];
-    if (_loginRoles.includes('admin')) {
-      await loadSettings();   // must complete first — populateStatsProductFilter reads it
-      _populateStatsProductFilter();
-      await Promise.all([loadStats(), loadUsers(), loadIngredients(), loadSuppliers(), loadSpecials()]);
-      startKitchenBadgePoll();  // keep badge count live across all tabs
-      // Load customisation pricing rules (non-blocking — used by subsModal)
-      fetch('/api/customisation-rules').then(r => r.ok ? r.json() : []).then(rules => { STATE._customisationRules = rules || []; }).catch(() => {});
-    }
+    startKitchenBadgePoll();   // badge visible to all roles
+    startCustomerVisitPoll();  // greet returning customers on teller screen
+    // Fire all background loads without awaiting — tabs lazy-load on demand,
+    // specials needed for cart discounts, packaging needed for cart modal,
+    // settings needed for markup %. None block the teller.
+    loadSpecials();
+    loadPackaging();
+    loadSettings();
+    fetch('/api/customisation-rules').then(r => r.ok ? r.json() : []).then(rules => { STATE._customisationRules = rules || []; }).catch(() => {});
   } catch (e) {
     hide(_loginLoading); show(_loginCard);
     const s = document.getElementById('login-status');
@@ -887,11 +884,11 @@ function renderTellerGrid(q = '') {
     const cb = STATE._cartCount[b.id] || 0;
     return cb - ca || a.name.localeCompare(b.name);
   });
-  host.innerHTML = '';
   if (!items.length) {
     host.innerHTML = '<div class="text-muted small py-1">No products match.</div>';
     return;
   }
+  const frag = document.createDocumentFragment();
   items.forEach(p => {
     const tile = document.createElement('div');
     tile.className = 'tpt';
@@ -916,8 +913,10 @@ function renderTellerGrid(q = '') {
       addToCartQty(p, p.batch_size || 1);
     });
     tile.addEventListener('click', () => addToCart(p));
-    host.appendChild(tile);
+    frag.appendChild(tile);
   });
+  host.innerHTML = '';
+  host.appendChild(frag); // single DOM write — avoids 463 individual reflows
 }
 
 let _productSort = { col: null, dir: 1 };
@@ -13748,8 +13747,10 @@ document.addEventListener('shown.bs.tab', async (evt) => {
 // ═══════════════════════════════════════════════════════
 (async function init() {
   updateVisibility(); // show login card immediately — STATE.user is null at startup
+  const _btn = document.getElementById('btn-login');
+  if (_btn) _btn.disabled = true; // prevent login before logout completes (race condition)
   try { await api('/api/logout', { method: 'POST' }); } catch {}
-  // No refreshMe() needed — we just logged out, user must log in fresh
+  if (_btn) _btn.disabled = false;
 })();
 
 // ═══════════════════════════════════════════════════════
