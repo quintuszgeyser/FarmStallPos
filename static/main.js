@@ -401,7 +401,7 @@ async function _deleteImage(imgId, pid) {
   }
 }
 
-async function api(path, opts = {}, timeoutMs = 10000) {
+async function api(path, opts = {}, timeoutMs = 30000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
