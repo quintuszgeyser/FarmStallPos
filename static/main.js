@@ -604,9 +604,8 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
       hide(_loginLoading);  // teller is visible — spinner gone, no extra delay
       loadCategories().then(() => renderProductsCards()).catch(() => {});
     } else {
-      _setLoginMsg('Loading products…');
-      await loadProducts();
-      hide(_loginLoading);
+      hide(_loginLoading);  // show teller immediately — products load in background
+      loadProducts();       // fire-and-forget: renders grid when done
     }
     _restoreCartFromSession();  // restore cart if session expired mid-sale
     startKitchenBadgePoll();   // badge visible to all roles
