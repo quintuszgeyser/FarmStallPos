@@ -3206,7 +3206,7 @@ function updateProductTypeSections(type) {
 
   isStockItem ? show(el('section-stock-item')) : hide(el('section-stock-item'));
   isRecipe    ? show(el('section-recipe'))     : hide(el('section-recipe'));
-  if (!isRecipe) hide(el('row-batch-size'));
+  isRecipe ? show(el('row-batch-size')) : hide(el('row-batch-size'));
   hide(el('row-stock-qty'));
   hide(el('section-purchase'));
   show(el('is-for-sale-row'));
