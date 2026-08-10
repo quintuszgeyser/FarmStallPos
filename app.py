@@ -2118,6 +2118,12 @@ def create_app():
 
     db.init_app(app)
 
+    # Gzip-compress API responses — reduces 750KB products payload to ~120KB
+    from flask_compress import Compress
+    app.config['COMPRESS_MIMETYPES'] = ['application/json', 'text/html', 'text/css', 'application/javascript']
+    app.config['COMPRESS_MIN_SIZE']  = 1000  # only compress responses > 1KB
+    Compress(app)
+
     # Inject environment into Jinja2 globals - used by QA banner in index.html
     app.jinja_env.globals['app_env']       = APP_ENV
     app.jinja_env.globals['is_qa']         = IS_QA

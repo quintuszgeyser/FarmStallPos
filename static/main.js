@@ -658,11 +658,16 @@ async function _applyProductsResponse(productsArray) {
 
 async function loadProducts() {
   if (!STATE.user) return;
+  const grid = document.getElementById('teller-product-grid');
+  if (grid && !STATE.products.length) grid.innerHTML = '<div class="text-muted small py-3 text-center"><i class="bi bi-hourglass-split me-1"></i>Loading products…</div>';
   try {
     const _productsResp = await api('/api/products?full=1', {}, 30000);
     if (!Array.isArray(_productsResp)) throw new Error('Products response was not an array — possible tunnel/proxy misconfiguration');
     await _applyProductsResponse(_productsResp);
-  } catch (e) { console.error('loadProducts', e); }
+  } catch (e) {
+    console.error('loadProducts', e);
+    if (grid) grid.innerHTML = `<div class="text-danger small py-3 text-center"><i class="bi bi-exclamation-triangle me-1"></i>Failed to load products: ${e.message}</div>`;
+  }
 }
 
 async function loadCategories() {

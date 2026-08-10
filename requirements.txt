@@ -14,3 +14,4 @@ qrcode[pil]==7.4.2
 pyusb==1.2.1
 pdfplumber>=0.11.0
 cryptography>=42.0.0
+flask-compress==1.15
