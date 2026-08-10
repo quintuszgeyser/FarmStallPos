@@ -653,6 +653,7 @@ async function _applyProductsResponse(productsArray) {
   renderTellerGrid();
   await loadCategories();
   renderProductsCards();
+  _focusTrap();  // re-focus scanner after background product load completes
 }
 
 async function loadProducts() {
@@ -7642,6 +7643,7 @@ function addToCart(p) {
   detectAndOfferSpecials();
   const srch = document.getElementById('search');
   if (srch && srch.value) { srch.value = ''; renderTellerGrid(); }
+  _focusTrap();  // ready for next scan immediately after adding to cart
 }
 
 function addToCartQty(p, qty) {
@@ -7661,6 +7663,7 @@ function addToCartQty(p, qty) {
   detectAndOfferSpecials();
   const srch = document.getElementById('search');
   if (srch && srch.value) { srch.value = ''; renderTellerGrid(); }
+  _focusTrap();  // ready for next scan immediately after adding to cart
 }
 
 // ── Undo last scan ──
@@ -8162,17 +8165,22 @@ function _releaseScanFocus() {
 
 let _scanBuffer = '', _scanBufferTimer = null;
 
-// Barcode trap: hidden input kept focused on the Teller tab for HID scanner input.
-// On other tabs the global keydown handler catches scanner events directly.
+// Scanner focus: on the Teller tab, keep #search focused so HID scanner events land reliably.
+// Tablets block programmatic focus on tiny hidden inputs — a real visible input works everywhere.
+// inputmode="none" suppresses the virtual keyboard; the user's explicit tap restores it.
 function _focusTrap() {
-  const trap = document.getElementById('barcode-trap');
-  if (!trap || !STATE.user) return;
+  if (!STATE.user) return;
   const active = document.querySelector('.tab-pane.active');
   if (!active || active.id !== 'teller') return;
-  // Don't steal focus from inputs the user intentionally tapped
   const tag = document.activeElement?.tagName;
-  if (['INPUT','TEXTAREA','SELECT'].includes(tag) && document.activeElement.id !== 'barcode-trap') return;
-  trap.focus({ preventScroll: true });
+  const activeId = document.activeElement?.id;
+  // Don't steal focus from intentional inputs (cart qty, weight, etc.) — only override
+  // barcode-trap (old trap) or search (our new trap) or no focused input at all.
+  if (['INPUT','TEXTAREA','SELECT'].includes(tag) && activeId !== 'barcode-trap' && activeId !== 'search') return;
+  const search = document.getElementById('search');
+  if (!search) return;
+  search.setAttribute('inputmode', 'none');  // suppress virtual keyboard when trap-focused
+  search.focus({ preventScroll: true });
 }
 
 document.getElementById('barcode-trap')?.addEventListener('keydown', (e) => {
@@ -8196,6 +8204,12 @@ document.getElementById('teller-screen')?.addEventListener('touchend', _focusTra
 
 // Re-focus trap when search field is cleared/blurred (user finished manual search)
 document.getElementById('search')?.addEventListener('blur', () => setTimeout(_focusTrap, 100));
+
+// When the user explicitly taps #search to type manually, restore the virtual keyboard
+document.getElementById('search')?.addEventListener('pointerdown', () => {
+  const s = document.getElementById('search');
+  if (s) s.removeAttribute('inputmode');
+});
 
 // Also handle #search Enter for cases where user manually typed a barcode
 document.getElementById('search')?.addEventListener('keydown', function(e) {
