@@ -8101,6 +8101,7 @@ document.getElementById('btn-weight-add')?.addEventListener('click', () => {
 // TELLER SEARCH
 // ═══════════════════════════════════════════════════════
 document.getElementById('search')?.addEventListener('input', function() {
+  if (this.getAttribute('inputmode') === 'none') return;  // scanner trap mode — chars aren't manual typing
   renderTellerGrid(this.value);
 });
 
@@ -8211,12 +8212,13 @@ document.getElementById('search')?.addEventListener('pointerdown', () => {
   if (s) s.removeAttribute('inputmode');
 });
 
-// Also handle #search Enter for cases where user manually typed a barcode
+// Handle #search Enter — covers both HID scanner input and manual barcode typing
 document.getElementById('search')?.addEventListener('keydown', function(e) {
   if (e.key !== 'Enter') return;
   e.preventDefault();
   const code = this.value.trim();
   this.value = '';
+  renderTellerGrid();  // reset grid — programmatic clear doesn't fire 'input'
   const host = document.getElementById('product-search-results');
   if (host) host.innerHTML = '';
   if (code.length >= 3) handleScannedCode(code);
