@@ -8204,9 +8204,10 @@ document.getElementById('barcode-trap')?.addEventListener('keydown', (e) => {
   }
 });
 
-// Re-focus trap when user taps anywhere on the teller screen (not on an input)
-document.getElementById('teller-screen')?.addEventListener('click', _focusTrap);
-document.getElementById('teller-screen')?.addEventListener('touchend', _focusTrap);
+// Re-focus trap when user taps anywhere on the teller screen (not on an input).
+// Skip if the tap target is #search — the user intends to type; pointerdown already removed inputmode.
+document.getElementById('teller-screen')?.addEventListener('click', (e) => { if (e.target.id !== 'search') _focusTrap(); });
+document.getElementById('teller-screen')?.addEventListener('touchend', (e) => { if (e.target.id !== 'search') _focusTrap(); });
 
 // Re-focus trap when search field is cleared/blurred (user finished manual search)
 document.getElementById('search')?.addEventListener('blur', () => setTimeout(_focusTrap, 100));
