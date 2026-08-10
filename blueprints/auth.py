@@ -46,9 +46,7 @@ def api_login():
     db.session.add(sess)
     db.session.commit()
     session['session_id'] = sess.id
-    from helpers import build_full_products_list
-    products = build_full_products_list()
-    return jsonify({'ok': True, 'username': user.username, 'role': user.role, 'roles': user.roles, 'products': products})
+    return jsonify({'ok': True, 'username': user.username, 'role': user.role, 'roles': user.roles})
 
 
 @bp.route('/api/logout', methods=['POST'])
