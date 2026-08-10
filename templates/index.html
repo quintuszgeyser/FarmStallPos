@@ -397,6 +397,23 @@
       #teller-left { flex: 0 0 42%; width: 100%; min-height: 0; }
       #teller-right { flex: 1; width: 100%; min-height: 0; border-left: none; padding-left: 0; border-top: 2px solid var(--lc-gold-border); padding-top: 8px; }
     }
+    /* 11" screen compact — recover ~70px of vertical header space */
+    @media (max-height: 840px) {
+      .lc-logo-wrap { height: 42px; }
+      .lc-logo-wrap img { height: 42px; }
+      .lc-brand { padding: 5px 0 4px; margin-bottom: 6px; }
+      .lc-brand span { font-size: 17px; }
+      #auth-bar { padding-bottom: 3px !important; margin-bottom: 4px !important; }
+      #tab-contents { margin-top: 6px !important; }
+      .nav-tabs .nav-link { padding: 4px 10px; font-size: 13px; }
+      .teller-toolbar .form-control { height: 36px; font-size: 15px; }
+      .btn-lg-touch { padding: .4rem .75rem; font-size: 15px; }
+      #teller-product-grid { grid-template-columns: repeat(auto-fill, minmax(82px, 110px)); gap: 4px; }
+      .tpt-ph { font-size: 20px; }
+      #cart .list-group-item { padding: .25rem .4rem; font-size: 14px; }
+      #teller-footer { padding-top: 5px; }
+      #teller-total-row strong { font-size: 1.25rem; }
+    }
     .tpt { border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden; cursor: pointer; background: #fff; user-select: none; transition: box-shadow .1s; touch-action: manipulation; }
     .tpt:hover, .tpt:active { box-shadow: 0 0 0 2px var(--lc-gold-border, #c9a84c); }
     .tpt-img { width: 100%; aspect-ratio: 1; object-fit: cover; object-position: center; display: block; }
@@ -4348,7 +4365,7 @@
 </script>
 <script async src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260810-batch-fix"></script>
+<script src="/static/main.js?v=20260810-11inch"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">
