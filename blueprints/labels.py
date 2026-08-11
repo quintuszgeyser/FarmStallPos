@@ -424,9 +424,7 @@ def api_labels_browser_print_bulk():
     u        = current_user()
 
     import base64
-    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-    # Pre-load all DB objects before threading (SQLAlchemy sessions aren't thread-safe)
     resolved = []
     for item in items:
         pid = int(item.get('product_id', 0))
@@ -440,20 +438,13 @@ def api_labels_browser_print_bulk():
             continue
         resolved.append((_tmpl_dict(tmpl), product, tmpl, qty))
 
-    def _render(args):
-        tmpl_dict, product, _, _ = args
-        return base64.b64encode(svc.render_png_bulk(tmpl_dict, product)).decode()
-
-    # Render all labels in parallel (PIL releases GIL during C-level encode)
-    b64_results = [None] * len(resolved)
-    with ThreadPoolExecutor(max_workers=4) as pool:
-        fut_map = {pool.submit(_render, args): i for i, args in enumerate(resolved)}
-        for fut in as_completed(fut_map):
-            i = fut_map[fut]
-            try:
-                b64_results[i] = fut.result()
-            except Exception as e:
-                log.warning('Bulk browser-print render failed: %s', e)
+    b64_results = []
+    for tmpl_dict, product, _, _ in resolved:
+        try:
+            b64_results.append(base64.b64encode(svc.render_png_bulk(tmpl_dict, product)).decode())
+        except Exception as e:
+            log.warning('Bulk browser-print render failed: %s', e)
+            b64_results.append(None)
 
     label_divs = []
     job_rows   = []
