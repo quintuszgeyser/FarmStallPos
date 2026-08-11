@@ -183,8 +183,9 @@ class LabelRenderService:
             lines = _wrap_text(draw, text, font, ew)
             lh    = _line_height(draw, font)
             gap   = max(1, int(lh * 0.15))
-            total_h = lh * len(lines) + gap * (len(lines) - 1)
-            if total_h <= eh:
+            total_h  = lh * len(lines) + gap * (len(lines) - 1)
+            max_lw   = max(draw.textbbox((0,0), l, font=font)[2] - draw.textbbox((0,0), l, font=font)[0] for l in lines)
+            if total_h <= eh and max_lw <= ew:
                 break
             pt -= 1
 
