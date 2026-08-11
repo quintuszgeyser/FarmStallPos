@@ -18098,10 +18098,11 @@ async function executeBulkPrint() {
         throw new Error(j.error || `Server error ${res.status}`);
       }
       const html = await res.text();
-      const win = window.open('', '_blank', 'width=600,height=400');
+      const blob = new Blob([html], { type: 'text/html' });
+      const url  = URL.createObjectURL(blob);
+      const win  = window.open(url, '_blank');
       if (!win) { toast('Pop-up blocked — allow pop-ups for this site', 'warning'); return; }
-      win.document.write(html);
-      win.document.close();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       toast(`${totalQty} label${totalQty > 1 ? 's' : ''} sent to print dialog`, 'success');
       bootstrap.Modal.getInstance(document.getElementById('bulkLabelModal'))?.hide();
     } else {
