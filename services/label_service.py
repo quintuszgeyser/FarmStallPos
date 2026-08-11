@@ -171,29 +171,41 @@ class LabelRenderService:
 
         # font_size is in typographic points. Convert to pixels at render DPI.
         # 1 pt = 1/72 inch → px = pt × DPI / 72
-        pt    = max(4, float(el.get('font_size') or 9))
-        px_sz = max(6, int(round(pt * DPI / 72)))
-        bold  = el.get('bold', False)
-        font  = _load_font(px_sz, bold)
+        pt   = max(4, float(el.get('font_size') or 9))
+        bold = el.get('bold', False)
 
-        # Measure text so we can apply alignment within the element box
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw   = bbox[2] - bbox[0]   # text width in px
-        th   = bbox[3] - bbox[1]   # text height in px
+        # Auto-fit: wrap text then shrink font until the block fits in the element box.
+        MIN_PT = 4
+        font = lines = None
+        while pt >= MIN_PT:
+            px_sz = max(6, int(round(pt * DPI / 72)))
+            font  = _load_font(px_sz, bold)
+            lines = _wrap_text(draw, text, font, ew)
+            lh    = _line_height(draw, font)
+            gap   = max(1, int(lh * 0.15))
+            total_h = lh * len(lines) + gap * (len(lines) - 1)
+            if total_h <= eh:
+                break
+            pt -= 1
 
-        align = el.get('align', 'left')
-        if align == 'center':
-            tx = ex + max(0, (ew - tw) // 2)
-        elif align == 'right':
-            tx = ex + max(0, ew - tw)
-        else:
-            tx = ex
+        lh      = _line_height(draw, font)
+        gap     = max(1, int(lh * 0.15))
+        total_h = lh * len(lines) + gap * (len(lines) - 1)
 
-        # Vertically centre text within the element box
-        ty = ey + max(0, (eh - th) // 2)
+        align   = el.get('align', 'left')
+        start_y = ey + max(0, (eh - total_h) // 2)
 
-        # Clip drawing to the element bounding box to avoid overflow
-        draw.text((tx, ty), text, fill=color, font=font)
+        for i, line in enumerate(lines):
+            bbox = draw.textbbox((0, 0), line, font=font)
+            tw   = bbox[2] - bbox[0]
+            if align == 'center':
+                tx = ex + max(0, (ew - tw) // 2)
+            elif align == 'right':
+                tx = ex + max(0, ew - tw)
+            else:
+                tx = ex
+            ty = start_y + i * (lh + gap)
+            draw.text((tx, ty), line, fill=color, font=font)
 
     def _render_barcode_pil(self, value: str, el: dict, w_px: int, h_px: int):
         """Render a barcode at high resolution then downsample — crisp at any size."""
@@ -533,6 +545,30 @@ def _load_font(px_size: int, bold: bool = False):
             pass
     # Last resort — Pillow default bitmap font (ignores px_size)
     return ImageFont.load_default()
+
+
+def _line_height(draw, font) -> int:
+    """Height (px) of a single text line for the given font."""
+    bb = draw.textbbox((0, 0), 'Ag', font=font)
+    return max(1, bb[3] - bb[1])
+
+
+def _wrap_text(draw, text: str, font, max_width: int) -> list:
+    """Split text into lines that each fit within max_width pixels."""
+    words = text.split()
+    if not words:
+        return ['']
+    lines, current = [], words[0]
+    for word in words[1:]:
+        candidate = current + ' ' + word
+        bb = draw.textbbox((0, 0), candidate, font=font)
+        if bb[2] - bb[0] <= max_width:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    lines.append(current)
+    return lines
 
 
 def _pick_barcode_format(value: str, hint: str) -> str:
