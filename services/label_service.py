@@ -91,6 +91,16 @@ class LabelRenderService:
         img.save(buf, format='PNG', dpi=(self.RENDER_DPI * dpr, self.RENDER_DPI * dpr))
         return buf.getvalue()
 
+    def render_png_bulk(self, template: dict, product=None) -> bytes:
+        """Fast render for bulk jobs — downscale 3× to printer-native 203 DPI,
+        use fastest PNG compression. ~9× smaller image = ~9× faster encode."""
+        img = self.render_image(template, product)
+        w, h = img.size
+        img = img.resize((w // 3, h // 3), Image.Resampling.NEAREST)
+        buf = io.BytesIO()
+        img.save(buf, format='PNG', optimize=False, compress_level=1)
+        return buf.getvalue()
+
     def render_image(self, template: dict, product=None) -> 'Image':
         """
         Render one label as a PIL Image at 203 DPI.
@@ -522,12 +532,20 @@ class _PrinterNotFound(Exception):
 
 # ── Pure helpers ───────────────────────────────────────────────────────────────
 
+# Font objects are expensive to load (disk read + parse). Cache by (px_size, bold)
+# so the auto-fit loop reuses them across elements and labels.
+_font_cache: dict = {}
+_lh_cache:   dict = {}   # line-height cache keyed by font id
+
+
 def _load_font(px_size: int, bold: bool = False):
     """
     Load a truetype font at px_size pixels. Tries common paths on Ubuntu + Windows.
     Falls back to Pillow's built-in bitmap font (always available, low quality).
     """
-    # Prefer DejaVu — ships with Ubuntu, metrically correct, free
+    key = (px_size, bold)
+    if key in _font_cache:
+        return _font_cache[key]
     candidates = (
         [
             '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
@@ -539,19 +557,28 @@ def _load_font(px_size: int, bold: bool = False):
             'arial.ttf', 'Arial.ttf',
         ]
     )
+    font = None
     for path in candidates:
         try:
-            return ImageFont.truetype(path, px_size)
+            font = ImageFont.truetype(path, px_size)
+            break
         except Exception:
             pass
-    # Last resort — Pillow default bitmap font (ignores px_size)
-    return ImageFont.load_default()
+    if font is None:
+        font = ImageFont.load_default()
+    _font_cache[key] = font
+    return font
 
 
 def _line_height(draw, font) -> int:
     """Height (px) of a single text line for the given font."""
+    fid = id(font)
+    if fid in _lh_cache:
+        return _lh_cache[fid]
     bb = draw.textbbox((0, 0), 'Ag', font=font)
-    return max(1, bb[3] - bb[1])
+    lh = max(1, bb[3] - bb[1])
+    _lh_cache[fid] = lh
+    return lh
 
 
 def _wrap_text(draw, text: str, font, max_width: int) -> list:

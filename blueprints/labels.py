@@ -424,10 +424,10 @@ def api_labels_browser_print_bulk():
     u        = current_user()
 
     import base64
-    label_divs = []
-    job_rows   = []
-    w_mm = h_mm = None
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
+    # Pre-load all DB objects before threading (SQLAlchemy sessions aren't thread-safe)
+    resolved = []
     for item in items:
         pid = int(item.get('product_id', 0))
         tid = int(item.get('template_id', 0))
@@ -438,11 +438,30 @@ def api_labels_browser_print_bulk():
         tmpl    = db.session.get(LabelTemplate, tid)
         if not product or not tmpl or tmpl.is_archived:
             continue
-        try:
-            png_bytes = svc.render_png(_tmpl_dict(tmpl), product, dpr=2)
-            img_b64   = base64.b64encode(png_bytes).decode()
-        except Exception as e:
-            log.warning('Bulk browser-print render failed for product %d: %s', pid, e)
+        resolved.append((_tmpl_dict(tmpl), product, tmpl, qty))
+
+    def _render(args):
+        tmpl_dict, product, _, _ = args
+        return base64.b64encode(svc.render_png_bulk(tmpl_dict, product)).decode()
+
+    # Render all labels in parallel (PIL releases GIL during C-level encode)
+    b64_results = [None] * len(resolved)
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        fut_map = {pool.submit(_render, args): i for i, args in enumerate(resolved)}
+        for fut in as_completed(fut_map):
+            i = fut_map[fut]
+            try:
+                b64_results[i] = fut.result()
+            except Exception as e:
+                log.warning('Bulk browser-print render failed: %s', e)
+
+    label_divs = []
+    job_rows   = []
+    w_mm = h_mm = None
+
+    for i, (tmpl_dict, product, tmpl, qty) in enumerate(resolved):
+        img_b64 = b64_results[i]
+        if not img_b64:
             continue
         if w_mm is None:
             w_mm = float(tmpl.width_mm)
