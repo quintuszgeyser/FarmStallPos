@@ -18084,38 +18084,25 @@ async function executeBulkPrint() {
     if (pid && tmplId) items.push({ product_id: parseInt(pid), template_id: parseInt(tmplId), qty });
   });
   if (!items.length) { toast('Select at least one product with a template', 'warning'); return; }
+  const totalQty = items.reduce((s, i) => s + i.qty, 0);
   if (statusEl) statusEl.textContent = `Rendering ${items.length} product(s)…`;
   try {
     if (printerVal === 'browser') {
-      // Open a separate browser print window per product (one print dialog, all pages)
-      // Collect all rendered labels into one window
-      const responses = await Promise.all(items.map(item =>
-        fetch('/api/labels/browser-print', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ product_id: item.product_id, template_id: item.template_id, qty: item.qty }),
-        }).then(r => r.text())
-      ));
-      // Extract body content from each response and merge into one print window
-      const firstTmplId = items[0]?.template_id;
-      const firstTmpl   = LABELS.templates.find(t => t.id === parseInt(firstTmplId));
-      const wMm = firstTmpl?.width_mm || 50;
-      const hMm = firstTmpl?.height_mm || 50;
-      const bodyContents = responses.map(html => {
-        const m = html.match(/<body>([\s\S]*?)<script>/);
-        return m ? m[1] : '';
-      }).join('');
-      const mergedHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-        @page { size: ${wMm}mm ${hMm}mm; margin: 0; }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        .label { width: ${wMm}mm; height: ${hMm}mm; overflow: hidden; page-break-after: always; }
-        .label img { width: 100%; height: 100%; display: block; object-fit: fill; }
-      </style></head><body>${bodyContents}<script>window.onload=function(){window.print()};<\/script></body></html>`;
+      // Single request: server renders all labels and returns one merged HTML page.
+      const res = await fetch('/api/labels/browser-print-bulk', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j.error || `Server error ${res.status}`);
+      }
+      const html = await res.text();
       const win = window.open('', '_blank', 'width=600,height=400');
       if (!win) { toast('Pop-up blocked — allow pop-ups for this site', 'warning'); return; }
-      win.document.write(mergedHtml);
+      win.document.write(html);
       win.document.close();
-      const total = items.reduce((s, i) => s + i.qty, 0);
-      toast(`${total} label${total > 1 ? 's' : ''} sent to print dialog`, 'success');
+      toast(`${totalQty} label${totalQty > 1 ? 's' : ''} sent to print dialog`, 'success');
       bootstrap.Modal.getInstance(document.getElementById('bulkLabelModal'))?.hide();
     } else {
       const result = await api('/api/labels/print-bulk', {

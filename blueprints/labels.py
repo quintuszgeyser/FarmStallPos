@@ -408,6 +408,84 @@ def api_labels_browser_print():
     return Response(html, mimetype='text/html')
 
 
+@bp.route('/api/labels/browser-print-bulk', methods=['POST'])
+def api_labels_browser_print_bulk():
+    """Render all items server-side and return one merged self-printing HTML page.
+    Replaces the JS Promise.all() pattern that fires N simultaneous requests."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+    data  = request.json or {}
+    items = data.get('items', [])   # [{product_id, template_id, qty}]
+    if not items:
+        return jsonify({'error': 'items required'}), 400
+
+    branding = _get_branding()
+    svc      = LabelRenderService(branding)
+    u        = current_user()
+
+    import base64
+    label_divs = []
+    job_rows   = []
+    w_mm = h_mm = None
+
+    for item in items:
+        pid = int(item.get('product_id', 0))
+        tid = int(item.get('template_id', 0))
+        qty = max(1, min(500, int(item.get('qty', 1))))
+        if not pid or not tid:
+            continue
+        product = db.session.get(Product, pid)
+        tmpl    = db.session.get(LabelTemplate, tid)
+        if not product or not tmpl or tmpl.is_archived:
+            continue
+        try:
+            png_bytes = svc.render_png(_tmpl_dict(tmpl), product, dpr=2)
+            img_b64   = base64.b64encode(png_bytes).decode()
+        except Exception as e:
+            log.warning('Bulk browser-print render failed for product %d: %s', pid, e)
+            continue
+        if w_mm is None:
+            w_mm = float(tmpl.width_mm)
+            h_mm = float(tmpl.height_mm)
+        div = f'<div class="label"><img src="data:image/png;base64,{img_b64}" alt="label"></div>'
+        label_divs.extend([div] * qty)
+        job_rows.append({'tmpl': tmpl, 'product': product, 'qty': qty})
+
+    if not label_divs:
+        return jsonify({'error': 'No labels could be rendered'}), 400
+
+    w_mm = w_mm or 50
+    h_mm = h_mm or 50
+    html = f"""<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page {{ size: {w_mm}mm {h_mm}mm; margin: 0; }}
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  body {{ background: #fff; }}
+  .label {{ width: {w_mm}mm; height: {h_mm}mm; overflow: hidden; page-break-after: always; }}
+  .label img {{ width: 100%; height: 100%; display: block; object-fit: fill; }}
+</style>
+</head>
+<body>
+{''.join(label_divs)}
+<script>window.onload = function() {{ window.print(); }};</script>
+</body>
+</html>"""
+
+    for row in job_rows:
+        db.session.add(LabelPrintJob(
+            template_id=row['tmpl'].id, product_id=row['product'].id,
+            qty=row['qty'], printer_id=None, status='browser',
+            user_id=u.id if u else None, notes='browser-print-bulk',
+        ))
+    db.session.commit()
+
+    from flask import Response
+    return Response(html, mimetype='text/html')
+
+
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/label-print-jobs', methods=['GET'])
