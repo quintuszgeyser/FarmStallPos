@@ -277,7 +277,7 @@ def api_stats():
     ]
 
     revenue_per_hour = defaultdict(float)
-    for r in rows: revenue_per_hour[r.date_time.hour] += float(Decimal(str(r.qty)) * r.unit_price)
+    for r in rows: revenue_per_hour[(r.date_time.hour + 2) % 24] += float(Decimal(str(r.qty)) * r.unit_price)
     hourly = [{'hour': h, 'revenue': round(v, 2)} for h, v in sorted(revenue_per_hour.items())]
 
     revenue_per_day = defaultdict(float); tx_per_day = defaultdict(set); profit_per_day = defaultdict(float)
@@ -508,11 +508,13 @@ def api_stats_drilldown():
             q = q.filter(Sale.date_time >= datetime(d.year, d.month, d.day), Sale.date_time <= datetime(d.year, d.month, d.day, 23, 59, 59))
         except Exception: pass
     elif slice_type == 'hour' and slice_val is not None:
-        q = q.filter(db.func.extract('hour', Sale.date_time) == int(slice_val))
+        utc_hour = (int(slice_val) - 2) % 24
+        q = q.filter(db.func.extract('hour', Sale.date_time) == utc_hour)
     elif slice_type == 'minute' and slice_val:
         try:
             hh, mm = slice_val.split(':')
-            q = q.filter(db.func.extract('hour', Sale.date_time) == int(hh), db.func.extract('minute', Sale.date_time) == int(mm))
+            utc_hh = (int(hh) - 2) % 24
+            q = q.filter(db.func.extract('hour', Sale.date_time) == utc_hh, db.func.extract('minute', Sale.date_time) == int(mm))
         except Exception: pass
     elif slice_type == 'product' and slice_val:
         q = q.filter(Sale.product_id == int(slice_val))
@@ -538,7 +540,7 @@ def api_stats_drilldown():
     for t in transactions:
         for l in t['lines']: prod_rev[l['product']] += l['line_total']; prod_qty[l['product']] += l['qty']
     hour_rev = defaultdict(float)
-    for t in transactions: hour_rev[int(t['date_time'][11:13])] += t['total']
+    for t in transactions: hour_rev[(int(t['date_time'][11:13]) + 2) % 24] += t['total']
     teller_rev = defaultdict(float); teller_tx = defaultdict(int)
     for t in transactions: teller_rev[t['teller']] += t['total']; teller_tx[t['teller']] += 1
 

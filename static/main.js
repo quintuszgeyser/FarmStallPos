@@ -8606,7 +8606,7 @@ function renderTransactions(trs) {
 
   trs.forEach(t => {
     const sid       = String(t.id).slice(0, 8);
-    const dtStr     = new Date(t.date_time).toLocaleString('en-ZA', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
+    const dtStr     = new Date(t.date_time+'Z').toLocaleString('en-ZA', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' });
     const isVoided  = !!t.voided;
     const isFlagged = t.flagged && !t.flag_resolved;
     const isReviewed = t.flagged && t.flag_resolved;
@@ -8809,7 +8809,7 @@ function openTxModal(t) {
   _txModalLines   = t.lines.map(l => ({ ...l }));
   document.getElementById('txModalTitle').textContent = `Transaction #${String(t.id).slice(0,8)}`;
   const meta = document.getElementById('tx-modal-meta');
-  if (meta) meta.textContent = `${new Date(t.date_time).toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
+  if (meta) meta.textContent = `${new Date(t.date_time+'Z').toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
   document.getElementById('tx-void-reason').value = '';
   renderTxEditTable();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('txModal')).show();
@@ -8918,7 +8918,7 @@ async function previewReceipt(saleId) {
       r.store_name || 'Farm Stall',
       r.store_legal ? `(${r.store_legal})` : '',
       vatNum,
-      new Date(r.date_time).toLocaleString('en-ZA'),
+      new Date(r.date_time+'Z').toLocaleString('en-ZA'),
       `Receipt: #${String(saleId).slice(0,8)}`,
       '─'.repeat(42),
       lines,
@@ -8947,7 +8947,7 @@ function openReturnModal(t, selectedLines) {
   _returnTx = t;
   document.getElementById('return-modal-title').textContent = `#${String(t.id).slice(0,8)}`;
   document.getElementById('return-modal-meta').textContent =
-    `${new Date(t.date_time).toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
+    `${new Date(t.date_time+'Z').toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
   document.getElementById('return-reason').value = '';
 
   // If specific lines were selected (from item selection toolbar), show only those;
@@ -9516,7 +9516,7 @@ function _renderDrilldownTransactions(data, opts = {}) {
       ).join('');
       html += `<tr class="sale-row" style="cursor:pointer" data-sale="${t.sale_id}">
         <td class="fw-semibold">#${t.sale_id}</td>
-        <td style="font-size:11px">${t.date_time.replace('T',' ').slice(0,16)}</td>
+        <td style="font-size:11px">${new Date(t.date_time+'Z').toLocaleString('en-ZA',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}</td>
         <td>${t.teller}</td>
         <td class="text-muted">${Math.round(t.item_count)} item${Math.round(t.item_count)!==1?'s':''}</td>
         <td class="text-end fw-semibold text-success">R${fmt(t.total)}</td>
@@ -15465,7 +15465,7 @@ async function openCustomerDetail(customerId) {
       bizHtml += `<div class="mb-3">
         <div class="fw-semibold small text-uppercase text-muted mb-1" style="letter-spacing:.05em">Recent Purchases</div>`;
       recentReceipts.forEach(r => {
-        const dt = new Date(r.date_time);
+        const dt = new Date(r.date_time+'Z');
         bizHtml += `<div class="border rounded px-2 py-1 mb-1 small">
           <div class="d-flex justify-content-between">
             <span class="text-muted">${dt.toLocaleDateString('en-ZA')} ${dt.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>
