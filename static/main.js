@@ -461,17 +461,34 @@ function _restoreCartFromSession() {
 // Also fires immediately when the tab becomes visible again after being hidden
 // (screen lock, browser minimised, tab switch back).
 (function _initKeepAlive() {
+  let _serverDown = false;
+  let _downInterval = null;
+
   async function _ping() {
     try {
       const r = await fetch('/api/ping', { credentials: 'same-origin' });
+      if (_serverDown) {
+        // Server is back — reload to restore full app state
+        location.reload();
+        return;
+      }
       if (r.status === 401 && STATE.user) {
         _saveCartToSession();
         toast('Session expired — please log in again', 'warning', 5000);
         STATE.user = null;
         setTimeout(() => location.reload(), 1500);
       }
-    } catch {}  // silent — network blip, server restart, etc.
+    } catch {
+      // Network error — server is down or unreachable
+      if (!_serverDown) {
+        _serverDown = true;
+        toast('Server unreachable — will reconnect automatically', 'warning', 0);
+        // Poll every 5 s until server comes back
+        _downInterval = setInterval(_ping, 5000);
+      }
+    }
   }
+
   setInterval(_ping, 4 * 60 * 1000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') _ping();
@@ -7634,7 +7651,15 @@ function renderCart() {
   }
 }
 
+// Per-product debounce timestamps — prevents rapid double-tap on the teller grid
+// from adding ×2 to the cart (common on touchscreen tablets).
+const _addToCartDebounce = {};
+
 function addToCart(p) {
+  const _now = Date.now();
+  if (_now - (_addToCartDebounce[p.id] || 0) < 400) return;
+  _addToCartDebounce[p.id] = _now;
+
   if (p.sold_by_weight) {
     openWeightModal(p);
     return;
@@ -7840,7 +7865,9 @@ document.getElementById('btn-cart-packaging')?.addEventListener('click', () => {
 });
 
 // ── Checkout ──
+let _checkoutInFlight = false;
 document.getElementById('btn-checkout')?.addEventListener('click', async () => {
+  if (_checkoutInFlight) return;
   const cart = Object.values(STATE.cart);
   if (cart.length === 0) return toast('Cart is empty', 'warning');
 
@@ -7938,6 +7965,7 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     }
   }
 
+  _checkoutInFlight = true;
   try {
     await _doSubmitSale(requestBody);
   } catch (e) {
@@ -7957,12 +7985,16 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
         modal.hide();
         try { await _doSubmitSale({ ...requestBody, force: true }); }
         catch (e2) { toast(e2.message, 'error'); }
+        finally { _checkoutInFlight = false; }
       };
       confirmBtn.addEventListener('click', handler);
       modal.show();
+      return; // lock stays on until confirm/dismiss
     } else {
       toast(e.message, 'error');
     }
+  } finally {
+    _checkoutInFlight = false;
   }
 });
 
