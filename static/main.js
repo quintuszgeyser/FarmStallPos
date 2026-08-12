@@ -457,6 +457,27 @@ function _restoreCartFromSession() {
   } catch {}
 }
 
+// Keep-alive: ping the server every 4 minutes so the session never idles out.
+// Also fires immediately when the tab becomes visible again after being hidden
+// (screen lock, browser minimised, tab switch back).
+(function _initKeepAlive() {
+  async function _ping() {
+    try {
+      const r = await fetch('/api/ping', { credentials: 'same-origin' });
+      if (r.status === 401 && STATE.user) {
+        _saveCartToSession();
+        toast('Session expired — please log in again', 'warning', 5000);
+        STATE.user = null;
+        setTimeout(() => location.reload(), 1500);
+      }
+    } catch {}  // silent — network blip, server restart, etc.
+  }
+  setInterval(_ping, 4 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') _ping();
+  });
+})();
+
 function toast(msg, type = 'success', durationMs = 3000) {
   const c = document.getElementById('toast-container');
   if (!c) return;

@@ -117,6 +117,14 @@ def version():
     return jsonify({'version': _app_version(), 'commit': _git_commit(), 'env': os.environ.get('APP_ENV', 'qa')})
 
 
+@bp.route('/api/ping')
+def api_ping():
+    """Keep-alive endpoint — updates last_active via before_request hook."""
+    if not require_login():
+        return jsonify({'ok': False}), 401
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/logs')
 def api_logs():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403

@@ -6,8 +6,8 @@ from sqlalchemy import Numeric
 
 db = SQLAlchemy()
 
-SESSION_TIMEOUT_MINUTES = 10
-SESSION_LOGOUT_HOURS    = 2
+SESSION_TIMEOUT_MINUTES = 480   # 8-hour shift: idle logout after 8 h
+SESSION_LOGOUT_HOURS    = 24    # hard logout after 24 h (end of day)
 
 
 class User(db.Model):
