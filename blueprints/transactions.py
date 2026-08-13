@@ -13,10 +13,12 @@ from helpers import (
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
     qty_bucket, get_stock_level,
 )
+from decimal import ROUND_HALF_UP
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, KitchenOrder,
     Sale, Purchase, User, AuditLog, Category, PackagingUsage,
+    ConsignmentLiability,
 )
 
 bp = Blueprint('transactions', __name__)
@@ -409,6 +411,33 @@ def api_transactions_post():
             sale_row.cogs = line_cogs
         else:
             sale_row.cogs = Decimal('0')
+            # Consignment liability for simple products (no FIFO batches).
+            # stock_item products get their liability inside consume_fifo.
+            _csup = getattr(p, 'consignment_supplier_id', None)
+            if p.is_consignment and _csup:
+                _basis = getattr(p, 'settlement_basis', 'FIXED_COST')
+                _sale_snap = None; _pct_snap = None
+                if _basis == 'PCT_OF_SALE':
+                    _pct = Decimal(str(p.consignment_pct or 0)) / Decimal('100')
+                    _unit_cost = (unit_price * _pct).quantize(Decimal('0.000001'))
+                    _sale_snap = float(unit_price)
+                    _pct_snap  = float(p.consignment_pct or 0)
+                else:
+                    _cuc = getattr(p, 'consignment_cost_per_unit', None)
+                    _unit_cost = Decimal(str(_cuc)) if _cuc else Decimal('0')
+                if _unit_cost > 0:
+                    _amount = (qty * _unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    db.session.add(ConsignmentLiability(
+                        supplier_id=_csup,
+                        product_id=pid,
+                        batch_id=None,
+                        sale_id=sale_uuid,
+                        qty_consumed=float(qty),
+                        unit_cost=float(_unit_cost),
+                        amount_owed=float(_amount),
+                        sale_price_at_time=_sale_snap,
+                        settlement_percent_at_time=_pct_snap,
+                    ))
 
     max_sort = db.session.query(func.max(KitchenOrder.sort_order)).filter_by(status='pending').scalar() or 0
 
@@ -887,5 +916,25 @@ def api_transaction_edit(sale_id):
             sale_row.cogs = line_cogs
         else:
             sale_row.cogs = Decimal('0')
+            _csup = getattr(p, 'consignment_supplier_id', None)
+            if p.is_consignment and _csup:
+                _basis = getattr(p, 'settlement_basis', 'FIXED_COST')
+                _sale_snap = None; _pct_snap = None
+                if _basis == 'PCT_OF_SALE':
+                    _pct = Decimal(str(p.consignment_pct or 0)) / Decimal('100')
+                    _unit_cost = (unit_price * _pct).quantize(Decimal('0.000001'))
+                    _sale_snap = float(unit_price)
+                    _pct_snap  = float(p.consignment_pct or 0)
+                else:
+                    _cuc = getattr(p, 'consignment_cost_per_unit', None)
+                    _unit_cost = Decimal(str(_cuc)) if _cuc else Decimal('0')
+                if _unit_cost > 0:
+                    _amount = (qty * _unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                    db.session.add(ConsignmentLiability(
+                        supplier_id=_csup, product_id=pid, batch_id=None,
+                        sale_id=sale_id, qty_consumed=float(qty),
+                        unit_cost=float(_unit_cost), amount_owed=float(_amount),
+                        sale_price_at_time=_sale_snap, settlement_percent_at_time=_pct_snap,
+                    ))
     db.session.commit()
     return jsonify({'ok': True})

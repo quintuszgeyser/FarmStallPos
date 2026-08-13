@@ -3,12 +3,15 @@ Shared utilities - imported by app.py and (eventually) blueprints.
 Import order: helpers → models → db. Never import from app.py here.
 """
 
+import logging
 import os
 import re
 import uuid
 import random
 from decimal import Decimal
 from datetime import datetime, timedelta
+
+logger = logging.getLogger('helpers')
 
 from flask import session, abort
 from sqlalchemy import func
@@ -254,6 +257,11 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
 
         # Consignment liability: generate on every FIFO consumption of a consignment batch.
         # Write-offs pass sale_id='wo-{uuid}' — still owed (shrinkage is supplier's risk too).
+        if getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT' and not batch.supplier_id:
+            logger.warning(
+                f'consume_fifo: consignment batch {batch.id} for product {ingredient_id} '
+                f'has no supplier_id — liability NOT created. Set supplier when receiving stock.'
+            )
         if getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT' and batch.supplier_id:
             _prod = db.session.get(Product, ingredient_id)
             _basis = getattr(_prod, 'settlement_basis', 'FIXED_COST') if _prod else 'FIXED_COST'
@@ -806,9 +814,11 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
         'last_overhead_costs':     p.last_overhead_costs,
         'inventory_policy':        p.inventory_policy or 'ALLOW_NEGATIVE',
         # Consignment fields
-        'is_consignment':    p.is_consignment,
-        'settlement_basis':  p.settlement_basis,
-        'consignment_pct':   float(p.consignment_pct) if p.consignment_pct is not None else None,
+        'is_consignment':             p.is_consignment,
+        'settlement_basis':           p.settlement_basis,
+        'consignment_pct':            float(p.consignment_pct) if p.consignment_pct is not None else None,
+        'consignment_supplier_id':    p.consignment_supplier_id,
+        'consignment_cost_per_unit':  float(p.consignment_cost_per_unit) if p.consignment_cost_per_unit is not None else None,
         'auto_price':        p.auto_price if getattr(p, 'auto_price', None) is not None else True,
         'supplier_names':    ', '.join(supplier_cache[p.id]) if supplier_cache and p.id in supplier_cache else '',
         'pending_price':          float(p.pending_price) if getattr(p, 'pending_price', None) is not None else None,

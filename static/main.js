@@ -2968,6 +2968,14 @@ function openProductEditor(p) {
   _toggleConsignmentBasis(_basis);
   const _pctEl = document.getElementById('p-consignment-pct');
   if (_pctEl) _pctEl.value = p?.consignment_pct ?? '';
+  const _costEl = document.getElementById('p-consignment-cost');
+  if (_costEl) _costEl.value = p?.consignment_cost_per_unit ?? '';
+  // Populate consignment supplier dropdown
+  const _cSupSel = document.getElementById('p-consignment-supplier');
+  if (_cSupSel) {
+    _cSupSel.innerHTML = '<option value="">— Select supplier —</option>' +
+      (_suppliers || []).map(s => `<option value="${s.id}"${s.id === p?.consignment_supplier_id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+  }
 
   // Description
   const descEl = document.getElementById('p-description');
@@ -3191,8 +3199,10 @@ function _toggleConsignmentSettings(on) {
   if (box) box.style.display = on ? '' : 'none';
 }
 function _toggleConsignmentBasis(basis) {
-  const pctRow = document.getElementById('consignment-pct-row');
-  if (pctRow) pctRow.style.display = (basis === 'PCT_OF_SALE') ? '' : 'none';
+  const pctRow  = document.getElementById('consignment-pct-row');
+  const costRow = document.getElementById('consignment-cost-row');
+  if (pctRow)  pctRow.style.display  = (basis === 'PCT_OF_SALE') ? '' : 'none';
+  if (costRow) costRow.style.display = (basis === 'FIXED_COST')  ? '' : 'none';
 }
 document.getElementById('p-is-consignment')?.addEventListener('change', (e) => {
   _toggleConsignmentSettings(e.target.checked);
@@ -4198,9 +4208,11 @@ function buildProductPayload() {
       stock_unit:  document.getElementById('p-stock-unit')?.value.trim() || null,
     } : {}),
     // Consignment
-    is_consignment:   document.getElementById('p-is-consignment')?.checked || false,
-    settlement_basis: document.querySelector('input[name="consignment-basis"]:checked')?.value || 'FIXED_COST',
-    consignment_pct:  (() => { const v = parseFloat(document.getElementById('p-consignment-pct')?.value || ''); return isNaN(v) ? null : v; })(),
+    is_consignment:            document.getElementById('p-is-consignment')?.checked || false,
+    settlement_basis:          document.querySelector('input[name="consignment-basis"]:checked')?.value || 'FIXED_COST',
+    consignment_pct:           (() => { const v = parseFloat(document.getElementById('p-consignment-pct')?.value || ''); return isNaN(v) ? null : v; })(),
+    consignment_supplier_id:   (() => { const v = parseInt(document.getElementById('p-consignment-supplier')?.value || '', 10); return v > 0 ? v : null; })(),
+    consignment_cost_per_unit: (() => { const v = parseFloat(document.getElementById('p-consignment-cost')?.value || ''); return isNaN(v) ? null : v; })(),
     // Auto-price
     auto_price: document.getElementById('p-auto-price')?.checked ?? true,
     // Inventory policy

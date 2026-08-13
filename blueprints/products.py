@@ -353,6 +353,14 @@ def api_products_post():
         consignment_pct = Decimal(str(data['consignment_pct'])) if data.get('consignment_pct') not in (None, '') else None
     except Exception:
         consignment_pct = None
+    try:
+        consignment_supplier_id = int(data['consignment_supplier_id']) if data.get('consignment_supplier_id') not in (None, '', 0) else None
+    except (TypeError, ValueError):
+        consignment_supplier_id = None
+    try:
+        consignment_cost_per_unit = Decimal(str(data['consignment_cost_per_unit'])) if data.get('consignment_cost_per_unit') not in (None, '') else None
+    except Exception:
+        consignment_cost_per_unit = None
 
     auto_price = bool(data.get('auto_price', True))
 
@@ -400,6 +408,8 @@ def api_products_post():
         is_produced=is_produced, batch_size=batch_size, stock_unit=stock_unit,
         is_consignment=is_consignment, settlement_basis=settlement_basis,
         consignment_pct=consignment_pct,
+        consignment_supplier_id=consignment_supplier_id,
+        consignment_cost_per_unit=consignment_cost_per_unit,
         auto_price=auto_price,
         sub_category_id=sub_category_id,
         product_family_id=product_family_id,
@@ -662,6 +672,18 @@ def api_products_update():
         raw_pct = data['consignment_pct']
         try:
             p.consignment_pct = Decimal(str(raw_pct)) if raw_pct not in (None, '') else None
+        except Exception:
+            pass
+    if 'consignment_supplier_id' in data:
+        v = data['consignment_supplier_id']
+        try:
+            p.consignment_supplier_id = int(v) if v not in (None, '', 0) else None
+        except (TypeError, ValueError):
+            pass
+    if 'consignment_cost_per_unit' in data:
+        v = data['consignment_cost_per_unit']
+        try:
+            p.consignment_cost_per_unit = Decimal(str(v)) if v not in (None, '') else None
         except Exception:
             pass
     if 'inventory_policy' in data:

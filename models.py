@@ -63,9 +63,13 @@ class Product(db.Model):
     scale_msg1           = db.Column(db.String(80), nullable=True)         # extra message text
     scale_msg2           = db.Column(db.String(80), nullable=True)
     # Consignment: supplier owes when item is sold, not when received
-    is_consignment       = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
-    settlement_basis     = db.Column(db.String(20), nullable=False, default='FIXED_COST', server_default="'FIXED_COST'")
-    consignment_pct      = db.Column(Numeric(5, 2), nullable=True)  # only for PCT_OF_SALE
+    is_consignment            = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
+    settlement_basis          = db.Column(db.String(20), nullable=False, default='FIXED_COST', server_default="'FIXED_COST'")
+    consignment_pct           = db.Column(Numeric(5, 2), nullable=True)   # only for PCT_OF_SALE
+    # supplier for simple consignment items (stock_item gets supplier from batch)
+    consignment_supplier_id   = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    # fixed cost per base unit for simple consignment items (stock_item gets cost from batch)
+    consignment_cost_per_unit = db.Column(Numeric(10, 6), nullable=True)
     scale_last_synced_at = db.Column(db.DateTime(timezone=True), nullable=True)
     scale_last_sync_status = db.Column(db.String(20), nullable=True)     # ok / error / pending
     scale_last_sync_error  = db.Column(db.Text, nullable=True)
@@ -809,7 +813,7 @@ class ConsignmentLiability(db.Model):
     id                         = db.Column(db.Integer, primary_key=True)
     supplier_id                = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=False, index=True)
     product_id                 = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    batch_id                   = db.Column(db.Integer, db.ForeignKey('stock_batches.id'), nullable=False)
+    batch_id                   = db.Column(db.Integer, db.ForeignKey('stock_batches.id'), nullable=True)   # NULL for simple products
     sale_id                    = db.Column(db.String(64), nullable=True, index=True)  # NULL for write-offs
     qty_consumed               = db.Column(Numeric(10, 4), nullable=False)
     unit_cost                  = db.Column(Numeric(10, 6), nullable=False)   # consignment_unit_cost snapshot
@@ -830,7 +834,7 @@ class ConsignmentSettlementLine(db.Model):
     liability_id  = db.Column(db.Integer, db.ForeignKey('consignment_liabilities.id'), nullable=False)
     supplier_id   = db.Column(db.Integer, nullable=False)
     product_id    = db.Column(db.Integer, nullable=False)
-    batch_id      = db.Column(db.Integer, nullable=False)
+    batch_id      = db.Column(db.Integer, nullable=True)
     qty           = db.Column(Numeric(10, 4), nullable=False)
     unit_cost     = db.Column(Numeric(10, 6), nullable=False)
     amount        = db.Column(Numeric(10, 2), nullable=False)

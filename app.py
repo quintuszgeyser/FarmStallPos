@@ -1544,6 +1544,8 @@ def strong_migrate():
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS is_consignment BOOLEAN NOT NULL DEFAULT FALSE")
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS settlement_basis TEXT NOT NULL DEFAULT 'FIXED_COST'")
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS consignment_pct NUMERIC(5,2)")
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS consignment_supplier_id INTEGER REFERENCES suppliers(id)")
+        pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS consignment_cost_per_unit NUMERIC(10,6)")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS ownership_type TEXT NOT NULL DEFAULT 'NORMAL'")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS consignment_unit_cost NUMERIC(10,4)")
         pg_try("""CREATE TABLE IF NOT EXISTS consignment_settlements (
@@ -1585,6 +1587,9 @@ def strong_migrate():
             amount        NUMERIC(10,2) NOT NULL
         )""")
         pg_try("CREATE INDEX IF NOT EXISTS ix_csl_settlement ON consignment_settlement_lines(settlement_id)")
+        # Make batch_id nullable — simple products create batchless liabilities
+        pg_try("ALTER TABLE consignment_liabilities ALTER COLUMN batch_id DROP NOT NULL")
+        pg_try("ALTER TABLE consignment_settlement_lines ALTER COLUMN batch_id DROP NOT NULL")
 
         # Backfill: batches for consignment products that were received before the
         # ownership_type field was applied (stock receive path was missing the flag).
