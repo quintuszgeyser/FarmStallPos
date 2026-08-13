@@ -850,6 +850,43 @@ def api_pending_prices_dismiss():
     return jsonify({'ok': True, 'dismissed': dismissed})
 
 
+@bp.route('/api/products/pending-prices/accept-markup', methods=['POST'])
+def api_pending_prices_accept_markup():
+    """Accept current price as correct — set margin_pct to match current price vs WAC, clear pending."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    from models import StockBatch
+    data = request.json or {}
+    ids  = data.get('ids')
+    q = Product.query.filter(
+        db.or_(
+            Product.pending_price.isnot(None),
+            Product.pending_price_per_unit.isnot(None),
+        )
+    )
+    if ids:
+        q = q.filter(Product.id.in_(ids))
+    products = q.all()
+    applied = []
+    skipped = []
+    for p in products:
+        current = float(p.price_per_unit or 0) if (p.sold_by_weight and p.unit_type in ('weight', 'volume')) else float(p.price or 0)
+        batches = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).all()
+        if batches and current > 0:
+            total_qty  = sum(float(b.qty_remaining_base) for b in batches)
+            total_cost = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches)
+            if total_qty > 0 and total_cost > 0:
+                wac = total_cost / total_qty
+                p.margin_pct = round((current / wac - 1) * 100, 2)
+                p.pending_price = None
+                p.pending_price_per_unit = None
+                applied.append(p.id)
+                continue
+        skipped.append(p.id)
+    db.session.commit()
+    return jsonify({'ok': True, 'applied': len(applied), 'skipped': len(skipped)})
+
+
 def _detect_circular_bom(product_id, path=None):
     """Return cycle path (list of product_ids) if the BOM is circular, else None.
     Only traverses is_produced recipe ingredients — those are the ones that can

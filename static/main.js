@@ -4019,6 +4019,21 @@ async function dismissAllPendingPrices() {
   } catch (e) { toast(e.message, 'error'); }
 }
 
+async function acceptMarkupSelected() {
+  const ids = _getSelectedPendingIds();
+  if (!ids.length) { toast('No products selected', 'warning'); return; }
+  try {
+    const j = await api('/api/products/pending-prices/accept-markup', { method: 'POST', body: JSON.stringify({ ids }) });
+    const msg = j.skipped > 0
+      ? `Markup adjusted for ${j.applied} product${j.applied !== 1 ? 's' : ''} (${j.skipped} skipped — no cost data)`
+      : `Markup adjusted for ${j.applied} product${j.applied !== 1 ? 's' : ''}`;
+    toast(msg, 'success');
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('pendingPricesModal')).hide();
+    await loadPendingPricesBanner();
+    loadProducts();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 async function runMarkupDriftCheck() {
   const btn = document.getElementById('btn-run-markup-check');
   if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-arrow-repeat spin me-1"></i>Checking…'; }
@@ -5992,6 +6007,7 @@ function _updateApplyCostsSummary(wrap) {
 }
 
 function populateSupplierDropdowns() {
+  _populateStatsSupplierFilter();
   // Receive stock modal dropdown
   const sel = document.getElementById('receive-supplier');
   if (sel) {
@@ -9306,14 +9322,21 @@ document.getElementById('btn-delete-user')?.addEventListener('click', async () =
 // STATS
 // ═══════════════════════════════════════════════════════
 
-let _statsData    = null;
+let _statsData     = null;
 let _statsChartTab = 'daily';
+let _statsTimeMetric = 'revenue'; // 'revenue' | 'count' | 'profit'
 
 function _statsSetDates(start, end) {
   const s = document.getElementById('stats-start');
   const e = document.getElementById('stats-end');
   if (s) s.value = start;
   if (e) e.value = end;
+}
+
+function _showTimeMetricBar(show) {
+  const bar = document.getElementById('stats-time-metric-bar');
+  if (!bar) return;
+  bar.classList.toggle('d-none', !show);
 }
 
 function _initStatsPresets() {
@@ -9357,6 +9380,19 @@ function _initStatsPresets() {
       loadStats();
     });
   });
+
+  document.querySelectorAll('[data-metric]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _statsTimeMetric = btn.dataset.metric;
+      document.querySelectorAll('[data-metric]').forEach(b => {
+        b.className = b.dataset.metric === _statsTimeMetric
+          ? 'btn btn-xs btn-primary'
+          : 'btn btn-xs btn-outline-secondary';
+        b.style.cssText = 'font-size:11px;padding:2px 7px';
+      });
+      _showChartTab(_statsChartTab);
+    });
+  });
 }
 
 // drilldown state - which canvas+slice is active for click hits
@@ -9379,7 +9415,9 @@ function drawBarChart(canvas, labels, values, opts = {}) {
 
   // Grow canvas (and parent) tall enough to show all labels
   const minH = padT + 160 + padB;
-  canvas.width  = parent?.clientWidth  || 800;
+  const minBarSlot = opts.minBarSlotPx || 0;
+  const minWidthForBars = minBarSlot > 0 ? padL + padR + labels.length * minBarSlot : 0;
+  canvas.width  = Math.max(parent?.clientWidth || 800, minWidthForBars);
   canvas.height = Math.max(parent?.clientHeight || 320, minH);
   if (parent && canvas.height > (parent.clientHeight || 0)) {
     parent.style.minHeight = canvas.height + 'px';
@@ -9572,13 +9610,15 @@ function _renderDrilldownTransactions(data, opts = {}) {
 }
 
 function _statsFilterParams() {
-  const start     = document.getElementById('stats-start')?.value || todayISO();
-  const end       = document.getElementById('stats-end')?.value   || todayISO();
-  const productId = document.getElementById('stats-product-filter')?.value || '';
-  const userId    = document.getElementById('stats-user-filter')?.value    || '';
+  const start      = document.getElementById('stats-start')?.value    || todayISO();
+  const end        = document.getElementById('stats-end')?.value      || todayISO();
+  const productId  = document.getElementById('stats-product-filter')?.value  || '';
+  const userId     = document.getElementById('stats-user-filter')?.value     || '';
+  const supplierId = document.getElementById('stats-supplier-filter')?.value || '';
   const p = new URLSearchParams({ start, end });
-  if (productId) p.set('product_id', productId);
-  if (userId)    p.set('user_id',    userId);
+  if (productId)  p.set('product_id',  productId);
+  if (userId)     p.set('user_id',     userId);
+  if (supplierId) p.set('supplier_id', supplierId);
   return p;
 }
 
@@ -9823,6 +9863,12 @@ function _showChartTab(tab) {
     const c = document.getElementById(`chart-${id}`);
     if (c) c.style.display = 'none';
   });
+  _showTimeMetricBar(false);
+  // Reset horizontal scroll on chart area (minute tab may have set it)
+  if (tab !== 'minute') {
+    const _ca = document.getElementById('stats-chart-area');
+    if (_ca) _ca.style.overflowX = '';
+  }
   document.querySelectorAll('[data-chart-tab]').forEach(b => {
     b.className = b.dataset.chartTab === tab
       ? 'btn btn-sm btn-primary'
@@ -9857,25 +9903,58 @@ function _showChartTab(tab) {
   } else if (tab === 'hourly') {
     const c = document.getElementById('chart-hourly');
     c.style.display = '';
-    const hours = Array.from({length: 24}, (_, i) => i);
-    const hourMap = Object.fromEntries((j.revenue_per_hour || []).map(x => [x.hour, x.revenue]));
-    drawBarChart(c, hours.map(h => `${h}:00`), hours.map(h => hourMap[h] || 0), {
-      color: '#1976d2', valuePrefix: 'R',
-      yLabel: 'Revenue (R)', xLabel: 'Hour of day',
+    _showTimeMetricBar(true);
+    const hours   = Array.from({length: 24}, (_, i) => i);
+    const hourMap = Object.fromEntries((j.revenue_per_hour || []).map(x => [x.hour, x]));
+    const metric  = _statsTimeMetric;
+    let vals, yLabel, valuePrefix = '';
+    if (metric === 'count') {
+      vals = hours.map(h => hourMap[h]?.tx_count || 0);
+      yLabel = 'Transactions';
+    } else if (metric === 'profit') {
+      vals = hours.map(h => hourMap[h]?.profit || 0);
+      yLabel = 'Profit (R)'; valuePrefix = 'R';
+    } else {
+      vals = hours.map(h => hourMap[h]?.revenue || 0);
+      yLabel = 'Revenue (R)'; valuePrefix = 'R';
+    }
+    drawBarChart(c, hours.map(h => `${h}:00`), vals, {
+      color: '#1976d2', valuePrefix,
+      yLabel, xLabel: 'Hour of day',
       onBarClick: (lbl, val, i) => { if (val > 0) openDrilldown(`Sales at ${i}:00`, 'hour', i); },
     });
-    if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue totalled by hour across all days in the selected range — click a bar to drill down</span>`;
+    const _mLabel = {revenue: 'Revenue', count: 'Transaction count', profit: 'Profit'}[metric] || metric;
+    if (_legend) _legend.innerHTML = `<span class="text-muted">${_mLabel} totalled by hour across all days in the selected range — click a bar to drill down</span>`;
 
   } else if (tab === 'minute') {
     const c = document.getElementById('chart-minute');
     c.style.display = '';
-    const mins = j.revenue_per_minute || [];
-    drawBarChart(c, mins.map(x => x.minute), mins.map(x => x.revenue), {
-      color: '#00838f', valuePrefix: 'R',
-      yLabel: 'Revenue (R)', xLabel: 'Time (hh:mm)',
-      onBarClick: (lbl) => { if (lbl) openDrilldown(`Sales at ${lbl}`, 'minute', lbl); },
+    _showTimeMetricBar(true);
+    const mins   = j.revenue_per_minute || [];
+    const metric = _statsTimeMetric;
+    // Enable horizontal scroll on chart area when many bars (> 120 = 2 hours × 60)
+    const chartArea = document.getElementById('stats-chart-area');
+    const needsScroll = mins.length > 120;
+    if (chartArea) chartArea.style.overflowX = needsScroll ? 'auto' : '';
+    let vals, yLabel, valuePrefix = '';
+    if (metric === 'count') {
+      vals = mins.map(x => x.tx_count || 0);
+      yLabel = 'Transactions';
+    } else if (metric === 'profit') {
+      vals = mins.map(x => x.profit || 0);
+      yLabel = 'Profit (R)'; valuePrefix = 'R';
+    } else {
+      vals = mins.map(x => x.revenue || 0);
+      yLabel = 'Revenue (R)'; valuePrefix = 'R';
+    }
+    drawBarChart(c, mins.map(x => x.minute), vals, {
+      color: '#00838f', valuePrefix,
+      yLabel, xLabel: 'Time (hh:mm)',
+      minBarSlotPx: 12,
+      onBarClick: (lbl, val) => { if (lbl && val > 0) openDrilldown(`Sales at ${lbl}`, 'minute', lbl); },
     });
-    if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue by minute — shows the busiest moments across the selected period</span>`;
+    const _mLabel = {revenue: 'Revenue', count: 'Transaction count', profit: 'Profit'}[metric] || metric;
+    if (_legend) _legend.innerHTML = `<span class="text-muted">${_mLabel} by minute — all 60 slots shown per active hour${needsScroll ? ' — <b>scroll right</b> to see all' : ''} (zero bars = no sales that minute)</span>`;
 
   } else if (tab === 'top-qty') {
     const c = document.getElementById('chart-top');
@@ -9893,7 +9972,8 @@ function _showChartTab(tab) {
       tooltipFormatter: (val, i) => qtyLabels[i] || String(val),
       onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id),
     });
-    if (_legend) _legend.innerHTML = `<span class="text-muted">Units (or estimated portions for weight/volume items) sold per product — click a bar to drill down</span>`;
+    const _hasPortions = products.some(x => x.stat_unit_size);
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Units sold per product${_hasPortions ? ' — weighted/volume items shown as <b>portions</b> (bar height = qty ÷ avg portion size)' : ''} — click a bar to drill down</span>`;
 
   } else if (tab === 'top-rev') {
     const c = document.getElementById('chart-top-rev');
@@ -10054,11 +10134,26 @@ function _populateStatsProductFilter() {
   _tomSelectSync('stats-product-filter');
 }
 
+function _populateStatsSupplierFilter() {
+  const sel = document.getElementById('stats-supplier-filter');
+  if (!sel || !_suppliers?.length) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All suppliers</option>';
+  [..._suppliers].sort((a, b) => a.name.localeCompare(b.name)).forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s.id; opt.textContent = s.name;
+    if (String(s.id) === String(current)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  _tomSelectSync('stats-supplier-filter');
+}
+
 async function loadStats() {
-  const start     = document.getElementById('stats-start')?.value || todayISO();
-  const end       = document.getElementById('stats-end')?.value   || todayISO();
-  const productId = document.getElementById('stats-product-filter')?.value || '';
-  const userId    = document.getElementById('stats-user-filter')?.value    || '';
+  const start      = document.getElementById('stats-start')?.value    || todayISO();
+  const end        = document.getElementById('stats-end')?.value      || todayISO();
+  const productId  = document.getElementById('stats-product-filter')?.value  || '';
+  const userId     = document.getElementById('stats-user-filter')?.value     || '';
+  const supplierId = document.getElementById('stats-supplier-filter')?.value || '';
   const label     = document.getElementById('stats-period-label');
 
   const dateLabel    = start === end ? start : `${start} → ${end}`;
@@ -10113,12 +10208,21 @@ async function loadStats() {
         loadStats();
       });
     }
-    chipArea.style.display = (userId || productId) ? '' : 'none';
+    if (supplierId) {
+      const sname = `Supplier: ${_suppliers.find(s => String(s.id) === supplierId)?.name || supplierId}`;
+      addChip(sname, () => {
+        const el = document.getElementById('stats-supplier-filter');
+        if (el) el.value = '';
+        loadStats();
+      });
+    }
+    chipArea.style.display = (userId || productId || supplierId) ? '' : 'none';
   }
 
   const params = new URLSearchParams({ start, end });
-  if (productId) params.set('product_id', productId);
-  if (userId)    params.set('user_id',    userId);
+  if (productId)  params.set('product_id',  productId);
+  if (userId)     params.set('user_id',     userId);
+  if (supplierId) params.set('supplier_id', supplierId);
 
   try {
     const j = await api(`/api/stats?${params}`);

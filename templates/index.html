@@ -1410,6 +1410,12 @@
             <option value="">All products</option>
           </select>
         </div>
+        <div>
+          <label class="form-label mb-1 small fw-bold">Supplier</label>
+          <select id="stats-supplier-filter" class="form-select form-select-sm" style="width:170px">
+            <option value="">All suppliers</option>
+          </select>
+        </div>
         <div class="d-flex gap-1 flex-wrap">
           <button class="btn btn-outline-secondary btn-sm" data-stats-preset="today">Today</button>
           <button class="btn btn-outline-secondary btn-sm" data-stats-preset="yesterday">Yesterday</button>
@@ -1580,6 +1586,13 @@
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="dow">Day of Week</button>
       </div>
       <div class="text-muted small mb-1" id="chart-click-hint" style="display:none">Click a bar to drill into those transactions</div>
+      <!-- Metric selector — shown for hourly / minute tabs -->
+      <div id="stats-time-metric-bar" class="d-none d-flex align-items-center gap-1 mb-1">
+        <span class="text-muted small">Metric:</span>
+        <button class="btn btn-xs btn-primary"           data-metric="revenue" style="font-size:11px;padding:2px 7px">Revenue</button>
+        <button class="btn btn-xs btn-outline-secondary" data-metric="count"   style="font-size:11px;padding:2px 7px">Count</button>
+        <button class="btn btn-xs btn-outline-secondary" data-metric="profit"  style="font-size:11px;padding:2px 7px">Profit</button>
+      </div>
       <div id="stats-chart-area" style="position:relative; height:320px;">
         <canvas id="chart-daily"     style="display:none; width:100%; height:100%"></canvas>
         <canvas id="chart-hourly"    style="display:none; width:100%; height:100%"></canvas>
@@ -4647,6 +4660,9 @@
       <div class="modal-footer">
         <button class="btn btn-outline-secondary btn-sm" onclick="dismissSelectedPendingPrices()">
           <i class="bi bi-x-circle me-1"></i>Dismiss Selected
+        </button>
+        <button class="btn btn-outline-primary btn-sm" onclick="acceptMarkupSelected()" title="Keep the current price — update the markup % target to match it">
+          <i class="bi bi-percent me-1"></i>Adjust Markup to Price
         </button>
         <button class="btn btn-warning btn-sm" onclick="applySelectedPendingPrices()">
           <i class="bi bi-check2 me-1"></i>Apply Selected

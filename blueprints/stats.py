@@ -64,6 +64,8 @@ def api_stats():
     except (ValueError, TypeError): product_id_filter = None
     try: user_id_filter = int(request.args.get('user_id')) if request.args.get('user_id') else None
     except (ValueError, TypeError): user_id_filter = None
+    try: supplier_id_filter = int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None
+    except (ValueError, TypeError): supplier_id_filter = None
 
     not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
     sale_q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, not_return)
@@ -74,6 +76,10 @@ def api_stats():
     if user_id_filter:
         sale_ids_by_user = {r.sale_id for r in db.session.query(Sale.sale_id).filter(Sale.user_id == user_id_filter, Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False).all()}
         sale_q = sale_q.filter(Sale.sale_id.in_(sale_ids_by_user))
+    if supplier_id_filter:
+        _sup_pids = {r.product_id for r in db.session.query(StockBatch.product_id).filter(StockBatch.supplier_id == supplier_id_filter).all()}
+        _sup_pids |= {r.id for r in db.session.query(Product.id).filter(Product.consignment_supplier_id == supplier_id_filter).all()}
+        sale_q = sale_q.filter(Sale.product_id.in_(list(_sup_pids))) if _sup_pids else sale_q.filter(db.false())
     rows = sale_q.all()
 
     transactions_count = len({r.sale_id for r in rows})
@@ -277,8 +283,15 @@ def api_stats():
     ]
 
     revenue_per_hour = defaultdict(float)
-    for r in rows: revenue_per_hour[(r.date_time.hour + 2) % 24] += float(Decimal(str(r.qty)) * r.unit_price)
-    hourly = [{'hour': h, 'revenue': round(v, 2)} for h, v in sorted(revenue_per_hour.items())]
+    txcount_per_hour = defaultdict(set)
+    cogs_per_hour    = defaultdict(float)
+    for r in rows:
+        h = (r.date_time.hour + 2) % 24
+        revenue_per_hour[h] += float(Decimal(str(r.qty)) * r.unit_price)
+        txcount_per_hour[h].add(r.sale_id)
+        if r.cogs is not None:
+            cogs_per_hour[h] += float(Decimal(str(r.cogs)))
+    hourly = [{'hour': h, 'revenue': round(v, 2), 'tx_count': len(txcount_per_hour.get(h, set())), 'profit': round(v - cogs_per_hour.get(h, 0.0), 2)} for h, v in sorted(revenue_per_hour.items())]
 
     revenue_per_day = defaultdict(float); tx_per_day = defaultdict(set); profit_per_day = defaultdict(float)
     for r in rows:
@@ -299,8 +312,21 @@ def api_stats():
     worst_day = min(daily, key=lambda x: x['revenue'], default=None) if len(daily) > 1 else None
 
     revenue_per_minute = defaultdict(float)
-    for r in rows: revenue_per_minute[r.date_time.strftime('%H:%M')] += float(Decimal(str(r.qty)) * r.unit_price)
-    minutely = [{'minute': m, 'revenue': round(v, 2)} for m, v in sorted(revenue_per_minute.items())]
+    txcount_per_minute = defaultdict(set)
+    cogs_per_minute    = defaultdict(float)
+    for r in rows:
+        mk = f'{(r.date_time.hour + 2) % 24:02d}:{r.date_time.minute:02d}'
+        revenue_per_minute[mk] += float(Decimal(str(r.qty)) * r.unit_price)
+        txcount_per_minute[mk].add(r.sale_id)
+        if r.cogs is not None:
+            cogs_per_minute[mk] += float(Decimal(str(r.cogs)))
+    # Fill all 60 minute slots for each hour that has any activity (ensures even spacing)
+    for _h in {int(k[:2]) for k in revenue_per_minute}:
+        for _m in range(60):
+            _k = f'{_h:02d}:{_m:02d}'
+            if _k not in revenue_per_minute:
+                revenue_per_minute[_k] = 0.0
+    minutely = [{'minute': k, 'revenue': round(revenue_per_minute[k], 2), 'tx_count': len(txcount_per_minute.get(k, set())), 'profit': round(revenue_per_minute[k] - cogs_per_minute.get(k, 0.0), 2)} for k in sorted(revenue_per_minute)]
 
     emp_revenue = defaultdict(float); emp_tx = defaultdict(set); emp_items = defaultdict(float); emp_first = {}; emp_last = {}
     for r in rows:
@@ -352,8 +378,9 @@ def api_stats():
         supplier_costs[sup_name] += float(b.qty_purchased_base) * float(b.cost_per_base_unit)
     supplier_breakdown = [{'supplier': k, 'total_cost': round(v, 2)} for k, v in sorted(supplier_costs.items(), key=lambda x: x[1], reverse=True)]
 
-    filtered_product_name = (db.session.get(Product, product_id_filter) or Product(name=None)).name if product_id_filter else None
-    filtered_user_name    = (db.session.get(User, user_id_filter) or User(username=None)).username if user_id_filter else None
+    filtered_product_name  = (db.session.get(Product,  product_id_filter)  or Product(name=None)).name      if product_id_filter  else None
+    filtered_user_name     = (db.session.get(User,     user_id_filter)     or User(username=None)).username  if user_id_filter     else None
+    filtered_supplier_name = (db.session.get(Supplier, supplier_id_filter) or Supplier(name=None)).name      if supplier_id_filter else None
 
     # ── Customer/channel metrics — online_orders table only exists on Lady Coleen box ──
     from sqlalchemy import text as _text
@@ -455,6 +482,7 @@ def api_stats():
     return jsonify({
         'filtered_product_id': product_id_filter, 'filtered_product_name': filtered_product_name,
         'filtered_user_id': user_id_filter, 'filtered_user_name': filtered_user_name,
+        'filtered_supplier_id': supplier_id_filter, 'filtered_supplier_name': filtered_supplier_name,
         'transactions_count': transactions_count, 'total_sales_value': round(total_sales_value, 2),
         'total_items_sold': round(total_items_sold, 2), 'avg_basket_value': round(avg_basket_value, 2),
         'avg_basket_qty': round(avg_basket_qty, 2), 'total_cogs': round(total_cogs, 2),
