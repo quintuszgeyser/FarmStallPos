@@ -9864,6 +9864,10 @@ function _showChartTab(tab) {
     if (c) c.style.display = 'none';
   });
   _showTimeMetricBar(false);
+  if (tab !== 'minute') {
+    const _ca = document.getElementById('stats-chart-area');
+    if (_ca) _ca.style.overflowX = '';
+  }
   document.querySelectorAll('[data-chart-tab]').forEach(b => {
     b.className = b.dataset.chartTab === tab
       ? 'btn btn-sm btn-primary'
@@ -9927,6 +9931,10 @@ function _showChartTab(tab) {
     _showTimeMetricBar(true);
     const mins   = j.revenue_per_minute || [];
     const metric = _statsTimeMetric;
+    // Enable horizontal scroll when many bars (all 60 slots per active hour are filled)
+    const chartArea = document.getElementById('stats-chart-area');
+    const needsScroll = mins.length > 120;
+    if (chartArea) chartArea.style.overflowX = needsScroll ? 'auto' : '';
     let vals, yLabel, valuePrefix = '';
     if (metric === 'count') {
       vals = mins.map(x => x.tx_count || 0);
@@ -9941,10 +9949,11 @@ function _showChartTab(tab) {
     drawBarChart(c, mins.map(x => x.minute), vals, {
       color: '#00838f', valuePrefix,
       yLabel, xLabel: 'Time (hh:mm)',
+      minBarSlotPx: 12,
       onBarClick: (lbl, val) => { if (lbl && val > 0) openDrilldown(`Sales at ${lbl}`, 'minute', lbl); },
     });
     const _mLabel = {revenue: 'Revenue', count: 'Transaction count', profit: 'Profit'}[metric] || metric;
-    if (_legend) _legend.innerHTML = `<span class="text-muted">${_mLabel} by minute — shows the busiest moments across the selected period</span>`;
+    if (_legend) _legend.innerHTML = `<span class="text-muted">${_mLabel} by minute — all 60 slots shown per active hour${needsScroll ? ' · <b>scroll right</b> to see full range' : ''} (zero bar = no sales that minute)</span>`;
 
   } else if (tab === 'top-qty') {
     const c = document.getElementById('chart-top');
