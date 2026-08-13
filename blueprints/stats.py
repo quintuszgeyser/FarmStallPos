@@ -320,12 +320,6 @@ def api_stats():
         txcount_per_minute[mk].add(r.sale_id)
         if r.cogs is not None:
             cogs_per_minute[mk] += float(Decimal(str(r.cogs)))
-    # Fill all 60 minute slots for each hour that has any activity (ensures even spacing)
-    for _h in {int(k[:2]) for k in revenue_per_minute}:
-        for _m in range(60):
-            _k = f'{_h:02d}:{_m:02d}'
-            if _k not in revenue_per_minute:
-                revenue_per_minute[_k] = 0.0
     minutely = [{'minute': k, 'revenue': round(revenue_per_minute[k], 2), 'tx_count': len(txcount_per_minute.get(k, set())), 'profit': round(revenue_per_minute[k] - cogs_per_minute.get(k, 0.0), 2)} for k in sorted(revenue_per_minute)]
 
     emp_revenue = defaultdict(float); emp_tx = defaultdict(set); emp_items = defaultdict(float); emp_first = {}; emp_last = {}

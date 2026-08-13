@@ -9864,11 +9864,6 @@ function _showChartTab(tab) {
     if (c) c.style.display = 'none';
   });
   _showTimeMetricBar(false);
-  // Reset horizontal scroll on chart area (minute tab may have set it)
-  if (tab !== 'minute') {
-    const _ca = document.getElementById('stats-chart-area');
-    if (_ca) _ca.style.overflowX = '';
-  }
   document.querySelectorAll('[data-chart-tab]').forEach(b => {
     b.className = b.dataset.chartTab === tab
       ? 'btn btn-sm btn-primary'
@@ -9932,10 +9927,6 @@ function _showChartTab(tab) {
     _showTimeMetricBar(true);
     const mins   = j.revenue_per_minute || [];
     const metric = _statsTimeMetric;
-    // Enable horizontal scroll on chart area when many bars (> 120 = 2 hours × 60)
-    const chartArea = document.getElementById('stats-chart-area');
-    const needsScroll = mins.length > 120;
-    if (chartArea) chartArea.style.overflowX = needsScroll ? 'auto' : '';
     let vals, yLabel, valuePrefix = '';
     if (metric === 'count') {
       vals = mins.map(x => x.tx_count || 0);
@@ -9950,11 +9941,10 @@ function _showChartTab(tab) {
     drawBarChart(c, mins.map(x => x.minute), vals, {
       color: '#00838f', valuePrefix,
       yLabel, xLabel: 'Time (hh:mm)',
-      minBarSlotPx: 12,
       onBarClick: (lbl, val) => { if (lbl && val > 0) openDrilldown(`Sales at ${lbl}`, 'minute', lbl); },
     });
     const _mLabel = {revenue: 'Revenue', count: 'Transaction count', profit: 'Profit'}[metric] || metric;
-    if (_legend) _legend.innerHTML = `<span class="text-muted">${_mLabel} by minute — all 60 slots shown per active hour${needsScroll ? ' — <b>scroll right</b> to see all' : ''} (zero bars = no sales that minute)</span>`;
+    if (_legend) _legend.innerHTML = `<span class="text-muted">${_mLabel} by minute — shows the busiest moments across the selected period</span>`;
 
   } else if (tab === 'top-qty') {
     const c = document.getElementById('chart-top');
