@@ -108,7 +108,17 @@ def _get_access_token() -> str:
         'refresh_token': refresh_token,
         'grant_type':    'refresh_token',
     }, timeout=15)
-    r.raise_for_status()
+    if not r.ok:
+        try:
+            google_err = r.json().get('error', r.text[:120])
+        except Exception:
+            google_err = r.text[:120]
+        if google_err in ('invalid_grant', 'token_expired'):
+            raise RuntimeError(
+                f'Google Drive token expired or revoked ({google_err}) — '
+                'go to Settings → Backup → Disconnect, then reconnect Google Drive'
+            )
+        raise RuntimeError(f'Google token refresh failed ({r.status_code}): {google_err}')
     j = r.json()
     _token_cache['access_token'] = j['access_token']
     _token_cache['expires_at']   = time.time() + j.get('expires_in', 3600)
