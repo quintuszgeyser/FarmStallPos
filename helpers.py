@@ -257,36 +257,39 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
 
         # Consignment liability: generate on every FIFO consumption of a consignment batch.
         # Write-offs pass sale_id='wo-{uuid}' — still owed (shrinkage is supplier's risk too).
-        if getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT' and not batch.supplier_id:
-            logger.warning(
-                f'consume_fifo: consignment batch {batch.id} for product {ingredient_id} '
-                f'has no supplier_id — liability NOT created. Set supplier when receiving stock.'
-            )
-        if getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT' and batch.supplier_id:
+        if getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT':
             _prod = db.session.get(Product, ingredient_id)
-            _basis = getattr(_prod, 'settlement_basis', 'FIXED_COST') if _prod else 'FIXED_COST'
-            _sale_price_snap = None
-            _pct_snap = None
-            if _basis == 'PCT_OF_SALE' and sale_unit_price is not None and _prod:
-                _pct = Decimal(str(_prod.consignment_pct or 0)) / Decimal('100')
-                _unit_cost = (Decimal(str(sale_unit_price)) * _pct).quantize(Decimal('0.000001'))
-                _sale_price_snap = float(sale_unit_price)
-                _pct_snap = float(_prod.consignment_pct or 0)
+            # Batch supplier takes priority; fall back to product-level consignment_supplier_id
+            _eff_supplier = batch.supplier_id or (getattr(_prod, 'consignment_supplier_id', None) if _prod else None)
+            if not _eff_supplier:
+                logger.warning(
+                    f'consume_fifo: consignment batch {batch.id} for product {ingredient_id} '
+                    f'has no supplier_id and product has no consignment_supplier_id — liability NOT created.'
+                )
             else:
-                _cuc = getattr(batch, 'consignment_unit_cost', None)
-                _unit_cost = Decimal(str(_cuc)) if _cuc is not None else Decimal(str(batch.cost_per_base_unit))
-            _amount = (take * _unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
-            db.session.add(ConsignmentLiability(
-                supplier_id=batch.supplier_id,
-                product_id=ingredient_id,
-                batch_id=batch.id,
-                sale_id=sale_id,
-                qty_consumed=float(take),
-                unit_cost=float(_unit_cost),
-                amount_owed=float(_amount),
-                sale_price_at_time=_sale_price_snap,
-                settlement_percent_at_time=_pct_snap,
-            ))
+                _basis = getattr(_prod, 'settlement_basis', 'FIXED_COST') if _prod else 'FIXED_COST'
+                _sale_price_snap = None
+                _pct_snap = None
+                if _basis == 'PCT_OF_SALE' and sale_unit_price is not None and _prod:
+                    _pct = Decimal(str(_prod.consignment_pct or 0)) / Decimal('100')
+                    _unit_cost = (Decimal(str(sale_unit_price)) * _pct).quantize(Decimal('0.000001'))
+                    _sale_price_snap = float(sale_unit_price)
+                    _pct_snap = float(_prod.consignment_pct or 0)
+                else:
+                    _cuc = getattr(batch, 'consignment_unit_cost', None)
+                    _unit_cost = Decimal(str(_cuc)) if _cuc is not None else Decimal(str(batch.cost_per_base_unit))
+                _amount = (take * _unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                db.session.add(ConsignmentLiability(
+                    supplier_id=_eff_supplier,
+                    product_id=ingredient_id,
+                    batch_id=batch.id,
+                    sale_id=sale_id,
+                    qty_consumed=float(take),
+                    unit_cost=float(_unit_cost),
+                    amount_owed=float(_amount),
+                    sale_price_at_time=_sale_price_snap,
+                    settlement_percent_at_time=_pct_snap,
+                ))
 
         qty_to_consume -= take
 
