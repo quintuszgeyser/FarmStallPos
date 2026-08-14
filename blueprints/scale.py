@@ -743,7 +743,11 @@ def _tplink_login(router_ip: str, password: str) -> str:
 
 
 def _tplink_reserve_ip(router_ip: str, stok: str, mac: str, ip: str, comment: str):
-    """Add or update a DHCP address reservation on a TP-Link Archer router."""
+    """
+    Add or update a DHCP address reservation on a TP-Link Archer router.
+    If a reservation for this MAC already exists (at any IP), it is replaced —
+    so changing the scale IP via the UI never leaves a stale old reservation.
+    """
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -752,9 +756,25 @@ def _tplink_reserve_ip(router_ip: str, stok: str, mac: str, ip: str, comment: st
     sess.verify = False
 
     mac_upper = mac.upper().replace(':', '-')
-
-    # Modern luci JSON API (Archer AX/MR 2020+ firmware)
     url = f'{base}/cgi-bin/luci/;stok={stok}/admin/dhcps'
+
+    # Step 1: fetch existing reservations so we can delete any with the same MAC
+    try:
+        r_get = sess.post(url, json={'method': 'get', 'ip_mac_binding': {}},
+                          params={'form': 'ip_mac_binding'}, timeout=8)
+        if r_get.ok:
+            data = r_get.json()
+            entries = data.get('data', {}).get('ip_mac_binding', []) or []
+            for entry in entries:
+                if (entry.get('mac', '') or '').upper().replace(':', '-') == mac_upper:
+                    # Delete the old reservation for this MAC
+                    sess.post(url, json={'method': 'del', 'ip_mac_binding': {'index': entry.get('index', entry.get('id', 0))}},
+                              params={'form': 'ip_mac_binding'}, timeout=8)
+                    break
+    except Exception:
+        pass  # best-effort; if GET fails just try to add
+
+    # Step 2: add the new reservation
     payload = {
         'method': 'add',
         'ip_mac_binding': {'mac': mac_upper, 'ip': ip, 'name': comment, 'enable': True},
@@ -769,7 +789,7 @@ def _tplink_reserve_ip(router_ip: str, stok: str, mac: str, ip: str, comment: st
             if r.status_code == 200:
                 return
 
-    # Fallback: older CGI API
+    # Fallback: older CGI API (pre-2019 firmware)
     url2 = f'{base}/userRpm/FixMapCfgRpm.htm'
     r2 = sess.post(url2, data={'Mac': mac_upper, 'Ip': ip, 'isNew': 1, 'entrys': 'save'},
                    timeout=8, headers={'Referer': f'{base}/'})
