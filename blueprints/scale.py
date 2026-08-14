@@ -18,6 +18,7 @@ Scale is a downstream cache. This blueprint provides:
 import hashlib
 import json
 import os
+import re
 import socket
 import logging
 import struct
@@ -25,9 +26,10 @@ from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime
 from pathlib import Path
 
+import requests as _requests
 from flask import Blueprint, jsonify, request
 
-from helpers import require_role, get_setting
+from helpers import require_role, get_setting, set_setting
 from models import db, Product, ScaleSyncRun, ScaleSnapshot, ScaleKeyboardPreset, ScaleAdvertMessage
 
 SYNC_SOURCE_FILE = Path(os.environ.get('SCALE_DATA_DIR', '/scale_data')) / 'sync_source.json'
@@ -601,3 +603,175 @@ def api_scale_adverts_save():
 
     db.session.commit()
     return jsonify({'ok': True, 'saved': len(slots)})
+
+
+# ---------------------------------------------------------------------------
+# Scale connection settings — IP/MAC editable from UI; optional router DHCP
+# ---------------------------------------------------------------------------
+
+@bp.route('/api/scale/connection-settings', methods=['GET'])
+def api_scale_conn_get():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    cfg = _get_scale_config()
+    has_router_pass = bool(get_setting('router_password', '').strip())
+    return jsonify({
+        'scale_ip':        cfg['ip'],
+        'scale_port':      cfg['port'],
+        'scale_mac':       get_setting('scale_mac', '3a:69:43:bc:97:f4'),
+        'router_ip':       get_setting('router_ip', '10.0.0.254'),
+        'router_password': '●●●●●●●●' if has_router_pass else '',
+        'has_router_pass': has_router_pass,
+    })
+
+
+@bp.route('/api/scale/connection-settings', methods=['POST'])
+def api_scale_conn_save():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.get_json() or {}
+
+    scale_ip = (data.get('scale_ip') or '').strip()
+    scale_port = data.get('scale_port')
+    scale_mac = (data.get('scale_mac') or '').strip().lower()
+    router_ip = (data.get('router_ip') or '').strip()
+    router_password = data.get('router_password')  # None = don't change
+
+    if scale_ip:
+        if not re.match(r'^\d{1,3}(\.\d{1,3}){3}$', scale_ip):
+            return jsonify({'error': 'Invalid scale IP address'}), 400
+        set_setting('scale_ip', scale_ip)
+
+    if scale_port is not None:
+        try:
+            p = int(scale_port)
+            if not (1 <= p <= 65535):
+                raise ValueError
+            set_setting('scale_port', str(p))
+        except (ValueError, TypeError):
+            return jsonify({'error': 'Invalid port number'}), 400
+
+    if scale_mac:
+        if not re.match(r'^([0-9a-f]{2}:){5}[0-9a-f]{2}$', scale_mac):
+            return jsonify({'error': 'Invalid MAC address (use xx:xx:xx:xx:xx:xx format)'}), 400
+        set_setting('scale_mac', scale_mac)
+
+    if router_ip:
+        if not re.match(r'^\d{1,3}(\.\d{1,3}){3}$', router_ip):
+            return jsonify({'error': 'Invalid router IP address'}), 400
+        set_setting('router_ip', router_ip)
+
+    # Only update router_password if the client sent a real value (not the placeholder dots)
+    if router_password is not None and router_password != '●●●●●●●●':
+        set_setting('router_password', router_password)
+
+    cfg = _get_scale_config()
+    return jsonify({'ok': True, 'scale_ip': cfg['ip'], 'scale_port': cfg['port']})
+
+
+@bp.route('/api/scale/reserve-dhcp', methods=['POST'])
+def api_scale_reserve_dhcp():
+    """Attempt to add a DHCP reservation on a TP-Link Archer router."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    scale_ip  = get_setting('scale_ip', '10.0.0.103')
+    scale_mac = get_setting('scale_mac', '3a:69:43:bc:97:f4')
+    router_ip = get_setting('router_ip', '10.0.0.254')
+    router_pass = get_setting('router_password', '').strip()
+
+    if not router_pass:
+        return jsonify({'error': 'Router password not configured. Enter it in the Connection Settings.'}), 400
+    if not scale_ip or not scale_mac:
+        return jsonify({'error': 'Scale IP and MAC must be configured first'}), 400
+
+    try:
+        stok = _tplink_login(router_ip, router_pass)
+    except Exception as e:
+        return jsonify({'error': f'Router login failed: {e}'}), 502
+
+    try:
+        _tplink_reserve_ip(router_ip, stok, scale_mac, scale_ip, 'BC4000 Scale')
+    except Exception as e:
+        return jsonify({'error': f'DHCP reservation failed: {e}'}), 502
+
+    return jsonify({'ok': True, 'reserved_ip': scale_ip, 'reserved_mac': scale_mac})
+
+
+def _tplink_login(router_ip: str, password: str) -> str:
+    """Login to a TP-Link Archer router. Returns the stok session token."""
+    import base64
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    from cryptography.hazmat.primitives.asymmetric import padding as _asym_padding
+    from cryptography.hazmat.backends import default_backend as _backend
+    from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
+
+    base = f'https://{router_ip}'
+    sess = _requests.Session()
+    sess.verify = False
+
+    r = sess.post(f'{base}/cgi/getParm', timeout=8)
+    r.raise_for_status()
+    nn_m = re.search(r'var\s+nn\s*=\s*"([0-9a-fA-F]+)"', r.text)
+    ee_m = re.search(r'var\s+ee\s*=\s*"([0-9a-fA-F]+)"', r.text)
+    if not nn_m or not ee_m:
+        raise Exception('Could not extract RSA key from router — firmware may use different login API')
+    n = int(nn_m.group(1), 16)
+    e = int(ee_m.group(1), 16)
+
+    pub_key = RSAPublicNumbers(e, n).public_key(_backend())
+
+    def rsa_enc(plaintext: str) -> str:
+        ct = pub_key.encrypt(plaintext.encode(), _asym_padding.PKCS1v15())
+        return ct.hex()
+
+    enc_user = rsa_enc('admin')
+    enc_pass = rsa_enc(base64.b64encode(password.encode()).decode())
+
+    r2 = sess.post(
+        f'{base}/cgi/login',
+        params={'UserName': enc_user, 'Passwd': enc_pass, 'Action': 1, 'LoginStatus': 0},
+        timeout=8,
+        allow_redirects=True,
+    )
+    stok_m = re.search(r'stok=([a-f0-9]+)', r2.url + r2.text)
+    if not stok_m:
+        raise Exception('Login appeared to succeed but no session token returned — check password')
+    return stok_m.group(1)
+
+
+def _tplink_reserve_ip(router_ip: str, stok: str, mac: str, ip: str, comment: str):
+    """Add or update a DHCP address reservation on a TP-Link Archer router."""
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    base = f'https://{router_ip}'
+    sess = _requests.Session()
+    sess.verify = False
+
+    mac_upper = mac.upper().replace(':', '-')
+
+    # Modern luci JSON API (Archer AX/MR 2020+ firmware)
+    url = f'{base}/cgi-bin/luci/;stok={stok}/admin/dhcps'
+    payload = {
+        'method': 'add',
+        'ip_mac_binding': {'mac': mac_upper, 'ip': ip, 'name': comment, 'enable': True},
+    }
+    r = sess.post(url, json=payload, params={'form': 'ip_mac_binding'}, timeout=8)
+    if r.ok:
+        try:
+            resp = r.json()
+            if resp.get('error_code', 0) == 0:
+                return
+        except Exception:
+            if r.status_code == 200:
+                return
+
+    # Fallback: older CGI API
+    url2 = f'{base}/userRpm/FixMapCfgRpm.htm'
+    r2 = sess.post(url2, data={'Mac': mac_upper, 'Ip': ip, 'isNew': 1, 'entrys': 'save'},
+                   timeout=8, headers={'Referer': f'{base}/'})
+    if not r2.ok:
+        raise Exception(f'Reservation API returned HTTP {r2.status_code}')

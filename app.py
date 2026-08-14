@@ -1720,6 +1720,11 @@ def strong_migrate():
         # Import in-progress flag (atomic lock for CSV imports)
         pg_try("INSERT INTO settings (key, value) VALUES ('import_in_progress', 'false') ON CONFLICT DO NOTHING")
 
+        # Scale connection settings (editable from Scale tab UI)
+        pg_try("INSERT INTO settings (key, value) VALUES ('scale_mac', '3a:69:43:bc:97:f4') ON CONFLICT DO NOTHING")
+        pg_try("INSERT INTO settings (key, value) VALUES ('router_ip', '10.0.0.254') ON CONFLICT DO NOTHING")
+        pg_try("INSERT INTO settings (key, value) VALUES ('router_password', '') ON CONFLICT DO NOTHING")
+
         # Receipt / printer settings
         pg_try("INSERT INTO settings (key, value) VALUES ('receipt_width_mm', '72') ON CONFLICT DO NOTHING")
         pg_try("INSERT INTO settings (key, value) VALUES ('receipt_printer_id', '') ON CONFLICT DO NOTHING")

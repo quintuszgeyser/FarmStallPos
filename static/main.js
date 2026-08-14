@@ -13519,6 +13519,72 @@ async function scaleTestConnection() {
   } catch (e) { toast('Connection test failed: ' + e.message, 'danger'); }
 }
 
+async function loadScaleConnectionSettings() {
+  try {
+    const d = await api('/api/scale/connection-settings');
+    document.getElementById('conn-scale-ip').value   = d.scale_ip   || '';
+    document.getElementById('conn-scale-port').value = d.scale_port || '';
+    document.getElementById('conn-scale-mac').value  = d.scale_mac  || '';
+    document.getElementById('conn-router-ip').value  = d.router_ip  || '';
+    document.getElementById('conn-router-pass').value = d.has_router_pass ? '●●●●●●●●' : '';
+  } catch (e) { toast('Failed to load connection settings: ' + e.message, 'danger'); }
+}
+
+async function saveScaleConnectionSettings() {
+  const scaleIp   = document.getElementById('conn-scale-ip').value.trim();
+  const scalePort = document.getElementById('conn-scale-port').value.trim();
+  const scaleMac  = document.getElementById('conn-scale-mac').value.trim();
+  const routerIp  = document.getElementById('conn-router-ip').value.trim();
+  const routerPass = document.getElementById('conn-router-pass').value;
+
+  const status = document.getElementById('conn-status');
+  status.innerHTML = '';
+
+  try {
+    const d = await api('/api/scale/connection-settings', {
+      method: 'POST',
+      body: JSON.stringify({
+        scale_ip: scaleIp || undefined,
+        scale_port: scalePort ? parseInt(scalePort) : undefined,
+        scale_mac: scaleMac || undefined,
+        router_ip: routerIp || undefined,
+        router_password: routerPass || undefined,
+      }),
+    });
+    toast(`Scale IP saved: ${d.scale_ip}:${d.scale_port}`, 'success');
+    // Refresh the banner so the new IP shows immediately
+    _updateScaleBanner();
+  } catch (e) {
+    toast('Save failed: ' + e.message, 'danger');
+  }
+}
+
+async function reserveScaleDhcp() {
+  const btn = document.getElementById('conn-reserve-btn');
+  const status = document.getElementById('conn-status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Contacting router...';
+  status.innerHTML = '';
+  try {
+    // Save current form values first so the reservation uses what's on screen
+    await saveScaleConnectionSettings();
+    const d = await api('/api/scale/reserve-dhcp', {method: 'POST'});
+    status.innerHTML = `<div class="alert alert-success mt-2 py-2">
+      <i class="bi bi-check-circle me-1"></i>
+      Reserved <strong>${d.reserved_ip}</strong> for MAC <code>${d.reserved_mac}</code> on the router.
+      Other devices can no longer take this IP.
+    </div>`;
+    toast('DHCP reservation set on router', 'success');
+  } catch (e) {
+    status.innerHTML = `<div class="alert alert-warning mt-2 py-2">
+      <i class="bi bi-exclamation-triangle me-1"></i>${e.message}
+    </div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-pin-map me-1"></i>Reserve IP on Router';
+  }
+}
+
 async function scalePreview() {
   try {
     const d = await api('/api/scale/preview', {method:'POST'});
