@@ -423,6 +423,8 @@ def api_transactions_post():
                     _sale_snap = float(unit_price)
                     _pct_snap  = float(p.consignment_pct or 0)
                 else:
+                    # FIXED_COST: manually-set price. UNIT_COST: auto from batch (no shipping).
+                    # Simple products have no batch, so both use consignment_cost_per_unit.
                     _cuc = getattr(p, 'consignment_cost_per_unit', None)
                     _unit_cost = Decimal(str(_cuc)) if _cuc else Decimal('0')
                 if _unit_cost > 0:
@@ -926,6 +928,8 @@ def api_transaction_edit(sale_id):
                     _sale_snap = float(unit_price)
                     _pct_snap  = float(p.consignment_pct or 0)
                 else:
+                    # FIXED_COST: manually-set price. UNIT_COST: auto from batch (no shipping).
+                    # Simple products have no batch, so both use consignment_cost_per_unit.
                     _cuc = getattr(p, 'consignment_cost_per_unit', None)
                     _unit_cost = Decimal(str(_cuc)) if _cuc else Decimal('0')
                 if _unit_cost > 0:

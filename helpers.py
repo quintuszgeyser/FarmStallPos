@@ -275,7 +275,15 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
                     _unit_cost = (Decimal(str(sale_unit_price)) * _pct).quantize(Decimal('0.000001'))
                     _sale_price_snap = float(sale_unit_price)
                     _pct_snap = float(_prod.consignment_pct or 0)
-                else:
+                elif _basis == 'FIXED_COST':
+                    # Manually-set fixed price on product overrides batch cost
+                    _fixed = getattr(_prod, 'consignment_cost_per_unit', None) if _prod else None
+                    if _fixed is not None:
+                        _unit_cost = Decimal(str(_fixed))
+                    else:
+                        _cuc = getattr(batch, 'consignment_unit_cost', None)
+                        _unit_cost = Decimal(str(_cuc)) if _cuc is not None else Decimal(str(batch.cost_per_base_unit))
+                else:  # UNIT_COST — purchase cost per unit, excludes shipping/additional costs
                     _cuc = getattr(batch, 'consignment_unit_cost', None)
                     _unit_cost = Decimal(str(_cuc)) if _cuc is not None else Decimal(str(batch.cost_per_base_unit))
                 _amount = (take * _unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -327,6 +335,92 @@ def get_stock_level(product_id):
         func.sum(StockBatch.qty_remaining_base)
     ).filter_by(product_id=product_id).scalar()
     return float(result or 0)
+
+
+def backfill_consignment_liabilities(product_id, qty_absorbed, supplier_id_override, cuc):
+    """Create ConsignmentLiability records for units already sold before stock was received.
+    Called when receiving consignment stock absorbs a negative placeholder.
+    For PCT_OF_SALE: creates per-sale records using actual sale prices.
+    For FIXED_COST/UNIT_COST: creates one aggregate record.
+    """
+    qty_to_cover = Decimal(str(qty_absorbed))
+    if qty_to_cover <= 0:
+        return
+
+    prod = db.session.get(Product, product_id)
+    if not prod or not prod.is_consignment:
+        return
+
+    supplier_id = supplier_id_override or getattr(prod, 'consignment_supplier_id', None)
+    if not supplier_id:
+        return
+
+    _basis = getattr(prod, 'settlement_basis', 'FIXED_COST')
+
+    if _basis == 'PCT_OF_SALE':
+        _pct = Decimal(str(prod.consignment_pct or 0)) / Decimal('100')
+
+        # Find when the negative started (creation time of the placeholder)
+        neg_batch = (StockBatch.query
+                     .filter_by(product_id=product_id, batch_type='negative_placeholder')
+                     .order_by(StockBatch.purchased_at.asc())
+                     .first())
+        if not neg_batch:
+            return
+        neg_start_at = neg_batch.purchased_at
+
+        # Sales already covered by existing liabilities (from previous partial receives)
+        covered = set(
+            row[0] for row in
+            db.session.query(ConsignmentLiability.sale_id)
+            .filter_by(product_id=product_id)
+            .filter(ConsignmentLiability.sale_id.isnot(None))
+            .filter(ConsignmentLiability.status != 'voided')
+            .all()
+        )
+
+        uncovered = (Sale.query
+                     .filter_by(product_id=product_id, voided=False)
+                     .filter(Sale.date_time >= neg_start_at)
+                     .filter(Sale.sale_id.notin_(covered) if covered else db.true())
+                     .order_by(Sale.date_time.asc())
+                     .all())
+
+        for sale in uncovered:
+            if qty_to_cover <= 0:
+                break
+            take = min(Decimal(str(sale.qty)), qty_to_cover)
+            unit_price = Decimal(str(sale.unit_price or 0))
+            unit_cost  = (unit_price * _pct).quantize(Decimal('0.000001'))
+            amount     = (take * unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            if amount > 0:
+                db.session.add(ConsignmentLiability(
+                    supplier_id=supplier_id, product_id=product_id,
+                    batch_id=None, sale_id=sale.sale_id,
+                    qty_consumed=float(take), unit_cost=float(unit_cost),
+                    amount_owed=float(amount),
+                    sale_price_at_time=float(unit_price),
+                    settlement_percent_at_time=float(prod.consignment_pct or 0),
+                ))
+            qty_to_cover -= take
+    else:
+        # FIXED_COST: manually-set price. UNIT_COST: purchase cost (no shipping).
+        if _basis == 'FIXED_COST':
+            _fixed = getattr(prod, 'consignment_cost_per_unit', None)
+            unit_cost = Decimal(str(_fixed)) if _fixed is not None else Decimal(str(cuc or 0))
+        else:
+            unit_cost = Decimal(str(cuc or 0))
+
+        if unit_cost <= 0:
+            return
+
+        amount = (qty_to_cover * unit_cost).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        db.session.add(ConsignmentLiability(
+            supplier_id=supplier_id, product_id=product_id,
+            batch_id=None, sale_id=None,
+            qty_consumed=float(qty_to_cover), unit_cost=float(unit_cost),
+            amount_owed=float(amount),
+        ))
 
 
 def absorb_neg_placeholder(product_id, incoming_qty_dec):

@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder
+from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
                     SupplierInvoiceTemplate, SupplierProductMapping,
@@ -1711,6 +1711,8 @@ def api_suppliers_purchase_run(sid):
             purchased_at=purchase_date,
             invoice_id=run_id,
         ))
+        if _ownership == 'CONSIGNMENT' and _pr_absorbed > 0:
+            backfill_consignment_liabilities(pl['pid'], _pr_absorbed, sid, _cuc)
         batches_created += 1
 
     # Stamp invoice-level totals
@@ -2179,11 +2181,15 @@ def api_supplier_invoice_update(sid, inv_id):
                     ld_amount_upd = Decimal('0')
             except Exception:
                 ld_amount_upd = Decimal('0')
+        _p_consign = bool(getattr(p, 'is_consignment', False))
+        _p_cuc_raw = line.get('consignment_unit_cost')
         prepared_lines.append({
             'pid': pid, 'qty_base': qty_base,
             'base_cost_total': Decimal(str(total_price)),
             'line_discount_label':  ld_label_upd if ld_amount_upd > Decimal('0') else None,
             'line_discount_amount': ld_amount_upd,
+            'is_consignment': _p_consign,
+            'consignment_unit_cost': float(_p_cuc_raw) if _p_cuc_raw is not None else None,
         })
 
     subtotal_upd = sum(pl['base_cost_total'] for pl in prepared_lines)
@@ -2231,6 +2237,10 @@ def api_supplier_invoice_update(sid, inv_id):
                                   if e.get('type') == 'shipping') if batch_addl else Decimal('0')
         final_cost_upd      = base_incl_vat_upd + share - disc_share_upd
         cost_per_base       = final_cost_upd / Decimal(str(pl['qty_base']))
+        _upd_ownership  = 'CONSIGNMENT' if pl.get('is_consignment') else 'NORMAL'
+        _upd_cuc        = pl.get('consignment_unit_cost')
+        if _upd_ownership == 'CONSIGNMENT' and _upd_cuc is None and pl['qty_base']:
+            _upd_cuc = float((pl['base_cost_total'] / Decimal(str(pl['qty_base']))).quantize(Decimal('0.0001')))
         _upd_qty_dec    = Decimal(str(pl['qty_base']))
         _upd_absorbed   = absorb_neg_placeholder(pl['pid'], _upd_qty_dec)
         _upd_remaining  = float(_upd_qty_dec - _upd_absorbed)
@@ -2239,6 +2249,8 @@ def api_supplier_invoice_update(sid, inv_id):
             qty_purchased_base=pl['qty_base'],
             qty_remaining_base=_upd_remaining,
             cost_per_base_unit=cost_per_base,
+            ownership_type=_upd_ownership,
+            consignment_unit_cost=_upd_cuc,
             base_cost_total=pl['base_cost_total'],
             vat_amount=float(vat_share.quantize(Decimal('0.0001'))) if vat_total_upd > 0 else None,
             base_cost_incl_vat=float(base_incl_vat_upd),
@@ -2251,6 +2263,8 @@ def api_supplier_invoice_update(sid, inv_id):
             purchased_at=purchase_date,
             invoice_id=inv_id,
         ))
+        if _upd_ownership == 'CONSIGNMENT' and _upd_absorbed > 0:
+            backfill_consignment_liabilities(pl['pid'], _upd_absorbed, sid, _upd_cuc)
         batches_created += 1
 
     inv.subtotal               = float(subtotal_upd)

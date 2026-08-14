@@ -11,7 +11,7 @@ from sqlalchemy import func
 from helpers import (
     require_login, require_role, current_user,
     get_stock_level, consume_fifo, reverse_fifo, _parse_dt, _auto_price_products,
-    absorb_neg_placeholder,
+    absorb_neg_placeholder, backfill_consignment_liabilities,
 )
 from models import (
     db,
@@ -277,6 +277,8 @@ def api_stock_receive():
         # use New Delivery (purchase run) when receiving against a supplier invoice
     )
     db.session.add(batch)
+    if _is_consign and _neg_absorbed > 0:
+        backfill_consignment_liabilities(pid, _neg_absorbed, supplier_id, _cuc)
     db.session.commit()
     try:
         _auto_price_products([pid])

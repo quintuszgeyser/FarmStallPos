@@ -2961,9 +2961,11 @@ function openProductEditor(p) {
     _toggleConsignmentSettings(!!p?.is_consignment);
   }
   const _basisFixed = document.getElementById('p-basis-fixed');
+  const _basisUnit  = document.getElementById('p-basis-unit');
   const _basisPct   = document.getElementById('p-basis-pct');
   const _basis      = p?.settlement_basis || 'FIXED_COST';
   if (_basisFixed) _basisFixed.checked = (_basis === 'FIXED_COST');
+  if (_basisUnit)  _basisUnit.checked  = (_basis === 'UNIT_COST');
   if (_basisPct)   _basisPct.checked   = (_basis === 'PCT_OF_SALE');
   _toggleConsignmentBasis(_basis);
   const _pctEl = document.getElementById('p-consignment-pct');
@@ -3202,7 +3204,7 @@ function _toggleConsignmentBasis(basis) {
   const pctRow  = document.getElementById('consignment-pct-row');
   const costRow = document.getElementById('consignment-cost-row');
   if (pctRow)  pctRow.style.display  = (basis === 'PCT_OF_SALE') ? '' : 'none';
-  if (costRow) costRow.style.display = (basis === 'FIXED_COST')  ? '' : 'none';
+  if (costRow) costRow.style.display = (basis === 'FIXED_COST')  ? '' : 'none'; // UNIT_COST is auto — no input needed
 }
 document.getElementById('p-is-consignment')?.addEventListener('change', (e) => {
   _toggleConsignmentSettings(e.target.checked);
@@ -11120,7 +11122,7 @@ const _IGM_VAT_OPTIONS  = [{v:'', label:'(default — Standard)'}, {v:'standard'
 const _IGM_TYPE_OPTIONS = [{v:'', label:'— choose —'}, {v:'stock_item', label:'Stock Item'}, {v:'recipe', label:'Recipe / Menu Item'}];
 const _IGM_UNIT_OPTIONS = [{v:'', label:'— choose —'}, {v:'weight', label:'Weight (kg/g)'}, {v:'volume', label:'Volume (ml/L)'}, {v:'count', label:'Count (fixed price)'}];
 const _IGM_PKG_UNIT_OPTIONS = [{v:'', label:'—'}, {v:'g', label:'g'}, {v:'kg', label:'kg'}, {v:'ml', label:'ml'}, {v:'L', label:'L'}, {v:'unit', label:'unit'}];
-const _IGM_SETTLE_OPTIONS = [{v:'', label:'(default — Fixed Cost)'}, {v:'FIXED_COST', label:'Fixed Cost'}, {v:'PCT_OF_SALE', label:'% of Sale'}];
+const _IGM_SETTLE_OPTIONS = [{v:'', label:'(default — Fixed Price)'}, {v:'FIXED_COST', label:'Fixed Price'}, {v:'UNIT_COST', label:'Unit Cost (excl. shipping)'}, {v:'PCT_OF_SALE', label:'% of Sale'}];
 
 function _igmIsSbw(row) { return row.product_type === 'stock_item' && (row.unit_type === 'weight' || row.unit_type === 'volume'); }
 function _igmIsCount(row) { return row.product_type === 'stock_item' && row.unit_type === 'count'; }
@@ -11280,7 +11282,7 @@ const IMPORT_COLS = [
   },
   { key:'settlement_basis', label:'Settlement', group:'consignment', width:130, type:'select', options:_IGM_SETTLE_OPTIONS,
     required: ()=>false, applicable: (row)=> row.is_consignment === 'true',
-    validate: (v, row)=> row.is_consignment === 'true' && v && !['FIXED_COST','PCT_OF_SALE'].includes(v) ? 'Use FIXED_COST or PCT_OF_SALE' : null
+    validate: (v, row)=> row.is_consignment === 'true' && v && !['FIXED_COST','UNIT_COST','PCT_OF_SALE'].includes(v) ? 'Use FIXED_COST, UNIT_COST or PCT_OF_SALE' : null
   },
   { key:'consignment_pct', label:'Supplier %', group:'consignment', width:100, type:'number',
     required: (row)=> row.is_consignment === 'true' && row.settlement_basis === 'PCT_OF_SALE',
@@ -12567,7 +12569,7 @@ function _igmReadFormRow() {
     family_name: txtVal('p-family'),
     is_default_variant: boolVal('p-is-default-variant'),
     is_consignment: boolVal('p-is-consignment'),
-    settlement_basis: document.getElementById('p-basis-pct')?.checked ? 'PCT_OF_SALE' : 'FIXED_COST',
+    settlement_basis: document.getElementById('p-basis-pct')?.checked ? 'PCT_OF_SALE' : (document.getElementById('p-basis-unit')?.checked ? 'UNIT_COST' : 'FIXED_COST'),
     consignment_pct: txtVal('p-consignment-pct'),
   };
 }
