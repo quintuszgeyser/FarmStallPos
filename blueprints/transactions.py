@@ -126,7 +126,8 @@ def api_transactions_get():
             start_dt = _parse_dt(start_param) or datetime(today.year, today.month, today.day)
             end_dt   = _parse_dt(end_param, is_end=True) or datetime(today.year, today.month, today.day, 23, 59, 59)
         else:
-            start_dt = datetime(today.year, today.month, today.day) - timedelta(days=6)
+            # Default: today only
+            start_dt = datetime(today.year, today.month, today.day)
             end_dt   = datetime(today.year, today.month, today.day, 23, 59, 59)
         q = q.filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt)
 
@@ -241,7 +242,7 @@ def api_transactions_get():
         margin  = round((total_f - cogs) / total_f * 100, 1) if total_f > 0 and cogs > 0 else None
         result.append({'id': sid, 'date_time': dates[sid].isoformat(), 'total': total_f, 'lines': items, 'teller': users_by_sale.get(sid, ''), 'cogs': cogs if cogs > 0 else None, 'margin_pct': margin, 'flagged': flags_by_sale.get(sid, {}).get('flagged', False), 'flag_note': flags_by_sale.get(sid, {}).get('flag_note'), 'flag_resolved': flags_by_sale.get(sid, {}).get('flag_resolved', False), 'discount_by': sale_disc.get('discount_by', '')})
 
-    if u.role != 'admin':
+    if not u.has_role('admin'):
         result = result[:5]
     elif limit_param:
         try: result = result[:int(limit_param)]

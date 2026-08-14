@@ -8560,11 +8560,9 @@ window.addEventListener('DOMContentLoaded', initSerialSupport);
 function initTxDatePickers() {
   const s = document.getElementById('tx-start');
   const e = document.getElementById('tx-end');
-  if (s && !s.value) {
-    const d = new Date(); d.setDate(d.getDate() - 6);
-    s.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
-  }
-  if (e && !e.value) e.value = todayISO();
+  const t = todayISO();
+  if (s && !s.value) s.value = t;
+  if (e && !e.value) e.value = t;
 }
 
 let _txFilter = {};
