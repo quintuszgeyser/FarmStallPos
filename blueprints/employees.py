@@ -443,17 +443,19 @@ def api_employees_create():
     d = request.json or {}
     if not d.get('name', '').strip():
         return jsonify({'error': 'Name required'}), 400
+    def _s(val):
+        return (val or '').strip() or None
     emp = Employee(
         name                 = d['name'].strip(),
         user_id              = d.get('user_id') or None,
-        employee_number      = d.get('employee_number', '').strip() or None,
-        id_number            = d.get('id_number', '').strip() or None,
-        tax_number           = d.get('tax_number', '').strip() or None,
-        uif_number           = d.get('uif_number', '').strip() or None,
-        bank_name            = d.get('bank_name', '').strip() or None,
-        bank_account         = d.get('bank_account', '').strip() or None,
-        bank_branch_code     = d.get('bank_branch_code', '').strip() or None,
-        phone                = d.get('phone', '').strip() or None,
+        employee_number      = _s(d.get('employee_number')),
+        id_number            = _s(d.get('id_number')),
+        tax_number           = _s(d.get('tax_number')),
+        uif_number           = _s(d.get('uif_number')),
+        bank_name            = _s(d.get('bank_name')),
+        bank_account         = _s(d.get('bank_account')),
+        bank_branch_code     = _s(d.get('bank_branch_code')),
+        phone                = _s(d.get('phone')),
         start_date           = date.fromisoformat(d['start_date']) if d.get('start_date') else None,
         employment_type      = d.get('employment_type', 'permanent'),
         hourly_rate          = Decimal(str(d.get('hourly_rate', 0))),
@@ -462,7 +464,7 @@ def api_employees_create():
         pay_frequency        = d.get('pay_frequency', 'biweekly'),
         pay_day_of_week      = int(d.get('pay_day_of_week', 5)),
         leave_days_per_year  = Decimal(str(d.get('leave_days_per_year', 21))),
-        notes                = d.get('notes', '').strip() or None,
+        notes                = _s(d.get('notes')),
         created_by           = current_user().id if current_user() else None,
     )
     db.session.add(emp)
@@ -544,7 +546,7 @@ def api_deductions_create(eid):
     d = request.json or {}
     ded = EmployeeDeduction(
         employee_id    = eid,
-        label          = d.get('label', '').strip(),
+        label          = (d.get('label') or '').strip(),
         deduction_type = d.get('deduction_type', 'fixed'),
         amount         = Decimal(str(d.get('amount', 0))),
         is_active      = d.get('is_active', True),
@@ -617,6 +619,153 @@ def api_attendance_list(eid):
     })
 
 
+@bp.route('/api/employees/generate_schedule', methods=['POST'])
+def api_generate_schedule():
+    """Bulk-create default attendance for all active employees for a given month.
+
+    rotation=false (default): uses each employee's normal_days_per_week.
+    rotation=true: Mon–Sat work week, each employee gets a rotating day off per week.
+      Week offset 0 → emp[0] off Mon, emp[1] off Tue, …, emp[5] off Sat.
+      Week offset 1 → emp[0] off Tue, emp[1] off Wed, … (shifts by 1 each week).
+    Skips days that already have an entry.
+    """
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    d = request.json or {}
+    month_str = d.get('month')
+    rotation  = bool(d.get('rotation', False))
+    try:
+        y, m = map(int, month_str.split('-'))
+        month_start = date(y, m, 1)
+    except Exception:
+        return jsonify({'error': 'month required (YYYY-MM)'}), 400
+
+    import calendar as _cal
+    from datetime import time as dtime
+    days_in_month = _cal.monthrange(y, m)[1]
+    month_end     = date(y, m, days_in_month)
+    all_days      = [date(y, m, day) for day in range(1, days_in_month + 1)]
+
+    employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
+    holidays  = sa_public_holidays(y)
+    u         = current_user()
+    created   = 0
+    skipped   = 0
+
+    for emp_idx, emp in enumerate(employees):
+        hours     = float(emp.normal_hours_per_day or 8)
+        break_min = 60 if hours >= 6 else 0
+        total_min = int(hours * 60) + break_min
+        co_h, co_m  = divmod(480 + total_min, 60)
+        clock_in_t  = dtime(8, 0)
+        clock_out_t = dtime(min(co_h, 23), co_m % 60)
+
+        # Fetch existing entries so we never overwrite
+        existing = {
+            row.work_date
+            for row in EmployeeAttendance.query.filter(
+                EmployeeAttendance.employee_id == emp.id,
+                EmployeeAttendance.work_date   >= month_start,
+                EmployeeAttendance.work_date   <= month_end,
+            ).all()
+        }
+
+        if rotation:
+            allowed_weekdays = set(range(6))   # Mon(0)–Sat(5); Sun always excluded
+        else:
+            work_days = emp.normal_days_per_week or 5
+            if work_days >= 7:
+                allowed_weekdays = set(range(7))
+            elif work_days >= 6:
+                allowed_weekdays = set(range(6))
+            else:
+                allowed_weekdays = set(range(5))
+
+        for day in all_days:
+            if day in existing:
+                skipped += 1
+                continue
+            if day.weekday() not in allowed_weekdays:
+                continue
+
+            if rotation:
+                # week_offset: 0 for days 1–7, 1 for days 8–14, etc.
+                week_offset = (day.day - 1) // 7
+                # This employee's off-weekday for this week (0=Mon … 5=Sat)
+                off_weekday = (emp_idx + week_offset) % 6
+                if day.weekday() == off_weekday:
+                    continue   # rotating day off — skip
+
+            day_type = _auto_day_type(day, holidays)
+            db.session.add(EmployeeAttendance(
+                employee_id   = emp.id,
+                work_date     = day,
+                clock_in      = clock_in_t,
+                clock_out     = clock_out_t,
+                break_minutes = break_min,
+                hours_worked  = Decimal(str(hours)),
+                day_type      = day_type,
+                source        = 'schedule_default',
+                created_by    = u.id if u else None,
+            ))
+            created += 1
+
+    db.session.commit()
+    return jsonify({'created': created, 'skipped': skipped, 'employees': len(employees)})
+
+
+@bp.route('/api/employees/attendance/summary', methods=['GET'])
+def api_attendance_summary():
+    """Returns attendance for ALL active employees for a given month — used by the
+    all-employees calendar grid view."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    month_str = request.args.get('month')
+    try:
+        y, m   = map(int, month_str.split('-'))
+        d_from = date(y, m, 1)
+    except Exception:
+        return jsonify({'error': 'month required (YYYY-MM)'}), 400
+
+    import calendar as _cal
+    days_in_month = _cal.monthrange(y, m)[1]
+    d_to          = date(y, m, days_in_month)
+    all_dates     = [date(y, m, day) for day in range(1, days_in_month + 1)]
+
+    employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
+    holidays  = sa_public_holidays(y)
+
+    att_rows = EmployeeAttendance.query.filter(
+        EmployeeAttendance.employee_id.in_([e.id for e in employees]),
+        EmployeeAttendance.work_date >= d_from,
+        EmployeeAttendance.work_date <= d_to,
+    ).all()
+
+    att_map = {}
+    for row in att_rows:
+        att_map.setdefault(row.employee_id, {})[row.work_date.isoformat()] = {
+            'hours':     float(row.hours_worked) if row.hours_worked else 0,
+            'day_type':  row.day_type,
+            'source':    row.source,
+            'clock_in':  row.clock_in.strftime('%H:%M')  if row.clock_in  else None,
+            'clock_out': row.clock_out.strftime('%H:%M') if row.clock_out else None,
+            'id':        row.id,
+        }
+
+    return jsonify({
+        'employees': [
+            {'id': e.id, 'name': e.name, 'days': att_map.get(e.id, {})}
+            for e in employees
+        ],
+        'dates':           [d.isoformat()       for d in all_dates],
+        'weekday_labels':  [f"{d.strftime('%a')} {d.day}" for d in all_dates],
+        'public_holidays': {
+            d.isoformat(): name
+            for d, name in holidays.items() if d_from <= d <= d_to
+        },
+    })
+
+
 @bp.route('/api/employees/<int:eid>/attendance', methods=['POST'])
 def api_attendance_upsert(eid):
     if not require_role('admin'):
@@ -666,7 +815,7 @@ def api_attendance_upsert(eid):
         hours_worked  = hours,
         day_type      = day_type,
         source        = d.get('source', 'admin_entry'),
-        notes         = d.get('notes', '').strip() or None,
+        notes         = (d.get('notes') or '').strip() or None,
         created_by    = u.id if u else None,
     )
     db.session.add(row)
@@ -762,7 +911,7 @@ def api_schedule_upsert(eid):
         expected_start = _parse_time(d.get('expected_start')),
         expected_end   = _parse_time(d.get('expected_end')),
         expected_hours = exp_hrs,
-        notes          = d.get('notes', '').strip() or None,
+        notes          = (d.get('notes') or '').strip() or None,
         created_by     = u.id if u else None,
     )
     db.session.add(row)
@@ -848,7 +997,7 @@ def api_leaves_reject(eid, lid):
         return jsonify({'error': 'Forbidden'}), 403
     req = LeaveRequest.query.filter_by(id=lid, employee_id=eid).first_or_404()
     req.status           = 'rejected'
-    req.rejection_reason = (request.json or {}).get('reason', '').strip() or None
+    req.rejection_reason = ((request.json or {}).get('reason') or '').strip() or None
     db.session.commit()
     return jsonify({'ok': True, 'status': 'rejected'})
 
@@ -1151,7 +1300,7 @@ def api_payslip(eid, pid):
 
     store_name = get_setting('branding_store_name') or 'Lady Coleen Boutique Farmstall'
 
-    # YTD totals (all paid/approved runs this calendar year)
+    # YTD totals
     year_start = date(pr.period_end.year, 1, 1)
     ytd_runs   = PayRun.query.filter(
         PayRun.employee_id == eid,
@@ -1163,9 +1312,40 @@ def api_payslip(eid, pid):
     ytd_gross = sum(float(r.gross_pay) for r in ytd_runs)
     ytd_net   = sum(float(r.net_pay)   for r in ytd_runs)
 
+    # Pass all numeric Decimal fields as floats so the template never touches Decimal
+    rate = float(pr.hourly_rate_snapshot)
+    pr_ctx = {
+        'reference':            pr.reference,
+        'period_start':         pr.period_start.isoformat(),
+        'period_end':           pr.period_end.isoformat(),
+        'period_year':          str(pr.period_end.year),
+        'pay_date':             pr.pay_date.isoformat() if pr.pay_date else None,
+        'status':               pr.status,
+        'hourly_rate_snapshot': rate,
+        'normal_hours':         float(pr.normal_hours),
+        'overtime_hours':       float(pr.overtime_hours),
+        'sunday_hours':         float(pr.sunday_hours),
+        'holiday_hours':        float(pr.holiday_hours),
+        'vacation_hours':       float(pr.vacation_hours),
+        'sick_hours':           float(pr.sick_hours),
+        'normal_pay':           float(pr.normal_pay),
+        'overtime_pay':         float(pr.overtime_pay),
+        'sunday_pay':           float(pr.sunday_pay),
+        'holiday_pay':          float(pr.holiday_pay),
+        'vacation_pay':         float(pr.vacation_pay),
+        'gross_pay':            float(pr.gross_pay),
+        'total_deductions':     float(pr.total_deductions),
+        'net_pay':              float(pr.net_pay),
+        'approved_at':          pr.approved_at.isoformat() if pr.approved_at else None,
+        'created_at':           pr.created_at.isoformat() if pr.created_at else None,
+        'rate_ot':              round(rate * 1.5, 2),
+        'rate_sun':             round(rate * 2.0, 2),
+        'rate_hol':             round(rate * 2.0, 2),
+    }
+
     return render_template('payslip.html',
         emp              = emp,
-        pr               = pr,
+        pr               = pr_ctx,
         deductions       = json.loads(pr.deductions_json),
         employer_contribs = json.loads(pr.employer_contributions_json),
         advances         = json.loads(pr.advances_json),

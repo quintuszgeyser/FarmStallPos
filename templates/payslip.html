@@ -76,13 +76,13 @@
     <tr><td>Normal Hours</td><td>{{ "%.2f"|format(pr.normal_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.normal_pay) }}</td></tr>
     {% endif %}
     {% if pr.overtime_hours > 0 %}
-    <tr><td>Overtime (1.5×)</td><td>{{ "%.2f"|format(pr.overtime_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot * 1.5) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.overtime_pay) }}</td></tr>
+    <tr><td>Overtime (1.5×)</td><td>{{ "%.2f"|format(pr.overtime_hours) }}</td><td>R {{ "%.2f"|format(pr.rate_ot) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.overtime_pay) }}</td></tr>
     {% endif %}
     {% if pr.sunday_hours > 0 %}
-    <tr><td>Sunday (2×)</td><td>{{ "%.2f"|format(pr.sunday_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot * 2) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.sunday_pay) }}</td></tr>
+    <tr><td>Sunday (2×)</td><td>{{ "%.2f"|format(pr.sunday_hours) }}</td><td>R {{ "%.2f"|format(pr.rate_sun) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.sunday_pay) }}</td></tr>
     {% endif %}
     {% if pr.holiday_hours > 0 %}
-    <tr><td>Public Holiday (2×)</td><td>{{ "%.2f"|format(pr.holiday_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot * 2) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.holiday_pay) }}</td></tr>
+    <tr><td>Public Holiday (2×)</td><td>{{ "%.2f"|format(pr.holiday_hours) }}</td><td>R {{ "%.2f"|format(pr.rate_hol) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.holiday_pay) }}</td></tr>
     {% endif %}
     {% if pr.vacation_hours > 0 %}
     <tr><td>Annual Leave</td><td>{{ "%.2f"|format(pr.vacation_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.vacation_pay) }}</td></tr>
@@ -146,7 +146,7 @@
 
 <!-- YTD -->
 <table style="margin-top:12px;">
-  <thead><tr><th colspan="2">Year to Date ({{ pr.period_end[:4] }})</th></tr></thead>
+  <thead><tr><th colspan="2">Year to Date ({{ pr.period_year }})</th></tr></thead>
   <tbody>
     <tr><td>Gross Earnings YTD</td><td style="text-align:right">R {{ "%.2f"|format(ytd_gross) }}</td></tr>
     <tr><td>Net Pay YTD</td><td style="text-align:right">R {{ "%.2f"|format(ytd_net) }}</td></tr>

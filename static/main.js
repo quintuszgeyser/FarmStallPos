@@ -21215,7 +21215,10 @@ function _empPopulateSelects() {
   const opts = EMP.employees.map(e =>
     `<option value="${e.id}">${e.name}</option>`).join('');
   const noneOpt = '<option value="">— Select employee —</option>';
-  for (const id of ['emp-ts-employee','emp-pr-employee','emp-pr-modal-emp',
+  // Timesheet dropdown gets an extra "All Employees" option
+  const tsEl = document.getElementById('emp-ts-employee');
+  if (tsEl) tsEl.innerHTML = '<option value="all">All Employees</option>' + opts;
+  for (const id of ['emp-pr-employee','emp-pr-modal-emp',
                     'emp-fin-adv-emp','emp-fin-loan-emp','emp-fin-leave-emp',
                     'emp-adv-modal-emp','emp-loan-modal-emp','emp-leave-modal-emp']) {
     const el = document.getElementById(id);
@@ -21234,7 +21237,7 @@ function empSwitchSub(sub) {
     if (el) el.style.display = s === sub ? '' : 'none';
   }
   if (sub === 'payroll')   loadPayRunList();
-  if (sub === 'employees') _empRenderEmployeeList();
+  if (sub === 'employees') _empLoadEmployees();
   if (sub === 'rules')     _empLoadPayRules();
   if (sub === 'timesheets') {
     const m = document.getElementById('emp-ts-month');
@@ -21298,6 +21301,25 @@ async function loadTimesheetCalendar() {
   const [year, month] = monthEl.value.split('-').map(Number);
   const monthStr      = monthEl.value;
 
+  const calEl  = document.getElementById('emp-ts-calendar');
+  const gridEl = document.getElementById('emp-ts-all-grid');
+  const sumEl  = document.getElementById('emp-ts-summary');
+
+  if (empId === 'all') {
+    if (calEl)  calEl.style.display  = 'none';
+    if (sumEl)  sumEl.style.display  = 'none';
+    if (gridEl) gridEl.style.display = 'block';
+    try {
+      const data = await api(`/api/employees/attendance/summary?month=${monthStr}`);
+      _renderAllEmployeesGrid(data);
+    } catch(e) { toast(e.message, 'danger'); }
+    return;
+  }
+
+  if (calEl)  calEl.style.display  = '';
+  if (gridEl) gridEl.style.display = 'none';
+  if (sumEl)  sumEl.style.display  = '';
+
   try {
     // Load attendance + public holidays in parallel
     const [attData, holidays] = await Promise.all([
@@ -21311,6 +21333,66 @@ async function loadTimesheetCalendar() {
     _renderCalendar(year, month, empId);
     _renderTimesheetSummary(attData.attendance);
   } catch(e) { toast(e.message, 'danger'); }
+}
+
+function _renderAllEmployeesGrid(data) {
+  const gridEl = document.getElementById('emp-ts-all-grid');
+  if (!gridEl) return;
+  const { employees, dates, weekday_labels, public_holidays } = data;
+  if (!employees || !employees.length) {
+    gridEl.innerHTML = '<p class="text-muted p-3">No employees found.</p>';
+    return;
+  }
+
+  // Header row
+  let html = '<table class="table table-bordered table-sm att-grid">';
+  html += '<thead><tr>';
+  html += '<th class="emp-col">Employee</th>';
+  for (let i = 0; i < dates.length; i++) {
+    const ds  = dates[i];
+    const lbl = weekday_labels[i];
+    const dow = new Date(ds + 'T00:00:00').getDay(); // 0=Sun,6=Sat
+    const isHol = !!public_holidays[ds];
+    let thCls = '';
+    if (isHol) thCls = 'style="background:#ede9fe;color:#5b21b6"';
+    else if (dow === 0) thCls = 'style="background:#fce7f3;color:#9d174d"';
+    else if (dow === 6) thCls = 'style="background:#ffedd5;color:#9a3412"';
+    html += `<th ${thCls}>${lbl}</th>`;
+  }
+  html += '<th class="total-col">Total</th>';
+  html += '</tr></thead><tbody>';
+
+  // Employee rows
+  for (const emp of employees) {
+    html += `<tr>`;
+    html += `<td class="emp-col" style="white-space:nowrap"><strong>${emp.name}</strong></td>`;
+    let totalH = 0;
+    for (const ds of dates) {
+      const rec = emp.days[ds];
+      const dow = new Date(ds + 'T00:00:00').getDay();
+      const isHol = !!public_holidays[ds];
+      if (rec) {
+        const h = rec.hours != null ? parseFloat(rec.hours) : 0;
+        totalH += h;
+        const hStr = h > 0 ? h.toFixed(1) + 'h' : rec.day_type.replace('_',' ');
+        const src  = rec.source === 'schedule' ? ' title="scheduled"' : '';
+        const onclick = `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
+        html += `<td class="att-cell-${rec.day_type}" style="cursor:pointer;text-align:center;padding:2px 3px" ${onclick}${src}>${hStr}</td>`;
+      } else if (isHol) {
+        html += `<td class="att-cell-public_holiday" style="text-align:center;font-size:9px">PH</td>`;
+      } else if (dow === 0) {
+        html += `<td class="att-cell-sunday" style="text-align:center;font-size:9px">Sun</td>`;
+      } else {
+        const onclick = `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
+        html += `<td class="att-cell-empty" style="cursor:pointer;text-align:center" ${onclick}>—</td>`;
+      }
+    }
+    html += `<td class="total-col">${totalH > 0 ? totalH.toFixed(1) + 'h' : '—'}</td>`;
+    html += '</tr>';
+  }
+
+  html += '</tbody></table>';
+  gridEl.innerHTML = html;
 }
 
 function _renderCalendar(year, month, empId) {
@@ -21383,14 +21465,32 @@ function _renderTimesheetSummary(attendance) {
 
 function empOpenAttendanceForDate(dateStr, empId) {
   const att = EMP.tsCalendarData[dateStr];
+  const emp = EMP.employees.find(e => e.id == empId);
   document.getElementById('emp-att-employee-id').value = empId;
   document.getElementById('emp-att-row-id').value      = att ? att.id : '';
   document.getElementById('emp-att-date').value        = dateStr;
-  document.getElementById('emp-att-clock-in').value    = att?.clock_in  || '';
-  document.getElementById('emp-att-clock-out').value   = att?.clock_out || '';
-  document.getElementById('emp-att-break').value       = att?.break_minutes ?? 60;
-  document.getElementById('emp-att-hours').value       = att?.hours_worked ?? '';
-  document.getElementById('emp-att-notes').value       = att?.notes || '';
+
+  if (att) {
+    // Editing existing entry — show as-saved values
+    document.getElementById('emp-att-clock-in').value  = att.clock_in  || '';
+    document.getElementById('emp-att-clock-out').value = att.clock_out || '';
+    document.getElementById('emp-att-break').value     = att.break_minutes ?? 60;
+    document.getElementById('emp-att-hours').value     = att.hours_worked ?? '';
+    document.getElementById('emp-att-notes').value     = att.notes || '';
+  } else {
+    // New entry — pre-fill from employee defaults
+    const defHours = emp ? parseFloat(emp.normal_hours_per_day) : 8;
+    const breakMin = defHours >= 6 ? 60 : 0;
+    const totalMin = Math.round(defHours * 60) + breakMin;
+    const coH = Math.floor((480 + totalMin) / 60);
+    const coM = (480 + totalMin) % 60;
+    const clockOut = `${String(Math.min(coH, 23)).padStart(2,'0')}:${String(coM).padStart(2,'0')}`;
+    document.getElementById('emp-att-clock-in').value  = '08:00';
+    document.getElementById('emp-att-clock-out').value = clockOut;
+    document.getElementById('emp-att-break').value     = breakMin;
+    document.getElementById('emp-att-hours').value     = defHours.toFixed(2);
+    document.getElementById('emp-att-notes').value     = '';
+  }
 
   // Auto-detect day type
   let dayType = 'normal';
@@ -21401,6 +21501,17 @@ function empOpenAttendanceForDate(dateStr, empId) {
   document.getElementById('emp-att-day-type').value = dayType;
 
   new bootstrap.Modal(document.getElementById('empAttendanceModal')).show();
+}
+
+async function empGenerateMonth() {
+  const month = document.getElementById('emp-ts-month').value;
+  if (!month) { toast('Select a month first', 'warning'); return; }
+  if (!confirm(`Generate default attendance for ALL employees for ${month}?\n\nDays already logged will not be overwritten.`)) return;
+  try {
+    const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify({ month }) });
+    toast(`Generated ${r.created} entries for ${r.employees} employees (${r.skipped} days already existed)`, 'success', 5000);
+    loadTimesheetCalendar();
+  } catch(e) { toast(e.message, 'danger'); }
 }
 
 function empOpenShiftModal() {

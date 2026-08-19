@@ -819,6 +819,24 @@
     .pay-status-draft    { background: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
     .pay-status-approved { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
     .pay-status-paid     { background: #bfdbfe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    /* All-employees attendance grid */
+    .att-grid { font-size: 11px; min-width: max-content; }
+    .att-grid th { padding: 3px 5px; white-space: nowrap; font-size: 10px; background: #f1f5f9; position: sticky; top: 0; z-index: 1; }
+    .att-grid th.emp-col { position: sticky; left: 0; z-index: 2; min-width: 110px; background: #f1f5f9; }
+    .att-grid td.emp-col { position: sticky; left: 0; background: #fff; font-weight: 500; padding: 3px 6px; white-space: nowrap; border-right: 2px solid #dee2e6; }
+    .att-grid td { padding: 2px 4px; text-align: center; white-space: nowrap; cursor: pointer; }
+    .att-grid td:hover { outline: 2px solid #3b82f6; }
+    .att-cell-normal   { background: #dcfce7; color: #166534; }
+    .att-cell-overtime { background: #ffedd5; color: #9a3412; }
+    .att-cell-sunday   { background: #fce7f3; color: #9d174d; }
+    .att-cell-public_holiday { background: #ede9fe; color: #5b21b6; }
+    .att-cell-vacation { background: #dbeafe; color: #1e40af; }
+    .att-cell-sick     { background: #fef9c3; color: #854d0e; }
+    .att-cell-off      { background: #f3f4f6; color: #9ca3af; }
+    .att-cell-empty    { background: #fff; color: #d1d5db; }
+    .att-cell-holiday-hdr { background: #ede9fe !important; }
+    .att-cell-sun-hdr     { background: #fce7f3 !important; }
+    .att-grid td.total-col { background: #f8fafc; font-weight: 600; position: sticky; right: 0; border-left: 2px solid #dee2e6; }
   </style>
 </head>
 <body>
@@ -2844,10 +2862,15 @@
             <select id="emp-ts-employee" class="form-select form-select-sm" style="max-width:220px" onchange="loadTimesheetCalendar()"></select>
             <input type="month" id="emp-ts-month" class="form-control form-control-sm" style="max-width:160px" onchange="loadTimesheetCalendar()">
             <button class="btn btn-outline-secondary btn-sm" onclick="loadTimesheetCalendar()"><i class="bi bi-arrow-clockwise"></i></button>
-            <button class="btn btn-sm btn-outline-primary ms-auto" onclick="empOpenShiftModal()"><i class="bi bi-calendar-plus me-1"></i>Add Shift</button>
+            <div class="ms-auto d-flex gap-2 flex-wrap">
+              <button class="btn btn-sm btn-success" onclick="empGenerateMonth(false)" title="Default schedule: uses each employee's normal days/week setting"><i class="bi bi-calendar-check me-1"></i>Generate Month</button>
+              <button class="btn btn-sm btn-outline-success" onclick="empGenerateMonth(true)" title="Mon–Sat, one rotating day off per employee per week"><i class="bi bi-arrow-repeat me-1"></i>Generate Rotating</button>
+              <button class="btn btn-sm btn-outline-primary" onclick="empOpenShiftModal()"><i class="bi bi-calendar-plus me-1"></i>Add Shift</button>
+            </div>
           </div>
-          <!-- Calendar grid -->
+          <!-- Calendar / all-employees grid -->
           <div id="emp-ts-calendar" class="emp-calendar"></div>
+          <div id="emp-ts-all-grid" style="display:none;overflow-x:auto;max-height:500px;overflow-y:auto;"></div>
           <!-- Summary bar -->
           <div id="emp-ts-summary" class="d-flex gap-3 flex-wrap mt-2 p-2 bg-light rounded small"></div>
         </div>
@@ -2860,7 +2883,7 @@
             <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadPayRunList()"><i class="bi bi-arrow-clockwise"></i></button>
           </div>
           <table class="table table-sm table-hover">
-            <thead class="table-dark">
+            <thead class="table-light">
               <tr><th>Ref</th><th>Employee</th><th>Period</th><th>Pay Date</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr>
             </thead>
             <tbody id="emp-payrun-tbody"></tbody>
@@ -2888,7 +2911,7 @@
               <select id="emp-fin-adv-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadAdvancesList()"></select>
               <button class="btn btn-sm btn-primary" onclick="empOpenAdvanceModal()"><i class="bi bi-plus-lg me-1"></i>Record Advance</button>
             </div>
-            <table class="table table-sm"><thead class="table-dark"><tr><th>Date</th><th>Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+            <table class="table table-sm"><thead class="table-light"><tr><th>Date</th><th>Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
             <tbody id="emp-advances-tbody"></tbody></table>
           </div>
           <div id="emp-fin-loans" style="display:none">
@@ -2896,7 +2919,7 @@
               <select id="emp-fin-loan-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadLoansList()"></select>
               <button class="btn btn-sm btn-primary" onclick="empOpenLoanModal()"><i class="bi bi-plus-lg me-1"></i>New Loan</button>
             </div>
-            <table class="table table-sm"><thead class="table-dark"><tr><th>Date</th><th>Principal</th><th>Balance</th><th>Installment</th><th>Reason</th><th>Status</th></tr></thead>
+            <table class="table table-sm"><thead class="table-light"><tr><th>Date</th><th>Principal</th><th>Balance</th><th>Installment</th><th>Reason</th><th>Status</th></tr></thead>
             <tbody id="emp-loans-tbody"></tbody></table>
           </div>
           <div id="emp-fin-leaves" style="display:none">
@@ -2904,7 +2927,7 @@
               <select id="emp-fin-leave-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadLeavesList()"></select>
               <button class="btn btn-sm btn-primary" onclick="empOpenLeaveModal()"><i class="bi bi-plus-lg me-1"></i>Request Leave</button>
             </div>
-            <table class="table table-sm"><thead class="table-dark"><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+            <table class="table table-sm"><thead class="table-light"><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th></th></tr></thead>
             <tbody id="emp-leaves-tbody"></tbody></table>
           </div>
         </div>
@@ -2913,7 +2936,7 @@
         <div id="emp-sub-rules" style="display:none">
           <p class="text-muted small mb-3">Multipliers applied when calculating pay. Change these if legislation or contracts change — no code edit needed.</p>
           <table class="table table-sm table-hover">
-            <thead class="table-dark"><tr><th>Day Type</th><th>Label</th><th>Multiplier</th><th>Paid?</th><th>Description</th><th></th></tr></thead>
+            <thead class="table-light"><tr><th>Day Type</th><th>Label</th><th>Multiplier</th><th>Paid?</th><th>Description</th><th></th></tr></thead>
             <tbody id="emp-rules-tbody"></tbody>
           </table>
         </div>
@@ -2924,7 +2947,7 @@
         <h5 class="mb-3"><i class="bi bi-file-earmark-text me-2"></i>My Payslips</h5>
         <p class="text-muted small mb-3">Your pay runs are listed below. Click View to open a printable payslip.</p>
         <table class="table table-sm table-hover">
-          <thead class="table-dark"><tr><th>Period</th><th>Pay Date</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr></thead>
+          <thead class="table-light"><tr><th>Period</th><th>Pay Date</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr></thead>
           <tbody id="emp-my-payslips-tbody"></tbody>
         </table>
       </div>
@@ -4631,7 +4654,7 @@
 </script>
 <script async src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260810-search-kb"></script>
+<script src="/static/main.js?v=20260819-emp4"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">
@@ -5038,7 +5061,7 @@
               <button class="btn btn-sm btn-outline-primary" onclick="empAddDeductionRow()"><i class="bi bi-plus-lg me-1"></i>Add Deduction</button>
             </div>
             <table class="table table-sm">
-              <thead class="table-dark"><tr><th>Label</th><th>Type</th><th>Amount/Rate</th><th>Active</th><th></th></tr></thead>
+              <thead class="table-light"><tr><th>Label</th><th>Type</th><th>Amount/Rate</th><th>Active</th><th></th></tr></thead>
               <tbody id="emp-ed-deductions-tbody"></tbody>
             </table>
           </div>
@@ -5061,7 +5084,7 @@
                 <button class="btn btn-primary" onclick="empUploadDocument()">Upload</button>
               </div>
             </div>
-            <table class="table table-sm"><thead class="table-dark"><tr><th>Type</th><th>Label</th><th>Uploaded</th><th></th></tr></thead>
+            <table class="table table-sm"><thead class="table-light"><tr><th>Type</th><th>Label</th><th>Uploaded</th><th></th></tr></thead>
             <tbody id="emp-docs-tbody"></tbody></table>
           </div>
         </div>
