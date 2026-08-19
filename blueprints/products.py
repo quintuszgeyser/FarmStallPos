@@ -1023,6 +1023,9 @@ def _collect_bom_shortages(product_id, qty_needed, context, shortages, _depth=0)
                     'name':          ing.name,
                     'needed':        float(ing_qty),
                     'available':     float(available),
+                    'shortage':      float(ing_qty - available),
+                    'unit_type':     ing.unit_type,
+                    'base_unit':     ing.base_unit,
                     'context':       context,
                 })
 

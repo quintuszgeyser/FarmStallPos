@@ -9505,23 +9505,62 @@ function drawBarChart(canvas, labels, values, opts = {}) {
     ctx.fillText(val >= 1000 ? `${(val/1000).toFixed(1)}k` : fmt(val), padL - 4, y + 4);
   });
 
+  const futureSet = new Set((opts.futureBars || []).map(f => f.xi));
+  const projVals  = opts.projectedValues || [];
+
   values.forEach((v, i) => {
     const slotW = (W - padL - padR) / n;
     const x = padL + i * slotW + (slotW - bw) / 2;
     const barH = (H - padT - padB) * (v / max);
     const y = H - padB - barH;
-    ctx.fillStyle = color2 && i % 2 === 1 ? color2 : color;
-    ctx.fillRect(x, y, bw, barH);
+    const isFuture = futureSet.has(i);
+
+    if (isFuture) {
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = color2 && i % 2 === 1 ? color2 : color;
+      ctx.fillRect(x, y, bw, barH);
+      ctx.globalAlpha = 0.7;
+      ctx.strokeStyle = color2 && i % 2 === 1 ? color2 : color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(x, y, bw, barH);
+      ctx.setLineDash([]);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = color2 && i % 2 === 1 ? color2 : color;
+      ctx.fillRect(x, y, bw, barH);
+    }
     barRects.push({ x, y, w: bw, h: barH, label: labels[i], value: v, index: i });
 
+    // Projected extension bar (stacked on top)
+    const projAdd = projVals[i] || 0;
+    if (projAdd > 0 && !isFuture) {
+      const projH = (H - padT - padB) * (projAdd / max);
+      const projY = y - projH;
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = color2 && i % 2 === 1 ? color2 : color;
+      ctx.fillRect(x, projY, bw, projH);
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = color2 && i % 2 === 1 ? color2 : color;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 2]);
+      ctx.strokeRect(x, projY, bw, projH);
+      ctx.setLineDash([]);
+      ctx.restore();
+    }
+
     if (barH > 14) {
-      ctx.fillStyle = '#fff'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillStyle = isFuture ? 'rgba(0,0,0,0.5)' : '#fff';
+      ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
       const num = v >= 1000 ? `${(v/1000).toFixed(1)}k` : fmt(v);
       const label = `${opts.valuePrefix || ''}${num}${opts.valueSuffix || ''}`;
       ctx.fillText(label, x + bw / 2, y + 12);
     }
 
-    ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillStyle = isFuture ? '#999' : '#555';
+    ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
     const lbl = String(labels[i] || '');
     ctx.save(); ctx.translate(x + bw / 2, H - padB + 6);
     if (shouldRotate) { ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; }
@@ -10137,6 +10176,7 @@ function _showChartTab(tab) {
         onBarClick: (lbl) => {
           const cat = STATE.categories?.find(c => c.name === lbl);
           if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); }
+          else { toast('Assign products to a category to filter by it', 'info'); }
         },
       });
       if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue grouped by product category — click a bar to filter by that category</span>`;
@@ -10161,6 +10201,7 @@ function _showChartTab(tab) {
         onBarClick: (lbl) => {
           const cat = STATE.categories?.find(c => c.name === lbl);
           if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); }
+          else { toast('Assign products to a category to filter by it', 'info'); }
         },
       });
       if (_legend) _legend.innerHTML = `<span class="text-muted">Gross profit grouped by product category — click a bar to filter by that category</span>`;
@@ -11157,6 +11198,9 @@ document.getElementById('top-products-groupby')?.addEventListener('click', e => 
 });
 document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
 document.getElementById('stats-product-filter')?.addEventListener('change', loadStats);
+document.getElementById('stats-supplier-filter')?.addEventListener('change', loadStats);
+document.getElementById('stats-category-filter')?.addEventListener('change', loadStats);
+document.getElementById('stats-user-filter')?.addEventListener('change', loadStats);
 document.getElementById('stats-start')?.addEventListener('change', loadStats);
 document.getElementById('stats-end')?.addEventListener('change', loadStats);
 document.getElementById('stats-start')?.addEventListener('input', loadStats);
@@ -11165,14 +11209,7 @@ _initStatsPresets();
 
 // ── Exports - all use the active stats filters ──
 function _exportParams() {
-  const s         = document.getElementById('stats-start')?.value || todayISO();
-  const e         = document.getElementById('stats-end')?.value   || todayISO();
-  const productId = document.getElementById('stats-product-filter')?.value || '';
-  const userId    = document.getElementById('stats-user-filter')?.value    || '';
-  const p = new URLSearchParams({ start: s, end: e });
-  if (productId) p.set('product_id', productId);
-  if (userId)    p.set('user_id',    userId);
-  return p;
+  return _statsFilterParams();
 }
 
 function _updateExportFilterLabel() {
