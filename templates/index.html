@@ -1591,6 +1591,14 @@
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="customers">Customers</button>
         <button class="btn btn-sm btn-outline-secondary" data-chart-tab="dow">Day of Week</button>
       </div>
+      <!-- Forecast toggle — only shown on daily tab -->
+      <div id="forecast-controls" class="d-flex align-items-center gap-2 mb-1" style="display:none">
+        <button id="btn-forecast-toggle" class="btn btn-sm btn-outline-info">
+          <i class="bi bi-graph-up-arrow me-1"></i>Show Forecast
+        </button>
+        <span id="forecast-badge" class="badge" style="display:none"></span>
+        <span id="forecast-explanation" class="text-muted small" style="display:none"></span>
+      </div>
       <div class="text-muted small mb-1" id="chart-click-hint" style="display:none">Click a bar to drill into those transactions</div>
       <!-- Metric selector — shown for hourly / minute tabs -->
       <div id="stats-time-metric-bar" class="d-none d-flex align-items-center gap-1 mb-1">

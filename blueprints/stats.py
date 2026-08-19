@@ -1933,3 +1933,262 @@ def api_stats_inventory():
         'reorder':    reorder,
         'overstock':  overstock,
     })
+
+
+# ─────────────────────────────────────────────────────────────
+# FORECASTING HELPERS
+# ─────────────────────────────────────────────────────────────
+
+def _easter(year):
+    """Return Easter Sunday as a date object (Anonymous Gregorian algorithm)."""
+    a = year % 19
+    b, c = divmod(year, 100)
+    d, e = divmod(b, 4)
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i, k = divmod(c, 4)
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month, day = divmod(114 + h + l - 7 * m, 31)
+    return date(year, month, day + 1)
+
+
+def _sa_holidays(year):
+    """Return {date: name} dict of SA public holidays for the given year."""
+    easter = _easter(year)
+    def _obs(d):
+        # If Sunday, observe the following Monday
+        return d + timedelta(days=1) if d.weekday() == 6 else d
+
+    holidays = {
+        date(year, 1, 1):   "New Year's Day",
+        date(year, 3, 21):  "Human Rights Day",
+        easter - timedelta(days=2): "Good Friday",
+        easter + timedelta(days=1): "Family Day",
+        _obs(date(year, 4, 27)):  "Freedom Day",
+        _obs(date(year, 5, 1)):   "Workers' Day",
+        _obs(date(year, 6, 16)):  "Youth Day",
+        _obs(date(year, 8, 9)):   "National Women's Day",
+        _obs(date(year, 9, 24)):  "Heritage Day",
+        _obs(date(year, 12, 16)): "Day of Reconciliation",
+        date(year, 12, 25): "Christmas Day",
+        date(year, 12, 26): "Day of Goodwill",
+    }
+    return holidays
+
+
+def _theil_sen(xs, ys):
+    """Return (slope, intercept) using Theil-Sen estimator."""
+    n = len(xs)
+    slopes = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            if xs[j] != xs[i]:
+                slopes.append((ys[j] - ys[i]) / (xs[j] - xs[i]))
+    if not slopes:
+        return 0.0, (sum(ys) / len(ys) if ys else 0.0)
+    slopes.sort()
+    m = len(slopes)
+    slope = slopes[m // 2] if m % 2 == 1 else (slopes[m // 2 - 1] + slopes[m // 2]) / 2
+    intercepts = sorted(ys[i] - slope * xs[i] for i in range(n))
+    k = len(intercepts)
+    intercept = intercepts[k // 2] if k % 2 == 1 else (intercepts[k // 2 - 1] + intercepts[k // 2]) / 2
+    return slope, intercept
+
+
+def _percentile(data, p):
+    """Return p-th percentile (0–100) of sorted or unsorted list."""
+    if not data:
+        return 0.0
+    s = sorted(data)
+    idx = (len(s) - 1) * p / 100
+    lo, hi = int(idx), min(int(idx) + 1, len(s) - 1)
+    return s[lo] + (s[hi] - s[lo]) * (idx - lo)
+
+
+def _build_daily_revenue(start_dt, end_dt, product_id_filter, user_id_filter, supplier_id_filter, category_id_filter):
+    """Query daily revenue totals, returning {date: float}."""
+    not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+    q = db.session.query(Sale).filter(
+        Sale.date_time >= start_dt,
+        Sale.date_time <= end_dt,
+        Sale.voided == False,
+        not_return,
+    )
+    if product_id_filter:
+        q = q.filter(Sale.product_id == product_id_filter)
+    if user_id_filter:
+        sale_ids = {r.sale_id for r in db.session.query(Sale.sale_id).filter(
+            Sale.user_id == user_id_filter,
+            Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False,
+        ).all()}
+        q = q.filter(Sale.sale_id.in_(sale_ids)) if sale_ids else q.filter(db.false())
+    if supplier_id_filter:
+        _pids = {r.product_id for r in db.session.query(StockBatch.product_id).filter(StockBatch.supplier_id == supplier_id_filter).all()}
+        _pids |= {r.id for r in db.session.query(Product.id).filter(Product.consignment_supplier_id == supplier_id_filter).all()}
+        q = q.filter(Sale.product_id.in_(list(_pids))) if _pids else q.filter(db.false())
+    if category_id_filter:
+        _cpids = {r.id for r in db.session.query(Product.id).filter(Product.category_id == category_id_filter).all()}
+        q = q.filter(Sale.product_id.in_(list(_cpids))) if _cpids else q.filter(db.false())
+    rows = q.all()
+    daily = defaultdict(float)
+    for r in rows:
+        d = r.date_time.date()
+        daily[d] += float(Decimal(str(r.qty)) * r.unit_price)
+    return daily
+
+
+@bp.route('/api/stats/forecast', methods=['GET'])
+def api_stats_forecast():
+    """Revenue forecast for the requested period using Theil-Sen + weekday seasonality."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    today = date.today()
+    try: start_dt = datetime.fromisoformat(request.args.get('start', today.isoformat()))
+    except Exception: start_dt = datetime(today.year, today.month, today.day)
+    try:
+        end_dt = datetime.fromisoformat(request.args.get('end', today.isoformat()))
+        end_dt = end_dt.replace(hour=23, minute=59, second=59)
+    except Exception:
+        end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
+
+    try: product_id_filter = int(request.args.get('product_id')) if request.args.get('product_id') else None
+    except (ValueError, TypeError): product_id_filter = None
+    try: user_id_filter = int(request.args.get('user_id')) if request.args.get('user_id') else None
+    except (ValueError, TypeError): user_id_filter = None
+    try: supplier_id_filter = int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None
+    except (ValueError, TypeError): supplier_id_filter = None
+    try: category_id_filter = int(request.args.get('category_id')) if request.args.get('category_id') else None
+    except (ValueError, TypeError): category_id_filter = None
+
+    # Gather up to 2 years of history before start
+    hist_start = datetime(start_dt.year - 2, start_dt.month, start_dt.day)
+    hist_end   = start_dt - timedelta(seconds=1)
+
+    hist_daily = _build_daily_revenue(
+        hist_start, hist_end,
+        product_id_filter, user_id_filter, supplier_id_filter, category_id_filter,
+    )
+
+    if len(hist_daily) < 14:
+        months = round(len(hist_daily) / 30, 1)
+        return jsonify({'error': 'insufficient_data', 'data_months': months})
+
+    # Build sorted series
+    all_dates = sorted(hist_daily.keys())
+    origin    = all_dates[0]
+    xs = [float((d - origin).days) for d in all_dates]
+    ys = [hist_daily[d] for d in all_dates]
+
+    # Theil-Sen — sample every 2nd point when large
+    if len(xs) > 300:
+        xs_s, ys_s = xs[::2], ys[::2]
+    else:
+        xs_s, ys_s = xs, ys
+    slope, intercept = _theil_sen(xs_s, ys_s)
+
+    # Compute detrended ratios per weekday for seasonal factors and band percentiles
+    by_dow = defaultdict(list)
+    for i, d in enumerate(all_dates):
+        trend_val = intercept + slope * xs[i]
+        if trend_val > 0:
+            ratio = ys[i] / trend_val
+        else:
+            ratio = 1.0
+        by_dow[d.weekday()].append(ratio)
+
+    seasonal = {}
+    p10_by_dow = {}
+    p90_by_dow = {}
+    for dow, ratios in by_dow.items():
+        seasonal[dow]    = _percentile(ratios, 50)
+        p10_by_dow[dow]  = _percentile(ratios, 10)
+        p90_by_dow[dow]  = _percentile(ratios, 90)
+    # Fill any missing weekday with 1.0
+    for dow in range(7):
+        seasonal.setdefault(dow, 1.0)
+        p10_by_dow.setdefault(dow, 0.8)
+        p90_by_dow.setdefault(dow, 1.2)
+
+    # Collect all SA holidays for forecast years
+    forecast_years = set()
+    cur = start_dt.date()
+    while cur <= end_dt.date():
+        forecast_years.add(cur.year)
+        cur += timedelta(days=1)
+    all_holidays = {}
+    for yr in forecast_years:
+        all_holidays.update(_sa_holidays(yr))
+
+    MONTH_END_DAYS = {25, 26, 27, 28, 29, 30, 31, 1, 2, 3}
+    HOLIDAY_FACTOR   = 0.6
+    MONTH_END_FACTOR = 1.25
+
+    # Build forecast for each day in [start_dt, end_dt]
+    forecast = []
+    cur = start_dt.date()
+    while cur <= end_dt.date():
+        x_val      = float((cur - origin).days)
+        trend_val  = intercept + slope * x_val
+        trend_val  = max(trend_val, 0.0)
+        dow        = cur.weekday()
+        sea        = seasonal.get(dow, 1.0)
+        is_holiday = cur in all_holidays
+        hol_factor = HOLIDAY_FACTOR if is_holiday else 1.0
+        me_factor  = MONTH_END_FACTOR if cur.day in MONTH_END_DAYS else 1.0
+
+        p50 = trend_val * sea * hol_factor * me_factor
+        p10 = trend_val * p10_by_dow.get(dow, 0.8) * hol_factor * me_factor
+        p90 = trend_val * p90_by_dow.get(dow, 1.2) * hol_factor * me_factor
+
+        forecast.append({
+            'date':         cur.isoformat(),
+            'p50':          round(p50, 2),
+            'p10':          round(p10, 2),
+            'p90':          round(p90, 2),
+            'is_holiday':   is_holiday,
+            'holiday_name': all_holidays.get(cur),
+        })
+        cur += timedelta(days=1)
+
+    # MAPE: holdout last 30 historical days
+    holdout_days = all_dates[-30:]
+    mape_vals = []
+    for hd in holdout_days:
+        x_h       = float((hd - origin).days)
+        t_h       = intercept + slope * x_h
+        t_h       = max(t_h, 0.0)
+        dow_h     = hd.weekday()
+        predicted = t_h * seasonal.get(dow_h, 1.0)
+        actual    = hist_daily[hd]
+        if actual > 0:
+            mape_vals.append(abs(predicted - actual) / actual)
+    mape = round(sum(mape_vals) / len(mape_vals), 3) if mape_vals else None
+
+    # Data quality tier
+    data_months = len(all_dates) / 30.44
+    if data_months >= 24:
+        quality = 'excellent'
+    elif data_months >= 12:
+        quality = 'good'
+    elif data_months >= 6:
+        quality = 'fair'
+    else:
+        quality = 'poor'
+
+    # Trend description (per week)
+    weekly_pct = slope * 7 / max(intercept, 1) * 100
+    trend_str = f"+{weekly_pct:.1f}%/wk" if weekly_pct >= 0 else f"{weekly_pct:.1f}%/wk"
+    mape_str  = f"MAPE {round(mape * 100)}%" if mape is not None else "MAPE n/a"
+    explanation = f"{round(data_months)} months of history · Trend {trend_str} · {mape_str}"
+
+    return jsonify({
+        'forecast':       forecast,
+        'data_quality':   quality,
+        'data_months':    round(data_months, 1),
+        'mape':           mape,
+        'explanation':    explanation,
+        'historical_days': len(all_dates),
+    })

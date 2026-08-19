@@ -9363,6 +9363,8 @@ document.getElementById('btn-delete-user')?.addEventListener('click', async () =
 let _statsData     = null;
 let _statsChartTab = 'daily';
 let _statsTimeMetric = 'revenue'; // 'revenue' | 'count' | 'profit'
+let _forecastEnabled = false;
+let _forecastData    = null;
 
 function _statsSetDates(start, end) {
   const s = document.getElementById('stats-start');
@@ -9526,6 +9528,39 @@ function drawBarChart(canvas, labels, values, opts = {}) {
     ctx.fillText(lbl, 0, 0);
     ctx.restore();
   });
+
+  // Forecast overlay
+  if (opts.overlay && opts.overlay.items && opts.overlay.items.length > 0) {
+    const useMax = Math.max(max, opts.overlay.maxVal || 0) || 1;
+    const toY  = v => H - padB - (H - padT - padB) * (v / useMax);
+    const toCx = i => padL + i * ((W - padL - padR) / n) + ((W - padL - padR) / n) / 2;
+    const bandItems = opts.overlay.items.filter(it => it.p10 != null && it.p90 != null);
+    if (bandItems.length > 1) {
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(13,110,253,0.12)';
+      ctx.moveTo(toCx(bandItems[0].xi), toY(bandItems[0].p90));
+      bandItems.forEach(it => ctx.lineTo(toCx(it.xi), toY(it.p90)));
+      bandItems.slice().reverse().forEach(it => ctx.lineTo(toCx(it.xi), toY(it.p10)));
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.save();
+    ctx.setLineDash([6, 3]);
+    ctx.strokeStyle = '#0d6efd'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    let _first = true;
+    opts.overlay.items.forEach(it => {
+      if (it.p50 == null) return;
+      const x = toCx(it.xi), y = toY(it.p50);
+      if (_first) { ctx.moveTo(x, y); _first = false; } else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+    opts.overlay.items.filter(it => it.is_holiday && it.p50 != null).forEach(it => {
+      ctx.beginPath();
+      ctx.arc(toCx(it.xi), toY(it.p50), 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#dc3545'; ctx.fill();
+    });
+  }
 
   // Attach or remove click handler — always clear stale handler first
   const _clickId = canvas.id;
@@ -9902,6 +9937,78 @@ function switchChartTab(tab) { _showChartTab(tab); }
 
 let _topProductsGroupBy = 'product';
 
+function _redrawDailyWithForecast() {
+  if (!_statsData) return;
+  const c = document.getElementById('chart-daily');
+  if (!c) return;
+  const dayData = _statsData.revenue_per_day || [];
+  const labels  = dayData.map(d => d.date ? d.date.slice(5) : '');
+  const values  = dayData.map(d => d.revenue || 0);
+  let overlayOpts = null;
+  if (_forecastEnabled && _forecastData && _forecastData.forecast) {
+    const items = (_forecastData.forecast).map(f => {
+      const dateSuffix = f.date ? f.date.slice(5) : null;
+      const xi = labels.indexOf(dateSuffix);
+      if (xi < 0) return null;
+      return { xi, p10: f.p10, p50: f.p50, p90: f.p90, is_holiday: f.is_holiday };
+    }).filter(Boolean);
+    const maxForecast = items.length ? Math.max(...items.map(it => it.p90 || 0)) : 0;
+    overlayOpts = { items, maxVal: maxForecast };
+  }
+  drawBarChart(c, labels, values, {
+    color: '#2a6f3e', color2: '#4caf7d', valuePrefix: 'R',
+    yLabel: 'Revenue (R)', xLabel: 'Date',
+    onBarClick: (lbl, val, i) => openDrilldown(`Sales on ${dayData[i]?.date}`, 'day', dayData[i]?.date),
+    overlay: overlayOpts,
+  });
+}
+
+async function _renderForecast() {
+  if (!_forecastEnabled || _statsChartTab !== 'daily') return;
+  const params = _statsFilterParams();
+  const badgeEl = document.getElementById('forecast-badge');
+  const explEl  = document.getElementById('forecast-explanation');
+  try {
+    const data = await api(`/api/stats/forecast?${params}`);
+    _forecastData = data;
+    const qualityColors = { excellent: 'bg-success', good: 'bg-primary', fair: 'bg-warning text-dark', poor: 'bg-danger' };
+    if (data.error === 'insufficient_data') {
+      if (badgeEl) { badgeEl.textContent = 'Not enough data'; badgeEl.className = 'badge bg-secondary'; badgeEl.style.display = ''; }
+      if (explEl) { explEl.textContent = `Only ${data.data_months || 0} months of history — need at least 2 weeks`; explEl.style.display = ''; }
+    } else {
+      if (badgeEl) { badgeEl.textContent = data.data_quality || 'unknown'; badgeEl.className = `badge ${qualityColors[data.data_quality] || 'bg-secondary'}`; badgeEl.style.display = ''; }
+      if (explEl) { explEl.textContent = data.explanation || ''; explEl.style.display = data.explanation ? '' : 'none'; }
+    }
+    _redrawDailyWithForecast();
+    // Refresh legend to show forecast key
+    const _legend = document.getElementById('stats-chart-legend');
+    if (_legend && !data.error) {
+      _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;border-top:2px dashed #0d6efd;vertical-align:middle"></span> Forecast P50</span>` +
+        ` <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:8px;background:rgba(13,110,253,0.2);vertical-align:middle"></span> P10–P90</span>`;
+    }
+  } catch(e) {
+    if (badgeEl) badgeEl.style.display = 'none';
+    if (explEl) explEl.style.display = 'none';
+  }
+}
+
+document.getElementById('btn-forecast-toggle')?.addEventListener('click', async () => {
+  _forecastEnabled = !_forecastEnabled;
+  const btn = document.getElementById('btn-forecast-toggle');
+  const badgeEl = document.getElementById('forecast-badge');
+  const explEl  = document.getElementById('forecast-explanation');
+  if (_forecastEnabled) {
+    if (btn) { btn.classList.replace('btn-outline-info', 'btn-info'); btn.innerHTML = '<i class="bi bi-graph-up-arrow me-1"></i>Hide Forecast'; }
+    await _renderForecast();
+  } else {
+    if (btn) { btn.classList.replace('btn-info', 'btn-outline-info'); btn.innerHTML = '<i class="bi bi-graph-up-arrow me-1"></i>Show Forecast'; }
+    _forecastData = null;
+    if (badgeEl) badgeEl.style.display = 'none';
+    if (explEl) explEl.style.display = 'none';
+    _redrawDailyWithForecast();
+  }
+});
+
 function _showChartTab(tab) {
   _statsChartTab = tab;
   ['daily','hourly','minute','top','top-rev','top-profit','suppliers','channels','customers','dow'].forEach(id => {
@@ -9923,6 +10030,9 @@ function _showChartTab(tab) {
   if (hint) hint.style.display = drillableTabs.includes(tab) ? '' : 'none';
   const groupByBar = document.getElementById('top-products-groupby');
   if (groupByBar) groupByBar.classList.toggle('d-none', !['top-rev','top-profit'].includes(tab));
+  // Show forecast controls only on daily tab
+  const forecastControls = document.getElementById('forecast-controls');
+  if (forecastControls) forecastControls.style.display = tab === 'daily' ? '' : 'none';
 
   // Legend strip — cleared each time, populated per tab below
   const _legend = document.getElementById('stats-chart-legend');
@@ -9934,15 +10044,10 @@ function _showChartTab(tab) {
   const j = _statsData;
 
   if (tab === 'daily') {
-    const c = document.getElementById('chart-daily');
-    c.style.display = '';
-    const dayData = j.revenue_per_day;
-    drawBarChart(c, dayData.map(d => d.date.slice(5)), dayData.map(d => d.revenue), {
-      color: '#2a6f3e', color2: '#4caf7d', valuePrefix: 'R',
-      yLabel: 'Revenue (R)', xLabel: 'Date',
-      onBarClick: (lbl, val, i) => openDrilldown(`Sales on ${dayData[i].date}`, 'day', dayData[i].date),
-    });
-    if (_legend) _legend.innerHTML = `<span class="text-muted">Total sales revenue for each day — click a bar to see the transactions</span>`;
+    document.getElementById('chart-daily').style.display = '';
+    _redrawDailyWithForecast();
+    if (_legend) _legend.innerHTML = `<span class="text-muted">Total sales revenue for each day — click a bar to see the transactions</span>` +
+      (_forecastEnabled && _forecastData && !_forecastData.error ? ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items-center;gap:4px"><span style="display:inline-block;width:20px;height:2px;border-top:2px dashed #0d6efd;vertical-align:middle"></span> Forecast P50</span> <span style="display:inline-flex;align-items-center;gap:4px"><span style="display:inline-block;width:12px;height:8px;background:rgba(13,110,253,0.2);vertical-align:middle"></span> P10–P90 band</span>` : '');
 
   } else if (tab === 'hourly') {
     const c = document.getElementById('chart-hourly');
@@ -10398,6 +10503,7 @@ async function loadStats() {
     }
 
     _showChartTab(_statsChartTab);
+    if (_forecastEnabled && _statsChartTab === 'daily') _renderForecast();
 
     // Employee performance table
     const empWrap = document.getElementById('employee-stats-table');
