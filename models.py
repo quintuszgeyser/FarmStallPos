@@ -884,3 +884,222 @@ class CustomisationRule(db.Model):
     label         = db.Column(db.String(200), nullable=True)     # shown to teller e.g. "Oat milk surcharge"
     active        = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
     sort_order    = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+
+# ── Employee / Payroll Subsystem ──────────────────────────────────────────────
+
+class Employee(db.Model):
+    __tablename__ = 'employees'
+    id                   = db.Column(db.Integer, primary_key=True)
+    user_id              = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    name                 = db.Column(db.String(120), nullable=False)
+    employee_number      = db.Column(db.String(20), nullable=True, unique=True)
+    id_number            = db.Column(db.String(13), nullable=True)
+    tax_number           = db.Column(db.String(20), nullable=True)
+    uif_number           = db.Column(db.String(20), nullable=True)
+    bank_name            = db.Column(db.String(80), nullable=True)
+    bank_account         = db.Column(db.String(30), nullable=True)
+    bank_branch_code     = db.Column(db.String(10), nullable=True)
+    phone                = db.Column(db.String(20), nullable=True)
+    start_date           = db.Column(db.Date, nullable=True)
+    employment_type      = db.Column(db.String(20), nullable=False, default='permanent', server_default="'permanent'")
+    hourly_rate          = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    normal_hours_per_day = db.Column(Numeric(4, 2), nullable=False, default=9, server_default='9')
+    normal_days_per_week = db.Column(db.Integer, nullable=False, default=5, server_default='5')
+    pay_frequency        = db.Column(db.String(20), nullable=False, default='biweekly', server_default="'biweekly'")
+    pay_day_of_week      = db.Column(db.Integer, nullable=False, default=5, server_default='5')  # 0=Mon…6=Sun
+    leave_days_per_year  = db.Column(Numeric(5, 2), nullable=False, default=21, server_default='21')
+    is_active            = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    notes                = db.Column(db.Text, nullable=True)
+    created_at           = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_by           = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+    user        = db.relationship('User', foreign_keys=[user_id])
+    deductions  = db.relationship('EmployeeDeduction', backref='employee', lazy='dynamic',
+                                  foreign_keys='EmployeeDeduction.employee_id')
+    attendance  = db.relationship('EmployeeAttendance', backref='employee', lazy='dynamic',
+                                  foreign_keys='EmployeeAttendance.employee_id')
+    pay_runs    = db.relationship('PayRun', backref='employee', lazy='dynamic',
+                                  foreign_keys='PayRun.employee_id')
+
+
+class EmployeeDeduction(db.Model):
+    __tablename__ = 'employee_deductions'
+    id             = db.Column(db.Integer, primary_key=True)
+    employee_id    = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    label          = db.Column(db.String(80), nullable=False)
+    deduction_type = db.Column(db.String(30), nullable=False, default='fixed', server_default="'fixed'")
+    # fixed | percentage_of_gross | auto_uif | auto_paye
+    amount         = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    is_active      = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    sort_order     = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+
+class PayRule(db.Model):
+    """Configurable multipliers per day type — no hardcoded rates in payroll logic."""
+    __tablename__ = 'pay_rules'
+    id          = db.Column(db.Integer, primary_key=True)
+    day_type    = db.Column(db.String(30), nullable=False, unique=True)
+    label       = db.Column(db.String(60), nullable=False)
+    multiplier  = db.Column(Numeric(4, 2), nullable=False, default=1, server_default='1')
+    is_paid     = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    description = db.Column(db.String(200), nullable=True)
+    sort_order  = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+
+class EmployeeAttendance(db.Model):
+    """Clock-in/out record — the raw audit trail source of truth."""
+    __tablename__ = 'employee_attendance'
+    id            = db.Column(db.Integer, primary_key=True)
+    employee_id   = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    work_date     = db.Column(db.Date, nullable=False, index=True)
+    clock_in      = db.Column(db.Time, nullable=True)
+    clock_out     = db.Column(db.Time, nullable=True)
+    break_minutes = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+    hours_worked  = db.Column(Numeric(5, 2), nullable=True)  # computed or manually overridden
+    day_type      = db.Column(db.String(30), nullable=False, default='normal', server_default="'normal'")
+    # normal | overtime | sunday | public_holiday | vacation | sick | unpaid_leave
+    source        = db.Column(db.String(20), nullable=False, default='manual', server_default="'manual'")
+    # manual | admin_entry | mobile
+    notes         = db.Column(db.String(300), nullable=True)
+    approved_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at   = db.Column(db.DateTime, nullable=True)
+    created_by    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    updated_by    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    updated_at    = db.Column(db.DateTime, nullable=True)
+    __table_args__ = (db.UniqueConstraint('employee_id', 'work_date',
+                                          name='uq_employee_attendance_date'),)
+
+
+class ShiftSchedule(db.Model):
+    """Planned shifts — compared against actual attendance for variance reporting."""
+    __tablename__ = 'shift_schedules'
+    id             = db.Column(db.Integer, primary_key=True)
+    employee_id    = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    scheduled_date = db.Column(db.Date, nullable=False)
+    expected_start = db.Column(db.Time, nullable=True)
+    expected_end   = db.Column(db.Time, nullable=True)
+    expected_hours = db.Column(Numeric(5, 2), nullable=True)
+    notes          = db.Column(db.String(200), nullable=True)
+    created_by     = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at     = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (db.UniqueConstraint('employee_id', 'scheduled_date',
+                                          name='uq_shift_schedule_date'),)
+
+
+class LeaveRequest(db.Model):
+    __tablename__ = 'leave_requests'
+    id               = db.Column(db.Integer, primary_key=True)
+    employee_id      = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    leave_type       = db.Column(db.String(30), nullable=False)
+    # annual | sick | family_responsibility | unpaid
+    date_from        = db.Column(db.Date, nullable=False)
+    date_to          = db.Column(db.Date, nullable=False)
+    days_requested   = db.Column(Numeric(5, 2), nullable=False)
+    reason           = db.Column(db.Text, nullable=True)
+    status           = db.Column(db.String(20), nullable=False, default='requested', server_default="'requested'")
+    # requested | approved | rejected
+    approved_by      = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at      = db.Column(db.DateTime, nullable=True)
+    rejection_reason = db.Column(db.String(300), nullable=True)
+    document_filename = db.Column(db.String(200), nullable=True)
+    created_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class LeaveBalance(db.Model):
+    __tablename__ = 'leave_balances'
+    id            = db.Column(db.Integer, primary_key=True)
+    employee_id   = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False)
+    leave_type    = db.Column(db.String(30), nullable=False)
+    year          = db.Column(db.Integer, nullable=False)
+    allocated_days = db.Column(Numeric(5, 2), nullable=False, default=0, server_default='0')
+    used_days      = db.Column(Numeric(5, 2), nullable=False, default=0, server_default='0')
+    __table_args__ = (db.UniqueConstraint('employee_id', 'leave_type', 'year',
+                                          name='uq_leave_balance'),)
+
+
+class EmployeeAdvance(db.Model):
+    """Cash advances — auto-deducted from next pay run."""
+    __tablename__ = 'employee_advances'
+    id          = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    amount      = db.Column(Numeric(10, 2), nullable=False)
+    date_given  = db.Column(db.Date, nullable=False)
+    reason      = db.Column(db.String(200), nullable=True)
+    status      = db.Column(db.String(20), nullable=False, default='outstanding', server_default="'outstanding'")
+    # outstanding | deducted | cancelled
+    pay_run_id  = db.Column(db.Integer, db.ForeignKey('pay_runs.id'), nullable=True)
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class EmployeeLoan(db.Model):
+    """Structured loans with installment deductions per pay run."""
+    __tablename__ = 'employee_loans'
+    id          = db.Column(db.Integer, primary_key=True)
+    employee_id = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    principal   = db.Column(Numeric(10, 2), nullable=False)
+    balance     = db.Column(Numeric(10, 2), nullable=False)
+    installment = db.Column(Numeric(10, 2), nullable=False)
+    date_given  = db.Column(db.Date, nullable=False)
+    reason      = db.Column(db.String(200), nullable=True)
+    status      = db.Column(db.String(20), nullable=False, default='active', server_default="'active'")
+    # active | settled | written_off
+    approved_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at  = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+class EmployeeDocument(db.Model):
+    """Digital employee file — contracts, ID copies, warnings, leave docs."""
+    __tablename__ = 'employee_documents'
+    id            = db.Column(db.Integer, primary_key=True)
+    employee_id   = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    document_type = db.Column(db.String(40), nullable=False)
+    # contract | id_copy | uif_form | bank_letter | disciplinary | warning | leave_doc | other
+    label         = db.Column(db.String(200), nullable=False)
+    filename      = db.Column(db.String(200), nullable=False)
+    original_name = db.Column(db.String(200), nullable=False)
+    uploaded_at   = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    uploaded_by   = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+
+
+class PayRun(db.Model):
+    """Locked payroll calculation for one employee for one period."""
+    __tablename__ = 'pay_runs'
+    id                         = db.Column(db.Integer, primary_key=True)
+    reference                  = db.Column(db.String(20), nullable=True, unique=True)
+    employee_id                = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    period_start               = db.Column(db.Date, nullable=False)
+    period_end                 = db.Column(db.Date, nullable=False)
+    pay_date                   = db.Column(db.Date, nullable=True)
+    hourly_rate_snapshot       = db.Column(Numeric(10, 2), nullable=False)
+    # Hour breakdown
+    normal_hours               = db.Column(Numeric(6, 2), nullable=False, default=0, server_default='0')
+    overtime_hours             = db.Column(Numeric(6, 2), nullable=False, default=0, server_default='0')
+    sunday_hours               = db.Column(Numeric(6, 2), nullable=False, default=0, server_default='0')
+    holiday_hours              = db.Column(Numeric(6, 2), nullable=False, default=0, server_default='0')
+    vacation_hours             = db.Column(Numeric(6, 2), nullable=False, default=0, server_default='0')
+    sick_hours                 = db.Column(Numeric(6, 2), nullable=False, default=0, server_default='0')
+    # Pay breakdown
+    normal_pay                 = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    overtime_pay               = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    sunday_pay                 = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    holiday_pay                = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    vacation_pay               = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    gross_pay                  = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    # Snapshots (locked at approval — never re-derived)
+    deductions_json            = db.Column(db.Text, nullable=False, default='[]', server_default="'[]'")
+    employer_contributions_json = db.Column(db.Text, nullable=False, default='[]', server_default="'[]'")
+    advances_json              = db.Column(db.Text, nullable=False, default='[]', server_default="'[]'")
+    attendance_json            = db.Column(db.Text, nullable=False, default='[]', server_default="'[]'")
+    total_deductions           = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    net_pay                    = db.Column(Numeric(10, 2), nullable=False, default=0, server_default='0')
+    # Status: draft → approved → paid  (no edits allowed after approved)
+    status                     = db.Column(db.String(20), nullable=False, default='draft', server_default="'draft'")
+    approved_by                = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    approved_at                = db.Column(db.DateTime, nullable=True)
+    paid_at                    = db.Column(db.DateTime, nullable=True)
+    notes                      = db.Column(db.Text, nullable=True)
+    created_by                 = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at                 = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)

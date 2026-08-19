@@ -796,6 +796,29 @@
     @keyframes slideIn { from { transform: translateX(40px); opacity: 0; } to { transform: none; opacity: 1; } }
     @keyframes spin { to { transform: rotate(360deg); } }
     .spin { display: inline-block; animation: spin .7s linear infinite; }
+    /* Employee timesheet calendar */
+    .emp-calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+    .emp-cal-header { text-align: center; font-size: 10px; font-weight: bold; color: #6c757d; padding: 4px 0; }
+    .emp-cal-day { border: 1px solid #dee2e6; border-radius: 6px; padding: 6px; min-height: 70px; cursor: pointer; position: relative; transition: background .15s; }
+    .emp-cal-day:hover { background: #f0f4ff; border-color: #a0b4ff; }
+    .emp-cal-day.other-month { opacity: 0.35; cursor: default; }
+    .emp-cal-day.today { border-color: var(--lc-gold); background: #fffbea; }
+    .emp-cal-day.holiday { background: #ede7f6; }
+    .emp-cal-day.sunday-day { background: #fce4ec; }
+    .emp-cal-day-num { font-size: 11px; font-weight: 600; color: #444; }
+    .emp-cal-logged { font-size: 10px; margin-top: 3px; }
+    .emp-cal-badge { font-size: 9px; padding: 1px 5px; border-radius: 10px; display: inline-block; margin-top: 2px; }
+    .emp-cal-badge.normal      { background: #d1fae5; color: #065f46; }
+    .emp-cal-badge.overtime    { background: #fef3c7; color: #92400e; }
+    .emp-cal-badge.sunday      { background: #fce7f3; color: #9d174d; }
+    .emp-cal-badge.public_holiday { background: #ede9fe; color: #4c1d95; }
+    .emp-cal-badge.vacation    { background: #dbeafe; color: #1e40af; }
+    .emp-cal-badge.sick        { background: #fef9c3; color: #713f12; }
+    .emp-cal-badge.unpaid_leave { background: #f3f4f6; color: #374151; }
+    .emp-pay-run-row td { vertical-align: middle; }
+    .pay-status-draft    { background: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    .pay-status-approved { background: #d1fae5; color: #065f46; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
+    .pay-status-paid     { background: #bfdbfe; color: #1e40af; padding: 2px 8px; border-radius: 10px; font-size: 11px; }
   </style>
 </head>
 <body>
@@ -883,6 +906,7 @@
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#stats">Stats</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#customers">Customers</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#invoices">Orders <span class="badge bg-danger ms-1" id="orders-active-badge" style="display:none">0</span></button></li>
+    <li class="nav-item pos-only"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#employees" onclick="loadEmployeesTab()"><i class="bi bi-people me-1"></i>Employees</button></li>
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#recognition-settings" onclick="loadCustomisationRules()"><i class="bi bi-gear me-1"></i>Configuration</button></li>
     {% if not is_appliance %}<li class="nav-item dev-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#dev-monitor"><i class="bi bi-bar-chart-line me-1"></i>Monitor</button></li>{% endif %}
     <li class="nav-item admin-only hidden"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#scale-monitor" onclick="loadScaleTab()"><i class="bi bi-speedometer2 me-1"></i>Scale</button></li>
@@ -2796,6 +2820,116 @@
       </table>
     </div>
     {% endif %}
+
+    <!-- ═══ EMPLOYEES TAB ═══ -->
+    <div class="tab-pane fade" id="employees">
+
+      <!-- ── ADMIN VIEW ── -->
+      <div id="emp-admin-view" class="admin-only hidden">
+        <!-- Dashboard summary row -->
+        <div id="emp-dashboard-row" class="row g-2 mb-3"></div>
+
+        <!-- Sub-tab nav -->
+        <ul class="nav nav-tabs mb-3" id="emp-subtabs">
+          <li class="nav-item"><button class="nav-link active" data-emp-sub="timesheets" onclick="empSwitchSub('timesheets')"><i class="bi bi-calendar3 me-1"></i>Timesheets</button></li>
+          <li class="nav-item"><button class="nav-link" data-emp-sub="payroll" onclick="empSwitchSub('payroll')"><i class="bi bi-cash-coin me-1"></i>Payroll</button></li>
+          <li class="nav-item"><button class="nav-link" data-emp-sub="employees" onclick="empSwitchSub('employees')"><i class="bi bi-person-gear me-1"></i>Employees</button></li>
+          <li class="nav-item"><button class="nav-link" data-emp-sub="finance" onclick="empSwitchSub('finance')"><i class="bi bi-wallet2 me-1"></i>Finance</button></li>
+          <li class="nav-item"><button class="nav-link" data-emp-sub="rules" onclick="empSwitchSub('rules')"><i class="bi bi-sliders me-1"></i>Pay Rules</button></li>
+        </ul>
+
+        <!-- TIMESHEETS sub-tab -->
+        <div id="emp-sub-timesheets">
+          <div class="d-flex gap-2 align-items-center mb-3 flex-wrap">
+            <select id="emp-ts-employee" class="form-select form-select-sm" style="max-width:220px" onchange="loadTimesheetCalendar()"></select>
+            <input type="month" id="emp-ts-month" class="form-control form-control-sm" style="max-width:160px" onchange="loadTimesheetCalendar()">
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadTimesheetCalendar()"><i class="bi bi-arrow-clockwise"></i></button>
+            <button class="btn btn-sm btn-outline-primary ms-auto" onclick="empOpenShiftModal()"><i class="bi bi-calendar-plus me-1"></i>Add Shift</button>
+          </div>
+          <!-- Calendar grid -->
+          <div id="emp-ts-calendar" class="emp-calendar"></div>
+          <!-- Summary bar -->
+          <div id="emp-ts-summary" class="d-flex gap-3 flex-wrap mt-2 p-2 bg-light rounded small"></div>
+        </div>
+
+        <!-- PAYROLL sub-tab -->
+        <div id="emp-sub-payroll" style="display:none">
+          <div class="d-flex gap-2 align-items-center mb-3 flex-wrap">
+            <select id="emp-pr-employee" class="form-select form-select-sm" style="max-width:220px"></select>
+            <button class="btn btn-sm btn-primary" onclick="empOpenPayRunModal()"><i class="bi bi-plus-lg me-1"></i>New Pay Run</button>
+            <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadPayRunList()"><i class="bi bi-arrow-clockwise"></i></button>
+          </div>
+          <table class="table table-sm table-hover">
+            <thead class="table-dark">
+              <tr><th>Ref</th><th>Employee</th><th>Period</th><th>Pay Date</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr>
+            </thead>
+            <tbody id="emp-payrun-tbody"></tbody>
+          </table>
+        </div>
+
+        <!-- EMPLOYEES sub-tab -->
+        <div id="emp-sub-employees" style="display:none">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <div></div>
+            <button class="btn btn-sm btn-primary" onclick="empOpenEmployeeModal()"><i class="bi bi-person-plus me-1"></i>Add Employee</button>
+          </div>
+          <div id="emp-employee-list" class="row g-3"></div>
+        </div>
+
+        <!-- FINANCE sub-tab -->
+        <div id="emp-sub-finance" style="display:none">
+          <ul class="nav nav-pills mb-3">
+            <li class="nav-item"><button class="nav-link active" data-emp-fin="advances" onclick="empSwitchFin('advances')">Advances</button></li>
+            <li class="nav-item"><button class="nav-link" data-emp-fin="loans" onclick="empSwitchFin('loans')">Loans</button></li>
+            <li class="nav-item"><button class="nav-link" data-emp-fin="leaves" onclick="empSwitchFin('leaves')">Leave</button></li>
+          </ul>
+          <div id="emp-fin-advances">
+            <div class="d-flex justify-content-between mb-2">
+              <select id="emp-fin-adv-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadAdvancesList()"></select>
+              <button class="btn btn-sm btn-primary" onclick="empOpenAdvanceModal()"><i class="bi bi-plus-lg me-1"></i>Record Advance</button>
+            </div>
+            <table class="table table-sm"><thead class="table-dark"><tr><th>Date</th><th>Amount</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+            <tbody id="emp-advances-tbody"></tbody></table>
+          </div>
+          <div id="emp-fin-loans" style="display:none">
+            <div class="d-flex justify-content-between mb-2">
+              <select id="emp-fin-loan-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadLoansList()"></select>
+              <button class="btn btn-sm btn-primary" onclick="empOpenLoanModal()"><i class="bi bi-plus-lg me-1"></i>New Loan</button>
+            </div>
+            <table class="table table-sm"><thead class="table-dark"><tr><th>Date</th><th>Principal</th><th>Balance</th><th>Installment</th><th>Reason</th><th>Status</th></tr></thead>
+            <tbody id="emp-loans-tbody"></tbody></table>
+          </div>
+          <div id="emp-fin-leaves" style="display:none">
+            <div class="d-flex justify-content-between mb-2">
+              <select id="emp-fin-leave-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadLeavesList()"></select>
+              <button class="btn btn-sm btn-primary" onclick="empOpenLeaveModal()"><i class="bi bi-plus-lg me-1"></i>Request Leave</button>
+            </div>
+            <table class="table table-sm"><thead class="table-dark"><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th></th></tr></thead>
+            <tbody id="emp-leaves-tbody"></tbody></table>
+          </div>
+        </div>
+
+        <!-- PAY RULES sub-tab -->
+        <div id="emp-sub-rules" style="display:none">
+          <p class="text-muted small mb-3">Multipliers applied when calculating pay. Change these if legislation or contracts change — no code edit needed.</p>
+          <table class="table table-sm table-hover">
+            <thead class="table-dark"><tr><th>Day Type</th><th>Label</th><th>Multiplier</th><th>Paid?</th><th>Description</th><th></th></tr></thead>
+            <tbody id="emp-rules-tbody"></tbody>
+          </table>
+        </div>
+      </div><!-- /emp-admin-view -->
+
+      <!-- ── TELLER VIEW: own payslips only ── -->
+      <div id="emp-teller-view" class="teller-only">
+        <h5 class="mb-3"><i class="bi bi-file-earmark-text me-2"></i>My Payslips</h5>
+        <p class="text-muted small mb-3">Your pay runs are listed below. Click View to open a printable payslip.</p>
+        <table class="table table-sm table-hover">
+          <thead class="table-dark"><tr><th>Period</th><th>Pay Date</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr></thead>
+          <tbody id="emp-my-payslips-tbody"></tbody>
+        </table>
+      </div>
+
+    </div><!-- /employees tab-pane -->
 
   </div><!-- /tab-contents -->
 </div><!-- /container -->
@@ -4779,5 +4913,235 @@
     </div>
   </div>
 </div>
+
+<!-- ═══════════ ATTENDANCE ENTRY MODAL ═══════════ -->
+<div class="modal fade" id="empAttendanceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0"><i class="bi bi-clock me-1"></i>Log Hours</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="emp-att-employee-id">
+        <input type="hidden" id="emp-att-row-id">
+        <div class="mb-2"><label class="form-label small mb-1">Date</label><input type="date" id="emp-att-date" class="form-control form-control-sm"></div>
+        <div class="mb-2"><label class="form-label small mb-1">Day Type</label>
+          <select id="emp-att-day-type" class="form-select form-select-sm">
+            <option value="normal">Normal</option>
+            <option value="overtime">Overtime</option>
+            <option value="sunday">Sunday</option>
+            <option value="public_holiday">Public Holiday</option>
+            <option value="vacation">Annual Leave</option>
+            <option value="sick">Sick Leave</option>
+            <option value="unpaid_leave">Unpaid Leave</option>
+          </select>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-6"><label class="form-label small mb-1">Clock In</label><input type="time" id="emp-att-clock-in" class="form-control form-control-sm" onchange="empAutoCalcHours()"></div>
+          <div class="col-6"><label class="form-label small mb-1">Clock Out</label><input type="time" id="emp-att-clock-out" class="form-control form-control-sm" onchange="empAutoCalcHours()"></div>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-6"><label class="form-label small mb-1">Break (min)</label><input type="number" id="emp-att-break" class="form-control form-control-sm" value="60" onchange="empAutoCalcHours()"></div>
+          <div class="col-6"><label class="form-label small mb-1">Hours Worked</label><input type="number" id="emp-att-hours" class="form-control form-control-sm" step="0.25"></div>
+        </div>
+        <div class="mb-2"><label class="form-label small mb-1">Notes</label><input type="text" id="emp-att-notes" class="form-control form-control-sm" placeholder="Optional"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="empSaveAttendance()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ PAY RUN MODAL ═══════════ -->
+<div class="modal fade" id="empPayRunModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0"><i class="bi bi-cash-coin me-1"></i>Pay Run</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="row g-2 mb-3">
+          <div class="col-md-4"><label class="form-label small mb-1">Employee</label><select id="emp-pr-modal-emp" class="form-select form-select-sm" onchange="empPreviewPayRun()"></select></div>
+          <div class="col-md-3"><label class="form-label small mb-1">Period Start</label><input type="date" id="emp-pr-start" class="form-control form-control-sm" onchange="empPreviewPayRun()"></div>
+          <div class="col-md-3"><label class="form-label small mb-1">Period End</label><input type="date" id="emp-pr-end" class="form-control form-control-sm" onchange="empPreviewPayRun()"></div>
+          <div class="col-md-2"><label class="form-label small mb-1">Pay Date</label><input type="date" id="emp-pr-paydate" class="form-control form-control-sm"></div>
+        </div>
+        <div id="emp-pr-preview" class="border rounded p-3 bg-light" style="min-height:200px"><div class="text-muted small text-center pt-5">Select an employee and period to preview</div></div>
+        <div class="mt-2"><label class="form-label small mb-1">Notes</label><input type="text" id="emp-pr-notes" class="form-control form-control-sm" placeholder="Optional"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="emp-pr-save-btn" class="btn btn-sm btn-primary" onclick="empSavePayRun()" disabled>Save as Draft</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ EMPLOYEE EDITOR MODAL ═══════════ -->
+<div class="modal fade" id="empEmployeeModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0"><i class="bi bi-person-gear me-1"></i><span id="emp-modal-title">Add Employee</span></h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <input type="hidden" id="emp-modal-id">
+        <ul class="nav nav-tabs mb-3" id="empEditorTabs">
+          <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#emp-ed-personal">Personal</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#emp-ed-pay">Pay Config</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#emp-ed-deductions">Deductions</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#emp-ed-docs">Documents</button></li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="emp-ed-personal">
+            <div class="row g-2">
+              <div class="col-md-6"><label class="form-label small mb-1">Full Name *</label><input type="text" id="emp-ed-name" class="form-control form-control-sm"></div>
+              <div class="col-md-3"><label class="form-label small mb-1">Employee #</label><input type="text" id="emp-ed-number" class="form-control form-control-sm" placeholder="Auto-generated"></div>
+              <div class="col-md-3"><label class="form-label small mb-1">Phone</label><input type="text" id="emp-ed-phone" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">ID Number</label><input type="text" id="emp-ed-id-number" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">Tax Number</label><input type="text" id="emp-ed-tax-number" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">UIF Number</label><input type="text" id="emp-ed-uif-number" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">Bank</label><input type="text" id="emp-ed-bank-name" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">Account No.</label><input type="text" id="emp-ed-bank-account" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">Branch Code</label><input type="text" id="emp-ed-bank-branch" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">Start Date</label><input type="date" id="emp-ed-start-date" class="form-control form-control-sm"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">Employment Type</label>
+                <select id="emp-ed-emp-type" class="form-select form-select-sm">
+                  <option value="permanent">Permanent</option>
+                  <option value="part_time">Part-time</option>
+                  <option value="casual">Casual</option>
+                </select>
+              </div>
+              <div class="col-md-4"><label class="form-label small mb-1">Linked User (optional)</label><select id="emp-ed-user-id" class="form-select form-select-sm"><option value="">— None —</option></select></div>
+              <div class="col-12"><label class="form-label small mb-1">Notes</label><textarea id="emp-ed-notes" class="form-control form-control-sm" rows="2"></textarea></div>
+            </div>
+          </div>
+          <div class="tab-pane fade" id="emp-ed-pay">
+            <div class="row g-2">
+              <div class="col-md-3"><label class="form-label small mb-1">Hourly Rate (R)</label><input type="number" id="emp-ed-rate" class="form-control form-control-sm" step="0.01"></div>
+              <div class="col-md-3"><label class="form-label small mb-1">Normal Hours/Day</label><input type="number" id="emp-ed-hrs-day" class="form-control form-control-sm" step="0.5" value="9"></div>
+              <div class="col-md-3"><label class="form-label small mb-1">Normal Days/Week</label><input type="number" id="emp-ed-days-week" class="form-control form-control-sm" value="5"></div>
+              <div class="col-md-3"><label class="form-label small mb-1">Leave Days/Year</label><input type="number" id="emp-ed-leave-days" class="form-control form-control-sm" step="0.5" value="21"></div>
+              <div class="col-md-4"><label class="form-label small mb-1">Pay Frequency</label>
+                <select id="emp-ed-pay-freq" class="form-select form-select-sm">
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly" selected>Every 2 Weeks</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div class="col-md-4"><label class="form-label small mb-1">Pay Day of Week</label>
+                <select id="emp-ed-pay-day" class="form-select form-select-sm">
+                  <option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option>
+                  <option value="3">Thursday</option><option value="4">Friday</option><option value="5" selected>Saturday</option><option value="6">Sunday</option>
+                </select>
+              </div>
+            </div>
+          </div>
+          <div class="tab-pane fade" id="emp-ed-deductions">
+            <div class="d-flex justify-content-end mb-2">
+              <button class="btn btn-sm btn-outline-primary" onclick="empAddDeductionRow()"><i class="bi bi-plus-lg me-1"></i>Add Deduction</button>
+            </div>
+            <table class="table table-sm">
+              <thead class="table-dark"><tr><th>Label</th><th>Type</th><th>Amount/Rate</th><th>Active</th><th></th></tr></thead>
+              <tbody id="emp-ed-deductions-tbody"></tbody>
+            </table>
+          </div>
+          <div class="tab-pane fade" id="emp-ed-docs">
+            <div class="mb-3">
+              <label class="form-label small mb-1">Upload Document</label>
+              <div class="input-group input-group-sm">
+                <select id="emp-doc-type" class="form-select" style="max-width:180px">
+                  <option value="contract">Contract</option>
+                  <option value="id_copy">ID Copy</option>
+                  <option value="uif_form">UIF Form</option>
+                  <option value="bank_letter">Bank Letter</option>
+                  <option value="disciplinary">Disciplinary</option>
+                  <option value="warning">Warning</option>
+                  <option value="leave_doc">Leave Document</option>
+                  <option value="other">Other</option>
+                </select>
+                <input type="text" id="emp-doc-label" class="form-control" placeholder="Label / description">
+                <input type="file" id="emp-doc-file" class="form-control" style="max-width:200px">
+                <button class="btn btn-primary" onclick="empUploadDocument()">Upload</button>
+              </div>
+            </div>
+            <table class="table table-sm"><thead class="table-dark"><tr><th>Type</th><th>Label</th><th>Uploaded</th><th></th></tr></thead>
+            <tbody id="emp-docs-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="empSaveEmployee()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ ADVANCE MODAL ═══════════ -->
+<div class="modal fade" id="empAdvanceModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0">Record Advance</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label small mb-1">Employee</label><select id="emp-adv-modal-emp" class="form-select form-select-sm"></select></div>
+        <div class="mb-2"><label class="form-label small mb-1">Amount (R)</label><input type="number" id="emp-adv-amount" class="form-control form-control-sm" step="0.01"></div>
+        <div class="mb-2"><label class="form-label small mb-1">Date</label><input type="date" id="emp-adv-date" class="form-control form-control-sm"></div>
+        <div class="mb-2"><label class="form-label small mb-1">Reason</label><input type="text" id="emp-adv-reason" class="form-control form-control-sm" placeholder="Optional"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="empSaveAdvance()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ LOAN MODAL ═══════════ -->
+<div class="modal fade" id="empLoanModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0">New Loan</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label small mb-1">Employee</label><select id="emp-loan-modal-emp" class="form-select form-select-sm"></select></div>
+        <div class="mb-2"><label class="form-label small mb-1">Amount (R)</label><input type="number" id="emp-loan-amount" class="form-control form-control-sm" step="0.01"></div>
+        <div class="mb-2"><label class="form-label small mb-1">Installment/period (R)</label><input type="number" id="emp-loan-installment" class="form-control form-control-sm" step="0.01"></div>
+        <div class="mb-2"><label class="form-label small mb-1">Date</label><input type="date" id="emp-loan-date" class="form-control form-control-sm"></div>
+        <div class="mb-2"><label class="form-label small mb-1">Reason</label><input type="text" id="emp-loan-reason" class="form-control form-control-sm" placeholder="Optional"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="empSaveLoan()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ LEAVE REQUEST MODAL ═══════════ -->
+<div class="modal fade" id="empLeaveModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-sm">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0">Leave Request</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="mb-2"><label class="form-label small mb-1">Employee</label><select id="emp-leave-modal-emp" class="form-select form-select-sm"></select></div>
+        <div class="mb-2"><label class="form-label small mb-1">Leave Type</label>
+          <select id="emp-leave-type" class="form-select form-select-sm">
+            <option value="annual">Annual Leave</option>
+            <option value="sick">Sick Leave</option>
+            <option value="family_responsibility">Family Responsibility</option>
+            <option value="unpaid">Unpaid Leave</option>
+          </select>
+        </div>
+        <div class="row g-2 mb-2">
+          <div class="col-6"><label class="form-label small mb-1">From</label><input type="date" id="emp-leave-from" class="form-control form-control-sm" onchange="empCalcLeaveDays()"></div>
+          <div class="col-6"><label class="form-label small mb-1">To</label><input type="date" id="emp-leave-to" class="form-control form-control-sm" onchange="empCalcLeaveDays()"></div>
+        </div>
+        <div class="mb-2"><label class="form-label small mb-1">Days</label><input type="number" id="emp-leave-days" class="form-control form-control-sm" step="0.5" readonly></div>
+        <div class="mb-2"><label class="form-label small mb-1">Reason</label><textarea id="emp-leave-reason" class="form-control form-control-sm" rows="2"></textarea></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-sm btn-primary" onclick="empSaveLeave()">Submit Request</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

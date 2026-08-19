@@ -21170,3 +21170,930 @@ function _custRuleTypeChanged() {
   const fromRow = document.getElementById('cust-rule-from-row');
   if (fromRow) fromRow.style.display = isSwap ? '' : 'none';
 }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+// EMPLOYEES / PAYROLL
+// ══════════════════════════════════════════════════════════════════════════════
+
+const EMP = {
+  employees: [],       // all active employees (admin view)
+  publicHolidays: {},  // { 'YYYY-MM-DD': 'Name' } for displayed month
+  tsCalendarData: {},  // attendance keyed by date for current calendar view
+  scheduleData: {},    // shifts keyed by date
+  currentPayRunPreview: null,
+  deductionEditRows: [],  // local deduction rows being edited in modal
+};
+
+// ── Bootstrap ─────────────────────────────────────────────────────────────────
+
+async function loadEmployeesTab() {
+  const u = STATE.currentUser;
+  if (!u) return;
+  if (u.role === 'admin' || u.roles?.includes('admin')) {
+    document.getElementById('emp-admin-view').classList.remove('hidden');
+    document.getElementById('emp-teller-view').style.display = 'none';
+    await _empLoadEmployees();
+    empSwitchSub('timesheets');
+    _empLoadDashboard();
+  } else {
+    document.getElementById('emp-admin-view').classList.add('hidden');
+    document.getElementById('emp-teller-view').style.display = '';
+    _empLoadMyPayslips();
+  }
+}
+
+async function _empLoadEmployees() {
+  try {
+    EMP.employees = await api('/api/employees');
+    _empPopulateSelects();
+    _empRenderEmployeeList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function _empPopulateSelects() {
+  const opts = EMP.employees.map(e =>
+    `<option value="${e.id}">${e.name}</option>`).join('');
+  const noneOpt = '<option value="">— Select employee —</option>';
+  for (const id of ['emp-ts-employee','emp-pr-employee','emp-pr-modal-emp',
+                    'emp-fin-adv-emp','emp-fin-loan-emp','emp-fin-leave-emp',
+                    'emp-adv-modal-emp','emp-loan-modal-emp','emp-leave-modal-emp']) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = noneOpt + opts;
+  }
+}
+
+// ── Sub-tab switching ─────────────────────────────────────────────────────────
+
+function empSwitchSub(sub) {
+  document.querySelectorAll('#emp-subtabs .nav-link').forEach(b => {
+    b.classList.toggle('active', b.dataset.empSub === sub);
+  });
+  for (const s of ['timesheets','payroll','employees','finance','rules']) {
+    const el = document.getElementById(`emp-sub-${s}`);
+    if (el) el.style.display = s === sub ? '' : 'none';
+  }
+  if (sub === 'payroll')   loadPayRunList();
+  if (sub === 'employees') _empRenderEmployeeList();
+  if (sub === 'rules')     _empLoadPayRules();
+  if (sub === 'timesheets') {
+    const m = document.getElementById('emp-ts-month');
+    if (!m.value) {
+      const today = new Date();
+      m.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+    }
+    if (EMP.employees.length) loadTimesheetCalendar();
+  }
+}
+
+function empSwitchFin(tab) {
+  document.querySelectorAll('[data-emp-fin]').forEach(b =>
+    b.classList.toggle('active', b.dataset.empFin === tab));
+  for (const t of ['advances','loans','leaves']) {
+    const el = document.getElementById(`emp-fin-${t}`);
+    if (el) el.style.display = t === tab ? '' : 'none';
+  }
+  if (tab === 'advances') loadAdvancesList();
+  if (tab === 'loans')    loadLoansList();
+  if (tab === 'leaves')   loadLeavesList();
+}
+
+// ── Dashboard summary ─────────────────────────────────────────────────────────
+
+async function _empLoadDashboard() {
+  try {
+    const data = await api('/api/employees/dashboard');
+    const row  = document.getElementById('emp-dashboard-row');
+    if (!row) return;
+    const totalH  = data.employees.reduce((s,e)=>s+e.hours_this_month,0);
+    const totalPay = data.total_payroll_this_month;
+    row.innerHTML = `
+      <div class="col-md-3"><div class="card border-0 bg-light h-100"><div class="card-body p-3">
+        <div class="text-muted small">Active Employees</div>
+        <div class="fs-4 fw-bold">${data.active_employee_count}</div>
+      </div></div></div>
+      <div class="col-md-3"><div class="card border-0 bg-light h-100"><div class="card-body p-3">
+        <div class="text-muted small">Hours This Month</div>
+        <div class="fs-4 fw-bold">${totalH.toFixed(1)}h</div>
+      </div></div></div>
+      <div class="col-md-3"><div class="card border-0 bg-light h-100"><div class="card-body p-3">
+        <div class="text-muted small">Est. Payroll This Month</div>
+        <div class="fs-4 fw-bold">R ${totalPay.toFixed(2)}</div>
+      </div></div></div>
+      <div class="col-md-3"><div class="card border-0 bg-light h-100"><div class="card-body p-3">
+        <div class="text-muted small">Pending Advances</div>
+        <div class="fs-4 fw-bold text-warning">R ${data.employees.reduce((s,e)=>s+e.pending_advances,0).toFixed(2)}</div>
+      </div></div></div>
+    `;
+  } catch(e) { console.warn('Dashboard load failed', e); }
+}
+
+// ── Timesheet Calendar ────────────────────────────────────────────────────────
+
+async function loadTimesheetCalendar() {
+  const empId   = document.getElementById('emp-ts-employee').value;
+  const monthEl = document.getElementById('emp-ts-month');
+  if (!empId || !monthEl.value) return;
+
+  const [year, month] = monthEl.value.split('-').map(Number);
+  const monthStr      = monthEl.value;
+
+  try {
+    // Load attendance + public holidays in parallel
+    const [attData, holidays] = await Promise.all([
+      api(`/api/employees/${empId}/attendance?month=${monthStr}`),
+      api(`/api/employees/public_holidays?year=${year}`),
+    ]);
+    EMP.publicHolidays  = holidays;
+    EMP.tsCalendarData  = {};
+    for (const a of attData.attendance) EMP.tsCalendarData[a.work_date] = a;
+
+    _renderCalendar(year, month, empId);
+    _renderTimesheetSummary(attData.attendance);
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function _renderCalendar(year, month, empId) {
+  const grid    = document.getElementById('emp-ts-calendar');
+  const days    = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+  const today   = new Date().toISOString().split('T')[0];
+
+  // First Monday on or before 1st of month
+  const firstOfMonth = new Date(year, month - 1, 1);
+  let startDate = new Date(firstOfMonth);
+  const dow = (firstOfMonth.getDay() + 6) % 7; // 0=Mon
+  startDate.setDate(startDate.getDate() - dow);
+
+  let html = days.map(d => `<div class="emp-cal-header">${d}</div>`).join('');
+
+  for (let i = 0; i < 42; i++) {
+    const d       = new Date(startDate);
+    d.setDate(d.getDate() + i);
+    const ds      = d.toISOString().split('T')[0];
+    const dayNum  = d.getDate();
+    const isThisMonth = d.getMonth() + 1 === month && d.getFullYear() === year;
+    const isHol   = !!EMP.publicHolidays[ds];
+    const isSun   = d.getDay() === 0;
+    const att     = EMP.tsCalendarData[ds];
+
+    let cls = 'emp-cal-day';
+    if (!isThisMonth) cls += ' other-month';
+    if (ds === today) cls += ' today';
+    if (isHol)        cls += ' holiday';
+    else if (isSun)   cls += ' sunday-day';
+
+    let inner = `<div class="emp-cal-day-num">${dayNum}</div>`;
+    if (isHol && isThisMonth) inner += `<div style="font-size:9px;color:#6b21a8">${EMP.publicHolidays[ds]}</div>`;
+    if (att) {
+      const h   = att.hours_worked !== null ? att.hours_worked.toFixed(2) + 'h' : '';
+      const lbl = att.day_type.replace('_',' ');
+      inner += `<div class="emp-cal-logged">
+        <span class="emp-cal-badge ${att.day_type}">${lbl}</span>
+        ${h ? `<div style="font-size:10px;font-weight:600">${h}</div>` : ''}
+        ${att.clock_in ? `<div style="font-size:9px;color:#555">${att.clock_in}–${att.clock_out||'?'}</div>` : ''}
+      </div>`;
+    }
+
+    const clickable = isThisMonth ? `onclick="empOpenAttendanceForDate('${ds}', ${empId})"` : '';
+    html += `<div class="${cls}" ${clickable}>${inner}</div>`;
+  }
+
+  grid.innerHTML = html;
+}
+
+function _renderTimesheetSummary(attendance) {
+  const el     = document.getElementById('emp-ts-summary');
+  const totals = {};
+  let totalH   = 0;
+  for (const a of attendance) {
+    const t = a.day_type;
+    totals[t] = (totals[t] || 0) + (a.hours_worked || 0);
+    totalH   += (a.hours_worked || 0);
+  }
+  const typeLabels = { normal:'Normal', overtime:'Overtime', sunday:'Sunday',
+                       public_holiday:'Public Holiday', vacation:'Leave', sick:'Sick' };
+  let html = `<strong>${totalH.toFixed(2)} total hours</strong>`;
+  for (const [t, h] of Object.entries(totals)) {
+    if (h > 0) html += ` &nbsp;|&nbsp; <span class="emp-cal-badge ${t}">${typeLabels[t]||t}: ${h.toFixed(2)}h</span>`;
+  }
+  el.innerHTML = html;
+}
+
+// ── Attendance modal ──────────────────────────────────────────────────────────
+
+function empOpenAttendanceForDate(dateStr, empId) {
+  const att = EMP.tsCalendarData[dateStr];
+  document.getElementById('emp-att-employee-id').value = empId;
+  document.getElementById('emp-att-row-id').value      = att ? att.id : '';
+  document.getElementById('emp-att-date').value        = dateStr;
+  document.getElementById('emp-att-clock-in').value    = att?.clock_in  || '';
+  document.getElementById('emp-att-clock-out').value   = att?.clock_out || '';
+  document.getElementById('emp-att-break').value       = att?.break_minutes ?? 60;
+  document.getElementById('emp-att-hours').value       = att?.hours_worked ?? '';
+  document.getElementById('emp-att-notes').value       = att?.notes || '';
+
+  // Auto-detect day type
+  let dayType = 'normal';
+  const d = new Date(dateStr + 'T12:00:00');
+  if (d.getDay() === 0) dayType = 'sunday';
+  if (EMP.publicHolidays[dateStr]) dayType = 'public_holiday';
+  if (att) dayType = att.day_type;
+  document.getElementById('emp-att-day-type').value = dayType;
+
+  new bootstrap.Modal(document.getElementById('empAttendanceModal')).show();
+}
+
+function empOpenShiftModal() {
+  const empId = document.getElementById('emp-ts-employee').value;
+  if (!empId) { toast('Select an employee first', 'warning'); return; }
+  const today = new Date().toISOString().split('T')[0];
+  empOpenAttendanceForDate(today, empId);
+}
+
+function empAutoCalcHours() {
+  const ci = document.getElementById('emp-att-clock-in').value;
+  const co = document.getElementById('emp-att-clock-out').value;
+  const br = parseInt(document.getElementById('emp-att-break').value) || 0;
+  if (ci && co) {
+    const [ch, cm] = ci.split(':').map(Number);
+    const [oh, om] = co.split(':').map(Number);
+    const total    = (oh * 60 + om) - (ch * 60 + cm) - br;
+    if (total > 0) document.getElementById('emp-att-hours').value = (total / 60).toFixed(2);
+  }
+}
+
+async function empSaveAttendance() {
+  const empId   = document.getElementById('emp-att-employee-id').value;
+  const date    = document.getElementById('emp-att-date').value;
+  const payload = {
+    date:          date,
+    clock_in:      document.getElementById('emp-att-clock-in').value  || null,
+    clock_out:     document.getElementById('emp-att-clock-out').value || null,
+    break_minutes: parseInt(document.getElementById('emp-att-break').value) || 0,
+    hours:         parseFloat(document.getElementById('emp-att-hours').value) || null,
+    day_type:      document.getElementById('emp-att-day-type').value,
+    notes:         document.getElementById('emp-att-notes').value.trim() || null,
+    source:        'admin_entry',
+  };
+  try {
+    await api(`/api/employees/${empId}/attendance`, { method:'POST', body: JSON.stringify(payload) });
+    bootstrap.Modal.getInstance(document.getElementById('empAttendanceModal'))?.hide();
+    toast('Attendance saved', 'success');
+    loadTimesheetCalendar();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Payroll ───────────────────────────────────────────────────────────────────
+
+async function loadPayRunList() {
+  const empId = document.getElementById('emp-pr-employee').value;
+  const tbody = document.getElementById('emp-payrun-tbody');
+  if (!tbody) return;
+
+  // Fetch all pay runs across all employees or filtered
+  try {
+    let rows = [];
+    if (empId) {
+      rows = await api(`/api/employees/${empId}/pay_runs`);
+      rows = rows.map(r => ({ ...r, employee_name: EMP.employees.find(e => e.id == empId)?.name || '' }));
+    } else {
+      // Fetch all employees' recent pay runs in parallel (up to 10)
+      const results = await Promise.all(
+        EMP.employees.slice(0, 20).map(e =>
+          api(`/api/employees/${e.id}/pay_runs`).then(rs =>
+            rs.map(r => ({ ...r, employee_name: e.name }))
+          ).catch(() => [])
+        )
+      );
+      rows = results.flat().sort((a,b) => b.period_start.localeCompare(a.period_start));
+    }
+
+    tbody.innerHTML = rows.map(r => `
+      <tr class="emp-pay-run-row">
+        <td>${r.reference || '—'}</td>
+        <td>${r.employee_name}</td>
+        <td>${r.period_start} – ${r.period_end}</td>
+        <td>${r.pay_date || '—'}</td>
+        <td>R ${r.gross_pay.toFixed(2)}</td>
+        <td>R ${r.net_pay.toFixed(2)}</td>
+        <td><span class="pay-status-${r.status}">${r.status}</span></td>
+        <td>
+          <button class="btn btn-xs btn-outline-secondary" onclick="empOpenPayslip(${r.employee_id}, ${r.id})"><i class="bi bi-file-earmark-text"></i></button>
+          ${r.status === 'draft' ? `<button class="btn btn-xs btn-success ms-1" onclick="empApprovePayRun(${r.employee_id}, ${r.id})">Approve</button>` : ''}
+          ${r.status === 'approved' ? `<button class="btn btn-xs btn-primary ms-1" onclick="empMarkPaid(${r.employee_id}, ${r.id})">Mark Paid</button>` : ''}
+        </td>
+      </tr>`).join('') || '<tr><td colspan="8" class="text-center text-muted">No pay runs</td></tr>';
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function empOpenPayRunModal() {
+  EMP.currentPayRunPreview = null;
+  document.getElementById('emp-pr-preview').innerHTML =
+    '<div class="text-muted small text-center pt-5">Select an employee and period to preview</div>';
+  document.getElementById('emp-pr-save-btn').disabled = true;
+
+  // Default dates: last biweekly period ending last Saturday
+  const today = new Date();
+  const dayOfWeek = today.getDay(); // 0=Sun
+  const daysToLastSat = (dayOfWeek + 1) % 7; // days since Saturday
+  const lastSat = new Date(today);
+  lastSat.setDate(today.getDate() - daysToLastSat);
+  const periodEnd   = lastSat.toISOString().split('T')[0];
+  const periodStart = new Date(lastSat);
+  periodStart.setDate(lastSat.getDate() - 13);
+
+  document.getElementById('emp-pr-start').value   = periodStart.toISOString().split('T')[0];
+  document.getElementById('emp-pr-end').value     = periodEnd;
+  document.getElementById('emp-pr-paydate').value = periodEnd;
+  document.getElementById('emp-pr-notes').value   = '';
+
+  // Pre-fill from payroll employee selector
+  const empId = document.getElementById('emp-pr-employee').value;
+  if (empId) document.getElementById('emp-pr-modal-emp').value = empId;
+
+  new bootstrap.Modal(document.getElementById('empPayRunModal')).show();
+}
+
+async function empPreviewPayRun() {
+  const empId = document.getElementById('emp-pr-modal-emp').value;
+  const start = document.getElementById('emp-pr-start').value;
+  const end   = document.getElementById('emp-pr-end').value;
+  if (!empId || !start || !end) return;
+
+  const preview = document.getElementById('emp-pr-preview');
+  preview.innerHTML = '<div class="text-center p-3"><span class="spin"><i class="bi bi-arrow-repeat"></i></span></div>';
+
+  try {
+    const data = await api(`/api/employees/${empId}/pay_runs/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ period_start: start, period_end: end }),
+    });
+    EMP.currentPayRunPreview = { empId, data };
+    document.getElementById('emp-pr-save-btn').disabled = false;
+    preview.innerHTML = _renderPayRunPreview(data);
+  } catch(e) {
+    preview.innerHTML = `<div class="alert alert-danger">${e.message}</div>`;
+    EMP.currentPayRunPreview = null;
+    document.getElementById('emp-pr-save-btn').disabled = true;
+  }
+}
+
+function _renderPayRunPreview(data) {
+  const fmtH = h => h.toFixed(2) + 'h';
+  const fmtR = r => 'R ' + r.toFixed(2);
+  const rows = [
+    data.normal_hours  > 0 ? `<tr><td>Normal Hours</td><td>${fmtH(data.normal_hours)}</td><td>${fmtR(data.normal_pay)}</td></tr>` : '',
+    data.overtime_hours > 0 ? `<tr><td>Overtime (1.5×)</td><td>${fmtH(data.overtime_hours)}</td><td>${fmtR(data.overtime_pay)}</td></tr>` : '',
+    data.sunday_hours  > 0 ? `<tr><td>Sunday (2×)</td><td>${fmtH(data.sunday_hours)}</td><td>${fmtR(data.sunday_pay)}</td></tr>` : '',
+    data.holiday_hours > 0 ? `<tr><td>Public Holiday (2×)</td><td>${fmtH(data.holiday_hours)}</td><td>${fmtR(data.holiday_pay)}</td></tr>` : '',
+    data.vacation_hours > 0 ? `<tr><td>Annual Leave</td><td>${fmtH(data.vacation_hours)}</td><td>${fmtR(data.vacation_pay)}</td></tr>` : '',
+    data.sick_hours > 0 ? `<tr><td>Sick Leave</td><td>${fmtH(data.sick_hours)}</td><td>${fmtR(0)}</td></tr>` : '',
+  ].filter(Boolean).join('');
+
+  const dedRows = data.deductions.map(d =>
+    `<tr><td>${d.label}</td><td style="text-align:right">R ${d.amount.toFixed(2)}</td></tr>`
+  ).join('') + data.advances.map(a =>
+    `<tr><td>Advance (${a.date})</td><td style="text-align:right">R ${a.amount.toFixed(2)}</td></tr>`
+  ).join('');
+
+  const attHtml = data.attendance.length ? `
+    <table class="table table-sm mt-3" style="font-size:11px">
+      <thead class="table-secondary"><tr><th>Date</th><th>In</th><th>Out</th><th>Hours</th><th>Type</th><th class="text-end">Pay</th></tr></thead>
+      <tbody>${data.attendance.map(a => `
+        <tr>
+          <td>${a.date}</td>
+          <td>${a.clock_in||'—'}</td><td>${a.clock_out||'—'}</td>
+          <td>${a.hours.toFixed(2)}h</td>
+          <td><span class="emp-cal-badge ${a.day_type}">${a.day_type.replace('_',' ')}</span></td>
+          <td class="text-end">R ${a.pay.toFixed(2)}</td>
+        </tr>`).join('')}</tbody>
+    </table>` : '';
+
+  return `
+    <div class="row g-3">
+      <div class="col-md-6">
+        <table class="table table-sm">
+          <thead class="table-dark"><tr><th>Earnings</th><th>Hours</th><th>Amount</th></tr></thead>
+          <tbody>${rows}<tr class="fw-bold"><td>Gross Pay</td><td></td><td>${fmtR(data.gross_pay)}</td></tr></tbody>
+        </table>
+      </div>
+      <div class="col-md-6">
+        <table class="table table-sm">
+          <thead class="table-dark"><tr><th>Deductions</th><th class="text-end">Amount</th></tr></thead>
+          <tbody>${dedRows}<tr class="fw-bold"><td>Total Deductions</td><td class="text-end">${fmtR(data.total_deductions)}</td></tr></tbody>
+        </table>
+        <div class="d-flex justify-content-between bg-dark text-white rounded p-2 mt-2">
+          <span class="fw-bold">NET PAY</span><span class="fw-bold fs-5">R ${data.net_pay.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>
+    ${attHtml}
+  `;
+}
+
+async function empSavePayRun() {
+  if (!EMP.currentPayRunPreview) return;
+  const { empId } = EMP.currentPayRunPreview;
+  const payload = {
+    period_start: document.getElementById('emp-pr-start').value,
+    period_end:   document.getElementById('emp-pr-end').value,
+    pay_date:     document.getElementById('emp-pr-paydate').value || null,
+    notes:        document.getElementById('emp-pr-notes').value.trim() || null,
+  };
+  try {
+    await api(`/api/employees/${empId}/pay_runs`, { method:'POST', body: JSON.stringify(payload) });
+    bootstrap.Modal.getInstance(document.getElementById('empPayRunModal'))?.hide();
+    toast('Pay run saved as draft', 'success');
+    loadPayRunList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empApprovePayRun(empId, prId) {
+  if (!confirm('Approve this pay run? It will lock and deduct any outstanding advances.')) return;
+  try {
+    const res = await api(`/api/employees/${empId}/pay_runs/${prId}/approve`, { method:'PUT' });
+    toast(`Approved: ${res.reference}`, 'success');
+    loadPayRunList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empMarkPaid(empId, prId) {
+  try {
+    await api(`/api/employees/${empId}/pay_runs/${prId}/paid`, { method:'PUT' });
+    toast('Marked as paid', 'success');
+    loadPayRunList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function empOpenPayslip(empId, prId) {
+  window.open(`/api/employees/${empId}/pay_runs/${prId}/payslip`, '_blank');
+}
+
+// ── Employee CRUD ─────────────────────────────────────────────────────────────
+
+function _empRenderEmployeeList() {
+  const grid = document.getElementById('emp-employee-list');
+  if (!grid) return;
+  grid.innerHTML = EMP.employees.map(e => `
+    <div class="col-md-4 col-lg-3">
+      <div class="card h-100 ${e.is_active ? '' : 'opacity-50'}">
+        <div class="card-body p-3">
+          <div class="fw-semibold">${e.name}</div>
+          <div class="text-muted small">${e.employee_number || ''}</div>
+          <div class="small mt-1">R ${e.hourly_rate.toFixed(2)}/hr &bull; ${e.employment_type}</div>
+          ${e.username ? `<div class="small text-info"><i class="bi bi-person-circle me-1"></i>${e.username}</div>` : ''}
+        </div>
+        <div class="card-footer p-2 d-flex gap-1 justify-content-end">
+          <button class="btn btn-xs btn-outline-secondary" onclick="empEditEmployee(${e.id})"><i class="bi bi-pencil"></i></button>
+          ${e.is_active ? `<button class="btn btn-xs btn-outline-danger" onclick="empDeactivate(${e.id})"><i class="bi bi-person-dash"></i></button>` : ''}
+        </div>
+      </div>
+    </div>`).join('') || '<div class="col-12 text-muted">No employees. Add one to get started.</div>';
+}
+
+async function empOpenEmployeeModal(id = null) {
+  // Reset form
+  document.getElementById('emp-modal-title').textContent = id ? 'Edit Employee' : 'Add Employee';
+  document.getElementById('emp-modal-id').value          = id || '';
+  for (const fid of ['emp-ed-name','emp-ed-number','emp-ed-phone','emp-ed-id-number',
+                      'emp-ed-tax-number','emp-ed-uif-number','emp-ed-bank-name',
+                      'emp-ed-bank-account','emp-ed-bank-branch','emp-ed-notes']) {
+    document.getElementById(fid).value = '';
+  }
+  document.getElementById('emp-ed-rate').value      = '';
+  document.getElementById('emp-ed-hrs-day').value   = '9';
+  document.getElementById('emp-ed-days-week').value = '5';
+  document.getElementById('emp-ed-leave-days').value = '21';
+  document.getElementById('emp-ed-pay-freq').value  = 'biweekly';
+  document.getElementById('emp-ed-pay-day').value   = '5';
+  document.getElementById('emp-ed-start-date').value = '';
+  document.getElementById('emp-ed-emp-type').value  = 'permanent';
+  document.getElementById('emp-ed-user-id').value   = '';
+
+  // Populate user select
+  try {
+    const users = await api('/api/users');
+    const sel   = document.getElementById('emp-ed-user-id');
+    sel.innerHTML = '<option value="">— None —</option>' +
+      users.filter(u => u.active).map(u => `<option value="${u.id}">${u.username}</option>`).join('');
+  } catch(e) { /* ignore */ }
+
+  EMP.deductionEditRows = [];
+  document.getElementById('emp-ed-deductions-tbody').innerHTML = '';
+  document.getElementById('emp-docs-tbody').innerHTML = '';
+
+  if (id) {
+    try {
+      const [emp, deds, docs] = await Promise.all([
+        api(`/api/employees/${id}`),
+        api(`/api/employees/${id}/deductions`),
+        api(`/api/employees/${id}/documents`),
+      ]);
+      document.getElementById('emp-ed-name').value         = emp.name;
+      document.getElementById('emp-ed-number').value       = emp.employee_number || '';
+      document.getElementById('emp-ed-phone').value        = emp.phone || '';
+      document.getElementById('emp-ed-id-number').value    = emp.id_number || '';
+      document.getElementById('emp-ed-tax-number').value   = emp.tax_number || '';
+      document.getElementById('emp-ed-uif-number').value   = emp.uif_number || '';
+      document.getElementById('emp-ed-bank-name').value    = emp.bank_name || '';
+      document.getElementById('emp-ed-bank-account').value = emp.bank_account || '';
+      document.getElementById('emp-ed-bank-branch').value  = emp.bank_branch_code || '';
+      document.getElementById('emp-ed-notes').value        = emp.notes || '';
+      document.getElementById('emp-ed-rate').value         = emp.hourly_rate;
+      document.getElementById('emp-ed-hrs-day').value      = emp.normal_hours_per_day;
+      document.getElementById('emp-ed-days-week').value    = emp.normal_days_per_week;
+      document.getElementById('emp-ed-leave-days').value   = emp.leave_days_per_year;
+      document.getElementById('emp-ed-pay-freq').value     = emp.pay_frequency;
+      document.getElementById('emp-ed-pay-day').value      = emp.pay_day_of_week;
+      document.getElementById('emp-ed-start-date').value   = emp.start_date || '';
+      document.getElementById('emp-ed-emp-type').value     = emp.employment_type;
+      if (emp.user_id) document.getElementById('emp-ed-user-id').value = emp.user_id;
+
+      EMP.deductionEditRows = deds.map(d => ({ ...d, _dirty: false }));
+      _renderDeductionRows();
+      _renderDocRows(docs, id);
+    } catch(e) { toast(e.message, 'danger'); return; }
+  }
+
+  new bootstrap.Modal(document.getElementById('empEmployeeModal')).show();
+}
+
+function empEditEmployee(id) { empOpenEmployeeModal(id); }
+
+async function empDeactivate(id) {
+  if (!confirm('Deactivate this employee?')) return;
+  try {
+    await api(`/api/employees/${id}`, { method:'DELETE' });
+    toast('Employee deactivated', 'success');
+    await _empLoadEmployees();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empSaveEmployee() {
+  const id = document.getElementById('emp-modal-id').value;
+  const payload = {
+    name:                 document.getElementById('emp-ed-name').value.trim(),
+    employee_number:      document.getElementById('emp-ed-number').value.trim() || null,
+    phone:                document.getElementById('emp-ed-phone').value.trim() || null,
+    id_number:            document.getElementById('emp-ed-id-number').value.trim() || null,
+    tax_number:           document.getElementById('emp-ed-tax-number').value.trim() || null,
+    uif_number:           document.getElementById('emp-ed-uif-number').value.trim() || null,
+    bank_name:            document.getElementById('emp-ed-bank-name').value.trim() || null,
+    bank_account:         document.getElementById('emp-ed-bank-account').value.trim() || null,
+    bank_branch_code:     document.getElementById('emp-ed-bank-branch').value.trim() || null,
+    notes:                document.getElementById('emp-ed-notes').value.trim() || null,
+    hourly_rate:          parseFloat(document.getElementById('emp-ed-rate').value) || 0,
+    normal_hours_per_day: parseFloat(document.getElementById('emp-ed-hrs-day').value) || 9,
+    normal_days_per_week: parseInt(document.getElementById('emp-ed-days-week').value) || 5,
+    leave_days_per_year:  parseFloat(document.getElementById('emp-ed-leave-days').value) || 21,
+    pay_frequency:        document.getElementById('emp-ed-pay-freq').value,
+    pay_day_of_week:      parseInt(document.getElementById('emp-ed-pay-day').value),
+    start_date:           document.getElementById('emp-ed-start-date').value || null,
+    employment_type:      document.getElementById('emp-ed-emp-type').value,
+    user_id:              parseInt(document.getElementById('emp-ed-user-id').value) || null,
+  };
+  if (!payload.name) { toast('Name is required', 'warning'); return; }
+
+  try {
+    if (id) {
+      await api(`/api/employees/${id}`, { method:'PUT', body: JSON.stringify(payload) });
+      // Save deductions
+      for (const d of EMP.deductionEditRows) {
+        if (d._new) {
+          await api(`/api/employees/${id}/deductions`, { method:'POST', body: JSON.stringify(d) });
+        } else if (d._dirty) {
+          await api(`/api/employees/${id}/deductions/${d.id}`, { method:'PUT', body: JSON.stringify(d) });
+        }
+      }
+      toast('Employee updated', 'success');
+    } else {
+      await api('/api/employees', { method:'POST', body: JSON.stringify(payload) });
+      toast('Employee added', 'success');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('empEmployeeModal'))?.hide();
+    await _empLoadEmployees();
+    _empLoadDashboard();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Deduction rows in editor ──────────────────────────────────────────────────
+
+function _renderDeductionRows() {
+  const tbody = document.getElementById('emp-ed-deductions-tbody');
+  tbody.innerHTML = EMP.deductionEditRows.map((d, i) => `
+    <tr>
+      <td><input type="text" class="form-control form-control-sm" value="${d.label}" onchange="EMP.deductionEditRows[${i}].label=this.value;EMP.deductionEditRows[${i}]._dirty=true"></td>
+      <td><select class="form-select form-select-sm" onchange="EMP.deductionEditRows[${i}].deduction_type=this.value;EMP.deductionEditRows[${i}]._dirty=true">
+        <option value="fixed" ${d.deduction_type==='fixed'?'selected':''}>Fixed (R)</option>
+        <option value="percentage_of_gross" ${d.deduction_type==='percentage_of_gross'?'selected':''}>% of gross</option>
+        <option value="auto_uif" ${d.deduction_type==='auto_uif'?'selected':''}>Auto-UIF</option>
+        <option value="auto_paye" ${d.deduction_type==='auto_paye'?'selected':''}>Auto-PAYE</option>
+      </select></td>
+      <td><input type="number" class="form-control form-control-sm" value="${d.amount}" step="0.01" onchange="EMP.deductionEditRows[${i}].amount=parseFloat(this.value)||0;EMP.deductionEditRows[${i}]._dirty=true"></td>
+      <td><input type="checkbox" ${d.is_active?'checked':''} onchange="EMP.deductionEditRows[${i}].is_active=this.checked;EMP.deductionEditRows[${i}]._dirty=true"></td>
+      <td><button class="btn btn-xs btn-outline-danger" onclick="_empRemoveDeductionRow(${i})"><i class="bi bi-trash"></i></button></td>
+    </tr>`).join('');
+}
+
+function empAddDeductionRow() {
+  EMP.deductionEditRows.push({ label:'', deduction_type:'fixed', amount:0, is_active:true, sort_order: EMP.deductionEditRows.length, _new:true, _dirty:false });
+  _renderDeductionRows();
+}
+
+async function _empRemoveDeductionRow(i) {
+  const row = EMP.deductionEditRows[i];
+  const empId = document.getElementById('emp-modal-id').value;
+  if (row.id && empId) {
+    try { await api(`/api/employees/${empId}/deductions/${row.id}`, { method:'DELETE' }); }
+    catch(e) { toast(e.message, 'danger'); return; }
+  }
+  EMP.deductionEditRows.splice(i, 1);
+  _renderDeductionRows();
+}
+
+// ── Documents ─────────────────────────────────────────────────────────────────
+
+function _renderDocRows(docs, empId) {
+  const tbody = document.getElementById('emp-docs-tbody');
+  tbody.innerHTML = docs.map(d => `
+    <tr>
+      <td>${d.document_type.replace('_',' ')}</td>
+      <td>${d.label}</td>
+      <td>${d.uploaded_at.slice(0,10)}</td>
+      <td>
+        <a href="/api/employees/${empId}/documents/${d.id}/download" target="_blank" class="btn btn-xs btn-outline-secondary"><i class="bi bi-download"></i></a>
+        <button class="btn btn-xs btn-outline-danger ms-1" onclick="_empDeleteDoc(${empId},${d.id})"><i class="bi bi-trash"></i></button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="4" class="text-muted text-center">No documents uploaded</td></tr>';
+}
+
+async function empUploadDocument() {
+  const empId = document.getElementById('emp-modal-id').value;
+  if (!empId) { toast('Save the employee first', 'warning'); return; }
+  const fileEl = document.getElementById('emp-doc-file');
+  if (!fileEl.files.length) { toast('Select a file', 'warning'); return; }
+  const fd = new FormData();
+  fd.append('file', fileEl.files[0]);
+  fd.append('document_type', document.getElementById('emp-doc-type').value);
+  fd.append('label', document.getElementById('emp-doc-label').value.trim() || fileEl.files[0].name);
+  try {
+    await fetch(`/api/employees/${empId}/documents`, { method:'POST', body: fd });
+    const docs = await api(`/api/employees/${empId}/documents`);
+    _renderDocRows(docs, empId);
+    fileEl.value = '';
+    toast('Document uploaded', 'success');
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function _empDeleteDoc(empId, docId) {
+  if (!confirm('Delete this document?')) return;
+  try {
+    await api(`/api/employees/${empId}/documents/${docId}`, { method:'DELETE' });
+    const docs = await api(`/api/employees/${empId}/documents`);
+    _renderDocRows(docs, empId);
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Advances ──────────────────────────────────────────────────────────────────
+
+async function loadAdvancesList() {
+  const empId = document.getElementById('emp-fin-adv-emp').value;
+  if (!empId) return;
+  const tbody = document.getElementById('emp-advances-tbody');
+  try {
+    const rows = await api(`/api/employees/${empId}/advances`);
+    tbody.innerHTML = rows.map(a => `
+      <tr>
+        <td>${a.date_given}</td>
+        <td>R ${a.amount.toFixed(2)}</td>
+        <td>${a.reason || '—'}</td>
+        <td><span class="badge ${a.status==='outstanding'?'bg-warning text-dark':a.status==='deducted'?'bg-success':'bg-secondary'}">${a.status}</span></td>
+        <td>${a.status==='outstanding'?`<button class="btn btn-xs btn-outline-danger" onclick="empCancelAdvance(${empId},${a.id})">Cancel</button>`:'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="5" class="text-muted text-center">No advances</td></tr>';
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function empOpenAdvanceModal() {
+  document.getElementById('emp-adv-amount').value = '';
+  document.getElementById('emp-adv-reason').value = '';
+  document.getElementById('emp-adv-date').value   = new Date().toISOString().split('T')[0];
+  const empId = document.getElementById('emp-fin-adv-emp').value;
+  if (empId) document.getElementById('emp-adv-modal-emp').value = empId;
+  new bootstrap.Modal(document.getElementById('empAdvanceModal')).show();
+}
+
+async function empSaveAdvance() {
+  const empId = document.getElementById('emp-adv-modal-emp').value;
+  if (!empId) { toast('Select an employee', 'warning'); return; }
+  const payload = {
+    amount:     parseFloat(document.getElementById('emp-adv-amount').value) || 0,
+    date_given: document.getElementById('emp-adv-date').value,
+    reason:     document.getElementById('emp-adv-reason').value.trim() || null,
+  };
+  if (!payload.amount) { toast('Enter an amount', 'warning'); return; }
+  try {
+    await api(`/api/employees/${empId}/advances`, { method:'POST', body: JSON.stringify(payload) });
+    bootstrap.Modal.getInstance(document.getElementById('empAdvanceModal'))?.hide();
+    toast('Advance recorded', 'success');
+    loadAdvancesList();
+    _empLoadDashboard();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empCancelAdvance(empId, advId) {
+  if (!confirm('Cancel this advance?')) return;
+  try {
+    await api(`/api/employees/${empId}/advances/${advId}/cancel`, { method:'PUT' });
+    toast('Advance cancelled', 'success');
+    loadAdvancesList();
+    _empLoadDashboard();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Loans ─────────────────────────────────────────────────────────────────────
+
+async function loadLoansList() {
+  const empId = document.getElementById('emp-fin-loan-emp').value;
+  if (!empId) return;
+  const tbody = document.getElementById('emp-loans-tbody');
+  try {
+    const rows = await api(`/api/employees/${empId}/loans`);
+    tbody.innerHTML = rows.map(l => `
+      <tr>
+        <td>${l.date_given}</td>
+        <td>R ${l.principal.toFixed(2)}</td>
+        <td>R ${l.balance.toFixed(2)}</td>
+        <td>R ${l.installment.toFixed(2)}</td>
+        <td>${l.reason || '—'}</td>
+        <td><span class="badge ${l.status==='active'?'bg-primary':l.status==='settled'?'bg-success':'bg-secondary'}">${l.status}</span></td>
+      </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-center">No loans</td></tr>';
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function empOpenLoanModal() {
+  document.getElementById('emp-loan-amount').value      = '';
+  document.getElementById('emp-loan-installment').value = '';
+  document.getElementById('emp-loan-reason').value      = '';
+  document.getElementById('emp-loan-date').value        = new Date().toISOString().split('T')[0];
+  const empId = document.getElementById('emp-fin-loan-emp').value;
+  if (empId) document.getElementById('emp-loan-modal-emp').value = empId;
+  new bootstrap.Modal(document.getElementById('empLoanModal')).show();
+}
+
+async function empSaveLoan() {
+  const empId = document.getElementById('emp-loan-modal-emp').value;
+  if (!empId) { toast('Select an employee', 'warning'); return; }
+  const payload = {
+    amount:      parseFloat(document.getElementById('emp-loan-amount').value) || 0,
+    installment: parseFloat(document.getElementById('emp-loan-installment').value) || 0,
+    date_given:  document.getElementById('emp-loan-date').value,
+    reason:      document.getElementById('emp-loan-reason').value.trim() || null,
+  };
+  if (!payload.amount) { toast('Enter an amount', 'warning'); return; }
+  try {
+    await api(`/api/employees/${empId}/loans`, { method:'POST', body: JSON.stringify(payload) });
+    bootstrap.Modal.getInstance(document.getElementById('empLoanModal'))?.hide();
+    toast('Loan created', 'success');
+    loadLoansList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Leave ─────────────────────────────────────────────────────────────────────
+
+async function loadLeavesList() {
+  const empId = document.getElementById('emp-fin-leave-emp').value;
+  if (!empId) return;
+  const tbody = document.getElementById('emp-leaves-tbody');
+  try {
+    const rows = await api(`/api/employees/${empId}/leaves`);
+    tbody.innerHTML = rows.map(l => `
+      <tr>
+        <td>${l.leave_type.replace('_',' ')}</td>
+        <td>${l.date_from}</td><td>${l.date_to}</td>
+        <td>${l.days_requested}</td>
+        <td>${l.reason || '—'}</td>
+        <td><span class="badge ${l.status==='approved'?'bg-success':l.status==='rejected'?'bg-danger':'bg-warning text-dark'}">${l.status}</span></td>
+        <td>${l.status==='requested'?`
+          <button class="btn btn-xs btn-success" onclick="empApproveLeave(${empId},${l.id})"><i class="bi bi-check"></i></button>
+          <button class="btn btn-xs btn-outline-danger ms-1" onclick="empRejectLeave(${empId},${l.id})"><i class="bi bi-x"></i></button>
+        `:'—'}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="text-muted text-center">No leave requests</td></tr>';
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function empOpenLeaveModal() {
+  document.getElementById('emp-leave-from').value   = '';
+  document.getElementById('emp-leave-to').value     = '';
+  document.getElementById('emp-leave-days').value   = '';
+  document.getElementById('emp-leave-reason').value = '';
+  const empId = document.getElementById('emp-fin-leave-emp').value;
+  if (empId) document.getElementById('emp-leave-modal-emp').value = empId;
+  new bootstrap.Modal(document.getElementById('empLeaveModal')).show();
+}
+
+function empCalcLeaveDays() {
+  const from = document.getElementById('emp-leave-from').value;
+  const to   = document.getElementById('emp-leave-to').value;
+  if (from && to) {
+    const d1 = new Date(from), d2 = new Date(to);
+    const days = Math.max(0, Math.round((d2 - d1) / 86400000) + 1);
+    document.getElementById('emp-leave-days').value = days;
+  }
+}
+
+async function empSaveLeave() {
+  const empId = document.getElementById('emp-leave-modal-emp').value;
+  if (!empId) { toast('Select an employee', 'warning'); return; }
+  const payload = {
+    leave_type:      document.getElementById('emp-leave-type').value,
+    date_from:       document.getElementById('emp-leave-from').value,
+    date_to:         document.getElementById('emp-leave-to').value,
+    days_requested:  parseFloat(document.getElementById('emp-leave-days').value) || 1,
+    reason:          document.getElementById('emp-leave-reason').value.trim() || null,
+  };
+  try {
+    await api(`/api/employees/${empId}/leaves`, { method:'POST', body: JSON.stringify(payload) });
+    bootstrap.Modal.getInstance(document.getElementById('empLeaveModal'))?.hide();
+    toast('Leave request submitted', 'success');
+    loadLeavesList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empApproveLeave(empId, lid) {
+  try {
+    await api(`/api/employees/${empId}/leaves/${lid}/approve`, { method:'PUT' });
+    toast('Leave approved', 'success');
+    loadLeavesList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empRejectLeave(empId, lid) {
+  const reason = prompt('Rejection reason (optional):') || '';
+  try {
+    await api(`/api/employees/${empId}/leaves/${lid}/reject`, { method:'PUT', body: JSON.stringify({ reason }) });
+    toast('Leave rejected', 'success');
+    loadLeavesList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Pay Rules ─────────────────────────────────────────────────────────────────
+
+async function _empLoadPayRules() {
+  const tbody = document.getElementById('emp-rules-tbody');
+  if (!tbody) return;
+  try {
+    const rules = await api('/api/employees/pay_rules');
+    tbody.innerHTML = rules.map(r => `
+      <tr>
+        <td><code>${r.day_type}</code></td>
+        <td>${r.label}</td>
+        <td>
+          <input type="number" class="form-control form-control-sm" style="width:80px;display:inline-block"
+            value="${r.multiplier}" step="0.25" id="rule-mult-${r.id}">×
+        </td>
+        <td><input type="checkbox" ${r.is_paid?'checked':''} id="rule-paid-${r.id}"></td>
+        <td class="text-muted small">${r.description || ''}</td>
+        <td><button class="btn btn-xs btn-outline-primary" onclick="_empSaveRule(${r.id})">Save</button></td>
+      </tr>`).join('');
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function _empSaveRule(id) {
+  const mult  = parseFloat(document.getElementById(`rule-mult-${id}`)?.value) || 1;
+  const isPaid = document.getElementById(`rule-paid-${id}`)?.checked;
+  try {
+    await api(`/api/employees/pay_rules/${id}`, { method:'PUT', body: JSON.stringify({ multiplier: mult, is_paid: isPaid }) });
+    toast('Pay rule updated', 'success');
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Teller: my payslips ───────────────────────────────────────────────────────
+
+async function _empLoadMyPayslips() {
+  const tbody = document.getElementById('emp-my-payslips-tbody');
+  if (!tbody) return;
+  try {
+    // Find the employee record linked to this user
+    const me = STATE.currentUser;
+    if (!me) return;
+    // Try to find an employee linked to this user via /api/employees (tellers can't list all)
+    // Instead call the own teller endpoint via a known employee or dashboard
+    // For tellers: the server only returns their own payslips via their linked employee
+    // We need a way to discover their employee_id. Use a dedicated endpoint:
+    const myEmp = await api('/api/employees/me').catch(() => null);
+    if (!myEmp) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No employee record linked to your account. Ask your admin.</td></tr>';
+      return;
+    }
+    const runs = await api(`/api/employees/${myEmp.id}/pay_runs`);
+    tbody.innerHTML = runs.map(r => `
+      <tr>
+        <td>${r.period_start} – ${r.period_end}</td>
+        <td>${r.pay_date || '—'}</td>
+        <td>R ${r.gross_pay.toFixed(2)}</td>
+        <td>R ${r.net_pay.toFixed(2)}</td>
+        <td><span class="pay-status-${r.status}">${r.status}</span></td>
+        <td><button class="btn btn-xs btn-outline-secondary" onclick="empOpenPayslip(${myEmp.id},${r.id})"><i class="bi bi-file-earmark-text me-1"></i>View</button></td>
+      </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-center">No payslips yet</td></tr>';
+  } catch(e) { toast(e.message, 'danger'); }
+}

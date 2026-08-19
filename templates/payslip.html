@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Payslip — {{ emp.name }} — {{ pr.period_start }}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #222; background: #fff; padding: 20px; }
+  h1 { font-size: 16px; font-weight: bold; text-align: center; margin-bottom: 2px; }
+  .subtitle { text-align: center; font-size: 11px; color: #555; margin-bottom: 14px; }
+  .header-bar { background: #1a1a2e; color: #fff; padding: 6px 10px; text-align: center; font-weight: bold; font-size: 12px; margin-bottom: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+  th { background: #2c3e50; color: #fff; padding: 5px 8px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { padding: 4px 8px; border-bottom: 1px solid #eee; vertical-align: top; }
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; margin-bottom: 12px; }
+  .info-grid .section { border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }
+  .section-title { background: #2c3e50; color: #fff; padding: 5px 8px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: bold; }
+  .info-row { display: flex; justify-content: space-between; padding: 3px 8px; border-bottom: 1px solid #f0f0f0; }
+  .info-row .lbl { color: #666; font-size: 10px; }
+  .info-row .val { font-weight: 500; text-align: right; }
+  .totals-row td { font-weight: bold; background: #f8f9fa; border-top: 2px solid #2c3e50; }
+  .net-pay { background: #2c3e50; color: #fff; padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; border-radius: 4px; margin: 10px 0; }
+  .net-pay .label { font-size: 14px; font-weight: bold; }
+  .net-pay .amount { font-size: 20px; font-weight: bold; }
+  .attendance-table td { font-size: 10px; padding: 3px 6px; }
+  .attendance-table th { font-size: 10px; }
+  .badge-normal      { background: #e8f5e9; color: #2e7d32; padding: 1px 5px; border-radius: 3px; }
+  .badge-overtime    { background: #fff3e0; color: #e65100; padding: 1px 5px; border-radius: 3px; }
+  .badge-sunday      { background: #fce4ec; color: #880e4f; padding: 1px 5px; border-radius: 3px; }
+  .badge-public_holiday { background: #ede7f6; color: #4527a0; padding: 1px 5px; border-radius: 3px; }
+  .badge-vacation    { background: #e3f2fd; color: #0d47a1; padding: 1px 5px; border-radius: 3px; }
+  .badge-sick        { background: #fef3c7; color: #92400e; padding: 1px 5px; border-radius: 3px; }
+  .footer { margin-top: 20px; border-top: 1px solid #ddd; padding-top: 8px; font-size: 9px; color: #888; display: flex; justify-content: space-between; }
+  @media print {
+    body { padding: 10mm; }
+    .no-print { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="no-print" style="margin-bottom:16px;">
+  <button onclick="window.print()" style="padding:8px 16px;background:#2c3e50;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Print / Save as PDF</button>
+  <button onclick="window.close()" style="padding:8px 16px;background:#6c757d;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;margin-left:8px;">Close</button>
+</div>
+
+<div class="header-bar">{{ store_name }}</div>
+<h1>PAYSLIP</h1>
+<div class="subtitle">Period: {{ pr.period_start }} to {{ pr.period_end }}{% if pr.pay_date %} &nbsp;|&nbsp; Pay Date: {{ pr.pay_date }}{% endif %} &nbsp;|&nbsp; Ref: {{ pr.reference }}</div>
+
+<div class="info-grid">
+  <div class="section">
+    <div class="section-title">Employee Information</div>
+    <div class="info-row"><span class="lbl">Name</span><span class="val">{{ emp.name }}</span></div>
+    <div class="info-row"><span class="lbl">Employee #</span><span class="val">{{ emp.employee_number or '—' }}</span></div>
+    <div class="info-row"><span class="lbl">ID Number</span><span class="val">{{ emp.id_number or '—' }}</span></div>
+    <div class="info-row"><span class="lbl">Tax Number</span><span class="val">{{ emp.tax_number or '—' }}</span></div>
+    <div class="info-row"><span class="lbl">UIF Number</span><span class="val">{{ emp.uif_number or '—' }}</span></div>
+    <div class="info-row"><span class="lbl">Employment Type</span><span class="val">{{ emp.employment_type | title }}</span></div>
+  </div>
+  <div class="section">
+    <div class="section-title">Bank Information</div>
+    <div class="info-row"><span class="lbl">Bank</span><span class="val">{{ emp.bank_name or '—' }}</span></div>
+    <div class="info-row"><span class="lbl">Account No.</span><span class="val">{{ emp.bank_account or '—' }}</span></div>
+    <div class="info-row"><span class="lbl">Branch Code</span><span class="val">{{ emp.bank_branch_code or '—' }}</span></div>
+    <div class="info-row"><span class="lbl">Rate per Hour</span><span class="val">R {{ "%.2f"|format(pr.hourly_rate_snapshot) }}</span></div>
+    <div class="info-row"><span class="lbl">Start Date</span><span class="val">{{ emp.start_date or '—' }}</span></div>
+  </div>
+</div>
+
+<!-- Earnings -->
+<table>
+  <thead><tr><th>Earnings</th><th>Hours</th><th>Rate</th><th style="text-align:right">Amount</th></tr></thead>
+  <tbody>
+    {% if pr.normal_hours > 0 %}
+    <tr><td>Normal Hours</td><td>{{ "%.2f"|format(pr.normal_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.normal_pay) }}</td></tr>
+    {% endif %}
+    {% if pr.overtime_hours > 0 %}
+    <tr><td>Overtime (1.5×)</td><td>{{ "%.2f"|format(pr.overtime_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot * 1.5) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.overtime_pay) }}</td></tr>
+    {% endif %}
+    {% if pr.sunday_hours > 0 %}
+    <tr><td>Sunday (2×)</td><td>{{ "%.2f"|format(pr.sunday_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot * 2) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.sunday_pay) }}</td></tr>
+    {% endif %}
+    {% if pr.holiday_hours > 0 %}
+    <tr><td>Public Holiday (2×)</td><td>{{ "%.2f"|format(pr.holiday_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot * 2) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.holiday_pay) }}</td></tr>
+    {% endif %}
+    {% if pr.vacation_hours > 0 %}
+    <tr><td>Annual Leave</td><td>{{ "%.2f"|format(pr.vacation_hours) }}</td><td>R {{ "%.2f"|format(pr.hourly_rate_snapshot) }}</td><td style="text-align:right">R {{ "%.2f"|format(pr.vacation_pay) }}</td></tr>
+    {% endif %}
+    <tr class="totals-row"><td colspan="3">Total Earnings</td><td style="text-align:right">R {{ "%.2f"|format(pr.gross_pay) }}</td></tr>
+  </tbody>
+</table>
+
+<!-- Deductions -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 20px;">
+  <table>
+    <thead><tr><th colspan="2">Deductions</th><th style="text-align:right">Amount</th></tr></thead>
+    <tbody>
+      {% for ded in deductions %}
+      <tr><td colspan="2">{{ ded.label }}</td><td style="text-align:right">R {{ "%.2f"|format(ded.amount) }}</td></tr>
+      {% endfor %}
+      {% for adv in advances %}
+      <tr><td colspan="2">Advance repayment ({{ adv.date }})</td><td style="text-align:right">R {{ "%.2f"|format(adv.amount) }}</td></tr>
+      {% endfor %}
+      {% if not deductions and not advances %}<tr><td colspan="3" style="color:#888">No deductions</td></tr>{% endif %}
+      <tr class="totals-row"><td colspan="2">Total Deductions</td><td style="text-align:right">R {{ "%.2f"|format(pr.total_deductions) }}</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead><tr><th colspan="2">Employer Contributions</th><th style="text-align:right">Amount</th></tr></thead>
+    <tbody>
+      {% for ec in employer_contribs %}
+      <tr><td colspan="2">{{ ec.label }}</td><td style="text-align:right">R {{ "%.2f"|format(ec.amount) }}</td></tr>
+      {% endfor %}
+      {% if not employer_contribs %}<tr><td colspan="3" style="color:#888">None</td></tr>{% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="net-pay">
+  <span class="label">NET PAY</span>
+  <span class="amount">R {{ "%.2f"|format(pr.net_pay) }}</span>
+</div>
+
+<!-- Attendance detail -->
+{% if attendance %}
+<table class="attendance-table" style="margin-top:12px;">
+  <thead><tr><th>Date</th><th>Day</th><th>Clock In</th><th>Clock Out</th><th>Break</th><th>Hours</th><th>Type</th><th style="text-align:right">Pay</th></tr></thead>
+  <tbody>
+    {% for a in attendance %}
+    <tr>
+      <td>{{ a.date }}</td>
+      <td>{{ a.date | replace('-','') }}</td>
+      <td>{{ a.clock_in or '—' }}</td>
+      <td>{{ a.clock_out or '—' }}</td>
+      <td>{{ a.break_min }}m</td>
+      <td>{{ "%.2f"|format(a.hours) }}h</td>
+      <td><span class="badge-{{ a.day_type }}">{{ a.day_type | replace('_',' ') | title }}</span></td>
+      <td style="text-align:right">R {{ "%.2f"|format(a.pay) }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<!-- YTD -->
+<table style="margin-top:12px;">
+  <thead><tr><th colspan="2">Year to Date ({{ pr.period_end[:4] }})</th></tr></thead>
+  <tbody>
+    <tr><td>Gross Earnings YTD</td><td style="text-align:right">R {{ "%.2f"|format(ytd_gross) }}</td></tr>
+    <tr><td>Net Pay YTD</td><td style="text-align:right">R {{ "%.2f"|format(ytd_net) }}</td></tr>
+  </tbody>
+</table>
+
+<div class="footer">
+  <span>Generated: {{ pr.created_at }}{% if approved_by_name %} &nbsp;|&nbsp; Approved by: {{ approved_by_name }}{% if pr.approved_at %} on {{ pr.approved_at }}{% endif %}{% endif %}</span>
+  <span>Status: {{ pr.status | upper }} &nbsp;|&nbsp; {{ store_name }}</span>
+</div>
+
+</body>
+</html>

@@ -2047,6 +2047,203 @@ def strong_migrate():
             )
         """)
 
+        # ── Employee / Payroll subsystem ──────────────────────────────────────
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS employees (
+              id                   SERIAL PRIMARY KEY,
+              user_id              INTEGER REFERENCES users(id),
+              name                 VARCHAR(120) NOT NULL,
+              employee_number      VARCHAR(20) UNIQUE,
+              id_number            VARCHAR(13),
+              tax_number           VARCHAR(20),
+              uif_number           VARCHAR(20),
+              bank_name            VARCHAR(80),
+              bank_account         VARCHAR(30),
+              bank_branch_code     VARCHAR(10),
+              phone                VARCHAR(20),
+              start_date           DATE,
+              employment_type      VARCHAR(20) NOT NULL DEFAULT 'permanent',
+              hourly_rate          NUMERIC(10,2) NOT NULL DEFAULT 0,
+              normal_hours_per_day NUMERIC(4,2) NOT NULL DEFAULT 9,
+              normal_days_per_week INTEGER NOT NULL DEFAULT 5,
+              pay_frequency        VARCHAR(20) NOT NULL DEFAULT 'biweekly',
+              pay_day_of_week      INTEGER NOT NULL DEFAULT 5,
+              leave_days_per_year  NUMERIC(5,2) NOT NULL DEFAULT 21,
+              is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+              notes                TEXT,
+              created_at           TIMESTAMP NOT NULL DEFAULT NOW(),
+              created_by           INTEGER REFERENCES users(id)
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS employee_deductions (
+              id             SERIAL PRIMARY KEY,
+              employee_id    INTEGER NOT NULL REFERENCES employees(id),
+              label          VARCHAR(80) NOT NULL,
+              deduction_type VARCHAR(30) NOT NULL DEFAULT 'fixed',
+              amount         NUMERIC(10,2) NOT NULL DEFAULT 0,
+              is_active      BOOLEAN NOT NULL DEFAULT TRUE,
+              sort_order     INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_deductions_emp ON employee_deductions(employee_id)")
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS pay_rules (
+              id          SERIAL PRIMARY KEY,
+              day_type    VARCHAR(30) NOT NULL UNIQUE,
+              label       VARCHAR(60) NOT NULL,
+              multiplier  NUMERIC(4,2) NOT NULL DEFAULT 1,
+              is_paid     BOOLEAN NOT NULL DEFAULT TRUE,
+              description VARCHAR(200),
+              sort_order  INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS pay_runs (
+              id                          SERIAL PRIMARY KEY,
+              reference                   VARCHAR(20) UNIQUE,
+              employee_id                 INTEGER NOT NULL REFERENCES employees(id),
+              period_start                DATE NOT NULL,
+              period_end                  DATE NOT NULL,
+              pay_date                    DATE,
+              hourly_rate_snapshot        NUMERIC(10,2) NOT NULL,
+              normal_hours                NUMERIC(6,2) NOT NULL DEFAULT 0,
+              overtime_hours              NUMERIC(6,2) NOT NULL DEFAULT 0,
+              sunday_hours                NUMERIC(6,2) NOT NULL DEFAULT 0,
+              holiday_hours               NUMERIC(6,2) NOT NULL DEFAULT 0,
+              vacation_hours              NUMERIC(6,2) NOT NULL DEFAULT 0,
+              sick_hours                  NUMERIC(6,2) NOT NULL DEFAULT 0,
+              normal_pay                  NUMERIC(10,2) NOT NULL DEFAULT 0,
+              overtime_pay                NUMERIC(10,2) NOT NULL DEFAULT 0,
+              sunday_pay                  NUMERIC(10,2) NOT NULL DEFAULT 0,
+              holiday_pay                 NUMERIC(10,2) NOT NULL DEFAULT 0,
+              vacation_pay                NUMERIC(10,2) NOT NULL DEFAULT 0,
+              gross_pay                   NUMERIC(10,2) NOT NULL DEFAULT 0,
+              deductions_json             TEXT NOT NULL DEFAULT '[]',
+              employer_contributions_json TEXT NOT NULL DEFAULT '[]',
+              advances_json               TEXT NOT NULL DEFAULT '[]',
+              attendance_json             TEXT NOT NULL DEFAULT '[]',
+              total_deductions            NUMERIC(10,2) NOT NULL DEFAULT 0,
+              net_pay                     NUMERIC(10,2) NOT NULL DEFAULT 0,
+              status                      VARCHAR(20) NOT NULL DEFAULT 'draft',
+              approved_by                 INTEGER REFERENCES users(id),
+              approved_at                 TIMESTAMP,
+              paid_at                     TIMESTAMP,
+              notes                       TEXT,
+              created_by                  INTEGER REFERENCES users(id),
+              created_at                  TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_pay_runs_emp ON pay_runs(employee_id)")
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS employee_attendance (
+              id            SERIAL PRIMARY KEY,
+              employee_id   INTEGER NOT NULL REFERENCES employees(id),
+              work_date     DATE NOT NULL,
+              clock_in      TIME,
+              clock_out     TIME,
+              break_minutes INTEGER NOT NULL DEFAULT 0,
+              hours_worked  NUMERIC(5,2),
+              day_type      VARCHAR(30) NOT NULL DEFAULT 'normal',
+              source        VARCHAR(20) NOT NULL DEFAULT 'manual',
+              notes         VARCHAR(300),
+              approved_by   INTEGER REFERENCES users(id),
+              approved_at   TIMESTAMP,
+              created_by    INTEGER REFERENCES users(id),
+              created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+              updated_by    INTEGER REFERENCES users(id),
+              updated_at    TIMESTAMP,
+              CONSTRAINT uq_employee_attendance_date UNIQUE (employee_id, work_date)
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_attendance_emp ON employee_attendance(employee_id)")
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_attendance_date ON employee_attendance(work_date)")
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS shift_schedules (
+              id             SERIAL PRIMARY KEY,
+              employee_id    INTEGER NOT NULL REFERENCES employees(id),
+              scheduled_date DATE NOT NULL,
+              expected_start TIME,
+              expected_end   TIME,
+              expected_hours NUMERIC(5,2),
+              notes          VARCHAR(200),
+              created_by     INTEGER REFERENCES users(id),
+              created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+              CONSTRAINT uq_shift_schedule_date UNIQUE (employee_id, scheduled_date)
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS leave_requests (
+              id               SERIAL PRIMARY KEY,
+              employee_id      INTEGER NOT NULL REFERENCES employees(id),
+              leave_type       VARCHAR(30) NOT NULL,
+              date_from        DATE NOT NULL,
+              date_to          DATE NOT NULL,
+              days_requested   NUMERIC(5,2) NOT NULL,
+              reason           TEXT,
+              status           VARCHAR(20) NOT NULL DEFAULT 'requested',
+              approved_by      INTEGER REFERENCES users(id),
+              approved_at      TIMESTAMP,
+              rejection_reason VARCHAR(300),
+              document_filename VARCHAR(200),
+              created_at       TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_leave_requests_emp ON leave_requests(employee_id)")
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS leave_balances (
+              id            SERIAL PRIMARY KEY,
+              employee_id   INTEGER NOT NULL REFERENCES employees(id),
+              leave_type    VARCHAR(30) NOT NULL,
+              year          INTEGER NOT NULL,
+              allocated_days NUMERIC(5,2) NOT NULL DEFAULT 0,
+              used_days     NUMERIC(5,2) NOT NULL DEFAULT 0,
+              CONSTRAINT uq_leave_balance UNIQUE (employee_id, leave_type, year)
+            )
+        """)
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS employee_advances (
+              id          SERIAL PRIMARY KEY,
+              employee_id INTEGER NOT NULL REFERENCES employees(id),
+              amount      NUMERIC(10,2) NOT NULL,
+              date_given  DATE NOT NULL,
+              reason      VARCHAR(200),
+              status      VARCHAR(20) NOT NULL DEFAULT 'outstanding',
+              pay_run_id  INTEGER REFERENCES pay_runs(id),
+              approved_by INTEGER REFERENCES users(id),
+              created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_advances_emp ON employee_advances(employee_id)")
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS employee_loans (
+              id          SERIAL PRIMARY KEY,
+              employee_id INTEGER NOT NULL REFERENCES employees(id),
+              principal   NUMERIC(10,2) NOT NULL,
+              balance     NUMERIC(10,2) NOT NULL,
+              installment NUMERIC(10,2) NOT NULL,
+              date_given  DATE NOT NULL,
+              reason      VARCHAR(200),
+              status      VARCHAR(20) NOT NULL DEFAULT 'active',
+              approved_by INTEGER REFERENCES users(id),
+              created_at  TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_loans_emp ON employee_loans(employee_id)")
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS employee_documents (
+              id            SERIAL PRIMARY KEY,
+              employee_id   INTEGER NOT NULL REFERENCES employees(id),
+              document_type VARCHAR(40) NOT NULL,
+              label         VARCHAR(200) NOT NULL,
+              filename      VARCHAR(200) NOT NULL,
+              original_name VARCHAR(200) NOT NULL,
+              uploaded_at   TIMESTAMP NOT NULL DEFAULT NOW(),
+              uploaded_by   INTEGER REFERENCES users(id)
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_docs_emp ON employee_documents(employee_id)")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 
@@ -2072,6 +2269,25 @@ def _seed_cost_categories():
             max_order = db.session.query(db.func.max(CostCategory.sort_order)).scalar() or 5
             db.session.add(CostCategory(name='vat', label='VAT', color='#dc3545', sort_order=max_order + 1))
             db.session.commit()
+
+
+def _seed_pay_rules():
+    from models import PayRule
+    from decimal import Decimal as _D
+    defaults = [
+        ('normal',          'Normal weekday',      _D('1.00'), True,  'Standard hours within contracted day',  0),
+        ('overtime',        'Overtime',            _D('1.50'), True,  'Hours beyond normal daily threshold',   1),
+        ('sunday',          'Sunday',              _D('2.00'), True,  'All hours worked on a Sunday (BCEA s16)', 2),
+        ('public_holiday',  'Public Holiday',      _D('2.00'), True,  'Worked on a public holiday (BCEA s18)', 3),
+        ('vacation',        'Annual Leave',        _D('1.00'), True,  'Paid annual leave (BCEA s20)',          4),
+        ('sick',            'Sick Leave',          _D('1.00'), True,  'Paid sick leave (BCEA s22)',            5),
+        ('unpaid_leave',    'Unpaid Leave',        _D('0.00'), False, 'Leave without pay',                    6),
+    ]
+    for day_type, label, mult, is_paid, desc, order in defaults:
+        if not PayRule.query.filter_by(day_type=day_type).first():
+            db.session.add(PayRule(day_type=day_type, label=label, multiplier=mult,
+                                   is_paid=is_paid, description=desc, sort_order=order))
+    db.session.commit()
 
 
 def create_app():
@@ -2321,6 +2537,8 @@ def create_app():
         seed_first_admin()
         db.session.remove()  # release AccessShareLock on users (and settings on fresh DB)
         _seed_cost_categories()
+        db.session.remove()
+        _seed_pay_rules()
         db.session.remove()  # release AccessShareLock on cost_categories
         try:
             _stale_cutoff = datetime.utcnow() - timedelta(hours=SESSION_LOGOUT_HOURS)
@@ -2368,6 +2586,7 @@ def _register_routes(_app):
     from blueprints.packaging       import bp as packaging_bp
     from blueprints.backup          import bp as backup_bp
     from blueprints.cctv            import bp as cctv_bp
+    from blueprints.employees       import bp as employees_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -2397,6 +2616,7 @@ def _register_routes(_app):
     _app.register_blueprint(packaging_bp)
     _app.register_blueprint(backup_bp)
     _app.register_blueprint(cctv_bp)
+    _app.register_blueprint(employees_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:
