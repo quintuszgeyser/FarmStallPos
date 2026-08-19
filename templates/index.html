@@ -1416,6 +1416,12 @@
             <option value="">All suppliers</option>
           </select>
         </div>
+        <div>
+          <label class="form-label mb-1 small fw-bold">Category</label>
+          <select id="stats-category-filter" class="form-select form-select-sm" style="width:160px">
+            <option value="">All categories</option>
+          </select>
+        </div>
         <div class="d-flex gap-1 flex-wrap">
           <button class="btn btn-outline-secondary btn-sm" data-stats-preset="today">Today</button>
           <button class="btn btn-outline-secondary btn-sm" data-stats-preset="yesterday">Yesterday</button>
@@ -1609,90 +1615,129 @@
 
       <!-- ── Employee Performance ── -->
       <div class="mt-3 border-top pt-3" id="stats-section-employees">
-        <h6 class="mb-2">Employee Performance</h6>
-        <div id="employee-stats-table">
-          <div class="text-muted small">Load stats to see employee data.</div>
+        <div class="d-flex align-items-center justify-content-between mb-2 stats-section-toggle" data-target="stats-section-employees-body" style="cursor:pointer">
+          <h6 class="mb-0">Employee Performance</h6>
+          <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+        <div id="stats-section-employees-body" style="display:none">
+          <div id="employee-stats-table">
+            <div class="text-muted small">Load stats to see employee data.</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Till Sessions / Z-Reports ── -->
       <div class="mt-3 border-top pt-3" id="stats-section-till">
-        <h6 class="mb-2"><i class="bi bi-cash-stack me-1"></i>Till Sessions (Z-Reports)</h6>
-        <!-- Summary cards -->
-        <div class="row g-2 mb-2" id="till-summary-cards" style="display:none">
-          <div class="col-6 col-md-3">
-            <div class="card h-100"><div class="card-body py-2">
-              <div class="text-muted small">Till Closes</div>
-              <h4 class="mb-0" id="till-stat-count">-</h4>
-            </div></div>
-          </div>
-          <div class="col-6 col-md-3">
-            <div class="card h-100"><div class="card-body py-2">
-              <div class="text-muted small">Cash Counted</div>
-              <h4 class="mb-0" id="till-stat-cash">-</h4>
-            </div></div>
-          </div>
-          <div class="col-6 col-md-3">
-            <div class="card h-100"><div class="card-body py-2">
-              <div class="text-muted small">Net Over/Under</div>
-              <h4 class="mb-0" id="till-stat-net-ou">-</h4>
-            </div></div>
-          </div>
-          <div class="col-6 col-md-3">
-            <div class="card h-100"><div class="card-body py-2">
-              <div class="text-muted small">Avg Over/Under</div>
-              <h4 class="mb-0" id="till-stat-avg-ou">-</h4>
-            </div></div>
-          </div>
+        <div class="d-flex align-items-center justify-content-between mb-2 stats-section-toggle" data-target="stats-section-till-body" style="cursor:pointer">
+          <h6 class="mb-0"><i class="bi bi-cash-stack me-1"></i>Till Sessions (Z-Reports)</h6>
+          <i class="bi bi-chevron-down text-muted"></i>
         </div>
-        <div id="till-sessions-table">
-          <div class="text-muted small">Load stats to see Z-report data.</div>
+        <div id="stats-section-till-body" style="display:none">
+          <!-- Summary cards -->
+          <div class="row g-2 mb-2" id="till-summary-cards" style="display:none">
+            <div class="col-6 col-md-3">
+              <div class="card h-100"><div class="card-body py-2">
+                <div class="text-muted small">Till Closes</div>
+                <h4 class="mb-0" id="till-stat-count">-</h4>
+              </div></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="card h-100"><div class="card-body py-2">
+                <div class="text-muted small">Cash Counted</div>
+                <h4 class="mb-0" id="till-stat-cash">-</h4>
+              </div></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="card h-100"><div class="card-body py-2">
+                <div class="text-muted small">Net Over/Under</div>
+                <h4 class="mb-0" id="till-stat-net-ou">-</h4>
+              </div></div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="card h-100"><div class="card-body py-2">
+                <div class="text-muted small">Avg Over/Under</div>
+                <h4 class="mb-0" id="till-stat-avg-ou">-</h4>
+              </div></div>
+            </div>
+          </div>
+          <div id="till-sessions-table">
+            <div class="text-muted small">Load stats to see Z-report data.</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Overhead Costs ── -->
       <div class="mt-3 border-top pt-3" id="stats-section-overhead">
-        <h6 class="mb-2"><i class="bi bi-boxes me-1"></i>Overhead Costs</h6>
-        <div id="overhead-stats-body">
-          <div class="text-muted small">Load stats to see overhead data.</div>
+        <div class="d-flex align-items-center justify-content-between mb-2 stats-section-toggle" data-target="stats-section-overhead-body" style="cursor:pointer">
+          <h6 class="mb-0"><i class="bi bi-boxes me-1"></i>Overhead Costs</h6>
+          <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+        <div id="stats-section-overhead-body" style="display:none">
+          <div id="overhead-stats-body">
+            <div class="text-muted small">Load stats to see overhead data.</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Supplier VAT Paid ── -->
       <div class="mt-3 border-top pt-3" id="stats-section-supplier-vat">
-        <h6 class="mb-2"><i class="bi bi-receipt-cutoff me-1"></i>Supplier VAT Paid</h6>
-        <div id="supplier-vat-stats-body">
-          <div class="text-muted small">Load stats to see supplier VAT data.</div>
+        <div class="d-flex align-items-center justify-content-between mb-2 stats-section-toggle" data-target="stats-section-supplier-vat-body" style="cursor:pointer">
+          <h6 class="mb-0"><i class="bi bi-receipt-cutoff me-1"></i>Supplier VAT Paid</h6>
+          <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+        <div id="stats-section-supplier-vat-body" style="display:none">
+          <div id="supplier-vat-stats-body">
+            <div class="text-muted small">Load stats to see supplier VAT data.</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Supplier Discounts Received ── -->
       <div class="mt-3 border-top pt-3" id="stats-section-supplier-discounts">
-        <h6 class="mb-2"><i class="bi bi-tag me-1"></i>Supplier Discounts Received</h6>
-        <div id="supplier-discounts-stats-body">
-          <div class="text-muted small">Load stats to see supplier discount data.</div>
+        <div class="d-flex align-items-center justify-content-between mb-2 stats-section-toggle" data-target="stats-section-supplier-discounts-body" style="cursor:pointer">
+          <h6 class="mb-0"><i class="bi bi-tag me-1"></i>Supplier Discounts Received</h6>
+          <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+        <div id="stats-section-supplier-discounts-body" style="display:none">
+          <div id="supplier-discounts-stats-body">
+            <div class="text-muted small">Load stats to see supplier discount data.</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Consignment Summary ── -->
       <div class="mt-3 border-top pt-3" id="stats-section-consignment">
-        <h6 class="mb-2"><i class="bi bi-tags me-1"></i>Consignment</h6>
-        <div id="consignment-stats-body">
-          <div class="text-muted small">Load stats to see consignment data.</div>
+        <div class="d-flex align-items-center justify-content-between mb-2 stats-section-toggle" data-target="stats-section-consignment-body" style="cursor:pointer">
+          <h6 class="mb-0"><i class="bi bi-tags me-1"></i>Consignment</h6>
+          <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+        <div id="stats-section-consignment-body" style="display:none">
+          <div id="consignment-stats-body">
+            <div class="text-muted small">Load stats to see consignment data.</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Inventory Stats ── -->
       <div class="mt-3 border-top pt-3" id="stats-section-inventory">
-        <h6 class="mb-3"><i class="bi bi-boxes me-1"></i>Inventory Intelligence</h6>
-        <div id="inventory-stats-body">
-          <div class="text-muted small">Load stats to see inventory data.</div>
+        <div class="d-flex align-items-center justify-content-between mb-2 stats-section-toggle" data-target="stats-section-inventory-body" style="cursor:pointer">
+          <h6 class="mb-0"><i class="bi bi-boxes me-1"></i>Inventory Intelligence</h6>
+          <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+        <div id="stats-section-inventory-body" style="display:none">
+          <div id="inventory-stats-body">
+            <div class="text-muted small">Load stats to see inventory data.</div>
+          </div>
         </div>
       </div>
 
       <!-- ── Export ── -->
-      <div class="mt-3 border-top pt-3">
-        <h6 class="mb-1">Export <span class="text-muted fw-normal small" id="export-filter-label"></span></h6>
+      <div class="mt-3 border-top pt-3" id="stats-section-export">
+        <div class="d-flex align-items-center justify-content-between mb-1 stats-section-toggle" data-target="stats-section-export-body" style="cursor:pointer">
+          <h6 class="mb-0">Export <span class="text-muted fw-normal small" id="export-filter-label"></span></h6>
+          <i class="bi bi-chevron-down text-muted"></i>
+        </div>
+        <div id="stats-section-export-body" style="display:none">
         <p class="text-muted small mb-2">All exports use the date range and product filter selected above.</p>
         <div class="d-flex gap-2 flex-wrap">
           <button id="btn-export-csv" class="btn btn-outline-secondary btn-sm">
@@ -1724,6 +1769,7 @@
             <span class="d-block" style="font-size:10px;color:#6c757d">All products with prices</span>
           </a>
         </div>
+        </div><!-- /stats-section-export-body -->
       </div>
     </div>
 
@@ -3566,7 +3612,7 @@
             <button id="btn-add-recipe-line" class="btn btn-outline-secondary btn-sm">+ Add Ingredient</button>
           </div>
           <table class="table table-sm">
-            <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>Est. cost</th><th></th></tr></thead>
+            <thead><tr><th>Ingredient</th><th>Qty</th><th>Unit</th><th>In stock</th><th>Est. cost</th><th></th></tr></thead>
             <tbody id="recipe-lines-body"></tbody>
           </table>
           <div id="recipe-cost-total" class="text-muted small"></div>

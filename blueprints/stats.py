@@ -66,6 +66,8 @@ def api_stats():
     except (ValueError, TypeError): user_id_filter = None
     try: supplier_id_filter = int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None
     except (ValueError, TypeError): supplier_id_filter = None
+    try: category_id_filter = int(request.args.get('category_id')) if request.args.get('category_id') else None
+    except (ValueError, TypeError): category_id_filter = None
 
     not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
     sale_q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, not_return)
@@ -80,6 +82,9 @@ def api_stats():
         _sup_pids = {r.product_id for r in db.session.query(StockBatch.product_id).filter(StockBatch.supplier_id == supplier_id_filter).all()}
         _sup_pids |= {r.id for r in db.session.query(Product.id).filter(Product.consignment_supplier_id == supplier_id_filter).all()}
         sale_q = sale_q.filter(Sale.product_id.in_(list(_sup_pids))) if _sup_pids else sale_q.filter(db.false())
+    if category_id_filter:
+        _cat_pids = {r.id for r in db.session.query(Product.id).filter(Product.category_id == category_id_filter).all()}
+        sale_q = sale_q.filter(Sale.product_id.in_(list(_cat_pids))) if _cat_pids else sale_q.filter(db.false())
     rows = sale_q.all()
 
     transactions_count = len({r.sale_id for r in rows})

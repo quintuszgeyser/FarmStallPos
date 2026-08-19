@@ -2679,25 +2679,52 @@ function _updateProducePreview() {
         document.getElementById('btn-produce-confirm').disabled = true;
         return;
       }
-      document.getElementById('btn-produce-confirm').disabled = false;
-      if (!pr.sub_recipes || pr.sub_recipes.length === 0) {
-        statusEl.innerHTML = '';
-        return;
+
+      let html = '';
+
+      // Direct ingredient shortages (raw ingredients)
+      const directShortages = pr.direct_shortages || [];
+      if (directShortages.length > 0) {
+        html += `<div class="fw-semibold text-danger mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Ingredient shortages — cannot produce:</div>`;
+        html += directShortages.map(s =>
+          `<div class="d-flex align-items-start gap-1 mb-1 ms-2">
+            <i class="bi bi-x-circle-fill text-danger mt-1 flex-shrink-0"></i>
+            <span><strong>${escapeHtml(s.name)}</strong>: need ${displayQty(s.needed, s.unit_type)}, have ${displayQty(s.available, s.unit_type)} — <span class="text-danger">short ${displayQty(s.shortage, s.unit_type)}</span></span>
+          </div>`
+        ).join('');
       }
-      const rows = pr.sub_recipes.map(sr => {
-        if (!sr.will_auto_produce) {
+
+      // Sub-recipe status
+      const subRecipes = pr.sub_recipes || [];
+      if (subRecipes.length > 0) {
+        html += `<div class="fw-semibold mb-1 mt-2">Sub-recipe status:</div>`;
+        html += subRecipes.map(sr => {
+          if (!sr.will_auto_produce) {
+            return `<div class="d-flex align-items-start gap-1 mb-1">
+              <i class="bi bi-check-circle-fill text-success mt-1 flex-shrink-0"></i>
+              <span><strong>${escapeHtml(sr.name)}</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)} — OK</span>
+            </div>`;
+          }
+          const nestedHtml = (sr.nested_shortages || []).length > 0
+            ? `<div class="ms-3 mt-1">${(sr.nested_shortages).map(ns =>
+                `<div class="d-flex align-items-start gap-1 mb-1">
+                  <i class="bi bi-x-circle-fill text-danger mt-1 flex-shrink-0"></i>
+                  <span class="small"><strong>${escapeHtml(ns.name)}</strong>: need ${displayQty(ns.needed, ns.unit_type)}, have ${displayQty(ns.available, ns.unit_type)} — <span class="text-danger">short ${displayQty(ns.shortage || (ns.needed - ns.available), ns.unit_type)}</span>${ns.context ? ` <span class="text-muted">(${escapeHtml(ns.context)})</span>` : ''}</span>
+                </div>`
+              ).join('')}</div>`
+            : '';
+          const canAutoProduceColor = (sr.nested_shortages || []).length > 0 ? 'text-danger' : 'text-warning';
+          const canAutoProduceIcon = (sr.nested_shortages || []).length > 0 ? 'bi-x-circle-fill text-danger' : 'bi-exclamation-circle-fill text-warning';
           return `<div class="d-flex align-items-start gap-1 mb-1">
-            <i class="bi bi-check-circle-fill text-success mt-1 flex-shrink-0"></i>
-            <span><strong>${escapeHtml(sr.name)}</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)} — OK</span>
+            <i class="bi ${canAutoProduceIcon} mt-1 flex-shrink-0"></i>
+            <div><span><strong>${escapeHtml(sr.name)}</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)}${(sr.nested_shortages || []).length === 0 ? ` → will auto-produce <strong>${sr.auto_batches} batch${sr.auto_batches !== 1 ? 'es' : ''}</strong>` : ' → <span class="text-danger">cannot auto-produce (see shortages below)</span>'}</span>${nestedHtml}</div>
           </div>`;
-        }
-        return `<div class="d-flex align-items-start gap-1 mb-1">
-          <i class="bi bi-exclamation-circle-fill text-warning mt-1 flex-shrink-0"></i>
-          <span><strong>${escapeHtml(sr.name)} shortage</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)} →
-          will auto-produce <strong>${sr.auto_batches} batch${sr.auto_batches !== 1 ? 'es' : ''}</strong> (${displayQty(sr.auto_units, sr.unit_type)})</span>
-        </div>`;
-      }).join('');
-      statusEl.innerHTML = `<div class="fw-semibold mb-1">Sub-recipe status:</div>${rows}`;
+        }).join('');
+      }
+
+      const canProduce = pr.can_produce !== false;
+      document.getElementById('btn-produce-confirm').disabled = !canProduce;
+      statusEl.innerHTML = html || '';
     } catch (_) {
       if (statusEl && _produceProduct?.id === p.id) statusEl.innerHTML = '';
     }
@@ -2977,6 +3004,7 @@ function openProductEditor(p) {
   if (_cSupSel) {
     _cSupSel.innerHTML = '<option value="">— Select supplier —</option>' +
       (_suppliers || []).map(s => `<option value="${s.id}"${s.id === p?.consignment_supplier_id ? ' selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
+    _tomSelectSync('p-consignment-supplier');
   }
 
   // Description
@@ -3540,10 +3568,20 @@ function renderRecipeLines() {
       unitSelHTML += '</select>';
     }
 
+    const stockLevel = ingr != null ? (ingr.stock_level ?? ingr.stock_qty ?? 0) : null;
+    const neededBase = isRecipeIngredient ? qty : toBase(qty, unit, unitType);
+    let stockCell = '<span class="text-muted">—</span>';
+    if (ingr != null) {
+      const stockDisp = displayQty(stockLevel, unitType);
+      const isShort = stockLevel < neededBase;
+      stockCell = `<span class="${isShort ? 'text-danger fw-semibold' : 'text-success'}">${stockDisp}</span>`;
+    }
+
     tr.innerHTML = `
       <td>${ingSelHTML}</td>
       <td><input type="number" step="0.01" min="0.01" value="${line.qty_base_display || line.qty_base || ''}" class="form-control form-control-sm" data-rl-idx="${idx}" data-rl-field="qty_display" style="width:80px"></td>
       <td>${unitSelHTML}</td>
+      <td class="small">${stockCell}</td>
       <td class="small text-muted">${lineCost > 0 ? `R${lineCost.toFixed(4)}` : '-'}</td>
       <td><button class="btn btn-outline-danger btn-sm" data-rl-remove="${idx}"><i class="bi bi-x-lg"></i></button></td>
     `;
@@ -9489,12 +9527,15 @@ function drawBarChart(canvas, labels, values, opts = {}) {
     ctx.restore();
   });
 
-  // Attach click handler if drilldown callback provided
+  // Attach or remove click handler — always clear stale handler first
+  const _clickId = canvas.id;
+  if (_chartClickHandlers[_clickId]) {
+    canvas.removeEventListener('click', _chartClickHandlers[_clickId]);
+    delete _chartClickHandlers[_clickId];
+  }
   if (opts.onBarClick) {
-    const id = canvas.id;
-    if (_chartClickHandlers[id]) canvas.removeEventListener('click', _chartClickHandlers[id]);
     canvas.style.cursor = 'pointer';
-    _chartClickHandlers[id] = (e) => {
+    _chartClickHandlers[_clickId] = (e) => {
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
@@ -9503,7 +9544,9 @@ function drawBarChart(canvas, labels, values, opts = {}) {
       const hit = barRects.find(b => mx >= b.x && mx <= b.x + b.w && my >= b.y && my <= b.y + b.h);
       if (hit) opts.onBarClick(hit.label, hit.value, hit.index);
     };
-    canvas.addEventListener('click', _chartClickHandlers[id]);
+    canvas.addEventListener('click', _chartClickHandlers[_clickId]);
+  } else {
+    canvas.style.cursor = '';
   }
 }
 
@@ -9615,10 +9658,12 @@ function _statsFilterParams() {
   const productId  = document.getElementById('stats-product-filter')?.value  || '';
   const userId     = document.getElementById('stats-user-filter')?.value     || '';
   const supplierId = document.getElementById('stats-supplier-filter')?.value || '';
+  const categoryId = document.getElementById('stats-category-filter')?.value || '';
   const p = new URLSearchParams({ start, end });
   if (productId)  p.set('product_id',  productId);
   if (userId)     p.set('user_id',     userId);
   if (supplierId) p.set('supplier_id', supplierId);
+  if (categoryId) p.set('category_id', categoryId);
   return p;
 }
 
@@ -9984,8 +10029,12 @@ function _showChartTab(tab) {
       const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
       drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), {
         color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Category',
+        onBarClick: (lbl) => {
+          const cat = STATE.categories?.find(c => c.name === lbl);
+          if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); }
+        },
       });
-      if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue grouped by product category</span>`;
+      if (_legend) _legend.innerHTML = `<span class="text-muted">Revenue grouped by product category — click a bar to filter by that category</span>`;
     } else {
       drawBarChart(c, products.map(x => x.name), products.map(x => x.revenue), {
         color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Product',
@@ -10004,8 +10053,12 @@ function _showChartTab(tab) {
       const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
       drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), {
         color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Category',
+        onBarClick: (lbl) => {
+          const cat = STATE.categories?.find(c => c.name === lbl);
+          if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); }
+        },
       });
-      if (_legend) _legend.innerHTML = `<span class="text-muted">Gross profit grouped by product category</span>`;
+      if (_legend) _legend.innerHTML = `<span class="text-muted">Gross profit grouped by product category — click a bar to filter by that category</span>`;
     } else {
       drawBarChart(c, products.map(x => x.name), products.map(x => x.profit), {
         color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Product',
@@ -10147,12 +10200,27 @@ function _populateStatsSupplierFilter() {
   _tomSelectSync('stats-supplier-filter');
 }
 
+function _populateStatsCategoryFilter() {
+  const sel = document.getElementById('stats-category-filter');
+  if (!sel || !STATE.categories?.length) return;
+  const current = sel.value;
+  sel.innerHTML = '<option value="">All categories</option>';
+  [...STATE.categories].sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id; opt.textContent = c.name;
+    if (String(c.id) === String(current)) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  _tomSelectSync('stats-category-filter');
+}
+
 async function loadStats() {
   const start      = document.getElementById('stats-start')?.value    || todayISO();
   const end        = document.getElementById('stats-end')?.value      || todayISO();
   const productId  = document.getElementById('stats-product-filter')?.value  || '';
   const userId     = document.getElementById('stats-user-filter')?.value     || '';
   const supplierId = document.getElementById('stats-supplier-filter')?.value || '';
+  const categoryId = document.getElementById('stats-category-filter')?.value || '';
   const label     = document.getElementById('stats-period-label');
 
   const dateLabel    = start === end ? start : `${start} → ${end}`;
@@ -10215,13 +10283,22 @@ async function loadStats() {
         loadStats();
       });
     }
-    chipArea.style.display = (userId || productId || supplierId) ? '' : 'none';
+    if (categoryId) {
+      const cname = `Category: ${STATE.categories?.find(c => String(c.id) === categoryId)?.name || categoryId}`;
+      addChip(cname, () => {
+        const el = document.getElementById('stats-category-filter');
+        if (el) { el.value = ''; _tomSelectSync('stats-category-filter'); }
+        loadStats();
+      });
+    }
+    chipArea.style.display = (userId || productId || supplierId || categoryId) ? '' : 'none';
   }
 
   const params = new URLSearchParams({ start, end });
   if (productId)  params.set('product_id',  productId);
   if (userId)     params.set('user_id',     userId);
   if (supplierId) params.set('supplier_id', supplierId);
+  if (categoryId) params.set('category_id', categoryId);
 
   try {
     const j = await api(`/api/stats?${params}`);
@@ -13992,9 +14069,25 @@ document.addEventListener('shown.bs.tab', async (evt) => {
     if (_kitchenRefreshTimer) { clearInterval(_kitchenRefreshTimer); _kitchenRefreshTimer = null; }
   } else if (target === '#stats') {
     _populateStatsProductFilter();
+    _populateStatsSupplierFilter();
+    _populateStatsCategoryFilter();
     // Only auto-load if no data has been loaded yet - preserve the user's selected range
     if (!_statsData) await loadStats();
   }
+});
+
+// Stats section collapsible toggle (delegated)
+document.addEventListener('click', function(e) {
+  const toggle = e.target.closest('.stats-section-toggle');
+  if (!toggle) return;
+  const targetId = toggle.dataset.target;
+  if (!targetId) return;
+  const body = document.getElementById(targetId);
+  if (!body) return;
+  const icon = toggle.querySelector('i.bi-chevron-down, i.bi-chevron-up');
+  const isOpen = body.style.display !== 'none';
+  body.style.display = isOpen ? 'none' : '';
+  if (icon) { icon.classList.toggle('bi-chevron-down', isOpen); icon.classList.toggle('bi-chevron-up', !isOpen); }
 });
 
 // ═══════════════════════════════════════════════════════

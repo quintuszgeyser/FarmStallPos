@@ -929,6 +929,29 @@ def api_produce_preview(pid):
         names = {q.id: q.name for q in Product.query.filter(Product.id.in_(ids)).all()}
         return jsonify({'circular': True, 'cycle': [names.get(i, str(i)) for i in cycle]})
 
+    # Check direct ingredient shortages (non-batch-recipe ingredients)
+    direct_shortages = []
+    for rl in RecipeLine.query.filter_by(product_id=pid).all():
+        ing = db.session.get(Product, rl.ingredient_id)
+        if not ing:
+            continue
+        if ing.product_type == 'recipe' and ing.is_produced:
+            continue  # handled as sub_recipe below
+        needed_d    = Decimal(str(rl.qty_base)) * batches
+        available_d = Decimal(str(get_stock_level(rl.ingredient_id)))
+        if available_d < needed_d:
+            direct_shortages.append({
+                'ingredient_id': rl.ingredient_id,
+                'name':          ing.name,
+                'needed':        float(needed_d),
+                'available':     float(available_d),
+                'shortage':      float(needed_d - available_d),
+                'unit_type':     ing.unit_type,
+                'base_unit':     ing.base_unit,
+                'context':       None,
+            })
+
+    # Check sub-recipe (batch-produced recipe ingredient) shortages
     sub_recipes = []
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
         ing = db.session.get(Product, rl.ingredient_id)
@@ -939,6 +962,11 @@ def api_produce_preview(pid):
         shortage_d  = max(Decimal('0'), needed_d - available_d)
         batch_sz_d  = Decimal(str(ing.batch_size or 1))
         auto_batches = int((shortage_d / batch_sz_d).to_integral_value(rounding=ROUND_CEILING)) if shortage_d > 0 else 0
+        # Collect nested raw ingredient shortages needed to auto-produce this sub-recipe
+        nested_shortages = []
+        if shortage_d > 0:
+            sub_batches = (shortage_d / batch_sz_d).to_integral_value(rounding=ROUND_CEILING)
+            _collect_bom_shortages(ing.id, sub_batches, f'for auto-producing {ing.name}', nested_shortages)
         sub_recipes.append({
             'ingredient_id':     rl.ingredient_id,
             'name':              ing.name,
@@ -950,9 +978,20 @@ def api_produce_preview(pid):
             'auto_units':        float(batch_sz_d * auto_batches),
             'unit_type':         ing.unit_type,
             'base_unit':         ing.base_unit,
+            'nested_shortages':  nested_shortages,
         })
 
-    return jsonify({'circular': False, 'sub_recipes': sub_recipes})
+    can_produce = len(direct_shortages) == 0 and all(
+        not sr['will_auto_produce'] or len(sr['nested_shortages']) == 0
+        for sr in sub_recipes
+    )
+
+    return jsonify({
+        'circular': False,
+        'sub_recipes': sub_recipes,
+        'direct_shortages': direct_shortages,
+        'can_produce': can_produce,
+    })
 
 
 def _collect_bom_shortages(product_id, qty_needed, context, shortages, _depth=0):
