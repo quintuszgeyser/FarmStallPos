@@ -9568,9 +9568,9 @@ function drawBarChart(canvas, labels, values, opts = {}) {
     ctx.restore();
   });
 
-  // Forecast overlay
+  // Forecast overlay — use same scale as bars so positions match exactly
   if (opts.overlay && opts.overlay.items && opts.overlay.items.length > 0) {
-    const useMax = Math.max(max, opts.overlay.maxVal || 0) || 1;
+    const useMax = max;
     const toY  = v => H - padB - (H - padT - padB) * (v / useMax);
     const toCx = i => padL + i * ((W - padL - padR) / n) + ((W - padL - padR) / n) / 2;
     const bandItems = opts.overlay.items.filter(it => it.p10 != null && it.p90 != null);
@@ -9980,54 +9980,218 @@ function _redrawDailyWithForecast() {
   if (!_statsData) return;
   const c = document.getElementById('chart-daily');
   if (!c) return;
-  const dayData = _statsData.revenue_per_day || [];
-  const labels  = dayData.map(d => d.date ? d.date.slice(5) : '');
-  const values  = dayData.map(d => d.revenue || 0);
+
+  const todayStr = todayISO(); // "YYYY-MM-DD"
+  const filterStart = document.getElementById('stats-start')?.value || todayStr;
+  const filterEnd   = document.getElementById('stats-end')?.value   || todayStr;
+
+  // Build full date range for the filter period
+  const allDatesInRange = [];
+  let _d = new Date(filterStart + 'T00:00:00');
+  const _end = new Date(filterEnd + 'T00:00:00');
+  while (_d <= _end) {
+    allDatesInRange.push(_d.toISOString().slice(0, 10));
+    _d.setDate(_d.getDate() + 1);
+  }
+
+  // Build actual data map {YYYY-MM-DD: revenue}
+  const actualMap = {};
+  (_statsData.revenue_per_day || []).forEach(d => { if (d.date) actualMap[d.date] = d.revenue || 0; });
+
+  // Build forecast map {YYYY-MM-DD: {p50, p10, p90, is_holiday}}
+  const forecastMap = {};
+  if (_forecastEnabled && _forecastData && _forecastData.forecast) {
+    _forecastData.forecast.forEach(f => { if (f.date) forecastMap[f.date] = f; });
+  }
+
+  // Build combined labels/values — actual where available, forecast p50 for future dates
+  const labels = [], values = [], futureBars = [];
+  allDatesInRange.forEach((dateStr, xi) => {
+    labels.push(dateStr.slice(5)); // MM-DD
+    const isFuture = dateStr > todayStr;
+    if (isFuture && forecastMap[dateStr]) {
+      values.push(forecastMap[dateStr].p50 || 0);
+      futureBars.push({ xi, p10: forecastMap[dateStr].p10, p90: forecastMap[dateStr].p90 });
+    } else {
+      values.push(actualMap[dateStr] || 0);
+    }
+  });
+
+  // Rebuild dayData array aligned to allDatesInRange for click handler
+  const combinedDayData = allDatesInRange.map(dateStr => ({
+    date: dateStr,
+    revenue: actualMap[dateStr] || 0,
+    isFuture: dateStr > todayStr,
+  }));
+
+  // Overlay items: only actual days (non-future) that have forecast — for the line
   let overlayOpts = null;
   if (_forecastEnabled && _forecastData && _forecastData.forecast) {
-    const items = (_forecastData.forecast).map(f => {
-      const dateSuffix = f.date ? f.date.slice(5) : null;
-      const xi = labels.indexOf(dateSuffix);
-      if (xi < 0) return null;
+    const items = allDatesInRange.map((dateStr, xi) => {
+      const f = forecastMap[dateStr];
+      if (!f) return null;
       return { xi, p10: f.p10, p50: f.p50, p90: f.p90, is_holiday: f.is_holiday };
     }).filter(Boolean);
     const maxForecast = items.length ? Math.max(...items.map(it => it.p90 || 0)) : 0;
     overlayOpts = { items, maxVal: maxForecast };
   }
+
   drawBarChart(c, labels, values, {
     color: '#2a6f3e', color2: '#4caf7d', valuePrefix: 'R',
     yLabel: 'Revenue (R)', xLabel: 'Date',
-    onBarClick: (lbl, val, i) => openDrilldown(`Sales on ${dayData[i]?.date}`, 'day', dayData[i]?.date),
+    onBarClick: (lbl, val, i) => {
+      const day = combinedDayData[i];
+      if (day && !day.isFuture && day.revenue > 0) openDrilldown(`Sales on ${day.date}`, 'day', day.date);
+    },
     overlay: overlayOpts,
+    futureBars: _forecastEnabled ? futureBars : [],
   });
 }
 
 async function _renderForecast() {
-  if (!_forecastEnabled || _statsChartTab !== 'daily') return;
+  if (!_forecastEnabled) return;
+  const tab = _statsChartTab;
   const params = _statsFilterParams();
   const badgeEl = document.getElementById('forecast-badge');
   const explEl  = document.getElementById('forecast-explanation');
-  try {
-    const data = await api(`/api/stats/forecast?${params}`);
-    _forecastData = data;
-    const qualityColors = { excellent: 'bg-success', good: 'bg-primary', fair: 'bg-warning text-dark', poor: 'bg-danger' };
-    if (data.error === 'insufficient_data') {
+  const qualityColors = { excellent: 'bg-success', good: 'bg-primary', fair: 'bg-warning text-dark', poor: 'bg-danger' };
+
+  const _setBadge = (data) => {
+    if (!data || data.error === 'insufficient_data') {
       if (badgeEl) { badgeEl.textContent = 'Not enough data'; badgeEl.className = 'badge bg-secondary'; badgeEl.style.display = ''; }
-      if (explEl) { explEl.textContent = `Only ${data.data_months || 0} months of history — need at least 2 weeks`; explEl.style.display = ''; }
+      if (explEl) { explEl.textContent = data ? `Only ${data.data_months || 0} months of history` : ''; explEl.style.display = ''; }
+    } else if (data.not_applicable) {
+      if (badgeEl) badgeEl.style.display = 'none';
+      if (explEl) explEl.style.display = 'none';
     } else {
       if (badgeEl) { badgeEl.textContent = data.data_quality || 'unknown'; badgeEl.className = `badge ${qualityColors[data.data_quality] || 'bg-secondary'}`; badgeEl.style.display = ''; }
       if (explEl) { explEl.textContent = data.explanation || ''; explEl.style.display = data.explanation ? '' : 'none'; }
     }
-    _redrawDailyWithForecast();
-    // Refresh legend to show forecast key
-    const _legend = document.getElementById('stats-chart-legend');
-    if (_legend && !data.error) {
-      _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;border-top:2px dashed #0d6efd;vertical-align:middle"></span> Forecast P50</span>` +
-        ` <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:8px;background:rgba(13,110,253,0.2);vertical-align:middle"></span> P10–P90</span>`;
+  };
+
+  if (tab === 'daily') {
+    try {
+      const data = await api(`/api/stats/forecast?${params}&group_by=daily`);
+      _forecastData = data;
+      _setBadge(data);
+      _redrawDailyWithForecast();
+      const _legend = document.getElementById('stats-chart-legend');
+      if (_legend && data.forecast && !data.error) {
+        _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:20px;border-top:2px dashed #0d6efd;vertical-align:middle"></span> Forecast P50</span>` +
+          ` <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:8px;background:rgba(13,110,253,0.2);vertical-align:middle"></span> P10–P90</span>` +
+          ` <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(42,111,62,0.35);border:1px dashed #2a6f3e;vertical-align:middle"></span> Future (forecast)</span>`;
+      }
+    } catch(e) { if (badgeEl) badgeEl.style.display = 'none'; if (explEl) explEl.style.display = 'none'; }
+
+  } else if (tab === 'hourly') {
+    try {
+      const data = await api(`/api/stats/forecast?${params}&group_by=hourly`);
+      _setBadge(data);
+      if (data.forecast && _statsData) {
+        // Re-render hourly chart with future bars
+        const c = document.getElementById('chart-hourly');
+        if (!c) return;
+        const hours   = Array.from({length: 24}, (_, i) => i);
+        const hourMap = Object.fromEntries((_statsData.revenue_per_hour || []).map(x => [x.hour, x]));
+        const metric  = _statsTimeMetric;
+        let vals, yLabel, valuePrefix = '';
+        if (metric === 'count') { vals = hours.map(h => hourMap[h]?.tx_count || 0); yLabel = 'Transactions'; }
+        else if (metric === 'profit') { vals = hours.map(h => hourMap[h]?.profit || 0); yLabel = 'Profit (R)'; valuePrefix = 'R'; }
+        else { vals = hours.map(h => hourMap[h]?.revenue || 0); yLabel = 'Revenue (R)'; valuePrefix = 'R'; }
+        // Overlay future hours with forecast p50
+        const fcMap = Object.fromEntries((data.forecast || []).map(f => [parseInt(f.key, 10), f]));
+        const futureBars = [];
+        data.forecast.forEach(f => {
+          const h = parseInt(f.key, 10);
+          futureBars.push({ xi: h, p10: f.p10, p90: f.p90 });
+          if (metric === 'revenue') vals[h] = f.p50;
+        });
+        drawBarChart(c, hours.map(h => `${h}:00`), vals, {
+          color: '#1976d2', valuePrefix, yLabel, xLabel: 'Hour of day',
+          futureBars,
+          onBarClick: (lbl, val, i) => { if (val > 0 && !futureBars.find(f => f.xi === i)) openDrilldown(`Sales at ${i}:00`, 'hour', i); },
+        });
+        const _legend = document.getElementById('stats-chart-legend');
+        if (_legend) _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(25,118,210,0.35);border:1px dashed #1976d2;vertical-align:middle"></span> Remaining hours (forecast)</span>`;
+      }
+    } catch(e) { if (badgeEl) badgeEl.style.display = 'none'; if (explEl) explEl.style.display = 'none'; }
+
+  } else if (['top-rev', 'top-profit', 'top-qty', 'suppliers'].includes(tab)) {
+    // Rate extrapolation: no API call needed — compute from filter dates
+    const startStr = document.getElementById('stats-start')?.value || todayISO();
+    const endStr   = document.getElementById('stats-end')?.value   || todayISO();
+    const todayStr = todayISO();
+    const msPerDay = 86400000;
+    const totalDays   = Math.max(1, (new Date(endStr) - new Date(startStr)) / msPerDay + 1);
+    const elapsedDays = Math.max(1, Math.min(totalDays, (new Date(todayStr) - new Date(startStr)) / msPerDay + 1));
+    if (elapsedDays >= totalDays) {
+      // Period complete — nothing to extrapolate
+      if (badgeEl) { badgeEl.textContent = 'Period complete'; badgeEl.className = 'badge bg-secondary'; badgeEl.style.display = ''; }
+      if (explEl) explEl.style.display = 'none';
+      return;
     }
-  } catch(e) {
-    if (badgeEl) badgeEl.style.display = 'none';
-    if (explEl) explEl.style.display = 'none';
+    const projMultiplier = totalDays / elapsedDays;
+    if (badgeEl) { badgeEl.textContent = 'Projected'; badgeEl.className = 'badge bg-info text-dark'; badgeEl.style.display = ''; }
+    if (explEl) { explEl.textContent = `Projected at current pace (${Math.round(elapsedDays)} of ${Math.round(totalDays)} days elapsed)`; explEl.style.display = ''; }
+    if (!_statsData) return;
+    const j = _statsData;
+    const _legend = document.getElementById('stats-chart-legend');
+
+    if (tab === 'top-rev') {
+      const c = document.getElementById('chart-top-rev');
+      if (!c) return;
+      const products = j.top_by_revenue || [];
+      if (_topProductsGroupBy === 'category') {
+        const catMap = {}, catProjMap = {};
+        products.forEach(p => { const k = p.category_name || 'Uncategorised'; catMap[k] = (catMap[k] || 0) + p.revenue; catProjMap[k] = ((catMap[k] || 0)) * (projMultiplier - 1); });
+        const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+        const projVals = cats.map(([k]) => catProjMap[k] || 0);
+        drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), { color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Category', projectedValues: projVals,
+          onBarClick: (lbl) => { const cat = STATE.categories?.find(c => c.name === lbl); if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); } } });
+      } else {
+        const projVals = products.map(p => p.revenue * (projMultiplier - 1));
+        drawBarChart(c, products.map(x => x.name), products.map(x => x.revenue), { color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Product', projectedValues: projVals,
+          onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id) });
+      }
+      if (_legend) _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(123,31,162,0.35);border:1px dashed #7b1fa2;vertical-align:middle"></span> Projected to period end</span>`;
+
+    } else if (tab === 'top-profit') {
+      const c = document.getElementById('chart-top-profit');
+      if (!c) return;
+      const products = j.top_by_profit || [];
+      if (_topProductsGroupBy === 'category') {
+        const catMap = {};
+        products.forEach(p => { const k = p.category_name || 'Uncategorised'; catMap[k] = (catMap[k] || 0) + p.profit; });
+        const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
+        const projVals = cats.map(([, v]) => v * (projMultiplier - 1));
+        drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), { color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Category', projectedValues: projVals,
+          onBarClick: (lbl) => { const cat = STATE.categories?.find(c => c.name === lbl); if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); } } });
+      } else {
+        const projVals = products.map(p => (p.profit || 0) * (projMultiplier - 1));
+        drawBarChart(c, products.map(x => x.name), products.map(x => x.profit), { color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Product', projectedValues: projVals,
+          onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id) });
+      }
+      if (_legend) _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(46,125,50,0.35);border:1px dashed #2e7d32;vertical-align:middle"></span> Projected to period end</span>`;
+
+    } else if (tab === 'top-qty') {
+      const c = document.getElementById('chart-top');
+      if (!c) return;
+      const products = j.top_products || [];
+      const qtyVals = products.map(x => x.stat_unit_size ? x.normalized_qty : x.qty_sold);
+      const projVals = qtyVals.map(v => v * (projMultiplier - 1));
+      drawBarChart(c, products.map(x => x.name), qtyVals, { color: '#e65100', valueSuffix: '', yLabel: 'Qty sold', xLabel: 'Product', projectedValues: projVals,
+        onBarClick: (lbl, val, i) => openDrilldown(`Sales of ${products[i]?.name}`, 'product', products[i]?.product_id) });
+      if (_legend) _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(230,81,0,0.35);border:1px dashed #e65100;vertical-align:middle"></span> Projected to period end</span>`;
+
+    } else if (tab === 'suppliers') {
+      const c = document.getElementById('chart-suppliers');
+      if (!c) return;
+      const sups = j.supplier_breakdown || [];
+      const projVals = sups.map(s => s.total_cost * (projMultiplier - 1));
+      drawBarChart(c, sups.map(x => x.supplier), sups.map(x => x.total_cost), { color: '#5d4037', valuePrefix: 'R', yLabel: 'Purchase cost (R)', xLabel: 'Supplier', projectedValues: projVals,
+        onBarClick: (lbl) => openSupplierDrilldown(lbl) });
+      if (_legend) _legend.innerHTML += ` &nbsp;·&nbsp; <span style="display:inline-flex;align-items:center;gap:4px"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:rgba(93,64,55,0.35);border:1px dashed #5d4037;vertical-align:middle"></span> Projected to period end</span>`;
+    }
   }
 }
 
@@ -10069,9 +10233,10 @@ function _showChartTab(tab) {
   if (hint) hint.style.display = drillableTabs.includes(tab) ? '' : 'none';
   const groupByBar = document.getElementById('top-products-groupby');
   if (groupByBar) groupByBar.classList.toggle('d-none', !['top-rev','top-profit'].includes(tab));
-  // Show forecast controls only on daily tab
+  // Show forecast controls on supported tabs
   const forecastControls = document.getElementById('forecast-controls');
-  if (forecastControls) forecastControls.style.display = tab === 'daily' ? '' : 'none';
+  const _fcTabs = ['daily', 'hourly', 'top-rev', 'top-profit', 'top-qty', 'suppliers'];
+  if (forecastControls) forecastControls.style.display = _fcTabs.includes(tab) ? '' : 'none';
 
   // Legend strip — cleared each time, populated per tab below
   const _legend = document.getElementById('stats-chart-legend');
@@ -10544,7 +10709,8 @@ async function loadStats() {
     }
 
     _showChartTab(_statsChartTab);
-    if (_forecastEnabled && _statsChartTab === 'daily') _renderForecast();
+    const _fcSupportedTabs = ['daily', 'hourly', 'top-rev', 'top-profit', 'top-qty', 'suppliers'];
+    if (_forecastEnabled && _fcSupportedTabs.includes(_statsChartTab)) _renderForecast();
 
     // Employee performance table
     const empWrap = document.getElementById('employee-stats-table');
