@@ -10477,6 +10477,12 @@ function _showChartTab(tab) {
       `The number in brackets (e.g. <em>Mon (4×)</em>) is how many Mondays fall in the selected period. ` +
       `Click a bar for transaction detail. Total revenue ÷ occurrences = bar height.</span>`;
   }
+
+  // Trigger forecast render when switching tabs with forecast already enabled
+  const _fcTabsSwitch = ['daily', 'hourly', 'top-rev', 'top-profit', 'top-qty', 'suppliers'];
+  if (_forecastEnabled && _fcTabsSwitch.includes(tab) && _statsData) {
+    setTimeout(() => _renderForecast(), 0);
+  }
 }
 
 function _populateStatsProductFilter() {

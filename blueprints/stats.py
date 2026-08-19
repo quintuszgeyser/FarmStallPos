@@ -2045,6 +2045,8 @@ def api_stats_forecast():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
 
+    group_by = request.args.get('group_by', 'daily')
+
     today = date.today()
     try: start_dt = datetime.fromisoformat(request.args.get('start', today.isoformat()))
     except Exception: start_dt = datetime(today.year, today.month, today.day)
@@ -2062,6 +2064,60 @@ def api_stats_forecast():
     except (ValueError, TypeError): supplier_id_filter = None
     try: category_id_filter = int(request.args.get('category_id')) if request.args.get('category_id') else None
     except (ValueError, TypeError): category_id_filter = None
+
+    # Hourly forecast: historical same-weekday revenue per hour, projected for remaining hours today
+    if group_by == 'hourly':
+        today_dow = today.weekday()
+        hist_start_h = datetime(today.year - 2, today.month, today.day)
+        hist_end_h   = datetime(today.year, today.month, today.day, 23, 59, 59) - timedelta(days=1)
+        not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+        q = db.session.query(Sale).filter(
+            Sale.date_time >= hist_start_h, Sale.date_time <= hist_end_h,
+            Sale.voided == False, not_return,
+        )
+        if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
+        if category_id_filter:
+            _cpids = {r.id for r in db.session.query(Product.id).filter(Product.category_id == category_id_filter).all()}
+            q = q.filter(Sale.product_id.in_(list(_cpids))) if _cpids else q.filter(db.false())
+        rows_h = q.all()
+        # Group by day then by hour, only for days matching today's weekday
+        from collections import defaultdict as _dd
+        day_hour_rev = _dd(lambda: _dd(float))
+        for r in rows_h:
+            if r.date_time.weekday() == today_dow:
+                day_hour_rev[r.date_time.date()][r.date_time.hour] += float(Decimal(str(r.qty)) * r.unit_price)
+        # Compute median revenue per hour across those days
+        hour_vals = _dd(list)
+        for day_rev in day_hour_rev.values():
+            for h, v in day_rev.items():
+                hour_vals[h].append(v)
+        import statistics as _stats
+        current_hour = datetime.now().hour
+        closing_hour = 18  # 18:00 closing
+        hourly_forecast = []
+        for h in range(current_hour + 1, closing_hour + 1):
+            vals_h = hour_vals.get(h, [])
+            if vals_h:
+                p50 = round(_stats.median(vals_h), 2)
+                s_sorted = sorted(vals_h)
+                p10 = round(_percentile(s_sorted, 10), 2)
+                p90 = round(_percentile(s_sorted, 90), 2)
+            else:
+                p50 = p10 = p90 = 0.0
+            hourly_forecast.append({'key': f'{h:02d}', 'p50': p50, 'p10': p10, 'p90': p90, 'is_future': True})
+        num_same_dow_days = len(day_hour_rev)
+        return jsonify({
+            'group_by': 'hourly',
+            'forecast': hourly_forecast,
+            'current_hour': current_hour,
+            'data_days': num_same_dow_days,
+            'data_quality': 'good' if num_same_dow_days >= 12 else ('fair' if num_same_dow_days >= 4 else 'poor'),
+            'explanation': f"Based on {num_same_dow_days} previous {today.strftime('%A')}s · remaining hours forecast",
+        })
+
+    # Non-daily, non-hourly group_by — not applicable
+    if group_by not in ('daily',):
+        return jsonify({'not_applicable': True})
 
     # Gather up to 2 years of history before start
     hist_start = datetime(start_dt.year - 2, start_dt.month, start_dt.day)
