@@ -22542,7 +22542,13 @@ function empTellerSwitchTab(tab) {
 async function _empLoadMyLeave() {
   if (!EMP.myEmpId) {
     const me = await api('/api/employees/me').catch(() => null);
-    if (!me) return;
+    if (!me) {
+      const noLinkMsg = '<div class="alert alert-warning m-3"><i class="bi bi-exclamation-triangle me-2"></i>Your user account is not linked to an employee record. Ask your admin to link your account in the Employees tab.</div>';
+      document.getElementById('emp-teller-leave-balance').innerHTML = noLinkMsg;
+      const tbody = document.getElementById('emp-my-leaves-tbody');
+      if (tbody) tbody.innerHTML = '';
+      return;
+    }
     EMP.myEmpId = me.id;
   }
   try {
