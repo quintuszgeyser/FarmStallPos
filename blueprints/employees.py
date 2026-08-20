@@ -1116,27 +1116,12 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
             result_accrued = 0.0
         else:
             months_employed = _months_diff(emp.start_date, as_of)
-            cycle_months  = int(policy.cycle_months or 36)
-            cycle_days    = float(policy.cycle_days or 30)
-            first_months  = int(policy.first_period_months or 6)
-            full_cycles   = months_employed // cycle_months
-            months_in_cur = months_employed % cycle_months
-            total = full_cycles * cycle_days
-            if months_in_cur >= first_months:
-                total += cycle_days
-            else:
-                if policy.first_period_per_26:
-                    # Approximate working days in first period of current cycle
-                    csm = full_cycles * cycle_months
-                    ys = emp.start_date.year + (emp.start_date.month - 1 + csm) // 12
-                    ms = (emp.start_date.month - 1 + csm) % 12 + 1
-                    cycle_start = date(ys, ms, min(emp.start_date.day, _cal.monthrange(ys, ms)[1]))
-                    days_in_period = max(0, (as_of - cycle_start).days)
-                    working_days = days_in_period * 5 / 7
-                    total += working_days / 26
-                else:
-                    total += cycle_days * months_in_cur / cycle_months
-            result_accrued = round(total, 2)
+            cycle_months = int(policy.cycle_months or 36)
+            cycle_days   = float(policy.cycle_days or 30)
+            full_cycles  = months_employed // cycle_months
+            # Full entitlement upfront: grant full cycle_days for every cycle
+            # including the current (in-progress) one from day 1 of employment.
+            result_accrued = round((full_cycles + 1) * cycle_days, 2)
     else:
         result_accrued = 0.0
 
