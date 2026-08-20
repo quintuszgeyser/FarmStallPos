@@ -435,9 +435,11 @@ def _calculate_pay_run(employee_id, period_start, period_end):
     total_ded    = Decimal('0')
     emp_contribs = []
 
+    has_uif_deduction = False
     for ded in EmployeeDeduction.query.filter_by(employee_id=employee_id, is_active=True).order_by(EmployeeDeduction.sort_order):
         if ded.deduction_type == 'auto_uif':
             amt = _uif_employee(gross, period_days)
+            has_uif_deduction = True
         elif ded.deduction_type == 'auto_paye':
             annual = gross * Decimal('26')  # biweekly → annual approximation
             amt = (_paye_annual(annual) / Decimal('26')).quantize(Decimal('0.01'))
@@ -448,9 +450,15 @@ def _calculate_pay_run(employee_id, period_start, period_end):
         deductions.append({'label': ded.label, 'type': ded.deduction_type, 'amount': float(amt)})
         total_ded += amt
 
+    # UIF employee contribution (1%) — auto-applied if not already in deductions
+    if not has_uif_deduction:
+        uif_emp = _uif_employee(gross, period_days)
+        deductions.append({'label': 'UIF (employee 1%)', 'type': 'auto_uif', 'amount': float(uif_emp)})
+        total_ded += uif_emp
+
     # UIF employer contribution (shown on payslip but not deducted from employee)
     uif_employer = _uif_employer(gross, period_days)
-    emp_contribs.append({'label': 'UIF (employer)', 'amount': float(uif_employer)})
+    emp_contribs.append({'label': 'UIF (employer 1%)', 'amount': float(uif_employer)})
 
     # Outstanding advances to deduct
     advances_due = EmployeeAdvance.query.filter_by(
