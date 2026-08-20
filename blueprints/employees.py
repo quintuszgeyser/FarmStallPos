@@ -371,19 +371,43 @@ def _calculate_pay_run(employee_id, period_start, period_end):
             'pay':          float(pay_amt.quantize(Decimal('0.01'))),
         })
 
+    # Build shared date sets used by both the public-holiday and salaried loops
+    logged_dates = {a.work_date for a in rows}
+    absent_dates = {a.work_date for a in rows if a.day_type in ('absent', 'unpaid_leave')}
+    try:
+        emp_work_days_set = set(int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip())
+    except Exception:
+        emp_work_days_set = {0, 1, 2, 3, 4, 5}
+    holidays_set = set(holidays_this_year.keys())
+
+    # BCEA s18: public holidays on a scheduled work day must be paid at normal rate
+    # even when the employee does NOT come in. Worked public holidays are already
+    # handled above (day_type='public_holiday' attendance record → 2× via pay rule).
+    curr = period_start
+    while curr <= period_end:
+        if (curr in holidays_set
+                and curr.weekday() in emp_work_days_set
+                and curr not in logged_dates
+                and curr not in absent_dates):
+            # Unworked public holiday on a scheduled day → 1× normal pay
+            totals['normal'] += normal_h
+            attendance_snapshot.append({
+                'date':      curr.isoformat(),
+                'clock_in':  None, 'clock_out': None, 'break_min': 0,
+                'hours':     float(normal_h),
+                'day_type':  'public_holiday',
+                'pay':       float((normal_h * rate).quantize(Decimal('0.01'))),
+                'note':      'Public holiday (not worked) — paid at normal rate',
+            })
+        curr += timedelta(days=1)
+
     # For salaried employees: pay ALL expected working days not explicitly marked absent/unpaid
     if is_salaried:
-        logged_dates = {a.work_date for a in rows}
-        absent_dates = {a.work_date for a in rows if a.day_type in ('absent', 'unpaid_leave')}
-        try:
-            emp_work_days_set = set(int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip())
-        except Exception:
-            emp_work_days_set = {0, 1, 2, 3, 4, 5}
-        # Add guaranteed pay for working days not in attendance records (not absent, not a holiday)
         curr = period_start
-        holidays_set = set(holidays_this_year.keys())
         while curr <= period_end:
-            if curr.weekday() in emp_work_days_set and curr not in logged_dates and curr not in holidays_set:
+            if (curr.weekday() in emp_work_days_set
+                    and curr not in logged_dates
+                    and curr not in holidays_set):
                 # Unlogged working day for salaried employee = normal pay
                 totals['normal'] += normal_h
                 attendance_snapshot.append({
