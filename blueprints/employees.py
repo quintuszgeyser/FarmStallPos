@@ -1222,29 +1222,33 @@ def api_leaves_approve(eid, lid):
     req.approved_by = u.id if u else None
     req.approved_at = datetime.utcnow()
 
-    # For unpaid leave on salaried employees, auto-create attendance records
-    # so _calculate_pay_run deducts those days from gross pay.
+    # Auto-create attendance records so _calculate_pay_run sees these days.
+    # Paid leave (vacation/sick) → day_type matches the leave type so payroll pays them.
+    # Unpaid leave → day_type='unpaid_leave' so payroll deducts for salaried employees.
     policy = LeavePolicy.query.filter_by(leave_type=req.leave_type).first()
-    if policy and not policy.is_paid:
-        emp = Employee.query.get(eid)
-        current_day = req.date_from
-        while current_day <= req.date_to:
-            if current_day.weekday() < 5:  # Mon–Fri only
-                existing = EmployeeAttendance.query.filter_by(
-                    employee_id=eid, work_date=current_day
-                ).first()
-                if not existing:
-                    att = EmployeeAttendance(
-                        employee_id  = eid,
-                        work_date    = current_day,
-                        day_type     = 'unpaid_leave',
-                        hours_worked = Decimal('0'),
-                        start_time   = None,
-                        end_time     = None,
-                        notes        = f'Unpaid leave (auto)',
-                    )
-                    db.session.add(att)
-            current_day += timedelta(days=1)
+    emp    = Employee.query.get(eid)
+    leave_day_type = (
+        'vacation'     if req.leave_type == 'annual' else
+        'sick'         if req.leave_type == 'sick'   else
+        'unpaid_leave' if (policy and not policy.is_paid) else
+        'vacation'     # custom paid leave types treated as paid leave
+    )
+    pay_hrs = Decimal(str(emp.normal_hours_per_day or 8)) if leave_day_type not in ('unpaid_leave',) else Decimal('0')
+    current_day = req.date_from
+    while current_day <= req.date_to:
+        if current_day.weekday() < 5:  # Mon–Fri only
+            existing = EmployeeAttendance.query.filter_by(
+                employee_id=eid, work_date=current_day
+            ).first()
+            if not existing:
+                db.session.add(EmployeeAttendance(
+                    employee_id  = eid,
+                    work_date    = current_day,
+                    day_type     = leave_day_type,
+                    hours_worked = pay_hrs,
+                    notes        = f'{req.leave_type.replace("_"," ").title()} (approved)',
+                ))
+        current_day += timedelta(days=1)
 
     db.session.commit()
     return jsonify({'ok': True, 'status': 'approved'})
@@ -1355,8 +1359,9 @@ def api_loans_create(eid):
 
 @bp.route('/api/employees/<int:eid>/documents', methods=['GET'])
 def api_documents_list(eid):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
+    _, _, err = _own_or_admin(eid)
+    if err:
+        return err
     rows = EmployeeDocument.query.filter_by(employee_id=eid).order_by(EmployeeDocument.uploaded_at.desc()).all()
     return jsonify([{
         'id':            r.id,
@@ -1398,8 +1403,9 @@ def api_documents_upload(eid):
 
 @bp.route('/api/employees/<int:eid>/documents/<int:did>/download', methods=['GET'])
 def api_documents_download(eid, did):
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
+    _, _, err = _own_or_admin(eid)
+    if err:
+        return err
     doc  = EmployeeDocument.query.filter_by(id=did, employee_id=eid).first_or_404()
     path = os.path.join(EMPLOYEE_DOCS_DIR, doc.filename)
     from flask import send_file
