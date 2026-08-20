@@ -21250,7 +21250,7 @@ function empSwitchSub(sub) {
   }
   if (sub === 'payroll')   loadPayRunList();
   if (sub === 'employees') _empLoadEmployees();
-  if (sub === 'rules')     _empLoadPayRules();
+  if (sub === 'rules')     { _empLoadPayRules(); _empLoadLeavePolicies(); }
   if (sub === 'timesheets') {
     const m = document.getElementById('emp-ts-month');
     if (!m.value) {
@@ -22546,24 +22546,35 @@ async function _empLoadMyLeave() {
     EMP.myEmpId = me.id;
   }
   try {
-    const [lb, requests] = await Promise.all([
+    const [balances, requests] = await Promise.all([
       api(`/api/employees/${EMP.myEmpId}/leave_balance`),
       api(`/api/employees/${EMP.myEmpId}/leaves`),
     ]);
-    document.getElementById('tl-vac-remaining').textContent    = lb.vacation_remaining;
-    document.getElementById('tl-vac-used').textContent         = lb.vacation_used;
-    document.getElementById('tl-vac-entitlement').textContent  = lb.vacation_entitlement;
-    document.getElementById('tl-sick-used').textContent        = lb.sick_used;
+    const ann  = balances['annual']                || {};
+    const sick = balances['sick']                  || {};
+
+    document.getElementById('tl-vac-remaining').textContent   = ann.remaining  != null ? ann.remaining  : '—';
+    document.getElementById('tl-vac-used').textContent        = ann.used       != null ? ann.used       : '—';
+    document.getElementById('tl-vac-entitlement').textContent = ann.accrued    != null ? ann.accrued    : '—';
+    document.getElementById('tl-sick-used').textContent       = sick.used      != null ? sick.used      : '—';
+
+    const sickEl = document.getElementById('tl-sick-cycle');
+    if (sickEl) {
+      sickEl.textContent = sick.cycle_days != null
+        ? `${sick.remaining ?? 0} of ${sick.cycle_days} sick days remaining in ${sick.cycle_months}-month cycle`
+        : '';
+    }
 
     const tbody = document.getElementById('emp-my-leaves-tbody');
     tbody.innerHTML = requests.map(r => `
       <tr>
-        <td>${r.leave_type.replace('_',' ')}</td>
+        <td>${r.leave_type.replace(/_/g,' ')}</td>
         <td>${r.date_from}</td><td>${r.date_to}</td>
         <td>${r.days_requested}</td>
         <td>${r.reason || '—'}</td>
         <td><span class="badge ${r.status==='approved'?'bg-success':r.status==='rejected'?'bg-danger':'bg-warning text-dark'}">${r.status}</span></td>
-      </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-center">No leave requests yet</td></tr>';
+        <td>${r.status==='requested' ? `<button class="btn btn-xs btn-outline-danger" onclick="empTellerCancelLeave(${r.id})">Cancel</button>` : ''}</td>
+      </tr>`).join('') || '<tr><td colspan="7" class="text-muted text-center">No leave requests yet</td></tr>';
   } catch(e) { toast(e.message, 'danger'); }
 }
 
@@ -22621,5 +22632,159 @@ async function _empLoadMyPayslips() {
         <td><span class="pay-status-${r.status}">${r.status}</span></td>
         <td><button class="btn btn-xs btn-outline-secondary" onclick="empOpenPayslip(${EMP.myEmpId},${r.id})"><i class="bi bi-file-earmark-text me-1"></i>View</button></td>
       </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-center">No payslips yet</td></tr>';
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Leave Policies Admin ──────────────────────────────────────────────────────
+
+const _BUILTIN_LEAVE_TYPES = ['annual','sick','family_responsibility','unpaid'];
+
+async function _empLoadLeavePolicies() {
+  const body = document.getElementById('emp-leave-policies-body');
+  if (!body) return;
+  try {
+    const policies = await api('/api/employees/leave_policies');
+    const rows = policies.map(p => {
+      const isAnnual  = p.accrual_method === 'daily';
+      const isSick    = p.accrual_method === 'sick_cycle';
+      const isFixed   = p.accrual_method === 'fixed';
+      const isNone    = p.accrual_method === 'none';
+      const isBuiltin = _BUILTIN_LEAVE_TYPES.includes(p.leave_type);
+      return `
+      <div class="border-bottom p-3" data-lp-type="${p.leave_type}">
+        <div class="row g-2 align-items-end">
+          <div class="col-12 col-md-3">
+            <span class="fw-semibold">${p.label}</span>
+            <span class="badge bg-secondary ms-1 small">${p.accrual_method.replace(/_/g,' ')}</span>
+            ${!p.is_paid ? '<span class="badge bg-light text-dark ms-1 small">unpaid</span>' : ''}
+          </div>
+          ${(isAnnual || isFixed) ? `
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Days per year</label>
+            <input type="number" class="form-control form-control-sm lp-days-per-year" value="${p.days_per_year != null ? p.days_per_year : (isFixed ? 3 : 15)}" step="0.5" min="0">
+          </div>` : ''}
+          ${isAnnual ? `
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Max carry-over days</label>
+            <input type="number" class="form-control form-control-sm lp-carry-over" value="${p.carry_over_max != null ? p.carry_over_max : 0}" step="0.5" min="0">
+          </div>` : ''}
+          ${isSick ? `
+          <div class="col-4 col-md-2">
+            <label class="form-label small mb-1">Days in cycle</label>
+            <input type="number" class="form-control form-control-sm lp-cycle-days" value="${p.cycle_days != null ? p.cycle_days : 30}" step="0.5" min="0">
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small mb-1">Cycle length (months)</label>
+            <input type="number" class="form-control form-control-sm lp-cycle-months" value="${p.cycle_months != null ? p.cycle_months : 36}" min="1">
+          </div>
+          <div class="col-4 col-md-2">
+            <label class="form-label small mb-1">First period (months)</label>
+            <input type="number" class="form-control form-control-sm lp-first-months" value="${p.first_period_months != null ? p.first_period_months : 6}" min="0">
+          </div>` : ''}
+          ${!isNone ? `
+          <div class="col-6 col-md-2">
+            <label class="form-label small mb-1">Proof required after (days)</label>
+            <input type="number" class="form-control form-control-sm lp-proof-days" value="${p.requires_proof_after_days != null ? p.requires_proof_after_days : ''}" placeholder="None" min="1">
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-primary" onclick="empSaveLeavePolicyRow('${p.leave_type}', this)">Save</button>
+          </div>` : ''}
+          ${!isBuiltin ? `
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-danger" onclick="empDeleteLeavePolicy('${p.leave_type}')"><i class="bi bi-trash"></i></button>
+          </div>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+
+    body.innerHTML = rows + `
+      <div class="p-3 border-top">
+        <button class="btn btn-sm btn-outline-success" onclick="empShowAddLeavePolicyForm(this)">
+          <i class="bi bi-plus-lg me-1"></i>Add Leave Type
+        </button>
+        <div id="emp-lp-add-form" style="display:none" class="mt-2">
+          <div class="row g-2 align-items-end">
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-1">Slug (no spaces)</label>
+              <input type="text" id="lp-new-type" class="form-control form-control-sm" placeholder="e.g. study">
+            </div>
+            <div class="col-6 col-md-3">
+              <label class="form-label small mb-1">Label</label>
+              <input type="text" id="lp-new-label" class="form-control form-control-sm" placeholder="Study Leave">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-1">Accrual method</label>
+              <select id="lp-new-method" class="form-select form-select-sm">
+                <option value="daily">Daily (annual-style)</option>
+                <option value="fixed">Fixed per year</option>
+                <option value="sick_cycle">Sick cycle</option>
+                <option value="none">None (unlimited)</option>
+              </select>
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label small mb-1">Days per year</label>
+              <input type="number" id="lp-new-days" class="form-control form-control-sm" placeholder="0" step="0.5" min="0">
+            </div>
+            <div class="col-auto">
+              <button class="btn btn-sm btn-success" onclick="empAddLeavePolicy()">Add</button>
+              <button class="btn btn-sm btn-link text-muted" onclick="document.getElementById('emp-lp-add-form').style.display='none'">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function empShowAddLeavePolicyForm(btn) {
+  const form = document.getElementById('emp-lp-add-form');
+  if (form) { form.style.display = ''; document.getElementById('lp-new-type').focus(); }
+}
+
+async function empAddLeavePolicy() {
+  const leave_type = document.getElementById('lp-new-type').value.trim().replace(/\s+/g,'_').toLowerCase();
+  const label      = document.getElementById('lp-new-label').value.trim();
+  const method     = document.getElementById('lp-new-method').value;
+  const dpy        = parseFloat(document.getElementById('lp-new-days').value) || null;
+  if (!leave_type || !label) { toast('Slug and label are required', 'warning'); return; }
+  try {
+    await api('/api/employees/leave_policies', { method:'POST', body: JSON.stringify({ leave_type, label, accrual_method: method, days_per_year: dpy }) });
+    toast('Leave type added', 'success');
+    _empLoadLeavePolicies();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empSaveLeavePolicyRow(leaveType, btn) {
+  const row = btn.closest('[data-lp-type]');
+  const g = (cls) => { const el = row.querySelector(cls); return el ? el.value : undefined; };
+  const payload = {};
+  const dpy = g('.lp-days-per-year'); if (dpy !== undefined) payload.days_per_year             = parseFloat(dpy) || null;
+  const co  = g('.lp-carry-over');    if (co  !== undefined) payload.carry_over_max             = parseFloat(co)  || 0;
+  const cd  = g('.lp-cycle-days');    if (cd  !== undefined) payload.cycle_days                 = parseFloat(cd)  || null;
+  const cm  = g('.lp-cycle-months');  if (cm  !== undefined) payload.cycle_months               = parseInt(cm)    || null;
+  const fm  = g('.lp-first-months');  if (fm  !== undefined) payload.first_period_months        = parseInt(fm)    || null;
+  const pd  = g('.lp-proof-days');    if (pd  !== undefined) payload.requires_proof_after_days  = pd ? parseInt(pd) : null;
+  try {
+    await api(`/api/employees/leave_policies/${leaveType}`, { method:'PUT', body: JSON.stringify(payload) });
+    toast('Leave policy saved', 'success');
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empDeleteLeavePolicy(leaveType) {
+  if (!confirm(`Delete leave type "${leaveType}"? This cannot be undone.`)) return;
+  try {
+    await api(`/api/employees/leave_policies/${leaveType}`, { method:'DELETE' });
+    toast('Leave type deleted', 'success');
+    _empLoadLeavePolicies();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Teller: cancel leave request ─────────────────────────────────────────────
+
+async function empTellerCancelLeave(lid) {
+  if (!confirm('Cancel this leave request?')) return;
+  try {
+    await api(`/api/employees/${EMP.myEmpId}/leaves/${lid}`, { method:'DELETE' });
+    toast('Leave request cancelled', 'success');
+    _empLoadMyLeave();
   } catch(e) { toast(e.message, 'danger'); }
 }

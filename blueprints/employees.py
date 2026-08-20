@@ -69,7 +69,7 @@ from helpers import require_login, require_role, current_user, get_setting
 from models import (
     db, User, Setting,
     Employee, EmployeeDeduction, PayRule, EmployeeAttendance,
-    ShiftSchedule, LeaveRequest, LeaveBalance,
+    ShiftSchedule, LeaveRequest, LeaveBalance, LeavePolicy,
     EmployeeAdvance, EmployeeLoan, EmployeeDocument, PayRun,
 )
 
@@ -1039,6 +1039,119 @@ def api_schedule_delete(eid, sid):
     return jsonify({'ok': True})
 
 
+# ── Leave helpers ─────────────────────────────────────────────────────────────
+
+def _months_diff(d1, d2):
+    """Complete months between two dates (d1 <= d2)."""
+    return max(0, (d2.year - d1.year) * 12 + d2.month - d1.month)
+
+
+def _compute_leave_balance(emp, leave_type, as_of=None):
+    """
+    Compute accrued/used/remaining for one leave type.
+    Source of truth for 'used': approved LeaveRequests.
+    Returns dict with accrued, used, remaining, policy_label, accrual_method.
+    """
+    import calendar as _cal
+    if as_of is None:
+        as_of = date.today()
+
+    policy = LeavePolicy.query.filter_by(leave_type=leave_type).first()
+    if not policy:
+        return {'accrued': 0.0, 'used': 0.0, 'remaining': 0.0,
+                'policy_label': leave_type, 'accrual_method': 'none'}
+
+    # Used: sum approved requests
+    if leave_type in ('annual', 'family_responsibility'):
+        yr_start = date(as_of.year, 1, 1)
+        used_rows = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == emp.id,
+            LeaveRequest.leave_type  == leave_type,
+            LeaveRequest.status      == 'approved',
+            LeaveRequest.date_from   >= yr_start,
+            LeaveRequest.date_from   <= as_of,
+        ).all()
+    else:
+        used_rows = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == emp.id,
+            LeaveRequest.leave_type  == leave_type,
+            LeaveRequest.status      == 'approved',
+            LeaveRequest.date_from   <= as_of,
+        ).all()
+    used = float(sum(float(r.days_requested) for r in used_rows))
+
+    if policy.accrual_method == 'none':
+        return {'accrued': None, 'used': used, 'remaining': None,
+                'policy_label': policy.label, 'accrual_method': 'none'}
+
+    if policy.accrual_method == 'fixed':
+        accrued = float(policy.days_per_year or 0)
+        if emp.start_date and emp.start_date > as_of:
+            accrued = 0.0
+        result_accrued = round(accrued, 2)
+
+    elif policy.accrual_method == 'daily':
+        year = as_of.year
+        yr_start = date(year, 1, 1)
+        days_in_year = 366 if _cal.isleap(year) else 365
+        days_per_year = float(policy.days_per_year or 15)
+        earn_start = emp.start_date if (emp.start_date and emp.start_date >= yr_start) else yr_start
+        if emp.start_date is None or emp.start_date > as_of:
+            accrued_this_year = 0.0
+        else:
+            days_earned = max(0, (as_of - earn_start).days + 1)
+            accrued_this_year = days_per_year * days_earned / days_in_year
+        carry_over = 0.0
+        carry_over_max = float(policy.carry_over_max or 0)
+        if carry_over_max > 0 and emp.start_date and emp.start_date.year < year:
+            prev = _compute_leave_balance(emp, leave_type, date(year - 1, 12, 31))
+            carry_over = min(float(prev.get('remaining') or 0), carry_over_max)
+        result_accrued = round(accrued_this_year + carry_over, 2)
+
+    elif policy.accrual_method == 'sick_cycle':
+        if emp.start_date is None or emp.start_date > as_of:
+            result_accrued = 0.0
+        else:
+            months_employed = _months_diff(emp.start_date, as_of)
+            cycle_months  = int(policy.cycle_months or 36)
+            cycle_days    = float(policy.cycle_days or 30)
+            first_months  = int(policy.first_period_months or 6)
+            full_cycles   = months_employed // cycle_months
+            months_in_cur = months_employed % cycle_months
+            total = full_cycles * cycle_days
+            if months_in_cur >= first_months:
+                total += cycle_days
+            else:
+                if policy.first_period_per_26:
+                    # Approximate working days in first period of current cycle
+                    csm = full_cycles * cycle_months
+                    ys = emp.start_date.year + (emp.start_date.month - 1 + csm) // 12
+                    ms = (emp.start_date.month - 1 + csm) % 12 + 1
+                    cycle_start = date(ys, ms, min(emp.start_date.day, _cal.monthrange(ys, ms)[1]))
+                    days_in_period = max(0, (as_of - cycle_start).days)
+                    working_days = days_in_period * 5 / 7
+                    total += working_days / 26
+                else:
+                    total += cycle_days * months_in_cur / cycle_months
+            result_accrued = round(total, 2)
+    else:
+        result_accrued = 0.0
+
+    remaining = round(max(0.0, result_accrued - used), 2)
+    out = {
+        'accrued':        result_accrued,
+        'used':           round(used, 2),
+        'remaining':      remaining,
+        'policy_label':   policy.label,
+        'accrual_method': policy.accrual_method,
+        'days_per_year':  float(policy.days_per_year) if policy.days_per_year else None,
+    }
+    if policy.accrual_method == 'sick_cycle':
+        out['cycle_days']   = float(policy.cycle_days or 30)
+        out['cycle_months'] = int(policy.cycle_months or 36)
+    return out
+
+
 # ── Leave ─────────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/leaves', methods=['GET'])
@@ -1097,6 +1210,31 @@ def api_leaves_approve(eid, lid):
     req.status      = 'approved'
     req.approved_by = u.id if u else None
     req.approved_at = datetime.utcnow()
+
+    # For unpaid leave on salaried employees, auto-create attendance records
+    # so _calculate_pay_run deducts those days from gross pay.
+    policy = LeavePolicy.query.filter_by(leave_type=req.leave_type).first()
+    if policy and not policy.is_paid:
+        emp = Employee.query.get(eid)
+        current_day = req.date_from
+        while current_day <= req.date_to:
+            if current_day.weekday() < 5:  # Mon–Fri only
+                existing = EmployeeAttendance.query.filter_by(
+                    employee_id=eid, work_date=current_day
+                ).first()
+                if not existing:
+                    att = EmployeeAttendance(
+                        employee_id  = eid,
+                        work_date    = current_day,
+                        day_type     = 'unpaid_leave',
+                        hours_worked = Decimal('0'),
+                        start_time   = None,
+                        end_time     = None,
+                        notes        = f'Unpaid leave (auto)',
+                    )
+                    db.session.add(att)
+            current_day += timedelta(days=1)
+
     db.session.commit()
     return jsonify({'ok': True, 'status': 'approved'})
 
@@ -1540,27 +1678,104 @@ def api_leave_balance(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
         return err
-    year = request.args.get('year', type=int) or datetime.utcnow().year
-    year_start = date(year, 1, 1)
-    year_end   = date(year, 12, 31)
-    ytd_runs = PayRun.query.filter(
-        PayRun.employee_id == eid,
-        PayRun.status.in_(['approved', 'paid']),
-        PayRun.period_start >= year_start,
-        PayRun.period_end   <= year_end,
-    ).all()
-    hrs_per_day = float(emp.normal_hours_per_day) if float(emp.normal_hours_per_day or 0) > 0 else 8.0
-    ytd_vac_hrs  = sum(float(r.vacation_hours or 0) for r in ytd_runs)
-    ytd_sick_hrs = sum(float(r.sick_hours or 0)     for r in ytd_runs)
-    ytd_vac_days  = round(ytd_vac_hrs  / hrs_per_day, 2)
-    ytd_sick_days = round(ytd_sick_hrs / hrs_per_day, 2)
-    entitlement   = float(emp.leave_days_per_year or 0)
-    return jsonify({
-        'vacation_entitlement': entitlement,
-        'vacation_used':        ytd_vac_days,
-        'vacation_remaining':   round(max(0.0, entitlement - ytd_vac_days), 2),
-        'sick_used':            ytd_sick_days,
-    })
+    as_of    = date.today()
+    policies = LeavePolicy.query.order_by(LeavePolicy.sort_order).all()
+    result   = {}
+    for p in policies:
+        result[p.leave_type] = _compute_leave_balance(emp, p.leave_type, as_of)
+    return jsonify(result)
+
+
+@bp.route('/api/employees/leave_policies', methods=['GET'])
+def api_leave_policies_list():
+    if not require_login():
+        return jsonify({'error': 'Login required'}), 401
+    policies = LeavePolicy.query.order_by(LeavePolicy.sort_order).all()
+    return jsonify([{
+        'leave_type':                p.leave_type,
+        'label':                     p.label,
+        'accrual_method':            p.accrual_method,
+        'days_per_year':             float(p.days_per_year) if p.days_per_year else None,
+        'carry_over_max':            float(p.carry_over_max),
+        'cycle_days':                float(p.cycle_days) if p.cycle_days else None,
+        'cycle_months':              p.cycle_months,
+        'first_period_months':       p.first_period_months,
+        'first_period_per_26':       p.first_period_per_26,
+        'requires_proof_after_days': p.requires_proof_after_days,
+        'is_paid':                   p.is_paid,
+        'sort_order':                p.sort_order,
+    } for p in policies])
+
+
+@bp.route('/api/employees/leave_policies/<leave_type>', methods=['PUT'])
+def api_leave_policy_update(leave_type):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    p = LeavePolicy.query.filter_by(leave_type=leave_type).first_or_404()
+    d = request.json or {}
+    if 'label'                     in d: p.label                     = d['label']
+    if 'days_per_year'             in d: p.days_per_year             = d['days_per_year']
+    if 'carry_over_max'            in d: p.carry_over_max            = d['carry_over_max']
+    if 'cycle_days'                in d: p.cycle_days                = d['cycle_days']
+    if 'cycle_months'              in d: p.cycle_months              = d['cycle_months']
+    if 'first_period_months'       in d: p.first_period_months       = d['first_period_months']
+    if 'first_period_per_26'       in d: p.first_period_per_26       = bool(d['first_period_per_26'])
+    if 'requires_proof_after_days' in d: p.requires_proof_after_days = d['requires_proof_after_days']
+    if 'is_paid'                   in d: p.is_paid                   = bool(d['is_paid'])
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+_BUILTIN_LEAVE_TYPES = {'annual', 'sick', 'family_responsibility', 'unpaid'}
+
+
+@bp.route('/api/employees/leave_policies', methods=['POST'])
+def api_leave_policy_create():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    d = request.json or {}
+    leave_type = (d.get('leave_type') or '').strip().lower().replace(' ', '_')
+    label      = (d.get('label') or '').strip()
+    if not leave_type or not label:
+        return jsonify({'error': 'leave_type and label are required'}), 400
+    if LeavePolicy.query.filter_by(leave_type=leave_type).first():
+        return jsonify({'error': f'Leave type "{leave_type}" already exists'}), 409
+    p = LeavePolicy(
+        leave_type     = leave_type,
+        label          = label,
+        accrual_method = d.get('accrual_method', 'fixed'),
+        days_per_year  = d.get('days_per_year'),
+        is_paid        = bool(d.get('is_paid', True)),
+        sort_order     = 99,
+    )
+    db.session.add(p)
+    db.session.commit()
+    return jsonify({'ok': True, 'leave_type': leave_type}), 201
+
+
+@bp.route('/api/employees/leave_policies/<leave_type>', methods=['DELETE'])
+def api_leave_policy_delete(leave_type):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    if leave_type in _BUILTIN_LEAVE_TYPES:
+        return jsonify({'error': 'Built-in leave types cannot be deleted'}), 400
+    p = LeavePolicy.query.filter_by(leave_type=leave_type).first_or_404()
+    db.session.delete(p)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/employees/<int:eid>/leaves/<int:lid>', methods=['DELETE'])
+def api_leaves_cancel(eid, lid):
+    emp, is_own, err = _own_or_admin(eid)
+    if err:
+        return err
+    req = LeaveRequest.query.filter_by(id=lid, employee_id=eid).first_or_404()
+    if req.status != 'requested':
+        return jsonify({'error': 'Only pending requests can be cancelled'}), 400
+    db.session.delete(req)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/payslip', methods=['GET'])

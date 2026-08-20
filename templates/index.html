@@ -2947,6 +2947,16 @@
 
         <!-- PAY RULES sub-tab -->
         <div id="emp-sub-rules" style="display:none">
+          <!-- Leave policies -->
+          <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center py-2">
+              <span class="fw-semibold small"><i class="bi bi-calendar-heart me-1"></i>Leave Policies</span>
+              <button class="btn btn-xs btn-outline-secondary" onclick="_empLoadLeavePolicies()"><i class="bi bi-arrow-clockwise"></i></button>
+            </div>
+            <div class="card-body p-0" id="emp-leave-policies-body">
+              <p class="text-muted small p-3 mb-0">Loading…</p>
+            </div>
+          </div>
           <p class="text-muted small mb-3">Multipliers applied when calculating pay. Change these if legislation or contracts change — no code edit needed.</p>
           <table class="table table-sm table-hover">
             <thead class="table-light"><tr><th>Day Type</th><th>Label</th><th>Multiplier</th><th>Paid?</th><th>Description</th><th></th></tr></thead>
@@ -3011,6 +3021,7 @@
                   <div class="small text-muted">this year</div>
                 </div>
               </div>
+              <div class="col-12"><p id="tl-sick-cycle" class="text-muted small mt-1 mb-0"></p></div>
             </div>
 
             <!-- Apply for leave -->
@@ -4766,7 +4777,7 @@
 </script>
 <script async src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260820-emp5"></script>
+<script src="/static/main.js?v=20260820-emp6"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">

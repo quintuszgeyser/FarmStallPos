@@ -2206,6 +2206,42 @@ def strong_migrate():
             )
         """)
         conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS leave_policies (
+              id                    SERIAL PRIMARY KEY,
+              leave_type            VARCHAR(30) NOT NULL UNIQUE,
+              label                 VARCHAR(80) NOT NULL,
+              accrual_method        VARCHAR(30) NOT NULL DEFAULT 'daily',
+              days_per_year         NUMERIC(5,2),
+              carry_over_max        NUMERIC(5,2) NOT NULL DEFAULT 0,
+              cycle_days            NUMERIC(5,2),
+              cycle_months          INTEGER,
+              first_period_months   INTEGER,
+              first_period_per_26   BOOLEAN NOT NULL DEFAULT true,
+              requires_proof_after_days INTEGER,
+              is_paid               BOOLEAN NOT NULL DEFAULT true,
+              sort_order            INTEGER NOT NULL DEFAULT 0
+            )
+        """)
+        conn.exec_driver_sql("""
+            INSERT INTO leave_policies (leave_type, label, accrual_method, days_per_year,
+                carry_over_max, cycle_days, cycle_months, first_period_months,
+                first_period_per_26, requires_proof_after_days, is_paid, sort_order)
+            SELECT v.leave_type, v.label, v.accrual_method,
+                   v.days_per_year::NUMERIC, v.carry_over_max::NUMERIC,
+                   v.cycle_days::NUMERIC, v.cycle_months::INTEGER, v.first_period_months::INTEGER,
+                   v.first_period_per_26::BOOLEAN, v.requires_proof_after_days::INTEGER,
+                   v.is_paid::BOOLEAN, v.sort_order::INTEGER
+            FROM (VALUES
+              ('annual',                'Annual Leave',                'daily',      '15',  '0',  NULL, NULL, NULL, 'true',  NULL, 'true',  '1'),
+              ('sick',                  'Sick Leave',                  'sick_cycle', NULL,  '0',  '30', '36', '6',  'true',  '2',  'true',  '2'),
+              ('family_responsibility', 'Family Responsibility Leave', 'fixed',      '3',   '0',  NULL, NULL, NULL, 'true',  NULL, 'true',  '3'),
+              ('unpaid',                'Unpaid Leave',                'none',       NULL,  '0',  NULL, NULL, NULL, 'true',  NULL, 'false', '4')
+            ) AS v(leave_type, label, accrual_method, days_per_year, carry_over_max,
+                   cycle_days, cycle_months, first_period_months, first_period_per_26,
+                   requires_proof_after_days, is_paid, sort_order)
+            WHERE NOT EXISTS (SELECT 1 FROM leave_policies LIMIT 1)
+        """)
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS employee_advances (
               id          SERIAL PRIMARY KEY,
               employee_id INTEGER NOT NULL REFERENCES employees(id),

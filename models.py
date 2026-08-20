@@ -1024,6 +1024,28 @@ class LeaveBalance(db.Model):
                                           name='uq_leave_balance'),)
 
 
+class LeavePolicy(db.Model):
+    """Configurable leave rules per leave type."""
+    __tablename__ = 'leave_policies'
+    id                  = db.Column(db.Integer, primary_key=True)
+    leave_type          = db.Column(db.String(30), nullable=False, unique=True)
+    label               = db.Column(db.String(80), nullable=False)
+    accrual_method      = db.Column(db.String(30), nullable=False, default='daily')
+    # 'daily'      — annual: accrues daily from start date
+    # 'sick_cycle' — 30d per 36-month cycle, prorated first 6 months
+    # 'fixed'      — family responsibility: lump sum each year
+    # 'none'       — unpaid: no balance tracked
+    days_per_year       = db.Column(Numeric(5, 2), nullable=True)
+    carry_over_max      = db.Column(Numeric(5, 2), nullable=False, default=0, server_default='0')
+    cycle_days          = db.Column(Numeric(5, 2), nullable=True)
+    cycle_months        = db.Column(db.Integer, nullable=True)
+    first_period_months = db.Column(db.Integer, nullable=True)
+    first_period_per_26 = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    requires_proof_after_days = db.Column(db.Integer, nullable=True)
+    is_paid             = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
+    sort_order          = db.Column(db.Integer, nullable=False, default=0, server_default='0')
+
+
 class EmployeeAdvance(db.Model):
     """Cash advances — auto-deducted from next pay run."""
     __tablename__ = 'employee_advances'
