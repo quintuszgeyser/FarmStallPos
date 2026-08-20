@@ -9985,12 +9985,14 @@ function _redrawDailyWithForecast() {
   const filterStart = document.getElementById('stats-start')?.value || todayStr;
   const filterEnd   = document.getElementById('stats-end')?.value   || todayStr;
 
-  // Build full date range for the filter period
+  // Build full date range for the filter period.
+  // Use local-date formatting (not toISOString which shifts to UTC and breaks in UTC+2).
+  const _localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   const allDatesInRange = [];
   let _d = new Date(filterStart + 'T00:00:00');
   const _end = new Date(filterEnd + 'T00:00:00');
   while (_d <= _end) {
-    allDatesInRange.push(_d.toISOString().slice(0, 10));
+    allDatesInRange.push(_localISO(_d));
     _d.setDate(_d.getDate() + 1);
   }
 
