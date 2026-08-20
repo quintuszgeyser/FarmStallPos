@@ -22371,10 +22371,13 @@ async function loadLeavesList() {
 
   const empId = document.getElementById('emp-fin-leave-emp').value;
   const tbody = document.getElementById('emp-leaves-tbody');
+  const entPanel = document.getElementById('emp-leave-entitlement-panel');
   if (!empId) {
     if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center small">Select an employee above to view their leave history</td></tr>';
+    if (entPanel) entPanel.style.display = 'none';
     return;
   }
+  empLoadLeaveEntitlements(parseInt(empId));
   try {
     const rows = await api(`/api/employees/${empId}/leaves`);
     tbody.innerHTML = rows.map(l => `
@@ -22469,6 +22472,110 @@ async function empRejectLeave(empId, lid) {
     await api(`/api/employees/${empId}/leaves/${lid}/reject`, { method:'PUT', body: JSON.stringify({ reason }) });
     toast('Leave rejected', 'success');
     loadLeavesList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// ── Leave Adjustments (Award Leave / Entitlements) ────────────────────────────
+
+async function empOpenAwardLeaveModal() {
+  // Populate employee dropdown
+  const empSel = document.getElementById('emp-award-emp');
+  if (empSel) {
+    empSel.innerHTML = '<option value="">— Select Employee —</option>' +
+      (EMP.employees || []).map(e => `<option value="${e.id}">${e.name}</option>`).join('');
+  }
+  // Populate leave type dropdown from policies
+  const typeSel = document.getElementById('emp-award-type');
+  if (typeSel) {
+    try {
+      const policies = await api('/api/employees/leave_policies');
+      typeSel.innerHTML = policies.map(p => `<option value="${p.leave_type}">${p.label}</option>`).join('');
+    } catch(e) { toast(e.message, 'danger'); return; }
+  }
+  // Pre-select currently viewed employee
+  const selEmp = document.getElementById('emp-fin-leave-emp')?.value;
+  if (selEmp && empSel) empSel.value = selEmp;
+  const modal = new bootstrap.Modal(document.getElementById('empAwardLeaveModal'));
+  modal.show();
+}
+
+async function empSaveAwardLeave() {
+  const empId = document.getElementById('emp-award-emp')?.value;
+  const leaveType = document.getElementById('emp-award-type')?.value;
+  const days = parseFloat(document.getElementById('emp-award-days')?.value) || 0;
+  const year = document.getElementById('emp-award-year')?.value || null;
+  const reason = document.getElementById('emp-award-reason')?.value || '';
+  if (!empId || !leaveType || !days) { toast('Employee, leave type and days are required', 'warning'); return; }
+  try {
+    await api(`/api/employees/${empId}/leave_adjustments`, {
+      method: 'POST',
+      body: JSON.stringify({ leave_type: leaveType, adjustment_days: days, year: year ? parseInt(year) : null, reason })
+    });
+    toast('Leave awarded', 'success');
+    bootstrap.Modal.getInstance(document.getElementById('empAwardLeaveModal'))?.hide();
+    // Reload entitlement panel if this employee is currently selected
+    const selEmp = document.getElementById('emp-fin-leave-emp')?.value;
+    if (selEmp && parseInt(selEmp) === parseInt(empId)) empLoadLeaveEntitlements(parseInt(empId));
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function empLoadLeaveEntitlements(empId) {
+  const panel = document.getElementById('emp-leave-entitlement-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  try {
+    const [adjustments, balance] = await Promise.all([
+      api(`/api/employees/${empId}/leave_adjustments`),
+      api(`/api/employees/${empId}/leave_balance`)
+    ]);
+    const types = Object.keys(balance);
+    const balanceHtml = types.map(t => {
+      const b = balance[t];
+      const overrideTag = b.days_per_year_is_override ? ' <span class="badge bg-info text-dark ms-1" title="Employee override">custom</span>' : '';
+      return `<tr>
+        <td>${b.policy_label || t}</td>
+        <td>${b.accrued != null ? b.accrued.toFixed(2) : '—'}</td>
+        <td>${b.used != null ? b.used.toFixed(2) : '—'}</td>
+        <td class="fw-bold ${(b.remaining||0)>=0?'text-success':'text-danger'}">${b.remaining != null ? b.remaining.toFixed(2) : '—'}</td>
+        <td>${b.adjustment_total ? (b.adjustment_total>0?'+':'')+b.adjustment_total.toFixed(2) : '—'}</td>
+        <td>${b.days_per_year != null ? b.days_per_year+'/yr'+overrideTag : '—'}</td>
+      </tr>`;
+    }).join('');
+
+    const adjustHtml = adjustments.length ? adjustments.map(a => `
+      <tr>
+        <td>${a.leave_type}</td>
+        <td class="${a.adjustment_days>=0?'text-success':'text-danger'}">${a.adjustment_days>=0?'+':''}${a.adjustment_days}</td>
+        <td>${a.year || 'Every year'}</td>
+        <td>${a.reason || '—'}</td>
+        <td>${a.created_by_name || '—'}</td>
+        <td>
+          <button class="btn btn-xs btn-outline-danger" onclick="empDeleteLeaveAdjustment(${empId},${a.id})">
+            <i class="bi bi-trash"></i>
+          </button>
+        </td>
+      </tr>`).join('') : '<tr><td colspan="6" class="text-muted text-center">No adjustments</td></tr>';
+
+    panel.innerHTML = `
+      <h6 class="mt-3">Leave Balances</h6>
+      <table class="table table-sm table-bordered">
+        <thead><tr><th>Type</th><th>Accrued</th><th>Used</th><th>Remaining</th><th>Adjustments</th><th>Entitlement</th></tr></thead>
+        <tbody>${balanceHtml}</tbody>
+      </table>
+      <h6 class="mt-3">Leave Adjustments / Awards</h6>
+      <table class="table table-sm table-bordered">
+        <thead><tr><th>Type</th><th>Days</th><th>Year</th><th>Reason</th><th>By</th><th></th></tr></thead>
+        <tbody>${adjustHtml}</tbody>
+      </table>`;
+  } catch(e) { panel.innerHTML = `<p class="text-danger">${e.message}</p>`; }
+}
+
+async function empDeleteLeaveAdjustment(empId, adjId) {
+  if (!confirm('Delete this leave adjustment?')) return;
+  try {
+    await api(`/api/employees/${empId}/leave_adjustments/${adjId}`, { method: 'DELETE' });
+    toast('Adjustment deleted', 'success');
+    empLoadLeaveEntitlements(empId);
   } catch(e) { toast(e.message, 'danger'); }
 }
 

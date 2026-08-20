@@ -70,6 +70,7 @@ from models import (
     db, User, Setting,
     Employee, EmployeeDeduction, PayRule, EmployeeAttendance,
     ShiftSchedule, LeaveRequest, LeaveBalance, LeavePolicy,
+    EmployeeLeaveAdjustment,
     EmployeeAdvance, EmployeeLoan, EmployeeDocument, PayRun,
 )
 
@@ -1094,7 +1095,9 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
         year = as_of.year
         yr_start = date(year, 1, 1)
         days_in_year = 366 if _cal.isleap(year) else 365
-        days_per_year = float(policy.days_per_year or 15)
+        # Per-employee entitlement overrides the global policy
+        emp_override = float(emp.leave_days_per_year) if emp.leave_days_per_year and float(emp.leave_days_per_year) > 0 else None
+        days_per_year = emp_override if emp_override is not None else float(policy.days_per_year or 15)
         earn_start = emp.start_date if (emp.start_date and emp.start_date >= yr_start) else yr_start
         if emp.start_date is None or emp.start_date > as_of:
             accrued_this_year = 0.0
@@ -1137,14 +1140,37 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
     else:
         result_accrued = 0.0
 
+    # ── Add leave adjustments (admin awards / deductions) ─────────────────────
+    if policy.accrual_method != 'none':
+        adj_filter = [
+            EmployeeLeaveAdjustment.employee_id == emp.id,
+            EmployeeLeaveAdjustment.leave_type  == leave_type,
+        ]
+        if policy.accrual_method == 'daily':
+            # Year-scoped: apply adjustments with year=NULL or year=this year
+            adj_filter.append(
+                db.or_(EmployeeLeaveAdjustment.year == None,
+                       EmployeeLeaveAdjustment.year == as_of.year)
+            )
+        # sick_cycle and fixed: apply all adjustments (permanent modifiers)
+        adj_rows = EmployeeLeaveAdjustment.query.filter(*adj_filter).all()
+        adjustment_total = float(sum(float(a.adjustment_days) for a in adj_rows))
+        result_accrued = round(result_accrued + adjustment_total, 2)
+    else:
+        adj_rows = []
+        adjustment_total = 0.0
+
     remaining = round(max(0.0, result_accrued - used), 2)
+    emp_days_override = float(emp.leave_days_per_year) if policy.accrual_method == 'daily' and emp.leave_days_per_year and float(emp.leave_days_per_year) > 0 else None
     out = {
-        'accrued':        result_accrued,
-        'used':           round(used, 2),
-        'remaining':      remaining,
-        'policy_label':   policy.label,
-        'accrual_method': policy.accrual_method,
-        'days_per_year':  float(policy.days_per_year) if policy.days_per_year else None,
+        'accrued':            result_accrued,
+        'used':               round(used, 2),
+        'remaining':          remaining,
+        'adjustment_total':   round(adjustment_total, 2),
+        'policy_label':       policy.label,
+        'accrual_method':     policy.accrual_method,
+        'days_per_year':      emp_days_override if emp_days_override else (float(policy.days_per_year) if policy.days_per_year else None),
+        'days_per_year_is_override': emp_days_override is not None,
     }
     if policy.accrual_method == 'sick_cycle':
         out['cycle_days']   = float(policy.cycle_days or 30)
@@ -1774,6 +1800,59 @@ def api_leaves_cancel(eid, lid):
     if req.status != 'requested':
         return jsonify({'error': 'Only pending requests can be cancelled'}), 400
     db.session.delete(req)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+# ── Leave Adjustments (per-employee bonus/deduction days) ─────────────────────
+
+@bp.route('/api/employees/<int:eid>/leave_adjustments', methods=['GET'])
+def api_leave_adjustments_list(eid):
+    emp, is_own, err = _own_or_admin(eid)
+    if err:
+        return err
+    rows = EmployeeLeaveAdjustment.query.filter_by(employee_id=eid).order_by(
+        EmployeeLeaveAdjustment.created_at.desc()).all()
+    return jsonify([{
+        'id':              r.id,
+        'leave_type':      r.leave_type,
+        'adjustment_days': float(r.adjustment_days),
+        'year':            r.year,
+        'reason':          r.reason,
+        'created_at':      r.created_at.isoformat(),
+    } for r in rows])
+
+
+@bp.route('/api/employees/<int:eid>/leave_adjustments', methods=['POST'])
+def api_leave_adjustments_create(eid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    emp = Employee.query.get_or_404(eid)
+    d   = request.json or {}
+    try:
+        days = Decimal(str(d['adjustment_days']))
+    except (KeyError, Exception):
+        return jsonify({'error': 'adjustment_days required'}), 400
+    u = current_user()
+    adj = EmployeeLeaveAdjustment(
+        employee_id     = eid,
+        leave_type      = d.get('leave_type', 'annual'),
+        adjustment_days = days,
+        year            = int(d['year']) if d.get('year') else None,
+        reason          = (d.get('reason') or '').strip() or None,
+        created_by      = u.id if u else None,
+    )
+    db.session.add(adj)
+    db.session.commit()
+    return jsonify({'id': adj.id}), 201
+
+
+@bp.route('/api/employees/<int:eid>/leave_adjustments/<int:aid>', methods=['DELETE'])
+def api_leave_adjustments_delete(eid, aid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    adj = EmployeeLeaveAdjustment.query.filter_by(id=aid, employee_id=eid).first_or_404()
+    db.session.delete(adj)
     db.session.commit()
     return jsonify({'ok': True})
 

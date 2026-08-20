@@ -2242,6 +2242,19 @@ def strong_migrate():
             WHERE NOT EXISTS (SELECT 1 FROM leave_policies LIMIT 1)
         """)
         conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS employee_leave_adjustments (
+              id              SERIAL PRIMARY KEY,
+              employee_id     INTEGER NOT NULL REFERENCES employees(id),
+              leave_type      VARCHAR(30) NOT NULL,
+              adjustment_days NUMERIC(5,2) NOT NULL,
+              year            INTEGER,
+              reason          VARCHAR(200),
+              created_by      INTEGER REFERENCES users(id),
+              created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+            )
+        """)
+        conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_leave_adj ON employee_leave_adjustments(employee_id)")
+        conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS employee_advances (
               id          SERIAL PRIMARY KEY,
               employee_id INTEGER NOT NULL REFERENCES employees(id),

@@ -1024,6 +1024,19 @@ class LeaveBalance(db.Model):
                                           name='uq_leave_balance'),)
 
 
+class EmployeeLeaveAdjustment(db.Model):
+    """Admin-awarded bonus days or entitlement overrides per employee per leave type."""
+    __tablename__ = 'employee_leave_adjustments'
+    id              = db.Column(db.Integer, primary_key=True)
+    employee_id     = db.Column(db.Integer, db.ForeignKey('employees.id'), nullable=False, index=True)
+    leave_type      = db.Column(db.String(30), nullable=False)
+    adjustment_days = db.Column(Numeric(5, 2), nullable=False)  # positive=award, negative=deduct
+    year            = db.Column(db.Integer, nullable=True)  # NULL=every year; set=one-off for that year
+    reason          = db.Column(db.String(200), nullable=True)
+    created_by      = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class LeavePolicy(db.Model):
     """Configurable leave rules per leave type."""
     __tablename__ = 'leave_policies'
