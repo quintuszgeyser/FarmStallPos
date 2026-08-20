@@ -21406,9 +21406,9 @@ function _renderAllEmployeesGrid(data) {
         const onclick = `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
         html += `<td class="att-cell-${rec.day_type}" style="cursor:pointer;text-align:center;padding:2px 3px" ${onclick}${src}>${hStr}</td>`;
       } else if (isHol) {
-        html += `<td class="att-cell-public_holiday" style="text-align:center;font-size:9px">PH</td>`;
+        html += `<td class="att-cell-public_holiday" style="cursor:pointer;text-align:center;font-size:9px" onclick="empOpenAttendanceForDate('${ds}', ${emp.id})" title="Public holiday — click to add hours">PH</td>`;
       } else if (dow === 0) {
-        html += `<td class="att-cell-sunday" style="text-align:center;font-size:9px">Sun</td>`;
+        html += `<td class="att-cell-sunday" style="cursor:pointer;text-align:center;font-size:9px" onclick="empOpenAttendanceForDate('${ds}', ${emp.id})" title="Sunday — click to add hours">Sun</td>`;
       } else {
         const onclick = `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
         html += `<td class="att-cell-empty" style="cursor:pointer;text-align:center" ${onclick}>—</td>`;
