@@ -1672,6 +1672,46 @@ def api_pay_rules_update(rid):
     return jsonify({'ok': True})
 
 
+# ── Password verification (teller self-service gate) ─────────────────────────
+
+@bp.route('/api/employees/me/verify_password', methods=['POST'])
+def api_verify_password():
+    u = current_user()
+    if not u:
+        return jsonify({'error': 'Login required'}), 401
+    from werkzeug.security import check_password_hash
+    pw = (request.json or {}).get('password', '')
+    ok = check_password_hash(u.password_hash, pw)
+    return jsonify({'ok': ok})
+
+
+# ── Pending leave requests (admin overview) ───────────────────────────────────
+
+@bp.route('/api/employees/leaves/pending', methods=['GET'])
+def api_leaves_pending():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    rows = (LeaveRequest.query
+            .filter_by(status='requested')
+            .order_by(LeaveRequest.created_at.desc())
+            .all())
+    result = []
+    for r in rows:
+        emp = Employee.query.get(r.employee_id)
+        result.append({
+            'id':            r.id,
+            'employee_id':   r.employee_id,
+            'employee_name': emp.name if emp else '?',
+            'leave_type':    r.leave_type,
+            'date_from':     r.date_from.isoformat(),
+            'date_to':       r.date_to.isoformat(),
+            'days_requested':float(r.days_requested),
+            'reason':        r.reason,
+            'created_at':    r.created_at.isoformat(),
+        })
+    return jsonify(result)
+
+
 # ── Me (teller: find own employee record) ────────────────────────────────────
 
 @bp.route('/api/employees/me', methods=['GET'])

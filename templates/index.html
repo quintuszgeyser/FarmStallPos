@@ -2925,9 +2925,20 @@
             <tbody id="emp-loans-tbody"></tbody></table>
           </div>
           <div id="emp-fin-leaves" style="display:none">
-            <div class="d-flex justify-content-between mb-2">
-              <select id="emp-fin-leave-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadLeavesList()"></select>
-              <button class="btn btn-sm btn-primary" onclick="empOpenLeaveModal()"><i class="bi bi-plus-lg me-1"></i>Request Leave</button>
+            <!-- Pending leave requests from employees -->
+            <div id="emp-pending-leaves-section" class="mb-3" style="display:none">
+              <div class="d-flex align-items-center mb-1 gap-2">
+                <span class="fw-semibold small"><i class="bi bi-hourglass-split me-1 text-warning"></i>Pending Requests</span>
+                <span id="emp-pending-count" class="badge bg-warning text-dark">0</span>
+              </div>
+              <table class="table table-sm table-warning">
+                <thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th></th></tr></thead>
+                <tbody id="emp-pending-leaves-tbody"></tbody>
+              </table>
+            </div>
+            <div class="d-flex justify-content-between mb-2 align-items-center">
+              <select id="emp-fin-leave-emp" class="form-select form-select-sm" style="max-width:220px" onchange="loadLeavesList()"><option value="">— All / Select employee —</option></select>
+              <button class="btn btn-sm btn-primary" onclick="empOpenLeaveModal()"><i class="bi bi-plus-lg me-1"></i>Record Leave</button>
             </div>
             <table class="table table-sm"><thead class="table-light"><tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th><th></th></tr></thead>
             <tbody id="emp-leaves-tbody"></tbody></table>
@@ -2944,14 +2955,113 @@
         </div>
       </div><!-- /emp-admin-view -->
 
-      <!-- ── TELLER VIEW: own payslips only ── -->
+      <!-- ── TELLER VIEW ── -->
       <div id="emp-teller-view" class="teller-only">
-        <h5 class="mb-3"><i class="bi bi-file-earmark-text me-2"></i>My Payslips</h5>
-        <p class="text-muted small mb-3">Your pay runs are listed below. Click View to open a printable payslip.</p>
-        <table class="table table-sm table-hover">
-          <thead class="table-light"><tr><th>Period</th><th>Pay Date</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr></thead>
-          <tbody id="emp-my-payslips-tbody"></tbody>
-        </table>
+
+        <!-- Password gate -->
+        <div id="emp-teller-gate">
+          <div class="card mx-auto mt-4" style="max-width:360px">
+            <div class="card-body text-center py-4">
+              <i class="bi bi-shield-lock" style="font-size:2.5rem;color:#6c757d"></i>
+              <h6 class="mt-3 mb-1">Confirm your password</h6>
+              <p class="text-muted small mb-3">Enter your password to view your employee info.</p>
+              <input type="password" id="emp-teller-pw" class="form-control mb-2" placeholder="Password" onkeydown="if(event.key==='Enter')empTellerUnlock()">
+              <button class="btn btn-primary w-100" onclick="empTellerUnlock()"><i class="bi bi-unlock me-1"></i>Unlock</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Unlocked content -->
+        <div id="emp-teller-content" style="display:none">
+          <ul class="nav nav-tabs mb-3" id="emp-teller-tabs">
+            <li class="nav-item"><a class="nav-link active" href="#" data-teller-tab="payslips" onclick="empTellerSwitchTab('payslips');return false"><i class="bi bi-file-earmark-text me-1"></i>My Payslips</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" data-teller-tab="leave" onclick="empTellerSwitchTab('leave');return false"><i class="bi bi-calendar-heart me-1"></i>Leave</a></li>
+          </ul>
+
+          <!-- Payslips tab -->
+          <div id="emp-teller-payslips">
+            <table class="table table-sm table-hover">
+              <thead class="table-light"><tr><th>Period</th><th>Pay Date</th><th>Gross</th><th>Net</th><th>Status</th><th></th></tr></thead>
+              <tbody id="emp-my-payslips-tbody"></tbody>
+            </table>
+          </div>
+
+          <!-- Leave tab -->
+          <div id="emp-teller-leave" style="display:none">
+            <!-- Leave balance -->
+            <div id="emp-teller-leave-balance" class="row g-3 mb-4">
+              <div class="col-6 col-md-3">
+                <div class="card text-center py-2 px-1">
+                  <div class="small text-muted">Annual Leave</div>
+                  <div id="tl-vac-remaining" class="fw-bold fs-5 text-success">—</div>
+                  <div class="small text-muted">days remaining</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="card text-center py-2 px-1">
+                  <div class="small text-muted">Used This Year</div>
+                  <div id="tl-vac-used" class="fw-bold fs-5">—</div>
+                  <div class="small text-muted">of <span id="tl-vac-entitlement">—</span> days</div>
+                </div>
+              </div>
+              <div class="col-6 col-md-3">
+                <div class="card text-center py-2 px-1">
+                  <div class="small text-muted">Sick Days Used</div>
+                  <div id="tl-sick-used" class="fw-bold fs-5 text-warning">—</div>
+                  <div class="small text-muted">this year</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Apply for leave -->
+            <h6 class="mb-2"><i class="bi bi-send me-1"></i>Apply for Leave</h6>
+            <div class="card mb-4">
+              <div class="card-body">
+                <div class="row g-2">
+                  <div class="col-6 col-md-3">
+                    <label class="form-label small mb-1">Leave Type</label>
+                    <select id="tl-type" class="form-select form-select-sm">
+                      <option value="annual">Annual Leave</option>
+                      <option value="sick">Sick Leave</option>
+                      <option value="family_responsibility">Family Responsibility</option>
+                      <option value="unpaid">Unpaid Leave</option>
+                    </select>
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <label class="form-label small mb-1">From</label>
+                    <input type="date" id="tl-from" class="form-control form-control-sm" onchange="empTellerCalcDays()">
+                  </div>
+                  <div class="col-6 col-md-2">
+                    <label class="form-label small mb-1">To</label>
+                    <input type="date" id="tl-to" class="form-control form-control-sm" onchange="empTellerCalcDays()">
+                  </div>
+                  <div class="col-6 col-md-1">
+                    <label class="form-label small mb-1">Days</label>
+                    <input type="number" id="tl-days" class="form-control form-control-sm" min="0.5" step="0.5" readonly>
+                  </div>
+                  <div class="col-12 col-md-4">
+                    <label class="form-label small mb-1">Reason (optional)</label>
+                    <div class="input-group input-group-sm">
+                      <input type="text" id="tl-reason" class="form-control" placeholder="Reason">
+                      <button class="btn btn-primary" onclick="empTellerSubmitLeave()"><i class="bi bi-send me-1"></i>Submit</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Request history -->
+            <h6 class="mb-2"><i class="bi bi-clock-history me-1"></i>My Requests</h6>
+            <table class="table table-sm table-hover">
+              <thead class="table-light">
+                <tr><th>Type</th><th>From</th><th>To</th><th>Days</th><th>Reason</th><th>Status</th></tr>
+              </thead>
+              <tbody id="emp-my-leaves-tbody">
+                <tr><td colspan="6" class="text-muted text-center">Loading...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
     </div><!-- /employees tab-pane -->
@@ -4656,7 +4766,7 @@
 </script>
 <script async src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260820-emp4"></script>
+<script src="/static/main.js?v=20260820-emp5"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">

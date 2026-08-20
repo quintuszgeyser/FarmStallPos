@@ -21182,6 +21182,8 @@ const EMP = {
   tsCalendarData: {},  // attendance keyed by date for current calendar view (single-employee)
   allGridAttData: {},  // attendance keyed by `${empId}_${date}` for all-employees grid
   scheduleData: {},    // shifts keyed by date
+  tellerUnlocked: false, // password gate for teller self-service tab
+  myEmpId: null,         // cached employee id for logged-in teller
   currentPayRunPreview: null,
   deductionEditRows: [],  // local deduction rows being edited in modal
 };
@@ -21200,7 +21202,16 @@ async function loadEmployeesTab() {
   } else {
     document.getElementById('emp-admin-view').classList.add('hidden');
     document.getElementById('emp-teller-view').style.display = '';
-    _empLoadMyPayslips();
+    if (EMP.tellerUnlocked) {
+      _empShowTellerContent();
+    } else {
+      document.getElementById('emp-teller-gate').style.display = '';
+      document.getElementById('emp-teller-content').style.display = 'none';
+      setTimeout(() => {
+        const pw = document.getElementById('emp-teller-pw');
+        if (pw) pw.focus();
+      }, 200);
+    }
   }
 }
 
@@ -21246,7 +21257,11 @@ function empSwitchSub(sub) {
       const today = new Date();
       m.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
     }
-    if (EMP.employees.length) loadTimesheetCalendar();
+    if (!EMP.employees.length) {
+      _empLoadEmployees().then(() => loadTimesheetCalendar());
+    } else {
+      loadTimesheetCalendar();
+    }
   }
 }
 
@@ -22240,7 +22255,11 @@ async function _empDeleteDoc(empId, docId) {
 
 async function loadAdvancesList() {
   const empId = document.getElementById('emp-fin-adv-emp').value;
-  if (!empId) return;
+  if (!empId) {
+    const tbody = document.getElementById('emp-advances-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-muted text-center small">Select an employee above to view advances</td></tr>';
+    return;
+  }
   const tbody = document.getElementById('emp-advances-tbody');
   try {
     const rows = await api(`/api/employees/${empId}/advances`);
@@ -22296,7 +22315,11 @@ async function empCancelAdvance(empId, advId) {
 
 async function loadLoansList() {
   const empId = document.getElementById('emp-fin-loan-emp').value;
-  if (!empId) return;
+  if (!empId) {
+    const tbody = document.getElementById('emp-loans-tbody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center small">Select an employee above to view loans</td></tr>';
+    return;
+  }
   const tbody = document.getElementById('emp-loans-tbody');
   try {
     const rows = await api(`/api/employees/${empId}/loans`);
@@ -22343,9 +22366,15 @@ async function empSaveLoan() {
 // ── Leave ─────────────────────────────────────────────────────────────────────
 
 async function loadLeavesList() {
+  // Always load pending requests (all employees) at top
+  _empLoadPendingLeaves();
+
   const empId = document.getElementById('emp-fin-leave-emp').value;
-  if (!empId) return;
   const tbody = document.getElementById('emp-leaves-tbody');
+  if (!empId) {
+    if (tbody) tbody.innerHTML = '<tr><td colspan="7" class="text-muted text-center small">Select an employee above to view their leave history</td></tr>';
+    return;
+  }
   try {
     const rows = await api(`/api/employees/${empId}/leaves`);
     tbody.innerHTML = rows.map(l => `
@@ -22361,6 +22390,31 @@ async function loadLeavesList() {
         `:'—'}</td>
       </tr>`).join('') || '<tr><td colspan="7" class="text-muted text-center">No leave requests</td></tr>';
   } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function _empLoadPendingLeaves() {
+  const section = document.getElementById('emp-pending-leaves-section');
+  const tbody   = document.getElementById('emp-pending-leaves-tbody');
+  const badge   = document.getElementById('emp-pending-count');
+  if (!section || !tbody) return;
+  try {
+    const rows = await api('/api/employees/leaves/pending');
+    if (!rows.length) { section.style.display = 'none'; return; }
+    badge.textContent = rows.length;
+    section.style.display = '';
+    tbody.innerHTML = rows.map(r => `
+      <tr>
+        <td><strong>${r.employee_name}</strong></td>
+        <td>${r.leave_type.replace('_',' ')}</td>
+        <td>${r.date_from}</td><td>${r.date_to}</td>
+        <td>${r.days_requested}</td>
+        <td>${r.reason || '—'}</td>
+        <td class="text-nowrap">
+          <button class="btn btn-xs btn-success" onclick="empApproveLeave(${r.employee_id},${r.id})"><i class="bi bi-check"></i> Approve</button>
+          <button class="btn btn-xs btn-outline-danger ms-1" onclick="empRejectLeave(${r.employee_id},${r.id})"><i class="bi bi-x"></i> Deny</button>
+        </td>
+      </tr>`).join('');
+  } catch(e) { /* non-admin: section stays hidden */ }
 }
 
 function empOpenLeaveModal() {
@@ -22449,25 +22503,115 @@ async function _empSaveRule(id) {
   } catch(e) { toast(e.message, 'danger'); }
 }
 
+// ── Teller: password gate & self-service ──────────────────────────────────────
+
+async function empTellerUnlock() {
+  const pw = document.getElementById('emp-teller-pw').value;
+  if (!pw) { toast('Enter your password', 'warning'); return; }
+  try {
+    const res = await api('/api/employees/me/verify_password', {
+      method: 'POST', body: JSON.stringify({ password: pw }),
+    });
+    if (res.ok) {
+      EMP.tellerUnlocked = true;
+      document.getElementById('emp-teller-pw').value = '';
+      _empShowTellerContent();
+    } else {
+      toast('Incorrect password', 'danger');
+      document.getElementById('emp-teller-pw').select();
+    }
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+async function _empShowTellerContent() {
+  document.getElementById('emp-teller-gate').style.display = 'none';
+  document.getElementById('emp-teller-content').style.display = '';
+  empTellerSwitchTab('payslips');
+}
+
+function empTellerSwitchTab(tab) {
+  document.querySelectorAll('#emp-teller-tabs .nav-link').forEach(a => {
+    a.classList.toggle('active', a.dataset.tellerTab === tab);
+  });
+  document.getElementById('emp-teller-payslips').style.display = tab === 'payslips' ? '' : 'none';
+  document.getElementById('emp-teller-leave').style.display    = tab === 'leave'    ? '' : 'none';
+  if (tab === 'payslips') _empLoadMyPayslips();
+  if (tab === 'leave')    _empLoadMyLeave();
+}
+
+async function _empLoadMyLeave() {
+  if (!EMP.myEmpId) {
+    const me = await api('/api/employees/me').catch(() => null);
+    if (!me) return;
+    EMP.myEmpId = me.id;
+  }
+  try {
+    const [lb, requests] = await Promise.all([
+      api(`/api/employees/${EMP.myEmpId}/leave_balance`),
+      api(`/api/employees/${EMP.myEmpId}/leaves`),
+    ]);
+    document.getElementById('tl-vac-remaining').textContent    = lb.vacation_remaining;
+    document.getElementById('tl-vac-used').textContent         = lb.vacation_used;
+    document.getElementById('tl-vac-entitlement').textContent  = lb.vacation_entitlement;
+    document.getElementById('tl-sick-used').textContent        = lb.sick_used;
+
+    const tbody = document.getElementById('emp-my-leaves-tbody');
+    tbody.innerHTML = requests.map(r => `
+      <tr>
+        <td>${r.leave_type.replace('_',' ')}</td>
+        <td>${r.date_from}</td><td>${r.date_to}</td>
+        <td>${r.days_requested}</td>
+        <td>${r.reason || '—'}</td>
+        <td><span class="badge ${r.status==='approved'?'bg-success':r.status==='rejected'?'bg-danger':'bg-warning text-dark'}">${r.status}</span></td>
+      </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-center">No leave requests yet</td></tr>';
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+function empTellerCalcDays() {
+  const from = document.getElementById('tl-from').value;
+  const to   = document.getElementById('tl-to').value;
+  if (from && to) {
+    const diff = Math.max(0, Math.round((new Date(to) - new Date(from)) / 86400000) + 1);
+    document.getElementById('tl-days').value = diff;
+  }
+}
+
+async function empTellerSubmitLeave() {
+  if (!EMP.myEmpId) { toast('No employee record linked to your account', 'danger'); return; }
+  const payload = {
+    leave_type:      document.getElementById('tl-type').value,
+    date_from:       document.getElementById('tl-from').value,
+    date_to:         document.getElementById('tl-to').value,
+    days_requested:  parseFloat(document.getElementById('tl-days').value) || null,
+    reason:          document.getElementById('tl-reason').value.trim() || null,
+  };
+  if (!payload.date_from || !payload.date_to) { toast('Select a date range', 'warning'); return; }
+  try {
+    await api(`/api/employees/${EMP.myEmpId}/leaves`, { method:'POST', body: JSON.stringify(payload) });
+    toast('Leave request submitted — your manager will review it', 'success', 5000);
+    document.getElementById('tl-from').value   = '';
+    document.getElementById('tl-to').value     = '';
+    document.getElementById('tl-days').value   = '';
+    document.getElementById('tl-reason').value = '';
+    _empLoadMyLeave();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
 // ── Teller: my payslips ───────────────────────────────────────────────────────
 
 async function _empLoadMyPayslips() {
   const tbody = document.getElementById('emp-my-payslips-tbody');
   if (!tbody) return;
   try {
-    // Find the employee record linked to this user
-    const me = STATE.currentUser;
-    if (!me) return;
-    // Try to find an employee linked to this user via /api/employees (tellers can't list all)
-    // Instead call the own teller endpoint via a known employee or dashboard
-    // For tellers: the server only returns their own payslips via their linked employee
-    // We need a way to discover their employee_id. Use a dedicated endpoint:
-    const myEmp = await api('/api/employees/me').catch(() => null);
-    if (!myEmp) {
-      tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No employee record linked to your account. Ask your admin.</td></tr>';
-      return;
+    if (!EMP.myEmpId) {
+      const myEmp = await api('/api/employees/me').catch(() => null);
+      if (!myEmp) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center">No employee record linked to your account. Ask your admin.</td></tr>';
+        return;
+      }
+      EMP.myEmpId = myEmp.id;
     }
-    const runs = await api(`/api/employees/${myEmp.id}/pay_runs`);
+    const runs = await api(`/api/employees/${EMP.myEmpId}/pay_runs`);
     tbody.innerHTML = runs.map(r => `
       <tr>
         <td>${r.period_start} – ${r.period_end}</td>
@@ -22475,7 +22619,7 @@ async function _empLoadMyPayslips() {
         <td>R ${r.gross_pay.toFixed(2)}</td>
         <td>R ${r.net_pay.toFixed(2)}</td>
         <td><span class="pay-status-${r.status}">${r.status}</span></td>
-        <td><button class="btn btn-xs btn-outline-secondary" onclick="empOpenPayslip(${myEmp.id},${r.id})"><i class="bi bi-file-earmark-text me-1"></i>View</button></td>
+        <td><button class="btn btn-xs btn-outline-secondary" onclick="empOpenPayslip(${EMP.myEmpId},${r.id})"><i class="bi bi-file-earmark-text me-1"></i>View</button></td>
       </tr>`).join('') || '<tr><td colspan="6" class="text-muted text-center">No payslips yet</td></tr>';
   } catch(e) { toast(e.message, 'danger'); }
 }
