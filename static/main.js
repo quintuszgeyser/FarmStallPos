@@ -22695,8 +22695,10 @@ function empTellerCalcDays() {
   const from = document.getElementById('tl-from').value;
   const to   = document.getElementById('tl-to').value;
   if (from && to) {
-    const diff = Math.max(0, Math.round((new Date(to) - new Date(from)) / 86400000) + 1);
-    document.getElementById('tl-days').value = diff;
+    let count = 0, cur = new Date(from + 'T00:00:00');
+    const end = new Date(to + 'T00:00:00');
+    while (cur <= end) { if (cur.getDay() !== 0 && cur.getDay() !== 6) count++; cur.setDate(cur.getDate() + 1); }
+    document.getElementById('tl-days').value = count;
   }
 }
 
@@ -22750,7 +22752,7 @@ async function _empLoadMyPayslips() {
 
 // ── Leave Policies Admin ──────────────────────────────────────────────────────
 
-const _BUILTIN_LEAVE_TYPES = ['annual','sick','family_responsibility','unpaid'];
+const _BUILTIN_LEAVE_TYPES = ['annual','sick','family_responsibility','unpaid','maternity','paternal'];
 
 async function _empLoadLeavePolicies() {
   const body = document.getElementById('emp-leave-policies-body');

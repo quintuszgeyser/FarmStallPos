@@ -424,8 +424,8 @@ def _calculate_pay_run(employee_id, period_start, period_end):
     overtime_pay = (totals['overtime'] * rate * mult('overtime')).quantize(Decimal('0.01'))
     sunday_pay   = (totals['sunday']   * rate * mult('sunday')).quantize(Decimal('0.01'))
     holiday_pay  = (totals['holiday']  * rate * mult('public_holiday')).quantize(Decimal('0.01'))
-    vacation_pay = (totals['vacation'] * rate).quantize(Decimal('0.01'))
-    sick_pay     = (totals['sick']     * rate).quantize(Decimal('0.01'))
+    vacation_pay = (totals['vacation'] * rate * mult('vacation')).quantize(Decimal('0.01'))
+    sick_pay     = (totals['sick']     * rate * mult('sick')).quantize(Decimal('0.01'))
     gross        = normal_pay + overtime_pay + sunday_pay + holiday_pay + vacation_pay + sick_pay
 
     period_days = (period_end - period_start).days + 1
@@ -1066,6 +1066,22 @@ def api_schedule_delete(eid, sid):
 
 # ── Leave helpers ─────────────────────────────────────────────────────────────
 
+def _annual_cycle_start(emp_start, as_of):
+    """Return the start of the current annual leave cycle (hire anniversary)."""
+    year = as_of.year
+    try:
+        cs = date(year, emp_start.month, emp_start.day)
+    except ValueError:
+        cs = date(year, emp_start.month, 28)
+    if cs > as_of:
+        year -= 1
+        try:
+            cs = date(year, emp_start.month, emp_start.day)
+        except ValueError:
+            cs = date(year, emp_start.month, 28)
+    return cs
+
+
 def _months_diff(d1, d2):
     """Complete months between two dates (d1 <= d2)."""
     return max(0, (d2.year - d1.year) * 12 + d2.month - d1.month)
@@ -1087,16 +1103,16 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
                 'policy_label': leave_type, 'accrual_method': 'none'}
 
     # Used: sum approved requests scoped to the correct period.
-    # annual/fixed/custom: current calendar year only.
-    # sick_cycle: current 36-month cycle only (BCEA — unused days are forfeited each cycle).
-    # none: all-time (e.g. maternity).
+    # daily (annual): hire-anniversary cycle — BCEA s20 leave cycle.
+    # fixed (family_responsibility, custom): calendar year — forfeited Jan 1.
+    # sick_cycle: current 36-month cycle — unused days forfeited each cycle.
+    # none (maternity, paternal): all-time.
     if policy.accrual_method == 'sick_cycle' and emp.start_date:
         cycle_months_val = int(policy.cycle_months or 36)
         months_employed  = _months_diff(emp.start_date, as_of)
         full_cycles      = months_employed // cycle_months_val
-        # Compute current cycle start date
         csm = full_cycles * cycle_months_val
-        ys  = emp.start_date.year  + (emp.start_date.month - 1 + csm) // 12
+        ys  = emp.start_date.year + (emp.start_date.month - 1 + csm) // 12
         ms  = (emp.start_date.month - 1 + csm) % 12 + 1
         import calendar as _cal
         cycle_start = date(ys, ms, min(emp.start_date.day, _cal.monthrange(ys, ms)[1]))
@@ -1107,7 +1123,18 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
             LeaveRequest.date_from   >= cycle_start,
             LeaveRequest.date_from   <= as_of,
         ).all()
-    elif policy.accrual_method in ('daily', 'fixed') or leave_type in ('annual', 'family_responsibility'):
+    elif policy.accrual_method == 'daily':
+        # Scope to hire-anniversary cycle (not calendar year)
+        cycle_start_used = _annual_cycle_start(emp.start_date, as_of) if emp.start_date else date(as_of.year, 1, 1)
+        used_rows = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == emp.id,
+            LeaveRequest.leave_type  == leave_type,
+            LeaveRequest.status      == 'approved',
+            LeaveRequest.date_from   >= cycle_start_used,
+            LeaveRequest.date_from   <= as_of,
+        ).all()
+    elif policy.accrual_method == 'fixed':
+        # Calendar-year scoped (family responsibility, custom fixed types)
         yr_start  = date(as_of.year, 1, 1)
         used_rows = LeaveRequest.query.filter(
             LeaveRequest.employee_id == emp.id,
@@ -1117,7 +1144,7 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
             LeaveRequest.date_from   <= as_of,
         ).all()
     else:
-        # 'none' and unrecognised: all-time
+        # 'none' (maternity, paternal) and unrecognised: all-time
         used_rows = LeaveRequest.query.filter(
             LeaveRequest.employee_id == emp.id,
             LeaveRequest.leave_type  == leave_type,
@@ -1137,24 +1164,30 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
         result_accrued = round(accrued, 2)
 
     elif policy.accrual_method == 'daily':
-        year = as_of.year
-        yr_start = date(year, 1, 1)
-        days_in_year = 366 if _cal.isleap(year) else 365
-        # Per-employee entitlement overrides the global policy
+        # BCEA s20: leave cycle runs from hire anniversary, not Jan 1.
+        # Entitlement: explicit emp override > work-week derived > global policy.
         emp_override = float(emp.leave_days_per_year) if emp.leave_days_per_year and float(emp.leave_days_per_year) > 0 else None
-        days_per_year = emp_override if emp_override is not None else float(policy.days_per_year or 15)
-        earn_start = emp.start_date if (emp.start_date and emp.start_date >= yr_start) else yr_start
-        if emp.start_date is None or emp.start_date > as_of:
-            accrued_this_year = 0.0
+        if emp_override is not None:
+            days_per_year = emp_override
+        elif emp.normal_days_per_week and int(emp.normal_days_per_week) >= 6:
+            days_per_year = 18.0  # BCEA: 6-day week → 18 working days
         else:
+            days_per_year = float(policy.days_per_year or 15)
+
+        if emp.start_date is None or emp.start_date > as_of:
+            result_accrued = 0.0
+        else:
+            cycle_start = _annual_cycle_start(emp.start_date, as_of)
+            earn_start  = max(cycle_start, emp.start_date)
             days_earned = max(0, (as_of - earn_start).days + 1)
-            accrued_this_year = days_per_year * days_earned / days_in_year
-        carry_over = 0.0
-        carry_over_max = float(policy.carry_over_max or 0)
-        if carry_over_max > 0 and emp.start_date and emp.start_date.year < year:
-            prev = _compute_leave_balance(emp, leave_type, date(year - 1, 12, 31))
-            carry_over = min(float(prev.get('remaining') or 0), carry_over_max)
-        result_accrued = round(accrued_this_year + carry_over, 2)
+            accrued_this_cycle = days_per_year * days_earned / 365.0
+            carry_over = 0.0
+            carry_over_max_val = float(policy.carry_over_max or 0)
+            if carry_over_max_val > 0 and cycle_start > emp.start_date:
+                prev_cycle_end = cycle_start - timedelta(days=1)
+                prev = _compute_leave_balance(emp, leave_type, prev_cycle_end)
+                carry_over = min(float(prev.get('remaining') or 0), carry_over_max_val)
+            result_accrued = round(accrued_this_cycle + carry_over, 2)
 
     elif policy.accrual_method == 'sick_cycle':
         if emp.start_date is None or emp.start_date > as_of:
@@ -1243,18 +1276,50 @@ def api_leaves_request(eid):
     except (KeyError, ValueError):
         return jsonify({'error': 'date_from and date_to required (YYYY-MM-DD)'}), 400
 
-    days = Decimal(str(d.get('days_requested', (d_to - d_from).days + 1)))
-    req  = LeaveRequest(
+    leave_type = d.get('leave_type', 'annual')
+    reason     = (d.get('reason') or '').strip() or None
+    policy     = LeavePolicy.query.filter_by(leave_type=leave_type).first()
+
+    # Family responsibility eligibility check (BCEA s27)
+    if leave_type == 'family_responsibility':
+        if not reason:
+            return jsonify({'error': 'Reason required for family responsibility leave (e.g. child sick, bereavement)'}), 400
+        if emp.start_date and (date.today() - emp.start_date).days < 120:
+            return jsonify({'error': 'Family responsibility leave requires more than 4 months of employment'}), 400
+        if emp.normal_days_per_week and int(emp.normal_days_per_week) <= 4:
+            return jsonify({'error': 'Family responsibility leave requires working more than 4 days per week'}), 400
+
+    # days_requested: count only actual work days (Mon–Fri or emp schedule), excluding public holidays
+    ph = sa_public_holidays(d_from.year)
+    if d_to.year != d_from.year:
+        ph.update(sa_public_holidays(d_to.year))
+    try:
+        emp_work_days = set(int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip())
+    except Exception:
+        emp_work_days = {0, 1, 2, 3, 4, 5}
+    working_days = Decimal('0')
+    cur = d_from
+    while cur <= d_to:
+        if cur.weekday() in emp_work_days and cur not in ph:
+            working_days += Decimal('1')
+        cur += timedelta(days=1)
+    days = Decimal(str(d.get('days_requested'))) if d.get('days_requested') else working_days
+
+    # Maternity/paternal: check against policy duration cap
+    if policy and policy.days_per_year and days > Decimal(str(policy.days_per_year)):
+        return jsonify({'error': f'{policy.label} is limited to {policy.days_per_year} days'}), 400
+
+    req = LeaveRequest(
         employee_id    = eid,
-        leave_type     = d.get('leave_type', 'annual'),
+        leave_type     = leave_type,
         date_from      = d_from,
         date_to        = d_to,
         days_requested = days,
-        reason         = (d.get('reason') or '').strip() or None,
+        reason         = reason,
     )
     db.session.add(req)
     db.session.commit()
-    return jsonify({'id': req.id, 'status': req.status}), 201
+    return jsonify({'id': req.id, 'status': req.status, 'days_requested': float(days)}), 201
 
 
 @bp.route('/api/employees/<int:eid>/leaves/<int:lid>/approve', methods=['PUT'])
@@ -1276,27 +1341,46 @@ def api_leaves_approve(eid, lid):
         'vacation'     if req.leave_type == 'annual' else
         'sick'         if req.leave_type == 'sick'   else
         'unpaid_leave' if (policy and not policy.is_paid) else
-        'vacation'     # custom paid leave types treated as paid leave
+        'vacation'
     )
-    pay_hrs = Decimal(str(emp.normal_hours_per_day or 8)) if leave_day_type not in ('unpaid_leave',) else Decimal('0')
+    pay_hrs = Decimal(str(emp.normal_hours_per_day or 8)) if leave_day_type != 'unpaid_leave' else Decimal('0')
+    try:
+        emp_work_days = set(int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip())
+    except Exception:
+        emp_work_days = {0, 1, 2, 3, 4, 5}
+    ph = sa_public_holidays(req.date_from.year)
+    if req.date_to.year != req.date_from.year:
+        ph.update(sa_public_holidays(req.date_to.year))
+
+    # Medical certificate warning for sick leave > threshold
+    warnings = []
+    if req.leave_type == 'sick' and policy and policy.requires_proof_after_days:
+        if float(req.days_requested) > float(policy.requires_proof_after_days):
+            warnings.append(f'Medical certificate required (absence > {policy.requires_proof_after_days} days)')
+
     current_day = req.date_from
     while current_day <= req.date_to:
-        if current_day.weekday() < 5:  # Mon–Fri only
-            existing = EmployeeAttendance.query.filter_by(
-                employee_id=eid, work_date=current_day
-            ).first()
-            if not existing:
-                db.session.add(EmployeeAttendance(
-                    employee_id  = eid,
-                    work_date    = current_day,
-                    day_type     = leave_day_type,
-                    hours_worked = pay_hrs,
-                    notes        = f'{req.leave_type.replace("_"," ").title()} (approved)',
-                ))
+        if current_day.weekday() in emp_work_days:
+            if current_day in ph:
+                # BCEA s20: public holiday during annual leave = employee gets an extra day
+                # Don't create a leave attendance record; the payroll loop auto-pays this day.
+                pass
+            else:
+                existing = EmployeeAttendance.query.filter_by(
+                    employee_id=eid, work_date=current_day
+                ).first()
+                if not existing:
+                    db.session.add(EmployeeAttendance(
+                        employee_id  = eid,
+                        work_date    = current_day,
+                        day_type     = leave_day_type,
+                        hours_worked = pay_hrs,
+                        notes        = f'{req.leave_type.replace("_"," ").title()} (approved)',
+                    ))
         current_day += timedelta(days=1)
 
     db.session.commit()
-    return jsonify({'ok': True, 'status': 'approved'})
+    return jsonify({'ok': True, 'status': 'approved', 'warnings': warnings})
 
 
 @bp.route('/api/employees/<int:eid>/leaves/<int:lid>/reject', methods=['PUT'])

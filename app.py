@@ -2232,7 +2232,7 @@ def strong_migrate():
                    v.first_period_per_26::BOOLEAN, v.requires_proof_after_days::INTEGER,
                    v.is_paid::BOOLEAN, v.sort_order::INTEGER
             FROM (VALUES
-              ('annual',                'Annual Leave',                'daily',      '15',  '0',  NULL, NULL, NULL, 'true',  NULL, 'true',  '1'),
+              ('annual',                'Annual Leave',                'daily',      '15',  '999', NULL, NULL, NULL, 'true',  NULL, 'true',  '1'),
               ('sick',                  'Sick Leave',                  'sick_cycle', NULL,  '0',  '30', '36', '6',  'true',  '2',  'true',  '2'),
               ('family_responsibility', 'Family Responsibility Leave', 'fixed',      '3',   '0',  NULL, NULL, NULL, 'true',  NULL, 'true',  '3'),
               ('unpaid',                'Unpaid Leave',                'none',       NULL,  '0',  NULL, NULL, NULL, 'true',  NULL, 'false', '4')
@@ -2247,9 +2247,13 @@ def strong_migrate():
                 carry_over_max, cycle_days, cycle_months, first_period_months,
                 first_period_per_26, requires_proof_after_days, is_paid, sort_order)
             VALUES
-              ('maternity',  'Maternity Leave',  'none', NULL, 0, NULL, NULL, NULL, true, NULL, false, 5),
-              ('paternal',   'Paternal Leave',   'none', NULL, 0, NULL, NULL, NULL, true, NULL, false, 6)
+              ('maternity',  'Maternity Leave',  'none', '88', 0, NULL, NULL, NULL, true, NULL, false, 5),
+              ('paternal',   'Paternal Leave',   'none', '10', 0, NULL, NULL, NULL, true, NULL, false, 6)
             ON CONFLICT (leave_type) DO NOTHING
+        """)
+        conn.exec_driver_sql("""
+            UPDATE leave_policies SET days_per_year = 88 WHERE leave_type = 'maternity' AND days_per_year IS NULL;
+            UPDATE leave_policies SET days_per_year = 10 WHERE leave_type = 'paternal'  AND days_per_year IS NULL;
         """)
         conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS employee_leave_adjustments (
