@@ -2075,6 +2075,7 @@ def strong_migrate():
               created_by           INTEGER REFERENCES users(id)
             )
         """)
+        pg_try("ALTER TABLE employees ADD COLUMN pay_type VARCHAR(20) NOT NULL DEFAULT 'hourly'")
         pg_try("ALTER TABLE employees ADD COLUMN work_days_json TEXT NOT NULL DEFAULT '0,1,2,3,4,5'")
         pg_try("ALTER TABLE employees ADD COLUMN rotation_start_day INTEGER")
         pg_try("ALTER TABLE employees ADD COLUMN rotation_slot INTEGER")

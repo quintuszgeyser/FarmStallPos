@@ -21498,10 +21498,35 @@ function empOpenAttendanceForDate(dateStr, empId) {
   if (d.getDay() === 0) dayType = 'sunday';
   if (EMP.publicHolidays[dateStr]) dayType = 'public_holiday';
   if (att) dayType = att.day_type;
-  document.getElementById('emp-att-day-type').value = dayType;
+  const dayTypeEl = document.getElementById('emp-att-day-type');
+  dayTypeEl.value = dayType;
 
   const deleteBtn = document.getElementById('emp-att-delete-btn');
   if (deleteBtn) deleteBtn.style.display = att ? '' : 'none';
+
+  // Wire up leave balance display on day_type change
+  const leaveInfoEl = document.getElementById('emp-att-leave-info');
+  async function updateLeaveInfo() {
+    if (!leaveInfoEl) return;
+    const dt = dayTypeEl.value;
+    if (dt === 'vacation' || dt === 'sick') {
+      try {
+        const lb = await api(`/api/employees/${empId}/leave_balance`);
+        if (dt === 'vacation') {
+          leaveInfoEl.textContent = `Leave: ${lb.vacation_used} / ${lb.vacation_entitlement} days used — ${lb.vacation_remaining} remaining`;
+        } else {
+          leaveInfoEl.textContent = `Sick days used this year: ${lb.sick_used}`;
+        }
+        leaveInfoEl.style.display = '';
+      } catch(e) { leaveInfoEl.style.display = 'none'; }
+    } else {
+      leaveInfoEl.style.display = 'none';
+    }
+  }
+  dayTypeEl.removeEventListener('change', dayTypeEl._leaveHandler);
+  dayTypeEl._leaveHandler = updateLeaveInfo;
+  dayTypeEl.addEventListener('change', updateLeaveInfo);
+  updateLeaveInfo();
 
   new bootstrap.Modal(document.getElementById('empAttendanceModal')).show();
 }
@@ -21512,7 +21537,8 @@ async function empGenerateMonth() {
   if (!confirm(`Generate default attendance for ALL employees for ${month}?\n\nDays already logged will not be overwritten.`)) return;
   try {
     const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify({ month }) });
-    toast(`Generated ${r.created} entries for ${r.employees} employees (${r.skipped} days already existed)`, 'success', 5000);
+    const delMsg = r.deleted > 0 ? `, cleared ${r.deleted} rotation off-day entries` : '';
+    toast(`Generated ${r.created} entries for ${r.employees} employees (${r.skipped} skipped${delMsg})`, 'success', 5000);
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
 }
@@ -22043,6 +22069,8 @@ async function empOpenEmployeeModal(id = null) {
       if (rotStart) rotStart.value = (emp.rotation_start_day != null) ? String(emp.rotation_start_day) : '';
       const rotSlot = document.getElementById('emp-ed-rot-slot');
       if (rotSlot) rotSlot.value = (emp.rotation_slot != null) ? String(emp.rotation_slot) : '';
+      const payTypeEl = document.getElementById('emp-ed-pay-type');
+      if (payTypeEl) payTypeEl.value = emp.pay_type || 'hourly';
 
       EMP.deductionEditRows = deds.map(d => ({ ...d, _dirty: false }));
       _renderDeductionRows();
@@ -22089,6 +22117,7 @@ async function empSaveEmployee() {
     work_days_json:       [0,1,2,3,4,5,6].filter(d => { const cb = document.getElementById(`emp-wd-${d}`); return cb && cb.checked; }).join(',') || '0,1,2,3,4,5',
     rotation_start_day:   (() => { const el = document.getElementById('emp-ed-rot-start'); return el && el.value !== '' ? parseInt(el.value) : null; })(),
     rotation_slot:        (() => { const el = document.getElementById('emp-ed-rot-slot'); return el && el.value.trim() !== '' ? parseInt(el.value) : null; })(),
+    pay_type:             (() => { const el = document.getElementById('emp-ed-pay-type'); return el ? el.value : 'hourly'; })(),
   };
   if (!payload.name) { toast('Name is required', 'warning'); return; }
 

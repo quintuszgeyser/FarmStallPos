@@ -193,6 +193,7 @@ def _serialize_employee(emp, include_sensitive=True):
         'leave_days_per_year':  float(emp.leave_days_per_year),
         'is_active':            emp.is_active,
         'notes':                emp.notes,
+        'pay_type':             emp.pay_type or 'hourly',
         'work_days_json':       emp.work_days_json or '0,1,2,3,4,5',
         'rotation_start_day':   emp.rotation_start_day,
         'rotation_slot':        emp.rotation_slot,
@@ -315,26 +316,43 @@ def _calculate_pay_run(employee_id, period_start, period_end):
     attendance_snapshot = []
     totals = {k: Decimal('0') for k in
               ('normal', 'overtime', 'sunday', 'holiday', 'vacation', 'sick')}
+    absent_days = Decimal('0')  # for salaried: days marked absent (no pay)
+
+    is_salaried = (emp.pay_type or 'hourly') == 'salaried'
 
     for a in rows:
         hrs = Decimal(str(a.hours_worked)) if a.hours_worked is not None else Decimal('0')
         dt  = a.day_type
 
-        if dt in ('vacation', 'sick'):
+        if dt in ('absent', 'unpaid_leave'):
+            # No pay regardless of pay type
+            pay_hrs = Decimal('0')
+            pay_amt = Decimal('0')
+            if dt == 'absent':
+                absent_days += Decimal('1')
+        elif dt in ('vacation', 'sick'):
             # Paid leave: normal_hours_per_day at 1× rate
             pay_hrs = normal_h
             pay_amt = pay_hrs * rate * mult(dt)
             totals[dt if dt in totals else 'normal'] += pay_hrs
         elif dt == 'sunday':
-            pay_hrs = hrs
-            pay_amt = hrs * rate * mult('sunday')
-            totals['sunday'] += hrs
+            pay_hrs = hrs if not is_salaried else max(hrs, normal_h)
+            pay_amt = pay_hrs * rate * mult('sunday')
+            totals['sunday'] += pay_hrs
         elif dt == 'public_holiday':
             pay_hrs = hrs if hrs > 0 else normal_h
             pay_amt = pay_hrs * rate * mult('public_holiday')
             totals['holiday'] += pay_hrs
+        elif is_salaried:
+            # Salaried: guaranteed normal_h, overtime on top
+            std_hrs = normal_h
+            ot_hrs  = max(Decimal('0'), hrs - normal_h)
+            pay_amt = std_hrs * rate * mult('normal') + ot_hrs * rate * mult('overtime')
+            totals['normal']   += std_hrs
+            totals['overtime'] += ot_hrs
+            pay_hrs = hrs if hrs > 0 else normal_h
         else:
-            # Normal or overtime
+            # Hourly: pay exactly what's logged
             std_hrs = min(hrs, normal_h)
             ot_hrs  = max(Decimal('0'), hrs - normal_h)
             pay_amt = std_hrs * rate * mult('normal') + ot_hrs * rate * mult('overtime')
@@ -351,6 +369,30 @@ def _calculate_pay_run(employee_id, period_start, period_end):
             'day_type':     dt,
             'pay':          float(pay_amt.quantize(Decimal('0.01'))),
         })
+
+    # For salaried employees: pay ALL expected working days not explicitly marked absent/unpaid
+    if is_salaried:
+        logged_dates = {a.work_date for a in rows}
+        absent_dates = {a.work_date for a in rows if a.day_type in ('absent', 'unpaid_leave')}
+        try:
+            emp_work_days_set = set(int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip())
+        except Exception:
+            emp_work_days_set = {0, 1, 2, 3, 4, 5}
+        # Add guaranteed pay for working days not in attendance records (not absent, not a holiday)
+        curr = period_start
+        holidays_set = set(holidays_this_year.keys())
+        while curr <= period_end:
+            if curr.weekday() in emp_work_days_set and curr not in logged_dates and curr not in holidays_set:
+                # Unlogged working day for salaried employee = normal pay
+                totals['normal'] += normal_h
+                attendance_snapshot.append({
+                    'date':      curr.isoformat(),
+                    'clock_in':  None, 'clock_out': None, 'break_min': 0,
+                    'hours':     float(normal_h),
+                    'day_type':  'normal',
+                    'pay':       float((normal_h * rate).quantize(Decimal('0.01'))),
+                })
+            curr += timedelta(days=1)
 
     # Pay subtotals
     normal_pay   = (totals['normal']   * rate * mult('normal')).quantize(Decimal('0.01'))
@@ -473,6 +515,7 @@ def api_employees_create():
         pay_frequency        = d.get('pay_frequency', 'biweekly'),
         pay_day_of_week      = int(d.get('pay_day_of_week', 5)),
         leave_days_per_year  = Decimal(str(d.get('leave_days_per_year', 21))),
+        pay_type             = d.get('pay_type', 'hourly'),
         work_days_json       = d.get('work_days_json') or '0,1,2,3,4,5',
         rotation_start_day   = int(d['rotation_start_day']) if d.get('rotation_start_day') is not None and str(d.get('rotation_start_day', '')).strip() != '' else None,
         rotation_slot        = int(d['rotation_slot']) if d.get('rotation_slot') is not None and str(d.get('rotation_slot', '')).strip() != '' else None,
@@ -520,6 +563,8 @@ def api_employees_update(eid):
                                 ('leave_days_per_year', 21)]:
         if num_field in d:
             setattr(emp, num_field, d[num_field])
+    if 'pay_type' in d:
+        emp.pay_type = d['pay_type'] or 'hourly'
     if 'work_days_json' in d:
         emp.work_days_json = d['work_days_json'] or '0,1,2,3,4,5'
     if 'rotation_start_day' in d:
@@ -669,6 +714,7 @@ def api_generate_schedule():
     u         = current_user()
     created   = 0
     skipped   = 0
+    deleted   = 0
 
     # Load global schedule rules (used only when rotation=True)
     def _parse_days(key, default):
@@ -700,31 +746,26 @@ def api_generate_schedule():
         clock_in_t  = dtime(8, 0)
         clock_out_t = dtime(min(co_h, 23), co_m % 60)
 
-        # Fetch existing entries so we never overwrite
-        existing = {
-            row.work_date
-            for row in EmployeeAttendance.query.filter(
-                EmployeeAttendance.employee_id == emp.id,
-                EmployeeAttendance.work_date   >= month_start,
-                EmployeeAttendance.work_date   <= month_end,
-            ).all()
-        }
+        # Fetch existing entries: separate schedule_default (can be replaced) from manual
+        existing_rows = EmployeeAttendance.query.filter(
+            EmployeeAttendance.employee_id == emp.id,
+            EmployeeAttendance.work_date   >= month_start,
+            EmployeeAttendance.work_date   <= month_end,
+        ).all()
+        existing_schedule = {row.work_date: row for row in existing_rows if row.source == 'schedule_default'}
+        existing_manual   = {row.work_date for row in existing_rows if row.source != 'schedule_default'}
 
         if rotation:
-            # Use global work days: all days except mandatory-off days become eligible
-            # Employee works every day in their work_days_json that isn't overridden globally
             try:
                 emp_work_days = [int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip()]
             except Exception:
                 emp_work_days = [0, 1, 2, 3, 4, 5]
             allowed_weekdays = set(emp_work_days)
-            # Rotation pool: intersection of employee work days and global rotation days
             rot_pool = [d for d in global_rotation_days if d in allowed_weekdays]
             if not rot_pool:
-                rot_pool = [d for d in global_rotation_days]
+                rot_pool = list(global_rotation_days)
             slot = slot_map.get(emp.id, emp_idx)
         else:
-            # Non-rotation: use per-employee work_days_json
             try:
                 emp_work_days = [int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip()]
             except Exception:
@@ -734,24 +775,36 @@ def api_generate_schedule():
             slot = 0
 
         for day in all_days:
-            if day in existing:
-                skipped += 1
-                continue
             dow = day.weekday()
             if dow not in allowed_weekdays:
                 continue
-            # Mandatory days are always worked (skip rotation off-day logic for them)
+            # Manual entries are never touched
+            if day in existing_manual:
+                skipped += 1
+                continue
+
             is_mandatory = dow in global_mandatory_days
+            is_off_day   = False
 
             if rotation and rot_pool and not is_mandatory:
                 week_offset = (day.day - 1) // 7
                 if rotation_mode == 'advancing':
                     off_idx = (slot + week_offset) % len(rot_pool)
-                else:  # fixed
+                else:
                     off_idx = slot % len(rot_pool)
-                off_weekday = rot_pool[off_idx]
-                if dow == off_weekday:
-                    continue   # this employee's rotating day off
+                if dow == rot_pool[off_idx]:
+                    is_off_day = True
+
+            if is_off_day:
+                # Remove any schedule_default entry that already exists for this off-day
+                if day in existing_schedule:
+                    db.session.delete(existing_schedule[day])
+                    deleted += 1
+                continue
+
+            if day in existing_schedule:
+                skipped += 1
+                continue
 
             day_type = _auto_day_type(day, holidays)
             db.session.add(EmployeeAttendance(
@@ -768,7 +821,7 @@ def api_generate_schedule():
             created += 1
 
     db.session.commit()
-    return jsonify({'created': created, 'skipped': skipped, 'employees': len(employees)})
+    return jsonify({'created': created, 'skipped': skipped, 'deleted': deleted, 'employees': len(employees)})
 
 
 @bp.route('/api/employees/attendance/summary', methods=['GET'])
@@ -1480,6 +1533,34 @@ def api_pay_runs_paid(eid, pid):
     pr.paid_at = datetime.utcnow()
     db.session.commit()
     return jsonify({'ok': True, 'status': 'paid'})
+
+
+@bp.route('/api/employees/<int:eid>/leave_balance', methods=['GET'])
+def api_leave_balance(eid):
+    emp, is_own, err = _own_or_admin(eid)
+    if err:
+        return err
+    year = request.args.get('year', type=int) or datetime.utcnow().year
+    year_start = date(year, 1, 1)
+    year_end   = date(year, 12, 31)
+    ytd_runs = PayRun.query.filter(
+        PayRun.employee_id == eid,
+        PayRun.status.in_(['approved', 'paid']),
+        PayRun.period_start >= year_start,
+        PayRun.period_end   <= year_end,
+    ).all()
+    hrs_per_day = float(emp.normal_hours_per_day) if float(emp.normal_hours_per_day or 0) > 0 else 8.0
+    ytd_vac_hrs  = sum(float(r.vacation_hours or 0) for r in ytd_runs)
+    ytd_sick_hrs = sum(float(r.sick_hours or 0)     for r in ytd_runs)
+    ytd_vac_days  = round(ytd_vac_hrs  / hrs_per_day, 2)
+    ytd_sick_days = round(ytd_sick_hrs / hrs_per_day, 2)
+    entitlement   = float(emp.leave_days_per_year or 0)
+    return jsonify({
+        'vacation_entitlement': entitlement,
+        'vacation_used':        ytd_vac_days,
+        'vacation_remaining':   round(max(0.0, entitlement - ytd_vac_days), 2),
+        'sick_used':            ytd_sick_days,
+    })
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/payslip', methods=['GET'])

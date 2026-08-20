@@ -4656,7 +4656,7 @@
 </script>
 <script async src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260820-emp2"></script>
+<script src="/static/main.js?v=20260820-emp3"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">
@@ -4957,7 +4957,9 @@
             <option value="vacation">Annual Leave</option>
             <option value="sick">Sick Leave</option>
             <option value="unpaid_leave">Unpaid Leave</option>
+            <option value="absent">Absent (No Pay)</option>
           </select>
+          <div id="emp-att-leave-info" class="form-text text-info mt-1" style="display:none"></div>
         </div>
         <div class="row g-2 mb-2">
           <div class="col-6"><label class="form-label small mb-1">Clock In</label><input type="time" id="emp-att-clock-in" class="form-control form-control-sm" onchange="empAutoCalcHours()"></div>
@@ -5103,6 +5105,13 @@
               <div class="col-md-3"><label class="form-label small mb-1">Normal Hours/Day</label><input type="number" id="emp-ed-hrs-day" class="form-control form-control-sm" step="0.5" value="9"></div>
               <div class="col-md-3"><label class="form-label small mb-1">Normal Days/Week</label><input type="number" id="emp-ed-days-week" class="form-control form-control-sm" value="5"></div>
               <div class="col-md-3"><label class="form-label small mb-1">Leave Days/Year</label><input type="number" id="emp-ed-leave-days" class="form-control form-control-sm" step="0.5" value="21"></div>
+              <div class="col-md-4">
+                <label class="form-label small mb-1">Pay Type</label>
+                <select id="emp-ed-pay-type" class="form-select form-select-sm">
+                  <option value="hourly">Hourly — no work, no pay</option>
+                  <option value="salaried">Salaried — guaranteed daily pay (absent days deducted)</option>
+                </select>
+              </div>
               <div class="col-md-4"><label class="form-label small mb-1">Pay Frequency</label>
                 <select id="emp-ed-pay-freq" class="form-select form-select-sm">
                   <option value="weekly">Weekly</option>
