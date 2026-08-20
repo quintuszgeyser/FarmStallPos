@@ -21182,6 +21182,7 @@ const EMP = {
   tsCalendarData: {},  // attendance keyed by date for current calendar view (single-employee)
   allGridAttData: {},  // attendance keyed by `${empId}_${date}` for all-employees grid
   scheduleData: {},    // shifts keyed by date
+  scheduleRules: null, // global schedule rules (default clock-in/out, rotation config)
   tellerUnlocked: false, // password gate for teller self-service tab
   myEmpId: null,         // cached employee id for logged-in teller
   currentPayRunPreview: null,
@@ -21217,7 +21218,10 @@ async function loadEmployeesTab() {
 
 async function _empLoadEmployees() {
   try {
-    EMP.employees = await api('/api/employees');
+    [EMP.employees, EMP.scheduleRules] = await Promise.all([
+      api('/api/employees'),
+      api('/api/employees/schedule_rules').catch(() => null),
+    ]);
     _empPopulateSelects();
     _empRenderEmployeeList();
   } catch(e) { toast(e.message, 'danger'); }
@@ -21512,8 +21516,10 @@ function empOpenAttendanceForDate(dateStr, empId) {
     const coH = Math.floor((480 + totalMin) / 60);
     const coM = (480 + totalMin) % 60;
     const clockOut = `${String(Math.min(coH, 23)).padStart(2,'0')}:${String(coM).padStart(2,'0')}`;
-    document.getElementById('emp-att-clock-in').value  = '08:00';
-    document.getElementById('emp-att-clock-out').value = clockOut;
+    const defCi = (EMP.scheduleRules && EMP.scheduleRules.default_clock_in) || '07:30';
+    const defCo = (EMP.scheduleRules && EMP.scheduleRules.default_clock_out) || '17:00';
+    document.getElementById('emp-att-clock-in').value  = defCi;
+    document.getElementById('emp-att-clock-out').value = defCo;
     document.getElementById('emp-att-break').value     = breakMin;
     document.getElementById('emp-att-hours').value     = defHours.toFixed(2);
     document.getElementById('emp-att-notes').value     = '';
@@ -21644,6 +21650,10 @@ async function empOpenScheduleConfig() {
     }
     const modeEl = document.getElementById('sched-rotation-mode');
     if (modeEl) modeEl.value = rules.rotation_mode || 'fixed';
+    const ciEl = document.getElementById('sched-default-clock-in');
+    const coEl = document.getElementById('sched-default-clock-out');
+    if (ciEl) ciEl.value = rules.default_clock_in  || '07:30';
+    if (coEl) coEl.value = rules.default_clock_out || '17:00';
   } catch(e) { /* non-fatal */ }
 
   const body = document.getElementById('emp-sched-config-body');
@@ -21995,13 +22005,15 @@ async function empSaveScheduleRules() {
   const rotDays = [0,1,2,3,4,5,6]
     .filter(d => { const cb = document.getElementById(`srot-${d}`); return cb && cb.checked; })
     .join(',');
-  const mode = document.getElementById('sched-rotation-mode')?.value || 'fixed';
+  const mode    = document.getElementById('sched-rotation-mode')?.value || 'fixed';
+  const clockIn  = document.getElementById('sched-default-clock-in')?.value  || '07:30';
+  const clockOut = document.getElementById('sched-default-clock-out')?.value || '17:00';
   try {
     await api('/api/employees/schedule_rules', {
       method: 'POST',
-      body: JSON.stringify({ mandatory_days: mandDays, rotation_days: rotDays, rotation_mode: mode })
+      body: JSON.stringify({ mandatory_days: mandDays, rotation_days: rotDays, rotation_mode: mode, default_clock_in: clockIn, default_clock_out: clockOut })
     });
-    toast('Rotation rules saved', 'success');
+    toast('Schedule rules saved', 'success');
   } catch(e) { toast(e.message, 'danger'); }
 }
 

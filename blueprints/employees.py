@@ -763,13 +763,22 @@ def api_generate_schedule():
             slot_map[emp.id] = slot_counter
         slot_counter += 1
 
+    # Read default clock-in/out from settings (configurable in Schedule Config)
+    def _parse_time_str(s, fallback_h, fallback_m):
+        try:
+            parts = (s or '').split(':')
+            return dtime(int(parts[0]), int(parts[1]))
+        except Exception:
+            return dtime(fallback_h, fallback_m)
+
+    default_ci_str  = get_setting('schedule_default_clock_in')  or '07:30'
+    default_co_str  = get_setting('schedule_default_clock_out') or '17:00'
+    default_ci      = _parse_time_str(default_ci_str, 7, 30)
+    default_co      = _parse_time_str(default_co_str, 17, 0)
+
     for emp_idx, emp in enumerate(employees):
-        hours     = float(emp.normal_hours_per_day or 8)
-        break_min = 60 if hours >= 6 else 0
-        total_min = int(hours * 60) + break_min
-        co_h, co_m  = divmod(480 + total_min, 60)
-        clock_in_t  = dtime(8, 0)
-        clock_out_t = dtime(min(co_h, 23), co_m % 60)
+        clock_in_t  = default_ci
+        clock_out_t = default_co
 
         # Fetch existing entries: separate schedule_default (can be replaced) from manual
         existing_rows = EmployeeAttendance.query.filter(
@@ -1779,9 +1788,11 @@ def api_schedule_rules_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     return jsonify({
-        'mandatory_days':  get_setting('schedule_mandatory_days')  or '5',
-        'rotation_days':   get_setting('schedule_rotation_days')   or '0,1,2,3,4',
-        'rotation_mode':   get_setting('schedule_rotation_mode')   or 'fixed',
+        'mandatory_days':  get_setting('schedule_mandatory_days')   or '5',
+        'rotation_days':   get_setting('schedule_rotation_days')    or '0,1,2,3,4',
+        'rotation_mode':   get_setting('schedule_rotation_mode')    or 'fixed',
+        'default_clock_in':  get_setting('schedule_default_clock_in')  or '07:30',
+        'default_clock_out': get_setting('schedule_default_clock_out') or '17:00',
     })
 
 
@@ -1802,6 +1813,10 @@ def api_schedule_rules_save():
         _save('schedule_rotation_days', d['rotation_days'])
     if 'rotation_mode' in d:
         _save('schedule_rotation_mode', d['rotation_mode'])
+    if 'default_clock_in' in d:
+        _save('schedule_default_clock_in', d['default_clock_in'])
+    if 'default_clock_out' in d:
+        _save('schedule_default_clock_out', d['default_clock_out'])
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -2007,7 +2022,29 @@ def api_payslip(eid, pid):
     hrs_per_day          = float(emp.normal_hours_per_day) if float(emp.normal_hours_per_day) > 0 else 8
     ytd_vacation_days    = round(ytd_vacation_hours / hrs_per_day, 2)
     ytd_sick_days        = round(ytd_sick_hours     / hrs_per_day, 2)
-    leave_remaining_days = max(0.0, float(emp.leave_days_per_year) - ytd_vacation_days)
+
+    # Compute leave balances for all leave types using the authoritative function
+    all_policies = LeavePolicy.query.order_by(LeavePolicy.sort_order).all()
+    as_of_date   = pr.period_end
+    leave_balances = []
+    for pol in all_policies:
+        try:
+            bal = _compute_leave_balance(emp, pol.leave_type, as_of_date)
+        except Exception:
+            bal = {'accrued': 0, 'used': 0, 'remaining': 0}
+        leave_balances.append({
+            'label':     pol.label,
+            'accrued':   round(float(bal.get('accrued', 0) or 0), 1),
+            'used':      round(float(bal.get('used',    0) or 0), 1),
+            'remaining': round(float(bal.get('remaining',0) or 0), 1),
+            'is_paid':   pol.is_paid,
+        })
+
+    # Keep legacy fields for backward compat with existing payslip template rows
+    leave_remaining_days = next(
+        (b['remaining'] for b in leave_balances if 'annual' in b['label'].lower() or b['label'].lower().startswith('annual')),
+        0.0
+    )
 
     # Pass all numeric Decimal fields as floats so the template never touches Decimal
     rate = float(pr.hourly_rate_snapshot)
@@ -2056,6 +2093,7 @@ def api_payslip(eid, pid):
         ytd_vacation_days    = ytd_vacation_days,
         ytd_sick_days        = ytd_sick_days,
         leave_remaining_days = leave_remaining_days,
+        leave_balances       = leave_balances,
     )
 
 
