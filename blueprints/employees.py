@@ -42,7 +42,13 @@ POST   /api/employees/<id>/pay_runs/preview        admin
 POST   /api/employees/<id>/pay_runs                admin (save as draft)
 PUT    /api/employees/<id>/pay_runs/<pid>/approve  admin
 PUT    /api/employees/<id>/pay_runs/<pid>/paid     admin
+DELETE /api/employees/<id>/pay_runs/<pid>          admin (draft only)
 GET    /api/employees/<id>/pay_runs/<pid>/payslip  admin | own teller (HTML)
+
+POST   /api/employees/pay_runs/bulk                admin (all employees, one period)
+
+GET    /api/employees/schedule_rules               admin
+POST   /api/employees/schedule_rules               admin
 
 GET    /api/employees/pay_rules                    admin
 PUT    /api/employees/pay_rules/<id>               admin
@@ -61,7 +67,7 @@ from sqlalchemy import func
 
 from helpers import require_login, require_role, current_user, get_setting
 from models import (
-    db, User,
+    db, User, Setting,
     Employee, EmployeeDeduction, PayRule, EmployeeAttendance,
     ShiftSchedule, LeaveRequest, LeaveBalance,
     EmployeeAdvance, EmployeeLoan, EmployeeDocument, PayRun,
@@ -187,6 +193,9 @@ def _serialize_employee(emp, include_sensitive=True):
         'leave_days_per_year':  float(emp.leave_days_per_year),
         'is_active':            emp.is_active,
         'notes':                emp.notes,
+        'work_days_json':       emp.work_days_json or '0,1,2,3,4,5',
+        'rotation_start_day':   emp.rotation_start_day,
+        'rotation_slot':        emp.rotation_slot,
         'username':             emp.user.username if emp.user else None,
     }
     if include_sensitive:
@@ -464,6 +473,9 @@ def api_employees_create():
         pay_frequency        = d.get('pay_frequency', 'biweekly'),
         pay_day_of_week      = int(d.get('pay_day_of_week', 5)),
         leave_days_per_year  = Decimal(str(d.get('leave_days_per_year', 21))),
+        work_days_json       = d.get('work_days_json') or '0,1,2,3,4,5',
+        rotation_start_day   = int(d['rotation_start_day']) if d.get('rotation_start_day') is not None and str(d.get('rotation_start_day', '')).strip() != '' else None,
+        rotation_slot        = int(d['rotation_slot']) if d.get('rotation_slot') is not None and str(d.get('rotation_slot', '')).strip() != '' else None,
         notes                = _s(d.get('notes')),
         created_by           = current_user().id if current_user() else None,
     )
@@ -508,6 +520,12 @@ def api_employees_update(eid):
                                 ('leave_days_per_year', 21)]:
         if num_field in d:
             setattr(emp, num_field, d[num_field])
+    if 'work_days_json' in d:
+        emp.work_days_json = d['work_days_json'] or '0,1,2,3,4,5'
+    if 'rotation_start_day' in d:
+        emp.rotation_start_day = int(d['rotation_start_day']) if d['rotation_start_day'] is not None and str(d['rotation_start_day']).strip() != '' else None
+    if 'rotation_slot' in d:
+        emp.rotation_slot = int(d['rotation_slot']) if d['rotation_slot'] is not None and str(d['rotation_slot']).strip() != '' else None
     if 'is_active' in d:
         emp.is_active = bool(d['is_active'])
     db.session.commit()
@@ -623,10 +641,10 @@ def api_attendance_list(eid):
 def api_generate_schedule():
     """Bulk-create default attendance for all active employees for a given month.
 
-    rotation=false (default): uses each employee's normal_days_per_week.
-    rotation=true: Mon–Sat work week, each employee gets a rotating day off per week.
-      Week offset 0 → emp[0] off Mon, emp[1] off Tue, …, emp[5] off Sat.
-      Week offset 1 → emp[0] off Tue, emp[1] off Wed, … (shifts by 1 each week).
+    rotation=false (default): uses each employee's work_days_json per-employee setting.
+    rotation=true: uses global schedule rules (schedule_mandatory_days, schedule_rotation_days,
+      schedule_rotation_mode). Each employee's rotation_slot (or alphabetical index) determines
+      which day they are off in each week.
     Skips days that already have an entry.
     """
     if not require_role('admin'):
@@ -652,6 +670,28 @@ def api_generate_schedule():
     created   = 0
     skipped   = 0
 
+    # Load global schedule rules (used only when rotation=True)
+    def _parse_days(key, default):
+        raw = get_setting(key) or default
+        try:
+            return [int(x) for x in raw.split(',') if x.strip() != '']
+        except Exception:
+            return list(map(int, default.split(',')))
+
+    global_rotation_days  = _parse_days('schedule_rotation_days', '0,1,2,3,4')   # Mon-Fri default
+    global_mandatory_days = set(_parse_days('schedule_mandatory_days', '5'))       # Sat default
+    rotation_mode         = get_setting('schedule_rotation_mode') or 'fixed'      # fixed | advancing
+
+    # Build rotation slots: use emp.rotation_slot if set, else alphabetical index
+    slot_map = {}
+    slot_counter = 0
+    for emp in sorted(employees, key=lambda e: (e.rotation_slot if e.rotation_slot is not None else 9999, e.name)):
+        if emp.rotation_slot is not None:
+            slot_map[emp.id] = emp.rotation_slot
+        else:
+            slot_map[emp.id] = slot_counter
+        slot_counter += 1
+
     for emp_idx, emp in enumerate(employees):
         hours     = float(emp.normal_hours_per_day or 8)
         break_min = 60 if hours >= 6 else 0
@@ -671,30 +711,47 @@ def api_generate_schedule():
         }
 
         if rotation:
-            allowed_weekdays = set(range(6))   # Mon(0)–Sat(5); Sun always excluded
+            # Use global work days: all days except mandatory-off days become eligible
+            # Employee works every day in their work_days_json that isn't overridden globally
+            try:
+                emp_work_days = [int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip()]
+            except Exception:
+                emp_work_days = [0, 1, 2, 3, 4, 5]
+            allowed_weekdays = set(emp_work_days)
+            # Rotation pool: intersection of employee work days and global rotation days
+            rot_pool = [d for d in global_rotation_days if d in allowed_weekdays]
+            if not rot_pool:
+                rot_pool = [d for d in global_rotation_days]
+            slot = slot_map.get(emp.id, emp_idx)
         else:
-            work_days = emp.normal_days_per_week or 5
-            if work_days >= 7:
-                allowed_weekdays = set(range(7))
-            elif work_days >= 6:
-                allowed_weekdays = set(range(6))
-            else:
-                allowed_weekdays = set(range(5))
+            # Non-rotation: use per-employee work_days_json
+            try:
+                emp_work_days = [int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip()]
+            except Exception:
+                emp_work_days = [0, 1, 2, 3, 4, 5]
+            allowed_weekdays = set(emp_work_days)
+            rot_pool = []
+            slot = 0
 
         for day in all_days:
             if day in existing:
                 skipped += 1
                 continue
-            if day.weekday() not in allowed_weekdays:
+            dow = day.weekday()
+            if dow not in allowed_weekdays:
                 continue
+            # Mandatory days are always worked (skip rotation off-day logic for them)
+            is_mandatory = dow in global_mandatory_days
 
-            if rotation:
-                # week_offset: 0 for days 1–7, 1 for days 8–14, etc.
+            if rotation and rot_pool and not is_mandatory:
                 week_offset = (day.day - 1) // 7
-                # This employee's off-weekday for this week (0=Mon … 5=Sat)
-                off_weekday = (emp_idx + week_offset) % 6
-                if day.weekday() == off_weekday:
-                    continue   # rotating day off — skip
+                if rotation_mode == 'advancing':
+                    off_idx = (slot + week_offset) % len(rot_pool)
+                else:  # fixed
+                    off_idx = slot % len(rot_pool)
+                off_weekday = rot_pool[off_idx]
+                if dow == off_weekday:
+                    continue   # this employee's rotating day off
 
             day_type = _auto_day_type(day, holidays)
             db.session.add(EmployeeAttendance(
@@ -1273,6 +1330,145 @@ def api_pay_runs_approve(eid, pid):
     return jsonify({'ok': True, 'status': 'approved', 'reference': pr.reference})
 
 
+@bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>', methods=['DELETE'])
+def api_pay_runs_delete(eid, pid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    pr = PayRun.query.filter_by(id=pid, employee_id=eid).first_or_404()
+    if pr.status == 'paid':
+        return jsonify({'error': 'Cannot delete a paid pay run'}), 400
+    # Reverse advance deductions if the run was approved
+    if pr.status == 'approved':
+        for adv_snap in json.loads(pr.advances_json or '[]'):
+            adv = EmployeeAdvance.query.get(adv_snap.get('id'))
+            if adv and adv.status == 'deducted' and adv.pay_run_id == pr.id:
+                adv.status     = 'outstanding'
+                adv.pay_run_id = None
+        for ded in json.loads(pr.deductions_json or '[]'):
+            if ded.get('type') == 'loan' and ded.get('loan_id'):
+                loan = EmployeeLoan.query.get(ded['loan_id'])
+                if loan:
+                    loan.balance = Decimal(str(loan.balance)) + Decimal(str(ded['amount']))
+                    if loan.status == 'settled':
+                        loan.status = 'active'
+    db.session.delete(pr)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/employees/pay_runs/bulk', methods=['POST'])
+def api_pay_runs_bulk():
+    """Create draft pay runs for all (or selected) active employees for the same period."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    d = request.json or {}
+    try:
+        p_start = date.fromisoformat(d['period_start'])
+        p_end   = date.fromisoformat(d['period_end'])
+    except (KeyError, ValueError):
+        return jsonify({'error': 'period_start and period_end required'}), 400
+    pay_date_val = date.fromisoformat(d['pay_date']) if d.get('pay_date') else None
+    notes_val    = (d.get('notes') or '').strip() or None
+    emp_ids      = d.get('employee_ids')  # list of ints, or None/missing = all active
+
+    if emp_ids:
+        employees = Employee.query.filter(Employee.id.in_(emp_ids), Employee.is_active == True).all()
+    else:
+        employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
+
+    u       = current_user()
+    created = []
+    skipped = []
+    errors  = []
+
+    for emp in employees:
+        # Skip if a pay run for this exact period already exists
+        existing = PayRun.query.filter_by(
+            employee_id  = emp.id,
+            period_start = p_start,
+            period_end   = p_end,
+        ).first()
+        if existing:
+            skipped.append({'id': emp.id, 'name': emp.name, 'reason': 'already exists'})
+            continue
+
+        calc = _calculate_pay_run(emp.id, p_start, p_end)
+        if not calc:
+            errors.append({'id': emp.id, 'name': emp.name, 'reason': 'calculation failed'})
+            continue
+
+        ref = _next_reference()
+        pr  = PayRun(
+            reference                   = ref,
+            employee_id                 = emp.id,
+            period_start                = p_start,
+            period_end                  = p_end,
+            pay_date                    = pay_date_val,
+            hourly_rate_snapshot        = Decimal(str(calc['hourly_rate_snapshot'])),
+            normal_hours                = Decimal(str(calc['normal_hours'])),
+            overtime_hours              = Decimal(str(calc['overtime_hours'])),
+            sunday_hours                = Decimal(str(calc['sunday_hours'])),
+            holiday_hours               = Decimal(str(calc['holiday_hours'])),
+            vacation_hours              = Decimal(str(calc['vacation_hours'])),
+            sick_hours                  = Decimal(str(calc['sick_hours'])),
+            normal_pay                  = Decimal(str(calc['normal_pay'])),
+            overtime_pay                = Decimal(str(calc['overtime_pay'])),
+            sunday_pay                  = Decimal(str(calc['sunday_pay'])),
+            holiday_pay                 = Decimal(str(calc['holiday_pay'])),
+            vacation_pay                = Decimal(str(calc['vacation_pay'])),
+            gross_pay                   = Decimal(str(calc['gross_pay'])),
+            deductions_json             = json.dumps(calc['deductions']),
+            employer_contributions_json = json.dumps(calc['employer_contributions']),
+            advances_json               = json.dumps(calc['advances']),
+            attendance_json             = json.dumps(calc['attendance']),
+            total_deductions            = Decimal(str(calc['total_deductions'])),
+            net_pay                     = Decimal(str(calc['net_pay'])),
+            notes                       = notes_val,
+            created_by                  = u.id if u else None,
+        )
+        db.session.add(pr)
+        db.session.flush()
+        created.append({
+            'id': emp.id, 'name': emp.name, 'reference': ref,
+            'gross': float(calc['gross_pay']), 'net': float(calc['net_pay']),
+        })
+
+    db.session.commit()
+    return jsonify({'created': created, 'skipped': skipped, 'errors': errors}), 201
+
+
+@bp.route('/api/employees/schedule_rules', methods=['GET'])
+def api_schedule_rules_get():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    return jsonify({
+        'mandatory_days':  get_setting('schedule_mandatory_days')  or '5',
+        'rotation_days':   get_setting('schedule_rotation_days')   or '0,1,2,3,4',
+        'rotation_mode':   get_setting('schedule_rotation_mode')   or 'fixed',
+    })
+
+
+@bp.route('/api/employees/schedule_rules', methods=['POST'])
+def api_schedule_rules_save():
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    d = request.json or {}
+    def _save(key, val):
+        s = Setting.query.filter_by(key=key).first()
+        if s:
+            s.value = val
+        else:
+            db.session.add(Setting(key=key, value=val))
+    if 'mandatory_days' in d:
+        _save('schedule_mandatory_days', d['mandatory_days'])
+    if 'rotation_days' in d:
+        _save('schedule_rotation_days', d['rotation_days'])
+    if 'rotation_mode' in d:
+        _save('schedule_rotation_mode', d['rotation_mode'])
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/paid', methods=['PUT'])
 def api_pay_runs_paid(eid, pid):
     if not require_role('admin'):
@@ -1311,6 +1507,12 @@ def api_payslip(eid, pid):
     ).all()
     ytd_gross = sum(float(r.gross_pay) for r in ytd_runs)
     ytd_net   = sum(float(r.net_pay)   for r in ytd_runs)
+    ytd_vacation_hours   = sum(float(r.vacation_hours) for r in ytd_runs)
+    ytd_sick_hours       = sum(float(r.sick_hours) for r in ytd_runs)
+    hrs_per_day          = float(emp.normal_hours_per_day) if float(emp.normal_hours_per_day) > 0 else 8
+    ytd_vacation_days    = round(ytd_vacation_hours / hrs_per_day, 2)
+    ytd_sick_days        = round(ytd_sick_hours     / hrs_per_day, 2)
+    leave_remaining_days = max(0.0, float(emp.leave_days_per_year) - ytd_vacation_days)
 
     # Pass all numeric Decimal fields as floats so the template never touches Decimal
     rate = float(pr.hourly_rate_snapshot)
@@ -1341,6 +1543,8 @@ def api_payslip(eid, pid):
         'rate_ot':              round(rate * 1.5, 2),
         'rate_sun':             round(rate * 2.0, 2),
         'rate_hol':             round(rate * 2.0, 2),
+        'leave_hours_per_day':  hrs_per_day,
+        'leave_entitlement_days': float(emp.leave_days_per_year),
     }
 
     return render_template('payslip.html',
@@ -1350,10 +1554,13 @@ def api_payslip(eid, pid):
         employer_contribs = json.loads(pr.employer_contributions_json),
         advances         = json.loads(pr.advances_json),
         attendance       = json.loads(pr.attendance_json),
-        store_name       = store_name,
-        approved_by_name = approved_by_name,
-        ytd_gross        = ytd_gross,
-        ytd_net          = ytd_net,
+        store_name           = store_name,
+        approved_by_name     = approved_by_name,
+        ytd_gross            = ytd_gross,
+        ytd_net              = ytd_net,
+        ytd_vacation_days    = ytd_vacation_days,
+        ytd_sick_days        = ytd_sick_days,
+        leave_remaining_days = leave_remaining_days,
     )
 
 

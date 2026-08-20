@@ -2863,7 +2863,8 @@
             <input type="month" id="emp-ts-month" class="form-control form-control-sm" style="max-width:160px" onchange="loadTimesheetCalendar()">
             <button class="btn btn-outline-secondary btn-sm" onclick="loadTimesheetCalendar()"><i class="bi bi-arrow-clockwise"></i></button>
             <div class="ms-auto d-flex gap-2 flex-wrap">
-              <button class="btn btn-sm btn-success" onclick="empGenerateMonth(false)" title="Default schedule: uses each employee's normal days/week setting"><i class="bi bi-calendar-check me-1"></i>Generate Month</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="empOpenScheduleConfig()" title="Configure per-employee work days and rotation"><i class="bi bi-sliders me-1"></i>Schedule Config</button>
+              <button class="btn btn-sm btn-success" onclick="empGenerateMonth(false)" title="Default schedule: uses each employee's working days setting"><i class="bi bi-calendar-check me-1"></i>Generate Month</button>
               <button class="btn btn-sm btn-outline-success" onclick="empGenerateMonth(true)" title="Mon–Sat, one rotating day off per employee per week"><i class="bi bi-arrow-repeat me-1"></i>Generate Rotating</button>
               <button class="btn btn-sm btn-outline-primary" onclick="empOpenShiftModal()"><i class="bi bi-calendar-plus me-1"></i>Add Shift</button>
             </div>
@@ -2880,6 +2881,7 @@
           <div class="d-flex gap-2 align-items-center mb-3 flex-wrap">
             <select id="emp-pr-employee" class="form-select form-select-sm" style="max-width:220px"></select>
             <button class="btn btn-sm btn-primary" onclick="empOpenPayRunModal()"><i class="bi bi-plus-lg me-1"></i>New Pay Run</button>
+            <button class="btn btn-sm btn-outline-success" onclick="empOpenBulkPayRunModal()" title="Create pay runs for ALL employees in one go"><i class="bi bi-people me-1"></i>Bulk Pay Run</button>
             <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="loadPayRunList()"><i class="bi bi-arrow-clockwise"></i></button>
           </div>
           <table class="table table-sm table-hover">
@@ -4654,7 +4656,7 @@
 </script>
 <script async src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
 <script src="/static/JsBarcode.all.min.js"></script>
-<script src="/static/main.js?v=20260819-emp4"></script>
+<script src="/static/main.js?v=20260820-emp2"></script>
 
 <!-- ═══════════════ LABEL PRINT MODAL ═══════════════ -->
 <div class="modal fade" id="labelPrintModal" tabindex="-1" aria-hidden="true">
@@ -4968,8 +4970,67 @@
         <div class="mb-2"><label class="form-label small mb-1">Notes</label><input type="text" id="emp-att-notes" class="form-control form-control-sm" placeholder="Optional"></div>
       </div>
       <div class="modal-footer py-2">
+        <button id="emp-att-delete-btn" class="btn btn-sm btn-danger me-auto" onclick="empDeleteAttendance()" style="display:none"><i class="bi bi-trash me-1"></i>Delete Entry</button>
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-sm btn-primary" onclick="empSaveAttendance()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ SCHEDULE CONFIG MODAL ═══════════ -->
+<div class="modal fade" id="empScheduleConfigModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0"><i class="bi bi-sliders me-1"></i>Schedule Configuration</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body p-0">
+        <!-- Global rotation rules -->
+        <div class="border-bottom p-3">
+          <h6 class="mb-2 fw-semibold"><i class="bi bi-gear me-1"></i>Global Rotation Rules</h6>
+          <div class="row g-3 align-items-start">
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold mb-1">Mandatory Work Days <span class="text-muted">(no one gets off)</span></label>
+              <div class="d-flex gap-2 flex-wrap" id="sched-mandatory-days">
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="smand-0" value="0"><label class="form-check-label small" for="smand-0">Mon</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="smand-1" value="1"><label class="form-check-label small" for="smand-1">Tue</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="smand-2" value="2"><label class="form-check-label small" for="smand-2">Wed</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="smand-3" value="3"><label class="form-check-label small" for="smand-3">Thu</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="smand-4" value="4"><label class="form-check-label small" for="smand-4">Fri</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="smand-5" value="5"><label class="form-check-label small" for="smand-5">Sat</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="smand-6" value="6"><label class="form-check-label small" for="smand-6">Sun</label></div>
+              </div>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label small fw-semibold mb-1">Rotation Day Pool <span class="text-muted">(eligible off-days)</span></label>
+              <div class="d-flex gap-2 flex-wrap" id="sched-rotation-days">
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="srot-0" value="0"><label class="form-check-label small" for="srot-0">Mon</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="srot-1" value="1"><label class="form-check-label small" for="srot-1">Tue</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="srot-2" value="2"><label class="form-check-label small" for="srot-2">Wed</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="srot-3" value="3"><label class="form-check-label small" for="srot-3">Thu</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="srot-4" value="4"><label class="form-check-label small" for="srot-4">Fri</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="srot-5" value="5"><label class="form-check-label small" for="srot-5">Sat</label></div>
+                <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" id="srot-6" value="6"><label class="form-check-label small" for="srot-6">Sun</label></div>
+              </div>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label small fw-semibold mb-1">Rotation Mode</label>
+              <select id="sched-rotation-mode" class="form-select form-select-sm">
+                <option value="fixed">Fixed (same every week)</option>
+                <option value="advancing">Advancing (shifts each week)</option>
+              </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button class="btn btn-sm btn-primary w-100" onclick="empSaveScheduleRules()"><i class="bi bi-check-lg me-1"></i>Save Rules</button>
+            </div>
+          </div>
+          <p class="text-muted small mt-2 mb-0">Example: Mandatory=Sat, Pool=Mon–Fri, Mode=Fixed → Emp1 always off Mon, Emp2 always off Tue. Mode=Advancing → off-day shifts by 1 each week.</p>
+        </div>
+        <!-- Per-employee settings -->
+        <p class="text-muted small px-3 pt-2 mb-0">Per-employee working days and rotation slot. Slot 0 = first in rotation. Leave blank for alphabetical order.</p>
+        <div id="emp-sched-config-body" class="p-3"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
@@ -5010,6 +5071,7 @@
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#emp-ed-pay">Pay Config</button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#emp-ed-deductions">Deductions</button></li>
           <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#emp-ed-docs">Documents</button></li>
+          <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#emp-ed-schedule">Schedule</button></li>
         </ul>
         <div class="tab-content">
           <div class="tab-pane fade show active" id="emp-ed-personal">
@@ -5087,11 +5149,72 @@
             <table class="table table-sm"><thead class="table-light"><tr><th>Type</th><th>Label</th><th>Uploaded</th><th></th></tr></thead>
             <tbody id="emp-docs-tbody"></tbody></table>
           </div>
+          <div class="tab-pane fade" id="emp-ed-schedule">
+            <div class="mb-3">
+              <label class="form-label small fw-semibold mb-2">Working Days</label>
+              <div class="d-flex gap-3 flex-wrap">
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="emp-wd-0" value="0"><label class="form-check-label small" for="emp-wd-0">Mon</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="emp-wd-1" value="1"><label class="form-check-label small" for="emp-wd-1">Tue</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="emp-wd-2" value="2"><label class="form-check-label small" for="emp-wd-2">Wed</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="emp-wd-3" value="3"><label class="form-check-label small" for="emp-wd-3">Thu</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="emp-wd-4" value="4"><label class="form-check-label small" for="emp-wd-4">Fri</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="emp-wd-5" value="5"><label class="form-check-label small" for="emp-wd-5">Sat</label></div>
+                <div class="form-check"><input class="form-check-input" type="checkbox" id="emp-wd-6" value="6"><label class="form-check-label small" for="emp-wd-6">Sun</label></div>
+              </div>
+            </div>
+            <div class="mb-3 row g-2 align-items-end">
+              <div class="col-md-4">
+                <label class="form-label small mb-1">Rotation Slot <span class="text-muted">(order in rotation, 0=first)</span></label>
+                <input type="number" id="emp-ed-rot-slot" class="form-control form-control-sm" placeholder="Auto" min="0" step="1">
+              </div>
+              <div class="col-md-5">
+                <label class="form-label small mb-1">Rotation Start Day <span class="text-muted">(override week 1 off-day)</span></label>
+                <select id="emp-ed-rot-start" class="form-select form-select-sm">
+                  <option value="">Auto</option>
+                  <option value="0">Monday</option>
+                  <option value="1">Tuesday</option>
+                  <option value="2">Wednesday</option>
+                  <option value="3">Thursday</option>
+                  <option value="4">Friday</option>
+                  <option value="5">Saturday</option>
+                  <option value="6">Sunday</option>
+                </select>
+              </div>
+            </div>
+            <p class="text-muted small">Working days drive "Generate Month". Rotation Slot is this employee's position in the global rotation order (0 = first off). Configure global rotation days and mode in <strong>Schedule Config</strong> on the Timesheets tab.</p>
+          </div>
         </div>
       </div>
       <div class="modal-footer py-2">
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-sm btn-primary" onclick="empSaveEmployee()">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ BULK PAY RUN MODAL ═══════════ -->
+<div class="modal fade" id="empBulkPayRunModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2"><h6 class="modal-title mb-0"><i class="bi bi-people me-1"></i>Bulk Pay Run — All Employees</h6><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+      <div class="modal-body">
+        <div class="row g-2 mb-3">
+          <div class="col-md-3"><label class="form-label small mb-1">Period Start</label><input type="date" id="emp-bulk-pr-start" class="form-control form-control-sm" onchange="empPreviewBulkPayRun()"></div>
+          <div class="col-md-3"><label class="form-label small mb-1">Period End</label><input type="date" id="emp-bulk-pr-end" class="form-control form-control-sm" onchange="empPreviewBulkPayRun()"></div>
+          <div class="col-md-3"><label class="form-label small mb-1">Pay Date</label><input type="date" id="emp-bulk-pr-paydate" class="form-control form-control-sm"></div>
+          <div class="col-md-3 d-flex align-items-end">
+            <button class="btn btn-sm btn-outline-secondary w-100" onclick="empPreviewBulkPayRun()"><i class="bi bi-eye me-1"></i>Preview</button>
+          </div>
+        </div>
+        <div id="emp-bulk-pr-preview" class="border rounded p-2 bg-light" style="min-height:120px;max-height:350px;overflow-y:auto">
+          <div class="text-muted small text-center pt-4">Enter a period and click Preview to see calculated pay for each employee.</div>
+        </div>
+        <div class="mt-2"><label class="form-label small mb-1">Notes</label><input type="text" id="emp-bulk-pr-notes" class="form-control form-control-sm" placeholder="Optional"></div>
+      </div>
+      <div class="modal-footer py-2">
+        <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button id="emp-bulk-pr-save-btn" class="btn btn-sm btn-success" onclick="empRunBulkPayRun()" disabled><i class="bi bi-check-lg me-1"></i>Create All Pay Runs</button>
       </div>
     </div>
   </div>

@@ -911,6 +911,9 @@ class Employee(db.Model):
     leave_days_per_year  = db.Column(Numeric(5, 2), nullable=False, default=21, server_default='21')
     is_active            = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
     notes                = db.Column(db.Text, nullable=True)
+    work_days_json       = db.Column(db.Text, nullable=False, default='0,1,2,3,4,5', server_default="'0,1,2,3,4,5'")
+    rotation_start_day   = db.Column(db.Integer, nullable=True)
+    rotation_slot        = db.Column(db.Integer, nullable=True)  # position in global rotation order; null = alphabetical
     created_at           = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     created_by           = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 

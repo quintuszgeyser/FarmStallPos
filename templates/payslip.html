@@ -153,6 +153,32 @@
   </tbody>
 </table>
 
+<table style="margin-top:8px;">
+  <thead><tr><th colspan="3">Leave Balance ({{ pr.period_year }})</th></tr></thead>
+  <tbody>
+    <tr>
+      <td style="width:45%">Annual Leave Entitlement</td>
+      <td style="text-align:center">{{ "%.1f"|format(pr.leave_entitlement_days) }} days</td>
+      <td style="text-align:right;color:#555">R {{ "%.2f"|format(pr.leave_entitlement_days * pr.hourly_rate_snapshot * pr.leave_hours_per_day) }}</td>
+    </tr>
+    <tr>
+      <td>Annual Leave Used (YTD)</td>
+      <td style="text-align:center;color:#dc2626">{{ "%.1f"|format(ytd_vacation_days) }} days</td>
+      <td style="text-align:right;color:#dc2626">R {{ "%.2f"|format(ytd_vacation_days * pr.hourly_rate_snapshot * pr.leave_hours_per_day) }}</td>
+    </tr>
+    <tr>
+      <td>Sick Leave Used (YTD)</td>
+      <td style="text-align:center;color:#92400e">{{ "%.1f"|format(ytd_sick_days) }} days</td>
+      <td></td>
+    </tr>
+    <tr class="totals-row">
+      <td>Annual Leave Remaining</td>
+      <td style="text-align:center;color:#166534">{{ "%.1f"|format(leave_remaining_days) }} days</td>
+      <td style="text-align:right;color:#166534">R {{ "%.2f"|format(leave_remaining_days * pr.hourly_rate_snapshot * pr.leave_hours_per_day) }}</td>
+    </tr>
+  </tbody>
+</table>
+
 <div class="footer">
   <span>Generated: {{ pr.created_at }}{% if approved_by_name %} &nbsp;|&nbsp; Approved by: {{ approved_by_name }}{% if pr.approved_at %} on {{ pr.approved_at }}{% endif %}{% endif %}</span>
   <span>Status: {{ pr.status | upper }} &nbsp;|&nbsp; {{ store_name }}</span>

@@ -2075,6 +2075,9 @@ def strong_migrate():
               created_by           INTEGER REFERENCES users(id)
             )
         """)
+        pg_try("ALTER TABLE employees ADD COLUMN work_days_json TEXT NOT NULL DEFAULT '0,1,2,3,4,5'")
+        pg_try("ALTER TABLE employees ADD COLUMN rotation_start_day INTEGER")
+        pg_try("ALTER TABLE employees ADD COLUMN rotation_slot INTEGER")
         conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS employee_deductions (
               id             SERIAL PRIMARY KEY,
