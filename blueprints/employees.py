@@ -2023,45 +2023,69 @@ def api_employees_dashboard():
         return jsonify({'error': 'Forbidden'}), 403
 
     employees = Employee.query.filter_by(is_active=True).all()
+    emp_ids   = [e.id for e in employees]
     today     = date.today()
-
-    # Current month attendance summary
     month_start = today.replace(day=1)
-    summaries   = []
-    for emp in employees:
-        att = EmployeeAttendance.query.filter(
-            EmployeeAttendance.employee_id == emp.id,
-            EmployeeAttendance.work_date   >= month_start,
-            EmployeeAttendance.work_date   <= today,
-        ).all()
-        total_hrs = sum(float(a.hours_worked or 0) for a in att)
-        # Last approved pay run
-        last_run = PayRun.query.filter_by(
-            employee_id=emp.id
-        ).order_by(PayRun.period_end.desc()).first()
-        # Outstanding advances
-        pending_advances = db.session.query(
-            func.sum(EmployeeAdvance.amount)
-        ).filter_by(employee_id=emp.id, status='outstanding').scalar() or 0
 
+    # Bulk query 1: hours worked this month for all employees
+    att_rows = EmployeeAttendance.query.filter(
+        EmployeeAttendance.employee_id.in_(emp_ids),
+        EmployeeAttendance.work_date >= month_start,
+        EmployeeAttendance.work_date <= today,
+    ).with_entities(EmployeeAttendance.employee_id, EmployeeAttendance.hours_worked).all()
+    hours_map = {}
+    for eid, hrs in att_rows:
+        hours_map[eid] = hours_map.get(eid, 0.0) + float(hrs or 0)
+
+    # Bulk query 2: latest pay run per employee (one subquery)
+    latest_pr_sub = (
+        db.session.query(
+            PayRun.employee_id,
+            func.max(PayRun.period_end).label('max_end')
+        ).filter(PayRun.employee_id.in_(emp_ids))
+        .group_by(PayRun.employee_id)
+        .subquery()
+    )
+    latest_runs = {
+        row.employee_id: row
+        for row in db.session.query(PayRun).join(
+            latest_pr_sub,
+            db.and_(
+                PayRun.employee_id == latest_pr_sub.c.employee_id,
+                PayRun.period_end  == latest_pr_sub.c.max_end,
+            )
+        ).all()
+    }
+
+    # Bulk query 3: outstanding advances per employee
+    adv_rows = db.session.query(
+        EmployeeAdvance.employee_id,
+        func.sum(EmployeeAdvance.amount)
+    ).filter(
+        EmployeeAdvance.employee_id.in_(emp_ids),
+        EmployeeAdvance.status == 'outstanding'
+    ).group_by(EmployeeAdvance.employee_id).all()
+    adv_map = {eid: float(total or 0) for eid, total in adv_rows}
+
+    summaries = []
+    for emp in employees:
+        total_hrs    = hours_map.get(emp.id, 0.0)
+        last_run     = latest_runs.get(emp.id)
         summaries.append({
-            'id':                  emp.id,
-            'name':                emp.name,
-            'hourly_rate':         float(emp.hourly_rate),
-            'hours_this_month':    round(total_hrs, 2),
-            'gross_this_month':    round(total_hrs * float(emp.hourly_rate), 2),
-            'last_pay_run':        last_run.period_end.isoformat() if last_run else None,
-            'last_pay_net':        float(last_run.net_pay) if last_run else None,
-            'pending_advances':    float(pending_advances),
-            'pay_frequency':       emp.pay_frequency,
-            'pay_day_of_week':     emp.pay_day_of_week,
+            'id':               emp.id,
+            'name':             emp.name,
+            'hourly_rate':      float(emp.hourly_rate),
+            'hours_this_month': round(total_hrs, 2),
+            'gross_this_month': round(total_hrs * float(emp.hourly_rate), 2),
+            'last_pay_run':     last_run.period_end.isoformat() if last_run else None,
+            'last_pay_net':     float(last_run.net_pay) if last_run else None,
+            'pending_advances': adv_map.get(emp.id, 0.0),
+            'pay_frequency':    emp.pay_frequency,
+            'pay_day_of_week':  emp.pay_day_of_week,
         })
 
-    # Total payroll this month across all employees
-    total_payroll_this_month = sum(s['gross_this_month'] for s in summaries)
-
     return jsonify({
-        'employees':                 summaries,
-        'total_payroll_this_month':  round(total_payroll_this_month, 2),
-        'active_employee_count':     len(employees),
+        'employees':                summaries,
+        'total_payroll_this_month': round(sum(s['gross_this_month'] for s in summaries), 2),
+        'active_employee_count':    len(employees),
     })
