@@ -5430,8 +5430,9 @@ function openBatchHistoryModal(product) {
   // Default date range: last 30 days
   const today = new Date();
   const prior = new Date(today); prior.setDate(prior.getDate() - 30);
-  document.getElementById('bh-start').value = prior.toISOString().slice(0, 10);
-  document.getElementById('bh-end').value   = today.toISOString().slice(0, 10);
+  const _bhISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  document.getElementById('bh-start').value = _bhISO(prior);
+  document.getElementById('bh-end').value   = _bhISO(today);
 
   bootstrap.Modal.getOrCreateInstance(modal).show();
   loadBatchHistory();
