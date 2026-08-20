@@ -21179,7 +21179,8 @@ function _custRuleTypeChanged() {
 const EMP = {
   employees: [],       // all active employees (admin view)
   publicHolidays: {},  // { 'YYYY-MM-DD': 'Name' } for displayed month
-  tsCalendarData: {},  // attendance keyed by date for current calendar view
+  tsCalendarData: {},  // attendance keyed by date for current calendar view (single-employee)
+  allGridAttData: {},  // attendance keyed by `${empId}_${date}` for all-employees grid
   scheduleData: {},    // shifts keyed by date
   currentPayRunPreview: null,
   deductionEditRows: [],  // local deduction rows being edited in modal
@@ -21344,6 +21345,17 @@ function _renderAllEmployeesGrid(data) {
     return;
   }
 
+  // Cache per-employee attendance so clicking cells opens the correct record
+  EMP.allGridAttData = {};
+  EMP.publicHolidays = public_holidays || {};
+  for (const emp of employees) {
+    for (const ds of dates) {
+      if (emp.days && emp.days[ds]) {
+        EMP.allGridAttData[`${emp.id}_${ds}`] = emp.days[ds];
+      }
+    }
+  }
+
   // Header row
   let html = '<table class="table table-bordered table-sm att-grid">';
   html += '<thead><tr>';
@@ -21464,7 +21476,7 @@ function _renderTimesheetSummary(attendance) {
 // ── Attendance modal ──────────────────────────────────────────────────────────
 
 function empOpenAttendanceForDate(dateStr, empId) {
-  const att = EMP.tsCalendarData[dateStr];
+  const att = EMP.tsCalendarData[dateStr] || (EMP.allGridAttData && EMP.allGridAttData[`${empId}_${dateStr}`]);
   const emp = EMP.employees.find(e => e.id == empId);
   document.getElementById('emp-att-employee-id').value = empId;
   document.getElementById('emp-att-row-id').value      = att ? att.id : '';
@@ -21531,13 +21543,16 @@ function empOpenAttendanceForDate(dateStr, empId) {
   new bootstrap.Modal(document.getElementById('empAttendanceModal')).show();
 }
 
-async function empGenerateMonth() {
+async function empGenerateMonth(rotation = false) {
   const month = document.getElementById('emp-ts-month').value;
   if (!month) { toast('Select a month first', 'warning'); return; }
-  if (!confirm(`Generate default attendance for ALL employees for ${month}?\n\nDays already logged will not be overwritten.`)) return;
+  const msg = rotation
+    ? `Generate ROTATING schedule for ALL employees for ${month}?\n\nOff-days will be assigned per rotation rules. Manual entries will not be touched.`
+    : `Generate default attendance for ALL employees for ${month}?\n\nDays already logged will not be overwritten.`;
+  if (!confirm(msg)) return;
   try {
-    const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify({ month }) });
-    const delMsg = r.deleted > 0 ? `, cleared ${r.deleted} rotation off-day entries` : '';
+    const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify({ month, rotation }) });
+    const delMsg = r.deleted > 0 ? `, cleared ${r.deleted} off-day entries` : '';
     toast(`Generated ${r.created} entries for ${r.employees} employees (${r.skipped} skipped${delMsg})`, 'success', 5000);
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
