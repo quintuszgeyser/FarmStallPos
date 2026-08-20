@@ -1062,9 +1062,29 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
         return {'accrued': 0.0, 'used': 0.0, 'remaining': 0.0,
                 'policy_label': leave_type, 'accrual_method': 'none'}
 
-    # Used: sum approved requests
-    if leave_type in ('annual', 'family_responsibility'):
-        yr_start = date(as_of.year, 1, 1)
+    # Used: sum approved requests scoped to the correct period.
+    # annual/fixed/custom: current calendar year only.
+    # sick_cycle: current 36-month cycle only (BCEA — unused days are forfeited each cycle).
+    # none: all-time (e.g. maternity).
+    if policy.accrual_method == 'sick_cycle' and emp.start_date:
+        cycle_months_val = int(policy.cycle_months or 36)
+        months_employed  = _months_diff(emp.start_date, as_of)
+        full_cycles      = months_employed // cycle_months_val
+        # Compute current cycle start date
+        csm = full_cycles * cycle_months_val
+        ys  = emp.start_date.year  + (emp.start_date.month - 1 + csm) // 12
+        ms  = (emp.start_date.month - 1 + csm) % 12 + 1
+        import calendar as _cal
+        cycle_start = date(ys, ms, min(emp.start_date.day, _cal.monthrange(ys, ms)[1]))
+        used_rows = LeaveRequest.query.filter(
+            LeaveRequest.employee_id == emp.id,
+            LeaveRequest.leave_type  == leave_type,
+            LeaveRequest.status      == 'approved',
+            LeaveRequest.date_from   >= cycle_start,
+            LeaveRequest.date_from   <= as_of,
+        ).all()
+    elif policy.accrual_method in ('daily', 'fixed') or leave_type in ('annual', 'family_responsibility'):
+        yr_start  = date(as_of.year, 1, 1)
         used_rows = LeaveRequest.query.filter(
             LeaveRequest.employee_id == emp.id,
             LeaveRequest.leave_type  == leave_type,
@@ -1073,6 +1093,7 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
             LeaveRequest.date_from   <= as_of,
         ).all()
     else:
+        # 'none' and unrecognised: all-time
         used_rows = LeaveRequest.query.filter(
             LeaveRequest.employee_id == emp.id,
             LeaveRequest.leave_type  == leave_type,

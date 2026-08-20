@@ -2241,6 +2241,16 @@ def strong_migrate():
                    requires_proof_after_days, is_paid, sort_order)
             WHERE NOT EXISTS (SELECT 1 FROM leave_policies LIMIT 1)
         """)
+        # Add newer leave types to existing DBs (idempotent — skips if already present)
+        conn.exec_driver_sql("""
+            INSERT INTO leave_policies (leave_type, label, accrual_method, days_per_year,
+                carry_over_max, cycle_days, cycle_months, first_period_months,
+                first_period_per_26, requires_proof_after_days, is_paid, sort_order)
+            VALUES
+              ('maternity',  'Maternity Leave',  'none', NULL, 0, NULL, NULL, NULL, true, NULL, false, 5),
+              ('paternal',   'Paternal Leave',   'none', NULL, 0, NULL, NULL, NULL, true, NULL, false, 6)
+            ON CONFLICT (leave_type) DO NOTHING
+        """)
         conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS employee_leave_adjustments (
               id              SERIAL PRIMARY KEY,
