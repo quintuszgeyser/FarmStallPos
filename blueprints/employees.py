@@ -783,6 +783,8 @@ def api_generate_schedule():
     default_co_str  = get_setting('schedule_default_clock_out') or '17:00'
     default_ci      = _parse_time_str(default_ci_str, 7, 30)
     default_co      = _parse_time_str(default_co_str, 17, 0)
+    break_min       = 0
+    hours           = _compute_hours(default_ci_str, default_co_str, break_min)
 
     for emp_idx, emp in enumerate(employees):
         clock_in_t  = default_ci
