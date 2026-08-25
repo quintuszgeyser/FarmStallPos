@@ -1022,14 +1022,15 @@ def _collect_bom_shortages(product_id, qty_needed, context, shortages, _depth=0)
             available = Decimal(str(get_stock_level(ing.id)))
             if available < ing_qty:
                 shortages.append({
-                    'ingredient_id': ing.id,
-                    'name':          ing.name,
-                    'needed':        float(ing_qty),
-                    'available':     float(available),
-                    'shortage':      float(ing_qty - available),
-                    'unit_type':     ing.unit_type,
-                    'base_unit':     ing.base_unit,
-                    'context':       context,
+                    'ingredient_id':    ing.id,
+                    'name':             ing.name,
+                    'needed':           float(ing_qty),
+                    'available':        float(available),
+                    'shortage':         float(ing_qty - available),
+                    'unit_type':        ing.unit_type,
+                    'base_unit':        ing.base_unit,
+                    'context':          context,
+                    'inventory_policy': getattr(ing, 'inventory_policy', None) or 'ALLOW_NEGATIVE',
                 })
 
 
@@ -1059,9 +1060,32 @@ def _auto_produce_tree(product_id, batches_needed, now, u, parent_name, auto_pro
     produce_uuid     = str(uuid.uuid4())
     total_cost       = Decimal('0')
     for rl in RecipeLine.query.filter_by(product_id=product_id).all():
-        total_cost += consume_fifo(rl.ingredient_id,
-                                   Decimal(str(rl.qty_base)) * batches_needed,
-                                   produce_uuid, now)
+        _sub_ing       = db.session.get(Product, rl.ingredient_id)
+        _sub_needed    = Decimal(str(rl.qty_base)) * batches_needed
+        _sub_available = Decimal(str(get_stock_level(rl.ingredient_id)))
+        total_cost += consume_fifo(rl.ingredient_id, _sub_needed, produce_uuid, now)
+        if _sub_ing and _sub_available < _sub_needed:
+            _sub_policy = getattr(_sub_ing, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
+            if _sub_policy in ('ALLOW_NEGATIVE', 'WARN'):
+                _sub_shortfall = _sub_needed - max(Decimal('0'), _sub_available)
+                _sub_neg = (StockBatch.query
+                            .filter_by(product_id=rl.ingredient_id, batch_type='negative_placeholder')
+                            .filter(StockBatch.qty_remaining_base < 0)
+                            .with_for_update()
+                            .first())
+                if _sub_neg:
+                    _sub_neg.qty_remaining_base = Decimal(str(_sub_neg.qty_remaining_base)) - _sub_shortfall
+                    _sub_neg.qty_purchased_base = Decimal(str(_sub_neg.qty_purchased_base)) - _sub_shortfall
+                else:
+                    db.session.add(StockBatch(
+                        product_id=rl.ingredient_id,
+                        qty_purchased_base=-_sub_shortfall,
+                        qty_remaining_base=-_sub_shortfall,
+                        cost_per_base_unit=Decimal('0'),
+                        purchased_at=now,
+                        user_id=u.id if u else None,
+                        batch_type='negative_placeholder',
+                    ))
     batch_sz    = Decimal(str(ing.batch_size or 1))
     units_added = int((batch_sz * batches_needed).to_integral_value())
     cost_per    = total_cost / units_added if units_added > 0 else Decimal('0')
@@ -1132,14 +1156,17 @@ def api_product_produce(pid):
     now = datetime.utcnow()
     u   = current_user()
 
-    # ── Pre-flight: recursively verify no ingredient goes negative ──
+    # ── Pre-flight: check BOM for shortages — block only on STRICT policy ──
     shortages = []
     _collect_bom_shortages(pid, batches, '', shortages)
-    if shortages:
+    blocking = [s for s in shortages if s.get('inventory_policy') == 'STRICT']
+    if blocking:
         return jsonify({
-            'error':     f'Cannot produce {p.name} — ingredient shortages.',
-            'shortages': shortages,
+            'error':     f'Cannot produce {p.name} — ingredient shortages (STRICT inventory policy).',
+            'shortages': blocking,
         }), 409
+    # Non-blocking shortages (WARN / ALLOW_NEGATIVE) — will create negative stock placeholders below
+    warnings = [s for s in shortages if s.get('inventory_policy') != 'STRICT']
 
     # ── Auto-produce sub-recipe shortfalls recursively (deepest first) ──
     auto_produced = []
@@ -1156,12 +1183,38 @@ def api_product_produce(pid):
         sub_batches = (shortage / batch_sz).to_integral_value(rounding=ROUND_CEILING)
         _auto_produce_tree(ing.id, sub_batches, now, u, p.name, auto_produced)
 
-    # Main produce — consume_fifo on meringue now sees the newly added sub-batches
-    # because SQLAlchemy autoflushes pending adds before each query.
+    # Main produce — consume_fifo on each ingredient; SQLAlchemy autoflushes so
+    # newly added sub-batches from auto_produce_tree are visible.
     produce_uuid = str(uuid.uuid4())
     total_ingredient_cost = Decimal('0')
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
-        total_ingredient_cost += consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches, produce_uuid, now)
+        _ing_obj       = db.session.get(Product, rl.ingredient_id)
+        _ing_needed    = Decimal(str(rl.qty_base)) * batches
+        _ing_available = Decimal(str(get_stock_level(rl.ingredient_id)))
+        total_ingredient_cost += consume_fifo(rl.ingredient_id, _ing_needed, produce_uuid, now)
+        # If ingredient went short and policy allows negative stock, record a placeholder
+        if _ing_obj and _ing_available < _ing_needed:
+            _ing_policy = getattr(_ing_obj, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
+            if _ing_policy in ('ALLOW_NEGATIVE', 'WARN'):
+                _ing_shortfall = _ing_needed - max(Decimal('0'), _ing_available)
+                _ing_neg = (StockBatch.query
+                            .filter_by(product_id=rl.ingredient_id, batch_type='negative_placeholder')
+                            .filter(StockBatch.qty_remaining_base < 0)
+                            .with_for_update()
+                            .first())
+                if _ing_neg:
+                    _ing_neg.qty_remaining_base = Decimal(str(_ing_neg.qty_remaining_base)) - _ing_shortfall
+                    _ing_neg.qty_purchased_base = Decimal(str(_ing_neg.qty_purchased_base)) - _ing_shortfall
+                else:
+                    db.session.add(StockBatch(
+                        product_id=rl.ingredient_id,
+                        qty_purchased_base=-_ing_shortfall,
+                        qty_remaining_base=-_ing_shortfall,
+                        cost_per_base_unit=Decimal('0'),
+                        purchased_at=now,
+                        user_id=u.id if u else None,
+                        batch_type='negative_placeholder',
+                    ))
 
     units_added    = int((Decimal(str(p.batch_size)) * batches).to_integral_value())
     overhead_total = sum(Decimal(str(c['amount'])) for c in addl_costs)
@@ -1216,11 +1269,12 @@ def api_product_produce(pid):
     db.session.commit()
     new_stock = get_stock_level(pid)
     return jsonify({
-        'ok':           True,
-        'units_added':  units_added,
-        'new_stock':    new_stock,
-        'cost':         float(total_ingredient_cost),
+        'ok':            True,
+        'units_added':   units_added,
+        'new_stock':     new_stock,
+        'cost':          float(total_ingredient_cost),
         'auto_produced': auto_produced,
+        'warnings':      warnings,
     })
 
 

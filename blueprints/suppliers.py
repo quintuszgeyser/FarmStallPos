@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities
+from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities, get_stock_level
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
                     SupplierInvoiceTemplate, SupplierProductMapping,
@@ -1443,10 +1443,13 @@ def api_suppliers_products(sid):
         p = db.session.get(Product, prod_id)
         if p:
             result.append({
-                'id': p.id,
-                'name': p.name,
-                'product_type': p.product_type,
+                'id':            p.id,
+                'name':          p.name,
+                'product_type':  p.product_type,
                 'last_received': last_received.date().isoformat() if last_received else None,
+                'stock_level':   float(get_stock_level(p.id)),
+                'unit_type':     p.unit_type,
+                'base_unit':     p.base_unit,
             })
     result.sort(key=lambda x: x['name'])
     return jsonify(result)

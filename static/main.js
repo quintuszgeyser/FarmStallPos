@@ -2749,7 +2749,7 @@ document.getElementById('btn-produce-confirm')?.addEventListener('click', async 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).hide();
     await loadProducts();
     loadIngredients();
-    if (r.auto_produced && r.auto_produced.length > 0) {
+    if ((r.auto_produced && r.auto_produced.length > 0) || (r.warnings && r.warnings.length > 0)) {
       _showProduceResultModal(r, product, batches);
     } else {
       toast(`Produced ${r.units_added} unit${r.units_added !== 1 ? 's' : ''} — stock now ${r.new_stock}`, 'success', 3000);
@@ -2807,6 +2807,16 @@ function _showProduceResultModal(r, product, batchesProduced) {
   html.push(`<div class="fw-semibold text-success border-top pt-2 mt-1">
     <i class="bi bi-box-seam me-1"></i>Stock now: <strong>${r.new_stock}</strong> ${escapeHtml(product.stock_unit || 'unit')}${r.new_stock !== 1 ? 's' : ''}
   </div>`);
+
+  if (r.warnings && r.warnings.length > 0) {
+    const warnLines = r.warnings.map(w =>
+      `<li><strong>${escapeHtml(w.name)}</strong>: needed ${displayQty(w.needed, w.unit_type)}, had ${displayQty(w.available, w.unit_type)} — stock went negative by ${displayQty(w.shortage, w.unit_type)}</li>`
+    ).join('');
+    html.push(`<div class="alert alert-warning mt-2 mb-0 py-2">
+      <i class="bi bi-exclamation-triangle-fill me-1"></i><strong>Ingredient stock went negative</strong> — check Negative Inventory:
+      <ul class="mb-0 mt-1 ps-3 small">${warnLines}</ul>
+    </div>`);
+  }
 
   body.innerHTML = html.join('');
   bootstrap.Modal.getOrCreateInstance(document.getElementById('produceResultModal')).show();
@@ -5778,13 +5788,23 @@ async function loadSupplierProducts(sid) {
     }
     host.innerHTML = `
       <table class="table table-sm table-hover mb-0">
-        <thead class="table-light"><tr><th>Name</th><th>Type</th><th>Last Received</th></tr></thead>
+        <thead class="table-light"><tr><th>Name</th><th>Type</th><th>Last Received</th><th class="text-end">Stock</th></tr></thead>
         <tbody>
-          ${products.map(p => `<tr>
-            <td>${p.name}</td>
-            <td><span class="badge bg-secondary" style="font-size:10px">${p.product_type}</span></td>
-            <td class="small text-muted">${p.last_received || '-'}</td>
-          </tr>`).join('')}
+          ${products.map(p => {
+            const isNeg = p.stock_level < 0;
+            const stockDisp = p.unit_type === 'weight' ? `${p.stock_level.toFixed(0)} g`
+                            : p.unit_type === 'volume' ? `${p.stock_level.toFixed(0)} ml`
+                            : p.stock_level.toFixed(0);
+            const stockCell = isNeg
+              ? `<span class="fw-semibold text-danger">${stockDisp} <i class="bi bi-exclamation-triangle-fill" title="Needs receiving"></i></span>`
+              : `<span class="text-muted">${stockDisp}</span>`;
+            return `<tr${isNeg ? ' class="table-danger"' : ''}>
+              <td>${escapeHtml(p.name)}</td>
+              <td><span class="badge bg-secondary" style="font-size:10px">${p.product_type}</span></td>
+              <td class="small text-muted">${p.last_received || '-'}</td>
+              <td class="text-end">${stockCell}</td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>`;
   } catch (e) {
@@ -21037,6 +21057,7 @@ function _invShowShrinkageDrilldown() {
 }
 
 // ── Negative Stock Dashboard ──────────────────────────────────────────────────
+let _negStockItems = [];
 async function _loadNegativeStock() {
   if (!isAdmin()) return;
   try {
@@ -21048,6 +21069,8 @@ async function _loadNegativeStock() {
     if (!items.length) { panel.style.display = 'none'; return; }
     panel.style.display = '';
     if (countEl) countEl.textContent = items.length;
+    // Store for use in _negStockReceive
+    _negStockItems = items;
     tbody.innerHTML = items.map(item => {
       const pol = item.inventory_policy;
       const polBadge = pol === 'STRICT' ? '<span class="badge bg-danger">Strict</span>'
@@ -21056,6 +21079,9 @@ async function _loadNegativeStock() {
       const qty = item.unit_type === 'weight' ? `${item.stock_level.toFixed(0)} g`
                 : item.unit_type === 'volume' ? `${item.stock_level.toFixed(0)} ml`
                 : item.stock_level.toFixed(0);
+      const receiveBtn = item.product_type !== 'recipe'
+        ? `<button class="btn btn-sm btn-outline-success py-0 px-1 ms-1" style="font-size:0.75rem" onclick="_negStockReceive(${item.product_id})"><i class="bi bi-box-arrow-in-down me-1"></i>Receive</button>`
+        : '';
       return `<tr>
         <td>${escapeHtml(item.name)}</td>
         <td class="text-end text-danger fw-semibold">${qty}</td>
@@ -21063,6 +21089,7 @@ async function _loadNegativeStock() {
         <td>${polBadge}</td>
         <td class="text-end">
           ${item.product_type === 'recipe' ? `<button class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.75rem" onclick="_negStockProduce(${item.product_id})">Produce</button>` : ''}
+          ${receiveBtn}
           <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" style="font-size:0.75rem" onclick="_negStockAdjust(${item.product_id})">Adjust</button>
         </td>
       </tr>`;
@@ -21078,6 +21105,95 @@ function _negStockProduce(productId) {
 function _negStockAdjust(productId) {
   const p = STATE.products.find(x => x.id === productId);
   if (p) openStocktakeModal(p);
+}
+
+async function _negStockReceive(productId) {
+  const item = _negStockItems.find(x => x.product_id === productId);
+  if (!item) return;
+
+  const sup = item.last_supplier;
+  if (!sup) {
+    toast(`"${item.name}" has never been received from a supplier — navigating to Suppliers.`, 'warning', 4000);
+    const tabBtn = document.querySelector('button.nav-link[data-bs-target="#suppliers"]');
+    if (tabBtn) bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+    return;
+  }
+
+  // Collect ALL negative non-recipe items that share this supplier
+  const groupItems = _negStockItems.filter(x => x.product_type !== 'recipe' && x.last_supplier?.id === sup.id);
+
+  // Navigate to supplier detail and open a new delivery pre-populated
+  const tabBtn = document.querySelector('button.nav-link[data-bs-target="#suppliers"]');
+  if (tabBtn) bootstrap.Tab.getOrCreateInstance(tabBtn).show();
+
+  // Wait for suppliers to load if needed
+  await new Promise(r => setTimeout(r, 100));
+
+  const supplier = _suppliers.find(x => x.id === sup.id);
+  if (!supplier) {
+    toast(`Supplier not found locally — please reload Suppliers.`, 'warning');
+    return;
+  }
+
+  // Open supplier detail first (loads _currentSupplierProducts)
+  openSupplierDetail(supplier);
+  await new Promise(r => setTimeout(r, 200));
+
+  // Start a fresh delivery — same pattern as btn-supplier-new-run
+  _editingInvoiceId = null;
+  _prStagedFile     = null;
+  const saveBtn = document.getElementById('btn-submit-purchase-run');
+  if (saveBtn) saveBtn.textContent = 'Save Delivery';
+  const nameEl2   = document.getElementById('pr-doc-filename');
+  const clearBtn2 = document.getElementById('pr-doc-clear');
+  const docInput2 = document.getElementById('pr-doc-upload-input');
+  if (nameEl2)   nameEl2.textContent = 'No file chosen';
+  if (clearBtn2) hide(clearBtn2);
+  if (docInput2) docInput2.value = '';
+  _hideScanResult?.();
+  const dateInput = document.getElementById('purchase-run-date');
+  if (dateInput) dateInput.value = todayISO();
+  _purchaseRunLines = [];
+  document.getElementById('purchase-run-lines').innerHTML = '';
+  _openPurchaseRunPanel();
+  // Invoice ref header
+  const prAddlWrap = document.getElementById('purchase-run-addl-costs-wrap');
+  document.getElementById('pr-invoice-header')?.remove();
+  if (prAddlWrap) {
+    prAddlWrap.insertAdjacentHTML('beforebegin', `
+      <div class="border rounded p-2 mb-2 bg-light" id="pr-invoice-header">
+        <label class="form-label small mb-1">Invoice Ref <span class="text-muted fw-normal">(optional)</span></label>
+        <input type="text" class="form-control form-control-sm" id="pr-invoice-ref" placeholder="e.g. INV-2026-441">
+      </div>`);
+    _renderAdditionalCostsBlock(prAddlWrap, []);
+    prAddlWrap.addEventListener('input', () => { _updatePurchaseRunSummary?.(); });
+  }
+
+  // Pre-populate lines for each negative item
+  for (const negItem of groupItems) {
+    addPurchaseLine();
+    const container = document.getElementById('purchase-run-lines');
+    const lineEl    = container?.lastElementChild;
+    if (!lineEl) continue;
+
+    _setLineProduct(lineEl, negItem.product_id);
+
+    // Qty = absolute value of shortfall, in base unit
+    const shortfall = Math.abs(negItem.stock_level);
+    const qtyInput  = lineEl.querySelector('[data-qty]');
+    const unitSel   = lineEl.querySelector('[data-unit]');
+    const priceInput = lineEl.querySelector('[data-price]');
+
+    if (qtyInput)  qtyInput.value  = shortfall.toFixed(negItem.unit_type === 'unit' ? 0 : 3);
+    if (unitSel)   unitSel.value   = negItem.base_unit || 'unit';
+    if (priceInput && negItem.last_cost_per_base_unit != null && negItem.last_cost_per_base_unit > 0) {
+      // cost_per_base_unit is per base unit; total cost for this shortfall
+      priceInput.value = (negItem.last_cost_per_base_unit * shortfall).toFixed(2);
+    }
+  }
+
+  _updatePurchaseRunSummary?.();
+  toast(`Pre-filled ${groupItems.length} negative item${groupItems.length !== 1 ? 's' : ''} from ${escapeHtml(sup.name)}`, 'info', 4000);
 }
 
 // ── Customisation Pricing Rules Admin ────────────────────────────────────────

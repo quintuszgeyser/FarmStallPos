@@ -931,6 +931,21 @@ def api_stock_negative():
             Sale.date_time >= since_dt,
         ).count()
 
+    # Find last supplier and last cost per base unit for each product (from batches with a supplier)
+    last_supplier_map    = {}  # product_id -> {supplier_id, supplier_name}
+    last_cost_map        = {}  # product_id -> cost_per_base_unit
+    for pid2 in pids:
+        last_batch = (StockBatch.query
+                      .filter(StockBatch.product_id == pid2,
+                              StockBatch.supplier_id.isnot(None))
+                      .order_by(StockBatch.purchased_at.desc())
+                      .first())
+        if last_batch:
+            sup = db.session.get(Supplier, last_batch.supplier_id)
+            if sup:
+                last_supplier_map[pid2] = {'id': sup.id, 'name': sup.name}
+            last_cost_map[pid2] = float(last_batch.cost_per_base_unit or 0)
+
     result = []
     for r in rows:
         p = products.get(r.product_id)
@@ -938,15 +953,17 @@ def api_stock_negative():
             continue
         since_dt = neg_since_map.get(r.product_id)
         result.append({
-            'product_id':            r.product_id,
-            'name':                  p.name,
-            'stock_level':           float(r.total),
-            'unit_type':             p.unit_type,
-            'base_unit':             p.base_unit,
-            'product_type':          p.product_type,
-            'inventory_policy':      p.inventory_policy or 'ALLOW_NEGATIVE',
-            'negative_since':        since_dt.date().isoformat() if since_dt else None,
-            'negative_transactions': sale_counts.get(r.product_id, 0),
+            'product_id':              r.product_id,
+            'name':                    p.name,
+            'stock_level':             float(r.total),
+            'unit_type':               p.unit_type,
+            'base_unit':               p.base_unit,
+            'product_type':            p.product_type,
+            'inventory_policy':        p.inventory_policy or 'ALLOW_NEGATIVE',
+            'negative_since':          since_dt.date().isoformat() if since_dt else None,
+            'negative_transactions':   sale_counts.get(r.product_id, 0),
+            'last_supplier':           last_supplier_map.get(r.product_id),
+            'last_cost_per_base_unit': last_cost_map.get(r.product_id),
         })
     result.sort(key=lambda x: x['stock_level'])
     return jsonify(result)
