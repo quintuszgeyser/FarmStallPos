@@ -732,6 +732,7 @@ def api_pending_prices():
     global_markup = float(get_setting('markup_percent', 20) or 20)
     products = Product.query.filter(
         Product.is_archived == False,
+        Product.is_for_sale == True,
         db.or_(
             Product.pending_price.isnot(None),
             Product.pending_price_per_unit.isnot(None),
@@ -859,6 +860,7 @@ def api_pending_prices_accept_markup():
     data = request.json or {}
     ids  = data.get('ids')
     q = Product.query.filter(
+        Product.is_for_sale == True,
         db.or_(
             Product.pending_price.isnot(None),
             Product.pending_price_per_unit.isnot(None),
@@ -870,14 +872,14 @@ def api_pending_prices_accept_markup():
     applied = []
     skipped = []
     for p in products:
-        current = float(p.price_per_unit or 0) if (p.sold_by_weight and p.unit_type in ('weight', 'volume')) else float(p.price or 0)
+        current = Decimal(str(p.price_per_unit or 0)) if (p.sold_by_weight and p.unit_type in ('weight', 'volume')) else Decimal(str(p.price or 0))
         batches = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).all()
         if batches and current > 0:
-            total_qty  = sum(float(b.qty_remaining_base) for b in batches)
-            total_cost = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in batches)
+            total_qty  = sum(Decimal(str(b.qty_remaining_base)) for b in batches)
+            total_cost = sum(Decimal(str(b.qty_remaining_base)) * Decimal(str(b.cost_per_base_unit)) for b in batches)
             if total_qty > 0 and total_cost > 0:
                 wac = total_cost / total_qty
-                p.margin_pct = round((current / wac - 1) * 100, 2)
+                p.margin_pct = (current / wac - 1) * 100
                 p.pending_price = None
                 p.pending_price_per_unit = None
                 applied.append(p.id)

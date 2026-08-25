@@ -266,13 +266,14 @@ def _serialize_pay_run(pr, brief=False):
     return row
 
 def _compute_hours(clock_in_str, clock_out_str, break_minutes):
-    """Compute hours_worked from clock in/out strings (HH:MM) minus break."""
-    from datetime import time as dtime
+    """Compute hours_worked from clock in/out strings (HH:MM) minus break.
+    Defaults to 60 min lunch deduction when no break is specified."""
     def parse_t(s):
         h, m = map(int, s.split(':'))
         return h * 60 + m
     try:
-        total = parse_t(clock_out_str) - parse_t(clock_in_str) - int(break_minutes or 0)
+        effective_break = int(break_minutes) if (break_minutes is not None and int(break_minutes) > 0) else 60
+        total = parse_t(clock_out_str) - parse_t(clock_in_str) - effective_break
         return round(max(0, total) / 60, 2)
     except Exception:
         return None
@@ -321,8 +322,23 @@ def _calculate_pay_run(employee_id, period_start, period_end):
 
     is_salaried = (emp.pay_type or 'hourly') == 'salaried'
 
+    # Track normal worked hours per ISO week for the weekly 45h overtime rule
+    from collections import defaultdict as _dd
+    _week_normal_hrs  = _dd(Decimal)  # (iso_year, iso_week) → sum of actual hours on non-special days
+    _week_normal_pool = _dd(Decimal)  # same key → hours currently allocated to totals['normal']
+
     for a in rows:
-        hrs = Decimal(str(a.hours_worked)) if a.hours_worked is not None else Decimal('0')
+        # Recompute from clock in/out when available so the 60-min lunch deduction applies
+        # to all records (including those saved before the lunch default was introduced).
+        if a.clock_in and a.clock_out:
+            computed = _compute_hours(
+                a.clock_in.strftime('%H:%M'),
+                a.clock_out.strftime('%H:%M'),
+                a.break_minutes,
+            )
+            hrs = Decimal(str(computed)) if computed is not None else Decimal('0')
+        else:
+            hrs = Decimal(str(a.hours_worked)) if a.hours_worked is not None else Decimal('0')
         dt  = a.day_type
 
         if dt in ('absent', 'unpaid_leave'):
@@ -360,6 +376,10 @@ def _calculate_pay_run(employee_id, period_start, period_end):
             totals['normal']   += std_hrs
             totals['overtime'] += ot_hrs
             pay_hrs = hrs
+            # Accumulate for weekly 45h check (only normal working days)
+            iso_week = a.work_date.isocalendar()[:2]
+            _week_normal_hrs[iso_week]  += hrs
+            _week_normal_pool[iso_week] += std_hrs
 
         attendance_snapshot.append({
             'date':         a.work_date.isoformat(),
@@ -370,6 +390,19 @@ def _calculate_pay_run(employee_id, period_start, period_end):
             'day_type':     dt,
             'pay':          float(pay_amt.quantize(Decimal('0.01'))),
         })
+
+    # BCEA weekly overtime: hours >45 in a week on normal working days get 1.5×.
+    # Per-day OT (hours > normal_h/day) is already in totals['overtime'].
+    # This check reclassifies any normal-pooled hours that push the week over 45.
+    _WEEKLY_THRESHOLD = Decimal('45')
+    for iso_week, week_total in _week_normal_hrs.items():
+        if week_total > _WEEKLY_THRESHOLD:
+            excess = week_total - _WEEKLY_THRESHOLD
+            normal_available = _week_normal_pool[iso_week]
+            reclassify = min(excess, normal_available)
+            if reclassify > 0:
+                totals['normal']   -= reclassify
+                totals['overtime'] += reclassify
 
     # Build shared date sets used by both the public-holiday and salaried loops
     logged_dates = {a.work_date for a in rows}

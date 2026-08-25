@@ -45,7 +45,7 @@ class Product(db.Model):
     package_size_unit   = db.Column(db.String(10), nullable=True)
     package_unit        = db.Column(db.String(30), nullable=True)
     parent_stock_item_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)
-    margin_pct           = db.Column(Numeric(5, 2), nullable=True)
+    margin_pct           = db.Column(Numeric(8, 2), nullable=True)
     is_prepared          = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     is_available_online  = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
     image_url            = db.Column(db.String(200), nullable=True)

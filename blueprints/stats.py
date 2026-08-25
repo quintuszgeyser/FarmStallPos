@@ -526,6 +526,8 @@ def api_stats_drilldown():
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
     user_id_filter    = request.args.get('user_id',    type=int)
     product_id_filter = request.args.get('product_id', type=int)
+    try: category_id_filter = int(request.args.get('category_id')) if request.args.get('category_id') else None
+    except (ValueError, TypeError): category_id_filter = None
     voided_filter     = request.args.get('voided') == '1'
 
     if voided_filter:
@@ -535,6 +537,9 @@ def api_stats_drilldown():
         q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, _not_return)
     if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
     if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
+    if category_id_filter:
+        _cat_pids = {r.id for r in db.session.query(Product.id).filter(Product.category_id == category_id_filter).all()}
+        q = q.filter(Sale.product_id.in_(list(_cat_pids))) if _cat_pids else q.filter(db.false())
     if slice_type == 'day' and slice_val:
         try:
             d = date.fromisoformat(slice_val)

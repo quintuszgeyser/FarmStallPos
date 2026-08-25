@@ -534,6 +534,7 @@ def _run_markup_drift_check(min_drift_pct=None):
             p.id for p in Product.query.filter(
                 Product.is_archived == False,
                 Product.auto_price == True,
+                Product.is_for_sale == True,
             ).all()
         ]
         if ids:
