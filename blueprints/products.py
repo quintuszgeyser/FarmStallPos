@@ -944,14 +944,15 @@ def api_produce_preview(pid):
         available_d = Decimal(str(get_stock_level(rl.ingredient_id)))
         if available_d < needed_d:
             direct_shortages.append({
-                'ingredient_id': rl.ingredient_id,
-                'name':          ing.name,
-                'needed':        float(needed_d),
-                'available':     float(available_d),
-                'shortage':      float(needed_d - available_d),
-                'unit_type':     ing.unit_type,
-                'base_unit':     ing.base_unit,
-                'context':       None,
+                'ingredient_id':    rl.ingredient_id,
+                'name':             ing.name,
+                'needed':           float(needed_d),
+                'available':        float(available_d),
+                'shortage':         float(needed_d - available_d),
+                'unit_type':        ing.unit_type,
+                'base_unit':        ing.base_unit,
+                'context':          None,
+                'inventory_policy': getattr(ing, 'inventory_policy', None) or 'ALLOW_NEGATIVE',
             })
 
     # Check sub-recipe (batch-produced recipe ingredient) shortages
@@ -984,10 +985,12 @@ def api_produce_preview(pid):
             'nested_shortages':  nested_shortages,
         })
 
-    can_produce = len(direct_shortages) == 0 and all(
-        not sr['will_auto_produce'] or len(sr['nested_shortages']) == 0
-        for sr in sub_recipes
-    )
+    # Blocking shortages are only STRICT-policy ingredients; WARN/ALLOW_NEGATIVE may proceed
+    blocking_direct = [s for s in direct_shortages if s.get('inventory_policy') == 'STRICT']
+    blocking_nested = [s for sr in sub_recipes
+                       for s in sr['nested_shortages']
+                       if s.get('inventory_policy') == 'STRICT']
+    can_produce = len(blocking_direct) == 0 and len(blocking_nested) == 0
 
     return jsonify({
         'circular': False,
@@ -1165,9 +1168,6 @@ def api_product_produce(pid):
             'error':     f'Cannot produce {p.name} — ingredient shortages (STRICT inventory policy).',
             'shortages': blocking,
         }), 409
-    # Non-blocking shortages (WARN / ALLOW_NEGATIVE) — will create negative stock placeholders below
-    warnings = [s for s in shortages if s.get('inventory_policy') != 'STRICT']
-
     # ── Auto-produce sub-recipe shortfalls recursively (deepest first) ──
     auto_produced = []
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
@@ -1185,8 +1185,11 @@ def api_product_produce(pid):
 
     # Main produce — consume_fifo on each ingredient; SQLAlchemy autoflushes so
     # newly added sub-batches from auto_produce_tree are visible.
+    # Track actual ingredient negatives here (not the pre-flight shortages list, which
+    # includes sub-recipe leaves that may have been resolved by auto_produce_tree).
     produce_uuid = str(uuid.uuid4())
     total_ingredient_cost = Decimal('0')
+    actual_warnings = []
     for rl in RecipeLine.query.filter_by(product_id=pid).all():
         _ing_obj       = db.session.get(Product, rl.ingredient_id)
         _ing_needed    = Decimal(str(rl.qty_base)) * batches
@@ -1215,6 +1218,16 @@ def api_product_produce(pid):
                         user_id=u.id if u else None,
                         batch_type='negative_placeholder',
                     ))
+                actual_warnings.append({
+                    'ingredient_id': rl.ingredient_id,
+                    'name':          _ing_obj.name,
+                    'needed':        float(_ing_needed),
+                    'available':     float(_ing_available),
+                    'shortage':      float(_ing_shortfall),
+                    'unit_type':     _ing_obj.unit_type,
+                    'base_unit':     _ing_obj.base_unit,
+                    'inventory_policy': _ing_policy,
+                })
 
     units_added    = int((Decimal(str(p.batch_size)) * batches).to_integral_value())
     overhead_total = sum(Decimal(str(c['amount'])) for c in addl_costs)
@@ -1274,7 +1287,7 @@ def api_product_produce(pid):
         'new_stock':     new_stock,
         'cost':          float(total_ingredient_cost),
         'auto_produced': auto_produced,
-        'warnings':      warnings,
+        'warnings':      actual_warnings,
     })
 
 

@@ -2682,14 +2682,24 @@ function _updateProducePreview() {
 
       let html = '';
 
-      // Direct ingredient shortages (raw ingredients)
+      // Direct ingredient shortages (raw ingredients) — split by policy
       const directShortages = pr.direct_shortages || [];
-      if (directShortages.length > 0) {
-        html += `<div class="fw-semibold text-danger mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Ingredient shortages — cannot produce:</div>`;
-        html += directShortages.map(s =>
+      const blockingShortages = directShortages.filter(s => s.inventory_policy === 'STRICT');
+      const warnShortages     = directShortages.filter(s => s.inventory_policy !== 'STRICT');
+      if (blockingShortages.length > 0) {
+        html += `<div class="fw-semibold text-danger mb-1"><i class="bi bi-x-circle-fill me-1"></i>Ingredient shortages — will block production (STRICT policy):</div>`;
+        html += blockingShortages.map(s =>
           `<div class="d-flex align-items-start gap-1 mb-1 ms-2">
             <i class="bi bi-x-circle-fill text-danger mt-1 flex-shrink-0"></i>
             <span><strong>${escapeHtml(s.name)}</strong>: need ${displayQty(s.needed, s.unit_type)}, have ${displayQty(s.available, s.unit_type)} — <span class="text-danger">short ${displayQty(s.shortage, s.unit_type)}</span></span>
+          </div>`).join('');
+      }
+      if (warnShortages.length > 0) {
+        html += `<div class="fw-semibold text-warning mb-1 mt-1"><i class="bi bi-exclamation-triangle-fill me-1"></i>Ingredient shortages — stock will go negative (will proceed):</div>`;
+        html += warnShortages.map(s =>
+          `<div class="d-flex align-items-start gap-1 mb-1 ms-2">
+            <i class="bi bi-exclamation-circle-fill text-warning mt-1 flex-shrink-0"></i>
+            <span><strong>${escapeHtml(s.name)}</strong>: need ${displayQty(s.needed, s.unit_type)}, have ${displayQty(s.available, s.unit_type)} — <span class="text-warning">short ${displayQty(s.shortage, s.unit_type)}</span></span>
           </div>`
         ).join('');
       }
@@ -2705,19 +2715,30 @@ function _updateProducePreview() {
               <span><strong>${escapeHtml(sr.name)}</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)} — OK</span>
             </div>`;
           }
-          const nestedHtml = (sr.nested_shortages || []).length > 0
-            ? `<div class="ms-3 mt-1">${(sr.nested_shortages).map(ns =>
-                `<div class="d-flex align-items-start gap-1 mb-1">
-                  <i class="bi bi-x-circle-fill text-danger mt-1 flex-shrink-0"></i>
-                  <span class="small"><strong>${escapeHtml(ns.name)}</strong>: need ${displayQty(ns.needed, ns.unit_type)}, have ${displayQty(ns.available, ns.unit_type)} — <span class="text-danger">short ${displayQty(ns.shortage || (ns.needed - ns.available), ns.unit_type)}</span>${ns.context ? ` <span class="text-muted">(${escapeHtml(ns.context)})</span>` : ''}</span>
-                </div>`
-              ).join('')}</div>`
+          const nested = sr.nested_shortages || [];
+          const nestedBlocking = nested.filter(ns => ns.inventory_policy === 'STRICT');
+          const nestedWarn     = nested.filter(ns => ns.inventory_policy !== 'STRICT');
+          const nestedHtml = nested.length > 0
+            ? `<div class="ms-3 mt-1">${nested.map(ns => {
+                const isBlock = ns.inventory_policy === 'STRICT';
+                return `<div class="d-flex align-items-start gap-1 mb-1">
+                  <i class="bi ${isBlock ? 'bi-x-circle-fill text-danger' : 'bi-exclamation-circle-fill text-warning'} mt-1 flex-shrink-0"></i>
+                  <span class="small"><strong>${escapeHtml(ns.name)}</strong>: need ${displayQty(ns.needed, ns.unit_type)}, have ${displayQty(ns.available, ns.unit_type)} — <span class="${isBlock ? 'text-danger' : 'text-warning'}">short ${displayQty(ns.shortage || (ns.needed - ns.available), ns.unit_type)}</span>${isBlock ? ' (STRICT — blocks)' : ' (will go negative)'}${ns.context ? ` <span class="text-muted">(${escapeHtml(ns.context)})</span>` : ''}</span>
+                </div>`;
+              }).join('')}</div>`
             : '';
-          const canAutoProduceColor = (sr.nested_shortages || []).length > 0 ? 'text-danger' : 'text-warning';
-          const canAutoProduceIcon = (sr.nested_shortages || []).length > 0 ? 'bi-x-circle-fill text-danger' : 'bi-exclamation-circle-fill text-warning';
+          const hasBlockingNested = nestedBlocking.length > 0;
+          const autoProduceIcon = nested.length === 0 ? 'bi-exclamation-circle-fill text-warning'
+                                : hasBlockingNested   ? 'bi-x-circle-fill text-danger'
+                                :                       'bi-exclamation-triangle-fill text-warning';
+          const autoProduceNote = nested.length === 0
+            ? ` → will auto-produce <strong>${sr.auto_batches} batch${sr.auto_batches !== 1 ? 'es' : ''}</strong>`
+            : hasBlockingNested
+              ? ' → <span class="text-danger">cannot auto-produce (STRICT ingredient shortage)</span>'
+              : ` → will auto-produce <strong>${sr.auto_batches} batch${sr.auto_batches !== 1 ? 'es' : ''}</strong> <span class="text-warning">(some ingredients will go negative)</span>`;
           return `<div class="d-flex align-items-start gap-1 mb-1">
-            <i class="bi ${canAutoProduceIcon} mt-1 flex-shrink-0"></i>
-            <div><span><strong>${escapeHtml(sr.name)}</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)}${(sr.nested_shortages || []).length === 0 ? ` → will auto-produce <strong>${sr.auto_batches} batch${sr.auto_batches !== 1 ? 'es' : ''}</strong>` : ' → <span class="text-danger">cannot auto-produce (see shortages below)</span>'}</span>${nestedHtml}</div>
+            <i class="bi ${autoProduceIcon} mt-1 flex-shrink-0"></i>
+            <div><span><strong>${escapeHtml(sr.name)}</strong>: need ${displayQty(sr.needed, sr.unit_type)}, have ${displayQty(sr.available, sr.unit_type)}${autoProduceNote}</span>${nestedHtml}</div>
           </div>`;
         }).join('');
       }
@@ -21179,15 +21200,20 @@ async function _negStockReceive(productId) {
     _setLineProduct(lineEl, negItem.product_id);
 
     // Qty = absolute value of shortfall, in base unit
-    const shortfall = Math.abs(negItem.stock_level);
-    const qtyInput  = lineEl.querySelector('[data-qty]');
-    const unitSel   = lineEl.querySelector('[data-unit]');
+    const shortfall  = Math.abs(negItem.stock_level);
+    const qtyInput   = lineEl.querySelector('[data-qty]');
+    const unitSel    = lineEl.querySelector('[data-unit]');
     const priceInput = lineEl.querySelector('[data-price]');
 
+    // Set unit FIRST and fire change so the line's conv tracker (_lineUnitConv) syncs
+    // before we populate qty — otherwise weight/volume totals calculate against the wrong factor
+    if (unitSel && negItem.base_unit) {
+      unitSel.value = negItem.base_unit;
+      unitSel.dispatchEvent(new Event('change'));
+    }
     if (qtyInput)  qtyInput.value  = shortfall.toFixed(negItem.unit_type === 'unit' ? 0 : 3);
-    if (unitSel)   unitSel.value   = negItem.base_unit || 'unit';
     if (priceInput && negItem.last_cost_per_base_unit != null && negItem.last_cost_per_base_unit > 0) {
-      // cost_per_base_unit is per base unit; total cost for this shortfall
+      // cost_per_base_unit is per base unit; total cost = rate × shortfall in base units
       priceInput.value = (negItem.last_cost_per_base_unit * shortfall).toFixed(2);
     }
   }
