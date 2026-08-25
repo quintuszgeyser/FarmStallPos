@@ -272,8 +272,14 @@ def _compute_hours(clock_in_str, clock_out_str, break_minutes):
         h, m = map(int, s.split(':'))
         return h * 60 + m
     try:
-        effective_break = int(break_minutes) if (break_minutes is not None and int(break_minutes) > 0) else 60
-        total = parse_t(clock_out_str) - parse_t(clock_in_str) - effective_break
+        raw_minutes = parse_t(clock_out_str) - parse_t(clock_in_str)
+        if break_minutes is not None and int(break_minutes) > 0:
+            effective_break = int(break_minutes)
+        elif raw_minutes > 300:  # only auto-deduct lunch for shifts longer than 5 hours
+            effective_break = 60
+        else:
+            effective_break = 0
+        total = raw_minutes - effective_break
         return round(max(0, total) / 60, 2)
     except Exception:
         return None
