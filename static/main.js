@@ -21199,22 +21199,47 @@ async function _negStockReceive(productId) {
 
     _setLineProduct(lineEl, negItem.product_id);
 
-    // Qty = absolute value of shortfall, in base unit
     const shortfall  = Math.abs(negItem.stock_level);
     const qtyInput   = lineEl.querySelector('[data-qty]');
     const unitSel    = lineEl.querySelector('[data-unit]');
     const priceInput = lineEl.querySelector('[data-price]');
 
-    // Set unit FIRST and fire change so the line's conv tracker (_lineUnitConv) syncs
-    // before we populate qty — otherwise weight/volume totals calculate against the wrong factor
-    if (unitSel && negItem.base_unit) {
-      unitSel.value = negItem.base_unit;
-      unitSel.dispatchEvent(new Event('change'));
+    // Determine the best purchase unit — prefer purchase_options, then package_unit, then base
+    const prod = STATE.products.find(x => x.id === negItem.product_id);
+    let preferredUnit = negItem.base_unit || 'unit';
+    let preferredConv = 1;  // base units per chosen unit (e.g. 100 for a 100g pack)
+
+    if (prod) {
+      if (prod.purchase_options && prod.purchase_options.length > 0) {
+        // Use the first (default) purchase option — e.g. "pack (100g)"
+        const po      = prod.purchase_options[0];
+        const baseConv = UNITS[prod.unit_type]?.toBase?.[po.package_size_unit] ?? 1;
+        preferredConv = po.package_size * baseConv;
+        preferredUnit = `po_${po.id}`;
+      } else if (prod.package_unit && prod.package_size > 0) {
+        // Use product-level package (package_size is already in base units)
+        preferredConv = prod.package_size;
+        preferredUnit = prod.package_unit;
+      } else if ((prod.unit_type === 'weight' || prod.unit_type === 'volume') && shortfall >= 1000) {
+        // No package defined — use natural display unit (kg / L) for large quantities
+        preferredConv = 1000;
+        preferredUnit = prod.unit_type === 'weight' ? 'kg' : 'L';
+      }
     }
-    if (qtyInput)  qtyInput.value  = shortfall.toFixed(negItem.unit_type === 'unit' ? 0 : 3);
+
+    // Set unit FIRST (with change event) so the line's conv tracker syncs before qty is set
+    if (unitSel) {
+      unitSel.value = preferredUnit;
+      unitSel.dispatchEvent(new Event('change'));  // syncs _lineUnitConv; qty empty so no scaling
+    }
+
+    // Qty = whole packs (round up so we cover the shortfall)
+    const qtyInUnit = Math.ceil(shortfall / preferredConv);
+    if (qtyInput)  qtyInput.value = qtyInUnit;
+
     if (priceInput && negItem.last_cost_per_base_unit != null && negItem.last_cost_per_base_unit > 0) {
-      // cost_per_base_unit is per base unit; total cost = rate × shortfall in base units
-      priceInput.value = (negItem.last_cost_per_base_unit * shortfall).toFixed(2);
+      // Total line cost = packs × base_per_pack × cost_per_base
+      priceInput.value = (qtyInUnit * preferredConv * negItem.last_cost_per_base_unit).toFixed(2);
     }
   }
 
