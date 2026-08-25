@@ -169,7 +169,7 @@
   </thead>
   <tbody>
     {% for lb in leave_balances %}
-    <tr{% if loop.last %} class="totals-row"{% endif %}>
+    <tr>
       <td>{{ lb.label }}</td>
       <td style="text-align:center">{{ "%.1f"|format(lb.accrued) }} days</td>
       <td style="text-align:center;color:#dc2626">{{ "%.1f"|format(lb.used) }} days</td>
