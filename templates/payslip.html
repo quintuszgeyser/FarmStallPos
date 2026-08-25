@@ -24,12 +24,14 @@
   .net-pay .amount { font-size: 20px; font-weight: bold; }
   .attendance-table td { font-size: 10px; padding: 3px 6px; }
   .attendance-table th { font-size: 10px; }
-  .badge-normal      { background: #e8f5e9; color: #2e7d32; padding: 1px 5px; border-radius: 3px; }
-  .badge-overtime    { background: #fff3e0; color: #e65100; padding: 1px 5px; border-radius: 3px; }
-  .badge-sunday      { background: #fce4ec; color: #880e4f; padding: 1px 5px; border-radius: 3px; }
-  .badge-public_holiday { background: #ede7f6; color: #4527a0; padding: 1px 5px; border-radius: 3px; }
-  .badge-vacation    { background: #e3f2fd; color: #0d47a1; padding: 1px 5px; border-radius: 3px; }
-  .badge-sick        { background: #fef3c7; color: #92400e; padding: 1px 5px; border-radius: 3px; }
+  .badge-normal          { background: #e8f5e9; color: #2e7d32; padding: 1px 5px; border-radius: 3px; }
+  .badge-overtime        { background: #fff3e0; color: #e65100; padding: 1px 5px; border-radius: 3px; }
+  .badge-weekly_overtime { background: #fff3e0; color: #e65100; padding: 1px 5px; border-radius: 3px; font-style: italic; }
+  .badge-sunday          { background: #fce4ec; color: #880e4f; padding: 1px 5px; border-radius: 3px; }
+  .badge-public_holiday  { background: #ede7f6; color: #4527a0; padding: 1px 5px; border-radius: 3px; }
+  .badge-vacation        { background: #e3f2fd; color: #0d47a1; padding: 1px 5px; border-radius: 3px; }
+  .badge-sick            { background: #fef3c7; color: #92400e; padding: 1px 5px; border-radius: 3px; }
+  .row-weekly-ot td      { background: #fffde7; font-style: italic; }
   .footer { margin-top: 20px; border-top: 1px solid #ddd; padding-top: 8px; font-size: 9px; color: #888; display: flex; justify-content: space-between; }
   @media print {
     body { padding: 10mm; }
@@ -129,14 +131,17 @@
   <thead><tr><th>Date</th><th>Day</th><th>Clock In</th><th>Clock Out</th><th>Break</th><th>Hours</th><th>Type</th><th style="text-align:right">Pay</th></tr></thead>
   <tbody>
     {% for a in attendance %}
-    <tr>
+    <tr{% if a.day_type == 'weekly_overtime' %} class="row-weekly-ot"{% endif %}>
       <td>{{ a.date }}</td>
-      <td>{{ a.date | replace('-','') }}</td>
+      <td>{% if a.day_type == 'weekly_overtime' %}—{% else %}{{ a.date | replace('-','') }}{% endif %}</td>
       <td>{{ a.clock_in or '—' }}</td>
       <td>{{ a.clock_out or '—' }}</td>
-      <td>{{ a.break_min }}m</td>
+      <td>{% if a.break_min is none %}—{% else %}{{ a.break_min }}m{% endif %}</td>
       <td>{{ "%.2f"|format(a.hours) }}h</td>
-      <td><span class="badge-{{ a.day_type }}">{{ a.day_type | replace('_',' ') | title }}</span></td>
+      <td>
+        <span class="badge-{{ a.day_type }}">{{ a.day_type | replace('_',' ') | title }}</span>
+        {% if a.note %}<br><span style="font-size:9px;color:#888">{{ a.note }}</span>{% endif %}
+      </td>
       <td style="text-align:right">R {{ "%.2f"|format(a.pay) }}</td>
     </tr>
     {% endfor %}

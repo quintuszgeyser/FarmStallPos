@@ -387,11 +387,23 @@ def _calculate_pay_run(employee_id, period_start, period_end):
             _week_normal_hrs[iso_week]  += hrs
             _week_normal_pool[iso_week] += std_hrs
 
+        # Compute effective break for display — mirrors _compute_hours logic
+        if a.clock_in and a.clock_out:
+            _raw_min = (a.clock_out.hour * 60 + a.clock_out.minute) - (a.clock_in.hour * 60 + a.clock_in.minute)
+            if a.break_minutes and a.break_minutes > 0:
+                _eff_break = a.break_minutes
+            elif _raw_min > 300:
+                _eff_break = 60
+            else:
+                _eff_break = 0
+        else:
+            _eff_break = a.break_minutes or 0
+
         attendance_snapshot.append({
             'date':         a.work_date.isoformat(),
             'clock_in':     a.clock_in.strftime('%H:%M') if a.clock_in else None,
             'clock_out':    a.clock_out.strftime('%H:%M') if a.clock_out else None,
-            'break_min':    a.break_minutes,
+            'break_min':    _eff_break,
             'hours':        float(pay_hrs),
             'day_type':     dt,
             'pay':          float(pay_amt.quantize(Decimal('0.01'))),
@@ -401,7 +413,7 @@ def _calculate_pay_run(employee_id, period_start, period_end):
     # Per-day OT (hours > normal_h/day) is already in totals['overtime'].
     # Only reclassify the gap between what per-day OT already caught and the weekly excess.
     _WEEKLY_THRESHOLD = Decimal('45')
-    for iso_week, week_total in _week_normal_hrs.items():
+    for iso_week, week_total in sorted(_week_normal_hrs.items()):
         if week_total > _WEEKLY_THRESHOLD:
             ot_already = week_total - _week_normal_pool[iso_week]  # per-day OT this week
             weekly_excess = week_total - _WEEKLY_THRESHOLD
@@ -409,6 +421,21 @@ def _calculate_pay_run(employee_id, period_start, period_end):
             if reclassify > 0:
                 totals['normal']   -= reclassify
                 totals['overtime'] += reclassify
+                # Add a breakdown row for the OT premium so the attendance table sums to gross
+                _ot_premium = (reclassify * rate * (mult('overtime') - mult('normal'))).quantize(Decimal('0.01'))
+                try:
+                    _wk_label = date.fromisocalendar(iso_week[0], iso_week[1], 1).isoformat()
+                except Exception:
+                    _wk_label = f'Week {iso_week[1]}'
+                attendance_snapshot.append({
+                    'date':      _wk_label,
+                    'clock_in':  None, 'clock_out': None,
+                    'break_min': None,
+                    'hours':     float(reclassify),
+                    'day_type':  'weekly_overtime',
+                    'pay':       float(_ot_premium),
+                    'note':      f'{float(reclassify):.2f}h exceeded 45h weekly threshold — OT premium',
+                })
 
     # Build shared date sets used by both the public-holiday and salaried loops
     logged_dates = {a.work_date for a in rows}
