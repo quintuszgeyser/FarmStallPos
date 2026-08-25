@@ -786,6 +786,7 @@ def api_check_markup_drift():
         from models import StockBatch
         count = Product.query.filter(
             Product.is_archived == False,
+            Product.is_for_sale == True,
             db.or_(
                 Product.pending_price.isnot(None),
                 Product.pending_price_per_unit.isnot(None),
