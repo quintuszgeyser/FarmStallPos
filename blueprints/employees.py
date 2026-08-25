@@ -393,13 +393,13 @@ def _calculate_pay_run(employee_id, period_start, period_end):
 
     # BCEA weekly overtime: hours >45 in a week on normal working days get 1.5×.
     # Per-day OT (hours > normal_h/day) is already in totals['overtime'].
-    # This check reclassifies any normal-pooled hours that push the week over 45.
+    # Only reclassify the gap between what per-day OT already caught and the weekly excess.
     _WEEKLY_THRESHOLD = Decimal('45')
     for iso_week, week_total in _week_normal_hrs.items():
         if week_total > _WEEKLY_THRESHOLD:
-            excess = week_total - _WEEKLY_THRESHOLD
-            normal_available = _week_normal_pool[iso_week]
-            reclassify = min(excess, normal_available)
+            ot_already = week_total - _week_normal_pool[iso_week]  # per-day OT this week
+            weekly_excess = week_total - _WEEKLY_THRESHOLD
+            reclassify = min(max(Decimal('0'), weekly_excess - ot_already), _week_normal_pool[iso_week])
             if reclassify > 0:
                 totals['normal']   -= reclassify
                 totals['overtime'] += reclassify
