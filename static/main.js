@@ -6120,6 +6120,15 @@ async function loadSupplierInvoices(supplierId) {
             data-edit-batch-base-cost-total="${b.base_cost_total || ''}"
             data-edit-batch-consumed-pct="${b.consumed_pct || 0}"
             data-edit-batch-updated-at="${b.updated_at || ''}"><i class="bi bi-pencil"></i></button>
+          <button class="btn btn-outline-info btn-sm py-0 px-1" title="Cost correction"
+            data-correct-batch-id="${b.id}"
+            data-correct-batch-cpu="${b.cost_per_base_unit || 0}"
+            data-correct-batch-product-id="${b.product_id}"
+            data-correct-batch-name="${escapeHtml(b.product_name)}"
+            data-correct-batch-unit="${b.base_unit || 'unit'}"
+            data-correct-batch-consignment="${b.is_consignment ? '1' : '0'}"
+            data-correct-batch-purchased="${b.qty_purchased_base}"
+            data-correct-batch-remaining="${b.qty_remaining_base}"><i class="bi bi-currency-dollar"></i></button>
           ${canDelete ? `<button class="btn btn-outline-danger btn-sm py-0 px-1"
             title="Delete batch"
             data-delete-batch-id="${b.id}"
