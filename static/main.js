@@ -4159,7 +4159,7 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
   const nowForSale = payload.is_for_sale !== false;
 
   try {
-    await api('/api/products/update', { method: 'POST', body: JSON.stringify(payload) });
+    const _updResult = await api('/api/products/update', { method: 'POST', body: JSON.stringify(payload) });
     await _uploadProductImagesIfSelected(id);
     if (payload.product_family_id !== undefined) {
       await api(`/api/products/${id}/variant_attributes`, { method: 'POST', body: JSON.stringify({ value_ids: _variantAttrValues }) });
@@ -4171,6 +4171,9 @@ document.getElementById('btn-update-product')?.addEventListener('click', async (
     if (wasForSale && !nowForSale)  msg = `"${payload.name}" moved to the Ingredients tab.`;
     if (!wasForSale && nowForSale)  msg = `"${payload.name}" moved back to For Sale.`;
     toast(msg, 'success', 2500);
+    if (_updResult?.type_change_warnings?.length) {
+      _updResult.type_change_warnings.forEach(w => toast(`Type change: ${w}`, 'warning', 8000));
+    }
     bootstrap.Modal.getOrCreateInstance(document.getElementById('productEditorModal')).hide();
   } catch (e) { toast(e.message, 'error'); }
 });
@@ -21268,6 +21271,7 @@ async function _loadNegativeStock() {
       const qty = item.unit_type === 'weight' ? `${item.stock_level.toFixed(0)} g`
                 : item.unit_type === 'volume' ? `${item.stock_level.toFixed(0)} ml`
                 : item.stock_level.toFixed(0);
+      const isProducedRecipe = item.product_type === 'recipe' && item.is_produced;
       const receiveBtn = item.product_type !== 'recipe'
         ? `<button class="btn btn-sm btn-outline-success py-0 px-1 ms-1" style="font-size:0.75rem" onclick="_negStockReceive(${item.product_id})"><i class="bi bi-box-arrow-in-down me-1"></i>Receive</button>`
         : '';
@@ -21277,7 +21281,7 @@ async function _loadNegativeStock() {
         <td class="small text-muted">${item.negative_since || '—'}${item.negative_transactions ? ` <span class="badge bg-secondary">${item.negative_transactions} sales</span>` : ''}</td>
         <td>${polBadge}</td>
         <td class="text-end">
-          ${item.product_type === 'recipe' ? `<button class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.75rem" onclick="_negStockProduce(${item.product_id})">Produce</button>` : ''}
+          ${isProducedRecipe ? `<button class="btn btn-sm btn-outline-primary py-0 px-1" style="font-size:0.75rem" onclick="_negStockProduce(${item.product_id})">Produce</button>` : ''}
           ${receiveBtn}
           <button class="btn btn-sm btn-outline-secondary py-0 px-1 ms-1" style="font-size:0.75rem" onclick="_negStockAdjust(${item.product_id})">Adjust</button>
         </td>

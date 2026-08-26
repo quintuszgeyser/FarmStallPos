@@ -485,6 +485,25 @@ def api_products_update():
         try: p.stock_qty = int(data['stock_qty'])
         except Exception: return jsonify({'error': 'Invalid stock_qty'}), 400
 
+    _type_change_warnings = []
+    if 'product_type' in data and data['product_type'] and data['product_type'] != p.product_type:
+        _new_type = data['product_type']
+        # Auto-zero any stranded negative_placeholder batches left over from the old type.
+        # These batches cannot be absorbed by the new type's normal flow (e.g. a made-to-order
+        # recipe has no produce run), so clear them now to prevent a permanently stuck negative.
+        _neg_phs = (StockBatch.query
+                    .filter_by(product_id=p.id, batch_type='negative_placeholder')
+                    .filter(StockBatch.qty_remaining_base < 0)
+                    .all())
+        for _neg in _neg_phs:
+            _old_qty = float(_neg.qty_remaining_base)
+            _neg.qty_remaining_base = Decimal('0')
+            _neg.qty_purchased_base = Decimal('0')
+            _type_change_warnings.append(
+                f'Cleared negative placeholder batch #{_neg.id} ({_old_qty} {p.base_unit or "units"}) '
+                f'left from previous type "{p.product_type}".'
+            )
+
     for field in ('product_type', 'unit_type', 'base_unit', 'package_size_unit', 'package_unit'):
         if field in data:
             setattr(p, field, data[field] or None)
@@ -697,7 +716,10 @@ def api_products_update():
         old_sub_category_id=_old_sub_id    if _old_sub_id    != p.sub_category_id     else None,
         old_family_id=_old_family_id if _old_family_id != p.product_family_id    else None,
     )
-    return jsonify({'ok': True})
+    resp = {'ok': True}
+    if _type_change_warnings:
+        resp['type_change_warnings'] = _type_change_warnings
+    return jsonify(resp)
 
 
 _VALID_COST_TYPES_P = {'shipping', 'labour', 'utilities', 'packaging', 'other'}

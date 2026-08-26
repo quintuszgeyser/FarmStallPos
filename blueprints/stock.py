@@ -307,8 +307,13 @@ def api_stock_adjust():
     if not reason:
         return jsonify({'error': 'reason required'}), 400
     p = db.session.get(Product, pid, with_for_update=True)
-    if not p or (p.product_type != 'stock_item' and not (p.product_type == 'recipe' and p.is_produced)):
-        return jsonify({'error': 'Product not found or not a stock_item'}), 404
+    if not p:
+        return jsonify({'error': 'Product not found'}), 404
+    _can_adjust = (p.product_type == 'stock_item' or
+                   (p.product_type == 'recipe' and p.is_produced) or
+                   StockBatch.query.filter_by(product_id=pid).count() > 0)
+    if not _can_adjust:
+        return jsonify({'error': 'Product has no stock batches to adjust'}), 400
     conversion  = _unit_conversion(p, unit)
     actual_base = Decimal(str(actual_qty * conversion))
     system_base = Decimal(str(get_stock_level(pid)))
@@ -542,7 +547,10 @@ def api_stock_writeoff():
     if not p:
         return jsonify({'error': 'Product not found'}), 404
 
-    if p.product_type not in ('stock_item',) and not (p.product_type == 'recipe' and p.is_produced):
+    _can_writeoff = (p.product_type == 'stock_item' or
+                     (p.product_type == 'recipe' and p.is_produced) or
+                     StockBatch.query.filter_by(product_id=pid).count() > 0)
+    if not _can_writeoff:
         return jsonify({'error': 'Product is not a stock item or batch-produced recipe'}), 400
     conversion     = _unit_conversion(p, unit)
     qty_base       = Decimal(str(qty * conversion))
@@ -959,6 +967,7 @@ def api_stock_negative():
             'unit_type':               p.unit_type,
             'base_unit':               p.base_unit,
             'product_type':            p.product_type,
+            'is_produced':             bool(p.is_produced) if p.product_type == 'recipe' else False,
             'inventory_policy':        p.inventory_policy or 'ALLOW_NEGATIVE',
             'negative_since':          since_dt.date().isoformat() if since_dt else None,
             'negative_transactions':   sale_counts.get(r.product_id, 0),
