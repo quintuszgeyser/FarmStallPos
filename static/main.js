@@ -2770,6 +2770,7 @@ document.getElementById('btn-produce-confirm')?.addEventListener('click', async 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('produceModal')).hide();
     await loadProducts();
     loadIngredients();
+    _loadNegativeStock();
     if ((r.auto_produced && r.auto_produced.length > 0) || (r.warnings && r.warnings.length > 0)) {
       _showProduceResultModal(r, product, batches);
     } else {
@@ -2879,6 +2880,7 @@ document.getElementById('btn-multi-produce-confirm')?.addEventListener('click', 
   else toast(`Produced ${totalUnits} total unit${totalUnits !== 1 ? 's' : ''}`, 'success', 3000);
   await loadProducts();
   loadIngredients();
+  _loadNegativeStock();
 });
 
 function _renderBarcodes(items) {
@@ -21431,6 +21433,14 @@ function empSwitchSub(sub) {
       const today = new Date();
       m.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
     }
+    const w = document.getElementById('emp-ts-week');
+    if (w && !w.value) {
+      // Set to current ISO week  e.g. "2026-W35"
+      const today = new Date();
+      const jan4  = new Date(today.getFullYear(), 0, 4);
+      const weekNum = Math.ceil(((today - jan4) / 86400000 + (jan4.getDay() + 6) % 7 + 1) / 7);
+      w.value = `${today.getFullYear()}-W${String(weekNum).padStart(2,'0')}`;
+    }
     if (!EMP.employees.length) {
       _empLoadEmployees().then(() => loadTimesheetCalendar());
     } else {
@@ -21734,20 +21744,71 @@ function empOpenAttendanceForDate(dateStr, empId) {
   new bootstrap.Modal(document.getElementById('empAttendanceModal')).show();
 }
 
-async function empGenerateMonth(rotation = false) {
-  const month = document.getElementById('emp-ts-month').value;
-  if (!month) { toast('Select a month first', 'warning'); return; }
-  const msg = rotation
-    ? `Generate ROTATING schedule for ALL employees for ${month}?\n\nOff-days will be assigned per rotation rules. Manual entries will not be touched.`
-    : `Generate default attendance for ALL employees for ${month}?\n\nDays already logged will not be overwritten.`;
-  if (!confirm(msg)) return;
+function _weekInputToDates(weekVal) {
+  // weekVal is "YYYY-Www" — convert to Mon (date_from) and Sun (date_to)
+  const [yearStr, weekStr] = weekVal.split('-W');
+  const year = parseInt(yearStr), week = parseInt(weekStr);
+  // ISO week: Jan 4 is always in week 1
+  const jan4 = new Date(year, 0, 4);
+  const mon  = new Date(jan4);
+  mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (week - 1) * 7);
+  const sun  = new Date(mon); sun.setDate(mon.getDate() + 6);
+  const fmt  = d => d.toISOString().split('T')[0];
+  return { date_from: fmt(mon), date_to: fmt(sun) };
+}
+
+async function empGenerateRange(rotation = false, scope = 'month') {
+  let payload = { rotation };
+  let label;
+  if (scope === 'week') {
+    const weekVal = document.getElementById('emp-ts-week').value;
+    if (!weekVal) { toast('Select a week first', 'warning'); return; }
+    const { date_from, date_to } = _weekInputToDates(weekVal);
+    payload.date_from = date_from;
+    payload.date_to   = date_to;
+    label = `${date_from} → ${date_to}`;
+  } else {
+    const month = document.getElementById('emp-ts-month').value;
+    if (!month) { toast('Select a month first', 'warning'); return; }
+    payload.month = month;
+    label = month;
+  }
+  const modeLabel = rotation ? 'ROTATING ' : '';
+  if (!confirm(`Generate ${modeLabel}schedule for ALL employees for ${label}?\n\nDays already logged will not be overwritten. Manual entries will not be touched.`)) return;
   try {
-    const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify({ month, rotation }) });
+    const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify(payload) });
     const delMsg = r.deleted > 0 ? `, cleared ${r.deleted} off-day entries` : '';
     toast(`Generated ${r.created} entries for ${r.employees} employees (${r.skipped} skipped${delMsg})`, 'success', 5000);
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
 }
+
+async function empClearSchedule(scope = 'month') {
+  let payload = {};
+  let label;
+  if (scope === 'week') {
+    const weekVal = document.getElementById('emp-ts-week').value;
+    if (!weekVal) { toast('Select a week first', 'warning'); return; }
+    const { date_from, date_to } = _weekInputToDates(weekVal);
+    payload.date_from = date_from;
+    payload.date_to   = date_to;
+    label = `${date_from} → ${date_to}`;
+  } else {
+    const month = document.getElementById('emp-ts-month').value;
+    if (!month) { toast('Select a month first', 'warning'); return; }
+    payload.month = month;
+    label = month;
+  }
+  if (!confirm(`Clear all generated schedule entries for ${label}?\n\nOnly auto-generated entries will be removed. Manually captured shifts are NOT affected.`)) return;
+  try {
+    const r = await api('/api/employees/clear_schedule', { method:'POST', body: JSON.stringify(payload) });
+    toast(`Cleared ${r.deleted} schedule entries for ${label}`, r.deleted > 0 ? 'success' : 'info', 4000);
+    loadTimesheetCalendar();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
+// Keep old name as alias for any remaining references
+const empGenerateMonth = (rotation) => empGenerateRange(rotation, 'month');
 
 function empOpenShiftModal() {
   const empId = document.getElementById('emp-ts-employee').value;

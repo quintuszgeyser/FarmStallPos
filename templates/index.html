@@ -2858,16 +2858,26 @@
 
         <!-- TIMESHEETS sub-tab -->
         <div id="emp-sub-timesheets">
-          <div class="d-flex gap-2 align-items-center mb-3 flex-wrap">
+          <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
             <select id="emp-ts-employee" class="form-select form-select-sm" style="max-width:220px" onchange="loadTimesheetCalendar()"></select>
             <input type="month" id="emp-ts-month" class="form-control form-control-sm" style="max-width:160px" onchange="loadTimesheetCalendar()">
             <button class="btn btn-outline-secondary btn-sm" onclick="loadTimesheetCalendar()"><i class="bi bi-arrow-clockwise"></i></button>
             <div class="ms-auto d-flex gap-2 flex-wrap">
               <button class="btn btn-sm btn-outline-secondary" onclick="empOpenScheduleConfig()" title="Configure per-employee work days and rotation"><i class="bi bi-sliders me-1"></i>Schedule Config</button>
-              <button class="btn btn-sm btn-success" onclick="empGenerateMonth(false)" title="Default schedule: uses each employee's working days setting"><i class="bi bi-calendar-check me-1"></i>Generate Month</button>
-              <button class="btn btn-sm btn-outline-success" onclick="empGenerateMonth(true)" title="Mon–Sat, one rotating day off per employee per week"><i class="bi bi-arrow-repeat me-1"></i>Generate Rotating</button>
               <button class="btn btn-sm btn-outline-primary" onclick="empOpenShiftModal()"><i class="bi bi-calendar-plus me-1"></i>Add Shift</button>
             </div>
+          </div>
+          <div class="d-flex gap-2 align-items-center mb-3 flex-wrap" style="border-top:1px solid #eee;padding-top:8px">
+            <span class="small text-muted fw-semibold">Generate:</span>
+            <input type="week" id="emp-ts-week" class="form-control form-control-sm" style="max-width:175px">
+            <button class="btn btn-sm btn-success" onclick="empGenerateRange(false,'week')" title="Generate default schedule for selected week only"><i class="bi bi-calendar-week me-1"></i>Week</button>
+            <button class="btn btn-sm btn-outline-success" onclick="empGenerateRange(true,'week')" title="Generate rotating schedule for selected week only"><i class="bi bi-arrow-repeat me-1"></i>Week Rotating</button>
+            <span class="text-muted">|</span>
+            <button class="btn btn-sm btn-success" onclick="empGenerateRange(false,'month')" title="Default schedule for the selected month"><i class="bi bi-calendar-check me-1"></i>Month</button>
+            <button class="btn btn-sm btn-outline-success" onclick="empGenerateRange(true,'month')" title="Rotating schedule for the selected month"><i class="bi bi-arrow-repeat me-1"></i>Month Rotating</button>
+            <span class="text-muted">|</span>
+            <button class="btn btn-sm btn-outline-danger" onclick="empClearSchedule('week')" title="Delete all generated (default) entries for the selected week"><i class="bi bi-trash me-1"></i>Clear Week</button>
+            <button class="btn btn-sm btn-outline-danger" onclick="empClearSchedule('month')" title="Delete all generated (default) entries for the selected month"><i class="bi bi-trash me-1"></i>Clear Month</button>
           </div>
           <!-- Calendar / all-employees grid -->
           <div id="emp-ts-calendar" class="emp-calendar"></div>

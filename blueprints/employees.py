@@ -794,19 +794,30 @@ def api_generate_schedule():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     d = request.json or {}
-    month_str = d.get('month')
     rotation  = bool(d.get('rotation', False))
-    try:
-        y, m = map(int, month_str.split('-'))
-        month_start = date(y, m, 1)
-    except Exception:
-        return jsonify({'error': 'month required (YYYY-MM)'}), 400
-
-    import calendar as _cal
+    # Support both month (YYYY-MM) and explicit date range (date_from / date_to YYYY-MM-DD)
     from datetime import time as dtime
-    days_in_month = _cal.monthrange(y, m)[1]
-    month_end     = date(y, m, days_in_month)
-    all_days      = [date(y, m, day) for day in range(1, days_in_month + 1)]
+    if d.get('date_from') and d.get('date_to'):
+        try:
+            month_start = date.fromisoformat(d['date_from'])
+            month_end   = date.fromisoformat(d['date_to'])
+        except Exception:
+            return jsonify({'error': 'date_from and date_to must be YYYY-MM-DD'}), 400
+    else:
+        month_str = d.get('month')
+        try:
+            import calendar as _cal
+            y, m = map(int, month_str.split('-'))
+            month_start = date(y, m, 1)
+            month_end   = date(y, m, _cal.monthrange(y, m)[1])
+        except Exception:
+            return jsonify({'error': 'month required (YYYY-MM) or date_from/date_to'}), 400
+    y = month_start.year
+    all_days = []
+    d_iter = month_start
+    while d_iter <= month_end:
+        all_days.append(d_iter)
+        d_iter += timedelta(days=1)
 
     employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
     holidays  = sa_public_holidays(y)
@@ -849,7 +860,9 @@ def api_generate_schedule():
     default_co_str  = get_setting('schedule_default_clock_out') or '17:00'
     default_ci      = _parse_time_str(default_ci_str, 7, 30)
     default_co      = _parse_time_str(default_co_str, 17, 0)
-    break_min       = 0
+    # Auto-apply 60-min lunch for shifts > 5 h (same rule as _compute_hours)
+    _raw_shift_min  = (default_co.hour * 60 + default_co.minute) - (default_ci.hour * 60 + default_ci.minute)
+    break_min       = 60 if _raw_shift_min > 300 else 0
     hours           = _compute_hours(default_ci_str, default_co_str, break_min)
 
     for emp_idx, emp in enumerate(employees):
@@ -932,6 +945,39 @@ def api_generate_schedule():
 
     db.session.commit()
     return jsonify({'created': created, 'skipped': skipped, 'deleted': deleted, 'employees': len(employees)})
+
+
+@bp.route('/api/employees/clear_schedule', methods=['POST'])
+def api_clear_schedule():
+    """Delete all schedule_default attendance entries for a given date range or month.
+    Only removes entries with source='schedule_default' — manual/admin entries are untouched.
+    """
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    d = request.json or {}
+    if d.get('date_from') and d.get('date_to'):
+        try:
+            d_from = date.fromisoformat(d['date_from'])
+            d_to   = date.fromisoformat(d['date_to'])
+        except Exception:
+            return jsonify({'error': 'date_from and date_to must be YYYY-MM-DD'}), 400
+    else:
+        month_str = d.get('month')
+        try:
+            import calendar as _cal
+            y, m   = map(int, month_str.split('-'))
+            d_from = date(y, m, 1)
+            d_to   = date(y, m, _cal.monthrange(y, m)[1])
+        except Exception:
+            return jsonify({'error': 'month (YYYY-MM) or date_from/date_to required'}), 400
+
+    deleted = (EmployeeAttendance.query
+               .filter(EmployeeAttendance.work_date >= d_from,
+                       EmployeeAttendance.work_date <= d_to,
+                       EmployeeAttendance.source    == 'schedule_default')
+               .delete(synchronize_session=False))
+    db.session.commit()
+    return jsonify({'deleted': deleted, 'from': d_from.isoformat(), 'to': d_to.isoformat()})
 
 
 @bp.route('/api/employees/attendance/summary', methods=['GET'])
