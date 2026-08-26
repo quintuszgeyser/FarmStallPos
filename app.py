@@ -1,4 +1,4 @@
-﻿
+
 # -*- coding: utf-8 -*-
 
 import os, uuid, logging, traceback, json
@@ -2312,6 +2312,51 @@ def strong_migrate():
         """)
         conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_emp_docs_emp ON employee_documents(employee_id)")
 
+        # ── Cost corrections (retroactive batch cost adjustment) ─────────────
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS cost_adjustments (
+              id                    SERIAL PRIMARY KEY,
+              batch_id              INTEGER NOT NULL REFERENCES stock_batches(id),
+              product_id            INTEGER NOT NULL REFERENCES products(id),
+              supplier_id           INTEGER REFERENCES suppliers(id),
+              scope                 VARCHAR(30) NOT NULL,
+              old_cost_per_unit     NUMERIC(10,6) NOT NULL,
+              new_cost_per_unit     NUMERIC(10,6) NOT NULL,
+              old_base_cost_total   NUMERIC(18,4),
+              new_base_cost_total   NUMERIC(18,4),
+              reason                TEXT NOT NULL,
+              status                VARCHAR(20) NOT NULL DEFAULT 'applied',
+              reversed_by_id        INTEGER REFERENCES cost_adjustments(id),
+              created_by            INTEGER REFERENCES users(id),
+              created_at            TIMESTAMP NOT NULL DEFAULT NOW(),
+              idempotency_key       VARCHAR(64) UNIQUE,
+              sales_affected        INTEGER,
+              consumptions_affected INTEGER,
+              cogs_delta            NUMERIC(18,4),
+              liability_delta       NUMERIC(18,4)
+            )
+        """)
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_cost_adj_batch ON cost_adjustments (batch_id)"
+        )
+        conn.exec_driver_sql("""
+            CREATE TABLE IF NOT EXISTS cost_adjustment_lines (
+              id            SERIAL PRIMARY KEY,
+              adjustment_id INTEGER NOT NULL REFERENCES cost_adjustments(id),
+              entity_type   VARCHAR(20) NOT NULL,
+              entity_id     INTEGER,
+              sale_id_str   VARCHAR(64),
+              old_value     NUMERIC(18,6),
+              new_value     NUMERIC(18,6),
+              qty           NUMERIC(10,4),
+              old_total     NUMERIC(18,4),
+              new_total     NUMERIC(18,4)
+            )
+        """)
+        conn.exec_driver_sql(
+            "CREATE INDEX IF NOT EXISTS ix_cost_adj_lines_adj ON cost_adjustment_lines (adjustment_id)"
+        )
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 
@@ -2654,7 +2699,8 @@ def _register_routes(_app):
     from blueprints.packaging       import bp as packaging_bp
     from blueprints.backup          import bp as backup_bp
     from blueprints.cctv            import bp as cctv_bp
-    from blueprints.employees       import bp as employees_bp
+    from blueprints.employees         import bp as employees_bp
+    from blueprints.cost_corrections  import bp as cost_corrections_bp
     _app.register_blueprint(auth_bp)
     _app.register_blueprint(kiosk_bp)
     _app.register_blueprint(kitchen_bp)
@@ -2685,6 +2731,7 @@ def _register_routes(_app):
     _app.register_blueprint(backup_bp)
     _app.register_blueprint(cctv_bp)
     _app.register_blueprint(employees_bp)
+    _app.register_blueprint(cost_corrections_bp)
 
     # Start background deploy scheduler (only in QA - QA schedules deploys to PROD)
     if IS_QA:

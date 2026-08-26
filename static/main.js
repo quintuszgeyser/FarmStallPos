@@ -4568,6 +4568,15 @@ function _buildStockBody(item, prod) {
               data-edit-batch-base-cost-total="${b.base_cost_total || ''}"
               data-edit-batch-consumed-pct="${b.consumed_pct || 0}"
               data-edit-batch-updated-at="${b.updated_at || ''}"><i class="bi bi-pencil"></i></button>
+            <button class="btn btn-outline-info btn-sm py-0 px-1" title="Cost correction"
+              data-correct-batch-id="${b.id}"
+              data-correct-batch-cpu="${b.cost_per_base_unit || 0}"
+              data-correct-batch-product-id="${item.id}"
+              data-correct-batch-name="${escapeHtml(item.name)}"
+              data-correct-batch-unit="${item.base_unit || 'unit'}"
+              data-correct-batch-consignment="${item.is_consignment ? '1' : '0'}"
+              data-correct-batch-purchased="${b.qty_purchased_base}"
+              data-correct-batch-remaining="${b.qty_remaining_base}"><i class="bi bi-currency-dollar"></i></button>
             ${Math.abs(b.qty_remaining_base - b.qty_purchased_base) < 0.0001 ? `<button class="btn btn-outline-danger btn-sm py-0 px-1" title="Delete batch"
               data-delete-batch-id="${b.id}"
               data-delete-batch-date="${new Date(b.purchased_at).toLocaleDateString('en-ZA')}"
@@ -5028,6 +5037,154 @@ document.addEventListener('click', async (e) => {
     if (pid) document.querySelector(`.product-row[data-product-id="${pid}"]`)?.click();
     if (_currentSupplier) loadSupplierInvoices(_currentSupplier.id);
   } catch (err) { toast(err.message || 'Delete failed', 'error'); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// COST CORRECTION
+// ═══════════════════════════════════════════════════════════════════════════
+
+let _ccPreviewData = null;  // stores last preview result for the apply step
+
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-correct-batch-id]');
+  if (!btn) return;
+  e.stopPropagation();
+
+  const batchId     = btn.dataset.correctBatchId;
+  const cpu         = parseFloat(btn.dataset.correctBatchCpu || '0');
+  const productId   = btn.dataset.correctBatchProductId;
+  const productName = btn.dataset.correctBatchName;
+  const baseUnit    = btn.dataset.correctBatchUnit || 'unit';
+  const isConsign   = btn.dataset.correctBatchConsignment === '1';
+  const qtyPurch    = parseFloat(btn.dataset.correctBatchPurchased || '0');
+  const qtyRem      = parseFloat(btn.dataset.correctBatchRemaining || '0');
+  const qtyCons     = Math.max(0, qtyPurch - qtyRem);
+
+  document.getElementById('cc-batch-id').value    = batchId;
+  document.getElementById('cc-product-id').value  = productId;
+  document.getElementById('cc-new-cost').value    = '';
+  document.getElementById('cc-reason').value      = '';
+  document.getElementById('cc-current-cost').textContent = `R${cpu.toFixed(4)} / ${baseUnit}`;
+  document.getElementById('cc-batch-info').innerHTML =
+    `Batch #${batchId} — <strong>${escapeHtml(productName)}</strong> &nbsp;·&nbsp; ` +
+    `${qtyPurch} ${baseUnit} purchased, ${qtyRem.toFixed(4)} remaining, ${qtyCons.toFixed(4)} consumed`;
+
+  // Reset scope
+  document.getElementById('cc-scope-remaining').checked = true;
+
+  // Consignment row
+  const consRow = document.getElementById('cc-consignment-row');
+  if (isConsign) { show(consRow); } else { hide(consRow); }
+  document.getElementById('cc-update-consignment').checked = false;
+
+  // Hide preview
+  hide(document.getElementById('cc-preview-panel'));
+  hide(document.getElementById('btn-cc-apply'));
+  _ccPreviewData = null;
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('costCorrectionModal')).show();
+});
+
+document.getElementById('btn-cc-preview')?.addEventListener('click', async () => {
+  const batchId     = document.getElementById('cc-batch-id').value;
+  const newCost     = parseFloat(document.getElementById('cc-new-cost').value || '0');
+  const scope       = document.querySelector('input[name="cc-scope"]:checked')?.value || 'remaining';
+
+  if (!newCost || newCost <= 0) return toast('Enter a valid new cost per unit', 'warning');
+
+  const btn = document.getElementById('btn-cc-preview');
+  btn.disabled = true;
+  btn.textContent = 'Calculating…';
+  try {
+    const impact = await api(`/api/stock/batches/${batchId}/cost-correction/preview`, {
+      method: 'POST',
+      body: JSON.stringify({ new_unit_cost: newCost, scope }),
+    });
+    _ccPreviewData = impact;
+    _renderCcPreview(impact);
+    show(document.getElementById('cc-preview-panel'));
+    show(document.getElementById('btn-cc-apply'));
+  } catch (err) {
+    toast(err.message || 'Preview failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Preview Impact';
+  }
+});
+
+function _renderCcPreview(d) {
+  const fmt2 = v => (v >= 0 ? '+' : '') + 'R' + Math.abs(v).toFixed(2);
+  const fmtR = v => 'R' + parseFloat(v).toFixed(2);
+  const rows = [];
+
+  rows.push(`<div class="row g-1 small">
+    <div class="col-6 text-muted">Remaining stock (${d.qty_remaining} units)</div>
+    <div class="col-6">Inventory value change: <strong class="${d.inventory_value_delta < 0 ? 'text-danger' : 'text-success'}">${fmt2(d.inventory_value_delta)}</strong></div>
+  </div>`);
+
+  if (d.scope === 'entire_batch') {
+    rows.push(`<div class="row g-1 small mt-1">
+      <div class="col-6 text-muted">Consumed stock (${d.qty_consumed} units)</div>
+      <div class="col-6">Historical COGS change: <strong class="${d.cogs_delta < 0 ? 'text-danger' : 'text-success'}">${fmt2(d.cogs_delta)}</strong> across <strong>${d.sales_affected}</strong> sale${d.sales_affected !== 1 ? 's' : ''}</div>
+    </div>`);
+
+    if (d.writeoff_qty > 0) {
+      rows.push(`<div class="small text-muted mt-1"><i class="bi bi-info-circle me-1"></i>${d.writeoff_qty} units were written off — consumption records updated, no Sale rows affected.</div>`);
+    }
+    if (d.liability_delta !== 0) {
+      rows.push(`<div class="small mt-1">Consignment liability change: <strong class="${d.liability_delta < 0 ? 'text-danger' : 'text-success'}">${fmt2(d.liability_delta)}</strong> (outstanding only)</div>`);
+    }
+  }
+
+  document.getElementById('cc-preview-body').innerHTML = rows.join('');
+
+  const warnEl = document.getElementById('cc-production-warning');
+  const warnTxt = document.getElementById('cc-production-warning-text');
+  if (d.production_warned) {
+    warnTxt.textContent = `${d.production_qty} unit(s) from this batch were consumed by production runs. The cost of those produced batches and their downstream sales will NOT be automatically corrected. Correct the produced batch separately if needed.`;
+    show(warnEl);
+  } else {
+    hide(warnEl);
+  }
+}
+
+document.getElementById('btn-cc-apply')?.addEventListener('click', async () => {
+  const batchId     = document.getElementById('cc-batch-id').value;
+  const newCost     = parseFloat(document.getElementById('cc-new-cost').value || '0');
+  const scope       = document.querySelector('input[name="cc-scope"]:checked')?.value || 'remaining';
+  const reason      = document.getElementById('cc-reason').value.trim();
+  const updateConsign = document.getElementById('cc-update-consignment').checked;
+
+  if (!newCost || newCost <= 0) return toast('Enter a valid new cost per unit', 'warning');
+  if (!reason) return toast('Reason is required', 'warning');
+
+  const btn = document.getElementById('btn-cc-apply');
+  btn.disabled = true;
+  btn.textContent = 'Applying…';
+  try {
+    const result = await api(`/api/stock/batches/${batchId}/cost-correction`, {
+      method: 'POST',
+      body: JSON.stringify({
+        new_unit_cost: newCost,
+        scope,
+        reason,
+        update_consignment_cost: updateConsign,
+        idempotency_key: `cc-${batchId}-${Date.now()}`,
+      }),
+    });
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('costCorrectionModal')).hide();
+    const msg = scope === 'entire_batch'
+      ? `Cost corrected. ${result.sales_affected} sale(s) updated. COGS delta: R${result.cogs_delta?.toFixed(2)}.`
+      : 'Batch cost updated for remaining stock.';
+    toast(msg, 'success', 4000);
+    await loadIngredients();
+    if (_currentSupplier) loadSupplierInvoices(_currentSupplier.id);
+  } catch (err) {
+    toast(err.message || 'Apply failed', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Confirm & Apply';
+  }
 });
 
 // ── Edit Invoice (open New Delivery panel pre-filled) ──

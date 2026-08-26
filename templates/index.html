@@ -4522,6 +4522,86 @@
   </div>
 </div>
 
+<!-- ═══════════ COST CORRECTION MODAL ═══════════ -->
+<div class="modal fade" id="costCorrectionModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header py-2">
+        <h5 class="modal-title"><i class="bi bi-currency-dollar me-1"></i>Cost Correction</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="cc-batch-id">
+        <input type="hidden" id="cc-product-id">
+        <div id="cc-batch-info" class="mb-3 p-2 bg-light rounded small text-muted"></div>
+
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <label class="form-label small fw-semibold">Current cost per unit</label>
+            <div id="cc-current-cost" class="form-control-plaintext ps-2 fw-bold"></div>
+          </div>
+          <div class="col-6">
+            <label class="form-label small fw-semibold">New cost per unit (R)</label>
+            <div class="input-group">
+              <span class="input-group-text">R</span>
+              <input id="cc-new-cost" type="number" step="0.0001" min="0.0001" class="form-control" placeholder="0.00">
+            </div>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Correction scope</label>
+          <div class="d-flex gap-3">
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="cc-scope" id="cc-scope-remaining" value="remaining" checked>
+              <label class="form-check-label small" for="cc-scope-remaining">
+                <strong>Remaining stock only</strong><br>
+                <span class="text-muted">Future sales use the new cost. Historical COGS unchanged.</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="cc-scope" id="cc-scope-entire" value="entire_batch">
+              <label class="form-check-label small" for="cc-scope-entire">
+                <strong>Entire batch (including sold)</strong><br>
+                <span class="text-muted">Rewrites historical COGS on all sales from this batch. Use for final consignment settlement.</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div id="cc-consignment-row" class="mb-3 hidden">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="cc-update-consignment">
+            <label class="form-check-label small" for="cc-update-consignment">
+              Also update consignment settlement cost (amount owed to supplier)
+            </label>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Reason <span class="text-danger">*</span></label>
+          <input id="cc-reason" type="text" class="form-control form-control-sm" placeholder="e.g. Supplier confirmed final consignment settlement at R60">
+        </div>
+
+        <!-- Preview panel -->
+        <div id="cc-preview-panel" class="hidden">
+          <hr class="my-2">
+          <div class="small fw-semibold mb-2">Impact Preview</div>
+          <div id="cc-preview-body"></div>
+          <div id="cc-production-warning" class="alert alert-warning py-2 small mt-2 hidden">
+            <i class="bi bi-exclamation-triangle-fill me-1"></i>
+            <span id="cc-production-warning-text"></span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer py-2 gap-2">
+        <button id="btn-cc-preview" class="btn btn-outline-secondary">Preview Impact</button>
+        <button id="btn-cc-apply" class="btn btn-primary hidden">Confirm &amp; Apply</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ═══════════ INGREDIENT SUBSTITUTION MODAL ═══════════ -->
 <div class="modal fade" id="subsModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered modal-lg">

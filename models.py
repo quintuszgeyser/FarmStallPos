@@ -1143,3 +1143,47 @@ class PayRun(db.Model):
     notes                      = db.Column(db.Text, nullable=True)
     created_by                 = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     created_at                 = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
+# ── Cost Corrections ──────────────────────────────────────────────────────────
+
+class CostAdjustment(db.Model):
+    """Immutable audit record for a retroactive batch cost correction.
+    status: applied | reversed
+    scope: remaining (future-only) | entire_batch (historical + future)
+    """
+    __tablename__ = 'cost_adjustments'
+    id                    = db.Column(db.Integer, primary_key=True)
+    batch_id              = db.Column(db.Integer, db.ForeignKey('stock_batches.id'), nullable=False, index=True)
+    product_id            = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
+    supplier_id           = db.Column(db.Integer, db.ForeignKey('suppliers.id'), nullable=True)
+    scope                 = db.Column(db.String(30), nullable=False)
+    old_cost_per_unit     = db.Column(Numeric(10, 6), nullable=False)
+    new_cost_per_unit     = db.Column(Numeric(10, 6), nullable=False)
+    old_base_cost_total   = db.Column(Numeric(18, 4), nullable=True)
+    new_base_cost_total   = db.Column(Numeric(18, 4), nullable=True)
+    reason                = db.Column(db.Text, nullable=False)
+    status                = db.Column(db.String(20), nullable=False, default='applied')
+    reversed_by_id        = db.Column(db.Integer, db.ForeignKey('cost_adjustments.id'), nullable=True)
+    created_by            = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at            = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    idempotency_key       = db.Column(db.String(64), nullable=True, unique=True)
+    sales_affected        = db.Column(db.Integer, nullable=True)
+    consumptions_affected = db.Column(db.Integer, nullable=True)
+    cogs_delta            = db.Column(Numeric(18, 4), nullable=True)
+    liability_delta       = db.Column(Numeric(18, 4), nullable=True)
+
+
+class CostAdjustmentLine(db.Model):
+    """One row per affected entity in a CostAdjustment — enables reversal and audit."""
+    __tablename__ = 'cost_adjustment_lines'
+    id            = db.Column(db.Integer, primary_key=True)
+    adjustment_id = db.Column(db.Integer, db.ForeignKey('cost_adjustments.id'), nullable=False, index=True)
+    entity_type   = db.Column(db.String(20), nullable=False)  # batch | consumption | sale | liability
+    entity_id     = db.Column(db.Integer, nullable=True)
+    sale_id_str   = db.Column(db.String(64), nullable=True)
+    old_value     = db.Column(Numeric(18, 6), nullable=True)
+    new_value     = db.Column(Numeric(18, 6), nullable=True)
+    qty           = db.Column(Numeric(10, 4), nullable=True)
+    old_total     = db.Column(Numeric(18, 4), nullable=True)
+    new_total     = db.Column(Numeric(18, 4), nullable=True)
