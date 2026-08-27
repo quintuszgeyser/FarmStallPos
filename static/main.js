@@ -21559,6 +21559,12 @@ async function _negStockReceive(productId) {
     _renderAdditionalCostsBlock(prAddlWrap, []);
     prAddlWrap.addEventListener('input', () => { _updatePurchaseRunSummary?.(); });
   }
+  // VAT section
+  const prVatWrap2 = document.getElementById('purchase-run-vat-wrap');
+  _renderPurchaseRunVatSection(prVatWrap2, null);
+  // Discounts section
+  const prDiscWrap2 = document.getElementById('purchase-run-discounts-wrap');
+  _renderDiscountsBlock(prDiscWrap2, []);
 
   // Pre-populate lines for each negative item
   for (const negItem of groupItems) {
