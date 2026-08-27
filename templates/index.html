@@ -355,12 +355,17 @@
     #draft-tabs-bar {
       display: flex;
       gap: 4px;
-      flex-wrap: wrap;
+      flex-wrap: nowrap;
       flex-shrink: 0;
+      overflow-x: auto;
+      overflow-y: visible;
       padding: 4px 0 6px 0;
       border-bottom: 1px solid var(--bs-border-color, #dee2e6);
       margin-bottom: 6px;
+      scrollbar-width: none;   /* Firefox */
+      -ms-overflow-style: none; /* IE/Edge */
     }
+    #draft-tabs-bar::-webkit-scrollbar { display: none; }
     #draft-tabs-bar .draft-tab { position: relative; }
     #draft-tabs-bar .draft-tab-close {
       position: absolute;
