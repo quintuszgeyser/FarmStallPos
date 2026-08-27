@@ -2007,7 +2007,7 @@ def api_supplier_invoices(sid):
             'additional_costs':   b.additional_costs,
             'allocated_discount': float(b.allocated_discount) if getattr(b, 'allocated_discount', None) is not None else None,
             'updated_at':         b.updated_at.isoformat() if b.updated_at else None,
-            'is_consignment':     bool(p.ownership_type == 'CONSIGNMENT') if p else False,
+            'is_consignment':     bool(p.is_consignment) if p else False,
         }
 
     # Group batches by invoice_id

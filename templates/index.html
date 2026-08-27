@@ -351,6 +351,29 @@
       gap: 6px;
       padding: 2px 0 8px;
     }
+    /* Draft cart tabs */
+    #draft-tabs-bar {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+      padding: 4px 0 6px 0;
+      border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+      margin-bottom: 6px;
+    }
+    #draft-tabs-bar .draft-tab { position: relative; }
+    #draft-tabs-bar .draft-tab-close {
+      position: absolute;
+      right: 5px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 1rem;
+      line-height: 1;
+      opacity: .65;
+      padding: 2px 1px;
+    }
+    #draft-tabs-bar .draft-tab-close:hover { opacity: 1; }
+
     /* RIGHT — cart + frozen footer */
     #teller-right {
       flex: 1;
@@ -960,6 +983,9 @@
 
         <!-- ── RIGHT: cart + frozen footer ── -->
         <div id="teller-right">
+
+          <!-- Draft cart tabs -->
+          <div id="draft-tabs-bar"></div>
 
           <!-- Scrollable area: customer badge + scan panel + cart -->
           <div id="teller-right-scroll">

@@ -33,6 +33,8 @@ let STATE = {
   activeCustomer:   null,   // customer detected at till
   customerPollInterval: null,  // interval ID for till customer polling
   _cartDiscount:    null,   // {type:'pct'|'amt', value:number} - admin cart-wide discount
+  _drafts:          [],     // [{id, label, cart, discount, scanHistory, createdDate}]
+  _activeDraftId:   null,   // id of the currently loaded draft
   _receiptPrinterId: null,  // LabelPrinter.id to use for receipts (null = auto-detect USB)
   _selectedProductIds: new Set(),  // product IDs checked in the products tab
   transactions:       [],           // cached transaction list for client-side filter
@@ -457,6 +459,194 @@ function _restoreCartFromSession() {
   } catch {}
 }
 
+// ── DRAFT CARTS ──────────────────────────────────────────────────────────────
+const _DRAFTS_LS  = 'farmpos_draft_carts';
+const _ACTIVE_LS  = 'farmpos_active_draft';
+
+function _todayStr() { return new Date().toISOString().slice(0, 10); }
+function _draftUid() { return 'draft_' + Math.random().toString(36).slice(2, 9); }
+
+function _initDrafts() {
+  const today = _todayStr();
+
+  // Check for a session-backup cart first (takes priority if the active draft is empty)
+  let sessionCart = null;
+  try {
+    const raw = sessionStorage.getItem('farmpos_cart_backup');
+    if (raw) { sessionCart = JSON.parse(raw); sessionStorage.removeItem('farmpos_cart_backup'); }
+  } catch {}
+
+  let saved = [];
+  try { saved = JSON.parse(localStorage.getItem(_DRAFTS_LS) || '[]'); } catch {}
+  // Expire drafts from previous days
+  saved = saved.filter(d => d.createdDate === today);
+
+  if (!saved.length) {
+    saved = [{ id: _draftUid(), label: 'Cart 1', cart: {}, discount: null, scanHistory: [], createdDate: today, _n: 1 }];
+  }
+  STATE._drafts = saved;
+
+  // Restore last-active draft (fallback to first)
+  const lastActive = localStorage.getItem(_ACTIVE_LS);
+  const match = STATE._drafts.find(d => d.id === lastActive);
+  STATE._activeDraftId = match ? match.id : STATE._drafts[0].id;
+
+  // Load active draft into live STATE
+  const active = STATE._drafts.find(d => d.id === STATE._activeDraftId) || STATE._drafts[0];
+  // Merge session backup into active draft if it was empty
+  if (sessionCart && Object.keys(sessionCart).length && !Object.keys(active.cart || {}).length) {
+    active.cart = sessionCart;
+    toast('Cart restored from previous session', 'info', 4000);
+  }
+  STATE.cart         = active.cart         || {};
+  STATE._cartDiscount = active.discount    || null;
+  STATE.scanHistory  = active.scanHistory  || [];
+
+  _persistDrafts();
+  renderDraftTabs();
+  renderCart();
+}
+
+function _persistDrafts() {
+  try {
+    localStorage.setItem(_DRAFTS_LS, JSON.stringify(STATE._drafts));
+    if (STATE._activeDraftId) localStorage.setItem(_ACTIVE_LS, STATE._activeDraftId);
+  } catch {}
+}
+
+function _saveDraft() {
+  if (!STATE._activeDraftId || !STATE._drafts.length) return;
+  const draft = STATE._drafts.find(d => d.id === STATE._activeDraftId);
+  if (!draft) return;
+  draft.cart        = STATE.cart;
+  draft.discount    = STATE._cartDiscount;
+  draft.scanHistory = STATE.scanHistory;
+  _persistDrafts();
+}
+
+let _draftCounter = 0;
+
+function _newDraft() {
+  _saveDraft();
+  _draftCounter = Math.max(_draftCounter, ...STATE._drafts.map(d => parseInt(d._n || 0))) + 1;
+  const d = { id: _draftUid(), label: 'Cart ' + _draftCounter, cart: {}, discount: null, scanHistory: [], createdDate: _todayStr(), _n: _draftCounter };
+  STATE._drafts.push(d);
+  _switchDraft(d.id);
+}
+
+function _switchDraft(id) {
+  _saveDraft();
+  STATE._activeDraftId = id;
+  const draft = STATE._drafts.find(d => d.id === id);
+  if (draft) {
+    STATE.cart          = draft.cart         || {};
+    STATE._cartDiscount = draft.discount     || null;
+    STATE.scanHistory   = draft.scanHistory  || [];
+  }
+  _persistDrafts();
+  renderDraftTabs();
+  renderCart();
+}
+
+function _closeDraft(id) {
+  const draft = STATE._drafts.find(d => d.id === id);
+  if (!draft) return;
+  const itemCount = Object.keys(draft.cart || {}).length;
+  if (itemCount && !confirm(`Close "${draft.label}"? It has ${itemCount} item${itemCount > 1 ? 's' : ''} that will be discarded.`)) return;
+
+  const wasActive = id === STATE._activeDraftId;
+  STATE._drafts = STATE._drafts.filter(d => d.id !== id);
+  if (!STATE._drafts.length) {
+    STATE._drafts.push({ id: _draftUid(), label: 'Cart 1', cart: {}, discount: null, scanHistory: [], createdDate: _todayStr(), _n: 1 });
+  }
+
+  if (wasActive) {
+    const next = STATE._drafts[0];
+    STATE._activeDraftId = next.id;
+    STATE.cart           = next.cart         || {};
+    STATE._cartDiscount  = next.discount     || null;
+    STATE.scanHistory    = next.scanHistory  || [];
+  }
+  _persistDrafts();
+  renderDraftTabs();
+  renderCart();
+}
+
+function _closeDraftAfterCheckout() {
+  // Called after a successful checkout — remove the just-paid draft
+  const id = STATE._activeDraftId;
+  STATE._drafts = STATE._drafts.filter(d => d.id !== id);
+
+  if (!STATE._drafts.length) {
+    STATE._drafts.push({ id: _draftUid(), label: 'Cart 1', cart: {}, discount: null, scanHistory: [], createdDate: _todayStr(), _n: 1 });
+  }
+
+  const next = STATE._drafts[0];
+  STATE._activeDraftId = next.id;
+  STATE.cart           = next.cart         || {};
+  STATE._cartDiscount  = next.discount     || null;
+  STATE.scanHistory    = next.scanHistory  || [];
+
+  _persistDrafts();
+  renderDraftTabs();
+  // renderCart will be called by the caller (already called after STATE.cart={})
+}
+
+function _renameDraft(draft) {
+  const val = prompt('Rename cart:', draft.label);
+  if (val === null) return;
+  const trimmed = val.trim();
+  if (!trimmed) return;
+  draft.label = trimmed;
+  _persistDrafts();
+  renderDraftTabs();
+}
+
+function renderDraftTabs() {
+  const bar = document.getElementById('draft-tabs-bar');
+  if (!bar) return;
+  bar.innerHTML = '';
+
+  STATE._drafts.forEach(draft => {
+    const isActive   = draft.id === STATE._activeDraftId;
+    const itemCount  = Object.keys(draft.cart || {}).length;
+    const hasClose   = STATE._drafts.length > 1;
+
+    const tab = document.createElement('button');
+    tab.className = 'draft-tab btn btn-sm ' + (isActive ? 'btn-primary' : 'btn-outline-secondary');
+    if (hasClose) tab.style.paddingRight = '24px';
+
+    if (isActive) {
+      // Active tab: click to rename
+      tab.title = 'Tap to rename';
+      tab.onclick = () => _renameDraft(draft);
+    } else {
+      tab.onclick = () => _switchDraft(draft.id);
+    }
+
+    const lbl = document.createElement('span');
+    lbl.textContent = draft.label + (itemCount ? ` (${itemCount})` : '');
+    tab.appendChild(lbl);
+
+    if (hasClose) {
+      const x = document.createElement('span');
+      x.className = 'draft-tab-close';
+      x.innerHTML = '&times;';
+      x.title = 'Close cart';
+      x.onclick = (e) => { e.stopPropagation(); _closeDraft(draft.id); };
+      tab.appendChild(x);
+    }
+    bar.appendChild(tab);
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn btn-sm btn-outline-secondary';
+  addBtn.innerHTML = '<i class="bi bi-plus-lg"></i>';
+  addBtn.title = 'New cart';
+  addBtn.onclick = _newDraft;
+  bar.appendChild(addBtn);
+}
+
 // Keep-alive: ping the server every 4 minutes so the session never idles out.
 // Also fires immediately when the tab becomes visible again after being hidden
 // (screen lock, browser minimised, tab switch back).
@@ -645,7 +835,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
       hide(_loginLoading);  // show teller immediately — products load in background
       loadProducts();       // fire-and-forget: renders grid when done
     }
-    _restoreCartFromSession();  // restore cart if session expired mid-sale
+    _initDrafts();  // load draft carts (handles session-backup restore internally)
     startKitchenBadgePoll();   // badge visible to all roles
     startCustomerVisitPoll();  // greet returning customers on teller screen
     // Fire all background loads without awaiting — tabs lazy-load on demand,
@@ -665,6 +855,7 @@ document.getElementById('btn-login')?.addEventListener('click', async () => {
 async function doLogout() {
   try { await api('/api/logout', { method: 'POST' }); } catch {}
   STATE.user = null; STATE.products = []; STATE.cart = {}; STATE.scanHistory = [];
+  STATE._drafts = []; STATE._activeDraftId = null;
   STATE.users = [];
   _statsData = null;
   stopScanner();
@@ -7772,6 +7963,7 @@ document.getElementById('adjustments-list')?.addEventListener('click', async (e)
 // CART
 // ═══════════════════════════════════════════════════════
 function renderCart() {
+  _saveDraft();
   const host = document.getElementById('cart'); if (!host) return;
   host.innerHTML = '';
   let total = 0;
@@ -8217,7 +8409,9 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
 
   async function _doSubmitSale(body) {
     const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(body) });
-    STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; STATE.packagingHints = {}; renderCart();
+    STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; STATE.packagingHints = {};
+    _closeDraftAfterCheckout();
+    renderCart();
     // Reset split inputs for the next sale
     document.getElementById('split-cash-input').value = '';
     document.getElementById('split-card-input').value = '';
