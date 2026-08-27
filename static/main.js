@@ -4615,6 +4615,10 @@ async function loadIngredients() {
         const totalQty  = remaining.reduce((s, b) => s + parseFloat(b.qty_remaining_base), 0);
         const totalCost = remaining.reduce((s, b) => s + parseFloat(b.qty_remaining_base) * parseFloat(b.cost_per_base_unit), 0);
         if (totalQty > 0) STATE._productCostMap[item.id] = totalCost / totalQty;
+      } else if (item.batches.length > 0) {
+        // No remaining stock — use the most recent batch cost so COGS/margin still shows
+        const last = item.batches.reduce((a, b) => b.id > a.id ? b : a);
+        if (last.cost_per_base_unit) STATE._productCostMap[item.id] = parseFloat(last.cost_per_base_unit);
       }
     });
     // Rebuild supplier map from all-time data (products API) — active-batch data is a subset
