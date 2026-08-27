@@ -21739,16 +21739,14 @@ async function loadEmployeesTab() {
   } else {
     document.getElementById('emp-admin-view').classList.add('hidden');
     document.getElementById('emp-teller-view').style.display = '';
-    if (EMP.tellerUnlocked) {
-      _empShowTellerContent();
-    } else {
-      document.getElementById('emp-teller-gate').style.display = '';
-      document.getElementById('emp-teller-content').style.display = 'none';
-      setTimeout(() => {
-        const pw = document.getElementById('emp-teller-pw');
-        if (pw) pw.focus();
-      }, 200);
-    }
+    // Always require password on every visit to this tab
+    EMP.tellerUnlocked = false;
+    document.getElementById('emp-teller-gate').style.display = '';
+    document.getElementById('emp-teller-content').style.display = 'none';
+    setTimeout(() => {
+      const pw = document.getElementById('emp-teller-pw');
+      if (pw) { pw.value = ''; pw.focus(); }
+    }, 200);
   }
 }
 
