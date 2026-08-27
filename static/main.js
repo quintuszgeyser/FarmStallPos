@@ -21738,7 +21738,7 @@ const EMP = {
 // ── Bootstrap ─────────────────────────────────────────────────────────────────
 
 async function loadEmployeesTab() {
-  const u = STATE.currentUser;
+  const u = STATE.user;
   if (!u) return;
   if (u.role === 'admin' || u.roles?.includes('admin')) {
     document.getElementById('emp-admin-view').classList.remove('hidden');
