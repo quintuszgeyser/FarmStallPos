@@ -75,7 +75,7 @@ def api_users_get():
         return jsonify({'error': 'Forbidden'}), 403
     users = User.query.order_by(User.username.asc()).all()
     return jsonify([{
-        'username': u.username, 'role': u.role,
+        'id': u.id, 'username': u.username, 'role': u.role,
         'roles': u.roles, 'active': u.active,
     } for u in users])
 
