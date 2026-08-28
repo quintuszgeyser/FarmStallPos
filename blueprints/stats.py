@@ -570,7 +570,7 @@ def api_stats_drilldown():
     for sid, sale_rows in sale_map.items():
         sr = sorted(sale_rows, key=lambda r: r.date_time)
         total = float(sum(Decimal(str(r.qty)) * r.unit_price for r in sale_rows))
-        transactions.append({'sale_id': sid[:8], 'date_time': sr[0].date_time.isoformat(), 'teller': user_names.get(sr[0].user_id, '-'), 'total': round(total, 2), 'item_count': sum(float(r.qty) for r in sale_rows), 'lines': [{'product': prod_names.get(r.product_id, str(r.product_id)), 'qty': float(r.qty), 'unit_price': float(r.unit_price), 'line_total': round(float(Decimal(str(r.qty)) * r.unit_price), 2)} for r in sorted(sale_rows, key=lambda x: x.product_id)]})
+        transactions.append({'sale_id': sid[:8], 'date_time': sr[0].date_time.isoformat(), 'teller': user_names.get(sr[0].user_id, '-'), 'total': round(total, 2), 'item_count': sum(float(r.qty) for r in sale_rows), 'lines': [{'product': prod_names.get(r.product_id, str(r.product_id)), 'qty': float(r.qty), 'unit_price': float(r.unit_price), 'line_total': round(float(Decimal(str(r.qty)) * r.unit_price), 2)} for r in sorted(sale_rows, key=lambda x: (x.product_id is None, x.product_id or 0))]})
     transactions.sort(key=lambda x: x['date_time'], reverse=True)
 
     total_revenue = sum(t['total'] for t in transactions); total_tx = len(transactions)

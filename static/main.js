@@ -9886,6 +9886,19 @@ function drawBarChart(canvas, labels, values, opts = {}) {
   // Store bar rects for click detection
   const barRects = [];
 
+  // Smart label thinning — avoid unreadable x-axis on dense charts
+  const _lbl0 = String(labels[0] || '');
+  const _isMMDD = /^\d{2}-\d{2}$/.test(_lbl0);
+  const _isHHMM = /^\d{2}:\d{2}$/.test(_lbl0);
+  const _showLabel = (i, lbl) => {
+    const s = String(lbl);
+    if (_isMMDD && n > 30) return s.endsWith('-01') || i === 0 || i === n - 1;
+    if (_isHHMM && n > 30) return s.endsWith(':00');
+    if (n <= 30) return true;
+    const stride = Math.ceil(n / 15);
+    return i % stride === 0 || i === n - 1;
+  };
+
   // Axes
   ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.lineTo(W - padR, H - padB); ctx.stroke();
@@ -9973,10 +9986,12 @@ function drawBarChart(canvas, labels, values, opts = {}) {
     ctx.fillStyle = isFuture ? '#999' : '#555';
     ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
     const lbl = String(labels[i] || '');
-    ctx.save(); ctx.translate(x + bw / 2, H - padB + 6);
-    if (shouldRotate) { ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; }
-    ctx.fillText(lbl, 0, 0);
-    ctx.restore();
+    if (_showLabel(i, lbl)) {
+      ctx.save(); ctx.translate(x + bw / 2, H - padB + 6);
+      if (shouldRotate) { ctx.rotate(-Math.PI / 4); ctx.textAlign = 'right'; }
+      ctx.fillText(lbl, 0, 0);
+      ctx.restore();
+    }
   });
 
   // Forecast overlay — use same scale as bars so positions match exactly
@@ -10033,6 +10048,41 @@ function drawBarChart(canvas, labels, values, opts = {}) {
   } else {
     canvas.style.cursor = '';
   }
+
+  // Hover tooltip — shows exact label + value for any bar column
+  const _ttMoveKey = '_tt_' + _clickId;
+  const _ttLeaveKey = '_ttl_' + _clickId;
+  if (_chartClickHandlers[_ttMoveKey]) {
+    canvas.removeEventListener('mousemove',  _chartClickHandlers[_ttMoveKey]);
+    canvas.removeEventListener('mouseleave', _chartClickHandlers[_ttLeaveKey]);
+  }
+  let _ttEl = document.getElementById('_chart_global_tt');
+  if (!_ttEl) {
+    _ttEl = document.createElement('div');
+    _ttEl.id = '_chart_global_tt';
+    _ttEl.style.cssText = 'position:fixed;background:rgba(30,30,30,0.93);color:#fff;font-size:12px;padding:5px 10px;border-radius:5px;pointer-events:none;display:none;z-index:9999;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25)';
+    document.body.appendChild(_ttEl);
+  }
+  _chartClickHandlers[_ttMoveKey] = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const mx = (e.clientX - rect.left) * scaleX;
+    const hit = barRects.find(b => mx >= b.x && mx <= b.x + b.w);
+    if (hit) {
+      const ttFmt = opts.tooltipFormatter;
+      const vStr = ttFmt ? ttFmt(hit.value, hit.index)
+        : `${opts.valuePrefix || ''}${hit.value >= 1000 ? `${(hit.value / 1000).toFixed(1)}k` : fmt(hit.value)}${opts.valueSuffix || ''}`;
+      _ttEl.innerHTML = `<span style="opacity:.7">${hit.label}</span>&ensp;<b>${vStr}</b>`;
+      _ttEl.style.left = (e.clientX + 14) + 'px';
+      _ttEl.style.top  = (e.clientY - 34) + 'px';
+      _ttEl.style.display = '';
+    } else {
+      _ttEl.style.display = 'none';
+    }
+  };
+  _chartClickHandlers[_ttLeaveKey] = () => { _ttEl.style.display = 'none'; };
+  canvas.addEventListener('mousemove',  _chartClickHandlers[_ttMoveKey]);
+  canvas.addEventListener('mouseleave', _chartClickHandlers[_ttLeaveKey]);
 }
 
 function _renderDrilldownTransactions(data, opts = {}) {

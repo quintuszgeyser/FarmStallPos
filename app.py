@@ -35,7 +35,7 @@ from helpers import (
     _parse_dt,
 )
 
-APP_VERSION = os.environ.get('APP_VERSION', '1.6.1')
+APP_VERSION = os.environ.get('APP_VERSION', '1.6.2')
 
 # Environment configuration - explicit, never guessed
 APP_ENV  = os.environ.get('APP_ENV', 'prod').lower()
