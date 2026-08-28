@@ -10085,6 +10085,258 @@ function drawBarChart(canvas, labels, values, opts = {}) {
   canvas.addEventListener('mouseleave', _chartClickHandlers[_ttLeaveKey]);
 }
 
+function drawLineChart(canvas, labels, values, opts = {}) {
+  if (!canvas) return;
+  const parent = canvas.parentElement;
+
+  const padL = opts.yLabel ? 74 : 60;
+  const padR = 20;
+  const padT = 30;
+  const padB = opts.xLabel ? 48 : 38;
+
+  canvas.width  = Math.max(parent?.clientWidth || 800, 400);
+  canvas.height = Math.max(parent?.clientHeight || 300, padT + 160 + padB);
+  if (parent && canvas.height > (parent.clientHeight || 0)) {
+    parent.style.minHeight = canvas.height + 'px';
+  }
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const W = canvas.width, H = canvas.height;
+  const n = Math.max(values.length, 2);
+  const color = opts.color || '#2a6f3e';
+
+  let dataMax = Math.max(...values, 1);
+  if (opts.values2?.length) dataMax = Math.max(dataMax, ...opts.values2);
+  if (opts.overlay?.items) {
+    const fcMax = Math.max(...opts.overlay.items.map(it => it.p90 || 0));
+    dataMax = Math.max(dataMax, fcMax);
+  }
+  const max = dataMax;
+
+  const toX = i => padL + (i / (n - 1)) * (W - padL - padR);
+  const toY = v => H - padB - Math.max(0, v / max) * (H - padT - padB);
+
+  // Smart label thinning
+  const _lbl0 = String(labels[0] || '');
+  const _isMMDD = /^\d{2}-\d{2}$/.test(_lbl0);
+  const _isHHMM = /^\d{2}:\d{2}$/.test(_lbl0);
+  const _showLabel = (i, lbl) => {
+    const s = String(lbl);
+    if (_isMMDD && n > 20) return s.endsWith('-01') || i === 0 || i === n - 1;
+    if (_isHHMM && n > 20) return s.endsWith(':00');
+    if (n <= 20) return true;
+    const stride = Math.ceil(n / 12);
+    return i % stride === 0 || i === n - 1;
+  };
+
+  // Y-axis label
+  if (opts.yLabel) {
+    ctx.save();
+    ctx.fillStyle = '#555'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.translate(13, padT + (H - padT - padB) / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.fillText(opts.yLabel, 0, 0);
+    ctx.restore();
+  }
+
+  // X-axis label
+  if (opts.xLabel) {
+    ctx.fillStyle = '#555'; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(opts.xLabel, padL + (W - padL - padR) / 2, H - 4);
+  }
+
+  // Y gridlines + labels
+  [0, 0.25, 0.5, 0.75, 1].forEach(f => {
+    const y = H - padB - f * (H - padT - padB);
+    ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
+    ctx.fillStyle = '#888'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+    const val = max * f;
+    ctx.fillText(val >= 1000 ? `${(val / 1000).toFixed(1)}k` : fmt(val), padL - 4, y + 4);
+  });
+
+  // Axes
+  ctx.strokeStyle = '#ccc'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(padL, padT); ctx.lineTo(padL, H - padB); ctx.lineTo(W - padR, H - padB); ctx.stroke();
+
+  // Future region shading
+  const futureSet = new Set((opts.futureBars || []).map(f => f.xi));
+  if (futureSet.size > 0) {
+    const firstFutureI = Math.min(...futureSet);
+    const fx = toX(firstFutureI);
+    ctx.fillStyle = 'rgba(200,210,230,0.18)';
+    ctx.fillRect(fx, padT, W - padR - fx, H - padT - padB);
+  }
+
+  // Forecast P10–P90 band + P50 line
+  if (opts.overlay?.items?.length > 1) {
+    const bandItems = opts.overlay.items.filter(it => it.p10 != null && it.p90 != null);
+    if (bandItems.length > 1) {
+      ctx.beginPath();
+      ctx.fillStyle = 'rgba(13,110,253,0.10)';
+      ctx.moveTo(toX(bandItems[0].xi), toY(bandItems[0].p90));
+      bandItems.forEach(it => ctx.lineTo(toX(it.xi), toY(it.p90)));
+      bandItems.slice().reverse().forEach(it => ctx.lineTo(toX(it.xi), toY(it.p10)));
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.save();
+    ctx.setLineDash([6, 3]);
+    ctx.strokeStyle = '#0d6efd'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    let _fcFirst = true;
+    opts.overlay.items.forEach(it => {
+      if (it.p50 == null) return;
+      const x = toX(it.xi), y = toY(it.p50);
+      if (_fcFirst) { ctx.moveTo(x, y); _fcFirst = false; } else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Build point list
+  const pts = values.map((v, i) => ({ x: toX(i), y: toY(v), label: String(labels[i] || ''), value: v, index: i }));
+
+  // Area fill
+  if (pts.length > 0) {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, H - padB);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length - 1].x, H - padB);
+    ctx.closePath();
+    ctx.fillStyle = color + '28';
+    ctx.fill();
+  }
+
+  // Line — future segment rendered dimmer
+  if (pts.length > 1) {
+    ctx.beginPath();
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    pts.forEach((p, i) => {
+      const isFuture = futureSet.has(i);
+      ctx.globalAlpha = isFuture ? 0.4 : 1;
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Second data series (opts.values2 / opts.color2)
+  const pts2 = opts.values2?.length
+    ? opts.values2.map((v, i) => ({ x: toX(i), y: toY(v), label: String(labels[i] || ''), value: v, index: i }))
+    : null;
+  if (pts2 && pts2.length > 0) {
+    const color2 = opts.color2 || '#1976d2';
+    ctx.beginPath();
+    ctx.moveTo(pts2[0].x, H - padB);
+    pts2.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts2[pts2.length - 1].x, H - padB);
+    ctx.closePath();
+    ctx.fillStyle = color2 + '20';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.strokeStyle = color2; ctx.lineWidth = 2;
+    pts2.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.stroke();
+  }
+
+  // X-axis labels + ticks
+  ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+  labels.forEach((lbl, i) => {
+    const x = toX(i);
+    const s = String(lbl || '');
+    if (_showLabel(i, s)) {
+      ctx.fillText(s, x, H - padB + 14);
+      ctx.strokeStyle = '#bbb'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, H - padB); ctx.lineTo(x, H - padB + 4); ctx.stroke();
+    }
+  });
+
+  // Snapshot for crosshair restore
+  const baseImage = ctx.getImageData(0, 0, W, H);
+
+  // Clean up all previous handlers on this canvas
+  const _clickId = canvas.id;
+  [_clickId, '_tt_' + _clickId, '_ttl_' + _clickId, '_mm_' + _clickId, '_ml_' + _clickId].forEach(key => {
+    if (!_chartClickHandlers[key]) return;
+    const evtMap = { [_clickId]: 'click', ['_tt_' + _clickId]: 'mousemove', ['_ttl_' + _clickId]: 'mouseleave', ['_mm_' + _clickId]: 'mousemove', ['_ml_' + _clickId]: 'mouseleave' };
+    canvas.removeEventListener(evtMap[key], _chartClickHandlers[key]);
+    delete _chartClickHandlers[key];
+  });
+
+  // Shared tooltip element
+  let _ttEl = document.getElementById('_chart_global_tt');
+  if (!_ttEl) {
+    _ttEl = document.createElement('div');
+    _ttEl.id = '_chart_global_tt';
+    _ttEl.style.cssText = 'position:fixed;background:rgba(30,30,30,0.93);color:#fff;font-size:12px;padding:5px 10px;border-radius:5px;pointer-events:none;display:none;z-index:9999;white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.25)';
+    document.body.appendChild(_ttEl);
+  }
+
+  // Mousemove: crosshair + tooltip
+  _chartClickHandlers['_tt_' + _clickId] = (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const mx = (e.clientX - rect.left) * scaleX;
+    if (mx < padL || mx > W - padR || !pts.length) {
+      _ttEl.style.display = 'none';
+      ctx.putImageData(baseImage, 0, 0);
+      return;
+    }
+    let nearest = pts[0], nearestDist = Infinity;
+    pts.forEach(p => { const d = Math.abs(p.x - mx); if (d < nearestDist) { nearestDist = d; nearest = p; } });
+    const nearest2 = pts2 ? pts2[nearest.index] : null;
+
+    ctx.putImageData(baseImage, 0, 0);
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(nearest.x, padT); ctx.lineTo(nearest.x, H - padB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(nearest.x, nearest.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = color; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    if (nearest2) {
+      ctx.beginPath();
+      ctx.arc(nearest2.x, nearest2.y, 5, 0, Math.PI * 2);
+      ctx.fillStyle = opts.color2 || '#1976d2'; ctx.fill();
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+    }
+    ctx.restore();
+
+    const ttFmt = opts.tooltipFormatter;
+    const _fmtV = v => `${opts.valuePrefix || ''}${v >= 1000 ? `${(v / 1000).toFixed(1)}k` : fmt(v)}${opts.valueSuffix || ''}`;
+    const vStr = ttFmt ? ttFmt(nearest.value, nearest.index) : _fmtV(nearest.value);
+    const s1Row = `<span style="color:${color}">${opts.series1Label ? `<span style="opacity:.65;font-size:11px">${opts.series1Label} </span>` : ''}<b>${vStr}</b></span>`;
+    const s2Row = nearest2 ? `<br><span style="color:${opts.color2 || '#1976d2'}">${opts.series2Label ? `<span style="opacity:.65;font-size:11px">${opts.series2Label} </span>` : ''}<b>${_fmtV(nearest2.value)}</b></span>` : '';
+    _ttEl.innerHTML = `<span style="opacity:.7">${nearest.label}</span><br>${s1Row}${s2Row}`;
+    _ttEl.style.left = (e.clientX + 14) + 'px';
+    _ttEl.style.top  = (e.clientY - 34) + 'px';
+    _ttEl.style.display = '';
+    if (opts.onBarClick) canvas.style.cursor = nearest.value > 0 ? 'pointer' : 'default';
+  };
+  _chartClickHandlers['_ttl_' + _clickId] = () => {
+    _ttEl.style.display = 'none';
+    ctx.putImageData(baseImage, 0, 0);
+    canvas.style.cursor = opts.onBarClick ? 'pointer' : '';
+  };
+  canvas.addEventListener('mousemove', _chartClickHandlers['_tt_' + _clickId]);
+  canvas.addEventListener('mouseleave', _chartClickHandlers['_ttl_' + _clickId]);
+
+  if (opts.onBarClick) {
+    canvas.style.cursor = 'pointer';
+    _chartClickHandlers[_clickId] = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const mx = (e.clientX - rect.left) * scaleX;
+      let nearest = pts[0], nearestDist = Infinity;
+      pts.forEach(p => { const d = Math.abs(p.x - mx); if (d < nearestDist) { nearestDist = d; nearest = p; } });
+      if (nearest && nearest.value > 0) opts.onBarClick(nearest.label, nearest.value, nearest.index);
+    };
+    canvas.addEventListener('click', _chartClickHandlers[_clickId]);
+  }
+}
+
 function _renderDrilldownTransactions(data, opts = {}) {
   const { summary, transactions } = data;
   const s = summary;
@@ -10499,7 +10751,8 @@ function _redrawDailyWithForecast() {
     overlayOpts = { items, maxVal: maxForecast };
   }
 
-  drawBarChart(c, labels, values, {
+  const _dailyChartFn = labels.length > 20 ? drawLineChart : drawBarChart;
+  _dailyChartFn(c, labels, values, {
     color: '#2a6f3e', color2: '#4caf7d', valuePrefix: 'R',
     yLabel: 'Revenue (R)', xLabel: 'Date',
     onBarClick: (lbl, val, i) => {
@@ -10750,8 +11003,7 @@ function _showChartTab(tab) {
     const metric = _statsTimeMetric;
     // Enable horizontal scroll when many bars (all 60 slots per active hour are filled)
     const chartArea = document.getElementById('stats-chart-area');
-    const needsScroll = mins.length > 120;
-    if (chartArea) chartArea.style.overflowX = needsScroll ? 'auto' : '';
+    if (chartArea) chartArea.style.overflowX = '';
     let vals, yLabel, valuePrefix = '';
     if (metric === 'count') {
       vals = mins.map(x => x.tx_count || 0);
@@ -10763,10 +11015,9 @@ function _showChartTab(tab) {
       vals = mins.map(x => x.revenue || 0);
       yLabel = 'Revenue (R)'; valuePrefix = 'R';
     }
-    drawBarChart(c, mins.map(x => x.minute), vals, {
+    drawLineChart(c, mins.map(x => x.minute), vals, {
       color: '#00838f', valuePrefix,
       yLabel, xLabel: 'Time (hh:mm)',
-      minBarSlotPx: 12,
       onBarClick: (lbl, val) => { if (lbl && val > 0) openDrilldown(`Sales at ${lbl}`, 'minute', lbl); },
     });
     const _mLabel = {revenue: 'Revenue', count: 'Transaction count', profit: 'Profit'}[metric] || metric;
@@ -10866,24 +11117,36 @@ function _showChartTab(tab) {
       const cntOnline      = daily.reduce((s, x) => s + x.online_count,  0);
       const cntInstore     = daily.reduce((s, x) => s + x.instore_count, 0);
 
-      // Interleave bars: even index = Online (green), odd index = In-store (blue)
-      // Date label on the Online bar, empty on the In-store bar (keeps it readable)
-      const barLabels = [], barValues = [];
-      daily.forEach(x => {
-        barLabels.push(x.date.slice(5), '');
-        barValues.push(x.online_rev, x.instore_rev);
-      });
-
-      drawBarChart(c, barLabels, barValues, {
-        color: '#4caf7d', color2: '#1976d2', valuePrefix: 'R',
-        yLabel: 'Revenue (R)', xLabel: 'Date',
-      });
-
-      if (_legend) _legend.innerHTML =
-        _sw('#4caf7d', `Online: R${fmt(totalOnline)} &nbsp;(${cntOnline} order${cntOnline !== 1 ? 's' : ''})`) +
-        `<span class="text-muted mx-1">|</span>` +
-        _sw('#1976d2', `In-store: R${fmt(totalInstore)} &nbsp;(${cntInstore} transaction${cntInstore !== 1 ? 's' : ''})`) +
-        `<span class="text-muted ms-2">— each date shows two bars side by side</span>`;
+      if (daily.length > 20) {
+        // Dense range — dual line chart
+        drawLineChart(c, daily.map(x => x.date.slice(5)), daily.map(x => x.online_rev), {
+          color: '#4caf7d', color2: '#1976d2', valuePrefix: 'R',
+          values2: daily.map(x => x.instore_rev),
+          series1Label: 'Online', series2Label: 'In-store',
+          yLabel: 'Revenue (R)', xLabel: 'Date',
+        });
+        if (_legend) _legend.innerHTML =
+          _sw('#4caf7d', `Online: R${fmt(totalOnline)} &nbsp;(${cntOnline} order${cntOnline !== 1 ? 's' : ''})`) +
+          `<span class="text-muted mx-1">|</span>` +
+          _sw('#1976d2', `In-store: R${fmt(totalInstore)} &nbsp;(${cntInstore} transaction${cntInstore !== 1 ? 's' : ''})`) +
+          `<span class="text-muted ms-2">— hover for daily breakdown</span>`;
+      } else {
+        // Short range — interleaved bars
+        const barLabels = [], barValues = [];
+        daily.forEach(x => {
+          barLabels.push(x.date.slice(5), '');
+          barValues.push(x.online_rev, x.instore_rev);
+        });
+        drawBarChart(c, barLabels, barValues, {
+          color: '#4caf7d', color2: '#1976d2', valuePrefix: 'R',
+          yLabel: 'Revenue (R)', xLabel: 'Date',
+        });
+        if (_legend) _legend.innerHTML =
+          _sw('#4caf7d', `Online: R${fmt(totalOnline)} &nbsp;(${cntOnline} order${cntOnline !== 1 ? 's' : ''})`) +
+          `<span class="text-muted mx-1">|</span>` +
+          _sw('#1976d2', `In-store: R${fmt(totalInstore)} &nbsp;(${cntInstore} transaction${cntInstore !== 1 ? 's' : ''})`) +
+          `<span class="text-muted ms-2">— each date shows two bars side by side</span>`;
+      }
     }).catch(() => {});
 
   } else if (tab === 'customers') {
