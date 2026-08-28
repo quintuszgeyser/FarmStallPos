@@ -3,7 +3,7 @@ import re
 
 from flask import Blueprint, jsonify, request
 
-from helpers import get_setting, set_setting, require_role
+from helpers import get_setting, set_setting, require_role, require_login
 from models import db, CustomisationRule
 
 bp = Blueprint('settings', __name__)
@@ -163,8 +163,8 @@ def api_settings():
 
 @bp.route('/api/customisation-rules', methods=['GET'])
 def api_customisation_rules_list():
-    if not require_role('admin'):
-        return jsonify({'error': 'Forbidden'}), 403
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
     rules = CustomisationRule.query.order_by(
         CustomisationRule.sort_order.asc(), CustomisationRule.id.asc()
     ).all()

@@ -15732,6 +15732,10 @@ async function openSubsModal(p, cartKey = null) {
     _subsIngredients = data.default_ingredients.map(i => ({ ...i, replaced_by_id: null, removed: false }));
     _subsAlts        = data.alternatives;
     _subsHistory     = data.history_ranked;
+    // Seed _productCostMap from substitution costs for users who don't load stock (e.g. tellers)
+    if (!STATE._productCostMap) STATE._productCostMap = {};
+    data.default_ingredients.forEach(i => { if (!STATE._productCostMap[i.ingredient_id] && i.cost_per_base_unit) STATE._productCostMap[i.ingredient_id] = i.cost_per_base_unit; });
+    data.alternatives.forEach(a => { if (!STATE._productCostMap[a.id] && a.cost_per_base_unit) STATE._productCostMap[a.id] = a.cost_per_base_unit; });
   } catch (e) {
     toast(e.message, 'error'); return;
   }

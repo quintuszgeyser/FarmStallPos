@@ -1936,6 +1936,18 @@ def api_product_substitutions(pid):
     if not p or p.product_type != 'recipe':
         return jsonify({'error': 'Not a recipe product'}), 404
     import json as _json
+    def _wac_cost(product_id):
+        batches = StockBatch.query.filter_by(product_id=product_id).all()
+        remaining = [b for b in batches if float(b.qty_remaining_base) > 0]
+        if remaining:
+            total_qty  = sum(float(b.qty_remaining_base) for b in remaining)
+            total_cost = sum(float(b.qty_remaining_base) * float(b.cost_per_base_unit) for b in remaining)
+            return total_cost / total_qty if total_qty > 0 else 0.0
+        if batches:
+            last = max(batches, key=lambda b: b.id)
+            return float(last.cost_per_base_unit)
+        return 0.0
+
     lines = RecipeLine.query.filter_by(product_id=pid).all()
     default_ingredients = []
     for rl in lines:
@@ -1948,11 +1960,13 @@ def api_product_substitutions(pid):
             'unit_type': ing.unit_type,
             'base_unit': ing.base_unit,
             'category': ing.category.name if ing.category else '',
+            'cost_per_base_unit': _wac_cost(rl.ingredient_id),
         })
     alternatives = [{
         'id': a.id, 'name': a.name,
         'unit_type': a.unit_type, 'base_unit': a.base_unit,
         'category': a.category.name if a.category else '',
+        'cost_per_base_unit': _wac_cost(a.id),
     } for a in Product.query.filter_by(product_type='stock_item', is_archived=False).order_by(Product.name.asc()).all()]
     history = {}
     try:
