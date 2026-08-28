@@ -3022,13 +3022,28 @@
 
         <!-- Password gate -->
         <div id="emp-teller-gate">
-          <div class="card mx-auto mt-4" style="max-width:360px">
-            <div class="card-body text-center py-4">
-              <i class="bi bi-shield-lock" style="font-size:2.5rem;color:#6c757d"></i>
-              <h6 class="mt-3 mb-1">Confirm your password</h6>
-              <p class="text-muted small mb-3">Enter your password to view your employee info.</p>
-              <input type="password" id="emp-teller-pw" class="form-control mb-2" placeholder="Password" onkeydown="if(event.key==='Enter')empTellerUnlock()">
-              <button class="btn btn-primary w-100" onclick="empTellerUnlock()"><i class="bi bi-unlock me-1"></i>Unlock</button>
+          <div class="card mx-auto mt-4" style="max-width:400px">
+            <div class="card-body text-center py-5 px-4">
+              <i class="bi bi-shield-lock" style="font-size:3rem;color:#6c757d"></i>
+              <h5 class="mt-3 mb-1">Confirm your password</h5>
+              <p class="text-muted mb-4">Enter your password to view your employee info.</p>
+              <div class="input-group mb-3">
+                <input type="password" id="emp-teller-pw" class="form-control form-control-lg"
+                       placeholder="Password"
+                       autocomplete="current-password" autocapitalize="off" autocorrect="off"
+                       onkeyup="if(event.key==='Enter')empTellerUnlock()">
+                <button class="btn btn-outline-secondary" type="button"
+                        style="touch-action:manipulation;min-width:52px;min-height:52px"
+                        onclick="(function(b){const i=document.getElementById('emp-teller-pw');i.type=i.type==='password'?'text':'password';b.querySelector('i').className=i.type==='password'?'bi bi-eye':'bi bi-eye-slash'})(this)"
+                        title="Show/hide password">
+                  <i class="bi bi-eye"></i>
+                </button>
+              </div>
+              <button class="btn btn-primary btn-lg w-100"
+                      style="touch-action:manipulation;min-height:52px"
+                      onclick="empTellerUnlock()">
+                <i class="bi bi-unlock me-2"></i>Unlock
+              </button>
             </div>
           </div>
         </div>
