@@ -11,7 +11,7 @@ from flask import current_app
 from helpers import (
     require_login, require_role, current_user,
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
-    qty_bucket, get_stock_level,
+    qty_bucket, get_stock_level, collect_kitchen_items,
 )
 from decimal import ROUND_HALF_UP
 from models import (
@@ -283,7 +283,9 @@ def api_transactions_post():
             card_amount = Decimal(str(data.get('card_amount')))
         except Exception:
             card_amount = None
-    cart_discount = data.get('cart_discount')
+    cart_discount        = data.get('cart_discount')
+    draft_order_id       = str(data.get('draft_order_id') or '').strip() or None
+    kitchen_already_sent = {str(k): Decimal(str(v)) for k, v in (data.get('kitchen_already_sent') or {}).items()}
     has_discount  = cart_discount or any(i.get('item_discount') or i.get('special_name') for i in cart)
     discount_by_id = (u.id if u else None) if has_discount else None
 
@@ -444,46 +446,25 @@ def api_transactions_post():
 
     max_sort = db.session.query(func.max(KitchenOrder.sort_order)).filter_by(status='pending').scalar() or 0
 
-    def _collect_kitchen(product_id, qty, depth=0, subs=None, extras=None):
-        if depth > 10: return []
-        p = db.session.get(Product, product_id)
-        if not p: return []
-        subs = subs or {}; extras = extras or []
-        if p.is_prepared:
-            ingredients = []
-            for rl in RecipeLine.query.filter_by(product_id=product_id).all():
-                actual_id = subs.get(rl.ingredient_id, rl.ingredient_id)
-                if actual_id == -1:
-                    orig = db.session.get(Product, rl.ingredient_id)
-                    ingredients.append({'name': orig.name if orig else str(rl.ingredient_id), 'qty': 0, 'base_unit': '', 'substituted': True, 'removed': True}); continue
-                ing      = db.session.get(Product, actual_id)
-                orig_ing = db.session.get(Product, rl.ingredient_id) if actual_id != rl.ingredient_id else ing
-                if not ing: continue
-                substituted = actual_id != rl.ingredient_id
-                if ing.product_type == 'stock_item':
-                    entry = {'name': ing.name, 'qty': float(rl.qty_base) * float(qty), 'base_unit': ing.base_unit or 'unit', 'substituted': substituted}
-                    if substituted and orig_ing: entry['original_name'] = orig_ing.name
-                    ingredients.append(entry)
-                elif ing.product_type == 'recipe':
-                    ingredients.append({'name': ing.name, 'qty': float(qty), 'base_unit': 'portion', 'substituted': substituted})
-            for ex in extras:
-                ex_id = int(ex.get('ingredient_id', 0)); ex_qty = float(ex.get('qty_base', 0)) * float(qty)
-                if ex_id and ex_qty > 0:
-                    ex_ing = db.session.get(Product, ex_id)
-                    if ex_ing: ingredients.append({'name': ex_ing.name, 'qty': ex_qty, 'base_unit': ex_ing.base_unit or 'unit', 'extra': True})
-            return [(p, qty, ingredients)]
-        elif p.product_type == 'recipe':
-            results = []
-            for rl in RecipeLine.query.filter_by(product_id=product_id).all():
-                results.extend(_collect_kitchen(rl.ingredient_id, Decimal(str(rl.qty_base)) * qty, depth + 1, subs))
-            return results
-        return []
-
+    # Build kitchen orders — compute delta to skip items already sent via draft
     all_kitchen = []
     for item in cart:
-        all_kitchen.extend(_collect_kitchen(int(item['product_id']), Decimal(str(item.get('qty', 1))), subs={int(k): int(v) for k, v in item.get('subs', {}).items()}, extras=item.get('extras', [])))
+        pid       = int(item['product_id'])
+        total_qty = Decimal(str(item.get('qty', 1)))
+        sent_qty  = kitchen_already_sent.get(str(pid), Decimal('0'))
+        delta_qty = total_qty - sent_qty
+        if delta_qty > 0:
+            subs_m = {int(k): int(v) for k, v in item.get('subs', {}).items()}
+            exts   = item.get('extras', [])
+            all_kitchen.extend(collect_kitchen_items(pid, delta_qty, subs=subs_m, extras=exts))
     for pos, (ko_product, ko_qty, ko_ingredients) in enumerate(all_kitchen):
         db.session.add(KitchenOrder(sale_id=sale_uuid, product_id=ko_product.id, product_name=ko_product.name, qty=ko_qty, ingredients=_json.dumps(ko_ingredients), status='pending', sort_order=max_sort + pos + 1, queued_at=now, teller_id=u.id if u else None))
+
+    # Link pre-sent draft kitchen orders to the real sale UUID
+    if draft_order_id:
+        for dko in KitchenOrder.query.filter_by(draft_order_id=draft_order_id).all():
+            dko.sale_id = sale_uuid
+
     db.session.commit()
     return jsonify({'ok': True, 'transaction_id': sale_uuid, 'kitchen_orders': len(all_kitchen)})
 

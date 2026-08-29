@@ -3,7 +3,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
-from helpers import require_login, _parse_dt
+from helpers import require_login, current_user, _parse_dt, collect_kitchen_items
 from models import db, KitchenOrder, User
 
 bp = Blueprint('kitchen', __name__)
@@ -185,3 +185,58 @@ def api_kitchen_sale_move(sale_id):
             sort_counter += 1
     db.session.commit()
     return jsonify({'ok': True})
+
+
+@bp.route('/api/kitchen/send-cart', methods=['POST'])
+def api_kitchen_send_cart():
+    """Create kitchen orders from a draft cart without checking out.
+    Uses draft_order_id as a temporary sale_id placeholder until checkout links it."""
+    if not require_login():
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    import json as _json
+    from decimal import Decimal
+
+    data           = request.json or {}
+    draft_order_id = str(data.get('draft_order_id') or '').strip()
+    items          = data.get('items') or []
+
+    if not draft_order_id:
+        return jsonify({'error': 'draft_order_id required'}), 400
+    if not items:
+        return jsonify({'ok': True, 'kitchen_orders': 0})
+
+    u        = current_user()
+    now      = datetime.utcnow()
+    max_sort = db.session.query(
+        db.func.max(KitchenOrder.sort_order)
+    ).filter_by(status='pending').scalar() or 0
+
+    all_kitchen = []
+    for item in items:
+        pid  = int(item.get('product_id', 0))
+        qty  = Decimal(str(item.get('qty', 1)))
+        subs = {int(k): int(v) for k, v in (item.get('subs') or {}).items()}
+        exts = item.get('extras') or []
+        if pid and qty > 0:
+            all_kitchen.extend(collect_kitchen_items(pid, qty, subs=subs, extras=exts))
+
+    if not all_kitchen:
+        return jsonify({'ok': True, 'kitchen_orders': 0})
+
+    for pos, (ko_product, ko_qty, ko_ingredients) in enumerate(all_kitchen):
+        db.session.add(KitchenOrder(
+            sale_id=draft_order_id,
+            draft_order_id=draft_order_id,
+            product_id=ko_product.id,
+            product_name=ko_product.name,
+            qty=ko_qty,
+            ingredients=_json.dumps(ko_ingredients),
+            status='pending',
+            sort_order=max_sort + pos + 1,
+            queued_at=now,
+            teller_id=u.id if u else None,
+        ))
+    db.session.commit()
+
+    return jsonify({'ok': True, 'kitchen_orders': len(all_kitchen)})

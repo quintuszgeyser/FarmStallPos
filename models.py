@@ -291,8 +291,9 @@ class KitchenOrder(db.Model):
     sort_order   = db.Column(db.Integer, nullable=False, default=0)
     queued_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime, nullable=True)
-    teller_id    = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    notes        = db.Column(db.String(500), nullable=True)
+    teller_id      = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    notes          = db.Column(db.String(500), nullable=True)
+    draft_order_id = db.Column(db.String(64), nullable=True, index=True)
 
 
 class Supplier(db.Model):

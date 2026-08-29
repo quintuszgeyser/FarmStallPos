@@ -998,6 +998,53 @@ def _serialize_product(p, include_recipe=False, include_packages=False, image_ca
     return d
 
 
+def collect_kitchen_items(product_id, qty, depth=0, subs=None, extras=None):
+    """Resolve a product into [(Product, qty, ingredients)] for kitchen orders.
+    Recurses into recipes. Returns [] for non-kitchen products."""
+    from decimal import Decimal as _D
+    if depth > 10:
+        return []
+    p = db.session.get(Product, int(product_id))
+    if not p:
+        return []
+    subs = subs or {}
+    extras = extras or []
+    if p.is_prepared:
+        ingredients = []
+        for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+            actual_id = subs.get(rl.ingredient_id, rl.ingredient_id)
+            if actual_id == -1:
+                orig = db.session.get(Product, rl.ingredient_id)
+                ingredients.append({'name': orig.name if orig else str(rl.ingredient_id), 'qty': 0, 'base_unit': '', 'substituted': True, 'removed': True})
+                continue
+            ing      = db.session.get(Product, actual_id)
+            orig_ing = db.session.get(Product, rl.ingredient_id) if actual_id != rl.ingredient_id else ing
+            if not ing:
+                continue
+            substituted = actual_id != rl.ingredient_id
+            if ing.product_type == 'stock_item':
+                entry = {'name': ing.name, 'qty': float(rl.qty_base) * float(qty), 'base_unit': ing.base_unit or 'unit', 'substituted': substituted}
+                if substituted and orig_ing:
+                    entry['original_name'] = orig_ing.name
+                ingredients.append(entry)
+            elif ing.product_type == 'recipe':
+                ingredients.append({'name': ing.name, 'qty': float(qty), 'base_unit': 'portion', 'substituted': substituted})
+        for ex in extras:
+            ex_id  = int(ex.get('ingredient_id', 0))
+            ex_qty = float(ex.get('qty_base', 0)) * float(qty)
+            if ex_id and ex_qty > 0:
+                ex_ing = db.session.get(Product, ex_id)
+                if ex_ing:
+                    ingredients.append({'name': ex_ing.name, 'qty': ex_qty, 'base_unit': ex_ing.base_unit or 'unit', 'extra': True})
+        return [(p, qty, ingredients)]
+    elif p.product_type == 'recipe':
+        results = []
+        for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+            results.extend(collect_kitchen_items(rl.ingredient_id, _D(str(rl.qty_base)) * qty, depth + 1, subs))
+        return results
+    return []
+
+
 def build_full_products_list():
     """Serialize all products with bulk caches — same result as GET /api/products?full=1.
     Used by the login endpoint so the client gets products in one round-trip."""

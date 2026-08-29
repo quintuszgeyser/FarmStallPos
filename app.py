@@ -311,6 +311,10 @@ def strong_migrate():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_sale_id   ON kitchen_orders (sale_id)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_status    ON kitchen_orders (status)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_queued_at ON kitchen_orders (queued_at)")
+            existing_ko = [r[1] for r in conn.exec_driver_sql("PRAGMA table_info(kitchen_orders)").fetchall()]
+            if 'draft_order_id' not in existing_ko:
+                conn.exec_driver_sql("ALTER TABLE kitchen_orders ADD COLUMN draft_order_id TEXT")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_draft_order_id ON kitchen_orders (draft_order_id)")
 
             # ---- new tables ----
             conn.exec_driver_sql("""
@@ -772,6 +776,8 @@ def strong_migrate():
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_sale_id   ON kitchen_orders (sale_id)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_status    ON kitchen_orders (status)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_queued_at ON kitchen_orders (queued_at)")
+            pg_try("ALTER TABLE kitchen_orders ADD COLUMN draft_order_id VARCHAR(64)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_ko_draft_order_id ON kitchen_orders (draft_order_id) WHERE draft_order_id IS NOT NULL")
 
             # Allow price and barcode to be null (stock_items may not have a selling price)
             pg_try("ALTER TABLE products ALTER COLUMN price DROP NOT NULL")

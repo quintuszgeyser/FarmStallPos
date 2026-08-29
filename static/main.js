@@ -33,6 +33,8 @@ let STATE = {
   activeCustomer:   null,   // customer detected at till
   customerPollInterval: null,  // interval ID for till customer polling
   _cartDiscount:    null,   // {type:'pct'|'amt', value:number} - admin cart-wide discount
+  draftKitchenId:   null,   // UUID used as sale_id placeholder for pre-checkout kitchen orders
+  kitchenSentQtys:  {},     // {product_id: total_qty_already_sent_to_kitchen}
   _drafts:          [],     // [{id, label, cart, discount, scanHistory, createdDate}]
   _activeDraftId:   null,   // id of the currently loaded draft
   _receiptPrinterId: null,  // LabelPrinter.id to use for receipts (null = auto-detect USB)
@@ -498,9 +500,11 @@ function _initDrafts() {
     active.cart = sessionCart;
     toast('Cart restored from previous session', 'info', 4000);
   }
-  STATE.cart         = active.cart         || {};
-  STATE._cartDiscount = active.discount    || null;
-  STATE.scanHistory  = active.scanHistory  || [];
+  STATE.cart             = active.cart            || {};
+  STATE._cartDiscount    = active.discount        || null;
+  STATE.scanHistory      = active.scanHistory     || [];
+  STATE.draftKitchenId   = active.kitchenDraftId  || null;
+  STATE.kitchenSentQtys  = active.kitchenSentQtys || {};
 
   _persistDrafts();
   renderDraftTabs();
@@ -518,9 +522,11 @@ function _saveDraft() {
   if (!STATE._activeDraftId || !STATE._drafts.length) return;
   const draft = STATE._drafts.find(d => d.id === STATE._activeDraftId);
   if (!draft) return;
-  draft.cart        = STATE.cart;
-  draft.discount    = STATE._cartDiscount;
-  draft.scanHistory = STATE.scanHistory;
+  draft.cart             = STATE.cart;
+  draft.discount         = STATE._cartDiscount;
+  draft.scanHistory      = STATE.scanHistory;
+  draft.kitchenDraftId   = STATE.draftKitchenId;
+  draft.kitchenSentQtys  = STATE.kitchenSentQtys;
   _persistDrafts();
 }
 
@@ -539,9 +545,11 @@ function _switchDraft(id) {
   STATE._activeDraftId = id;
   const draft = STATE._drafts.find(d => d.id === id);
   if (draft) {
-    STATE.cart          = draft.cart         || {};
-    STATE._cartDiscount = draft.discount     || null;
-    STATE.scanHistory   = draft.scanHistory  || [];
+    STATE.cart             = draft.cart            || {};
+    STATE._cartDiscount    = draft.discount        || null;
+    STATE.scanHistory      = draft.scanHistory     || [];
+    STATE.draftKitchenId   = draft.kitchenDraftId  || null;
+    STATE.kitchenSentQtys  = draft.kitchenSentQtys || {};
   }
   _persistDrafts();
   renderDraftTabs();
@@ -562,10 +570,12 @@ function _closeDraft(id) {
 
   if (wasActive) {
     const next = STATE._drafts[0];
-    STATE._activeDraftId = next.id;
-    STATE.cart           = next.cart         || {};
-    STATE._cartDiscount  = next.discount     || null;
-    STATE.scanHistory    = next.scanHistory  || [];
+    STATE._activeDraftId   = next.id;
+    STATE.cart             = next.cart            || {};
+    STATE._cartDiscount    = next.discount        || null;
+    STATE.scanHistory      = next.scanHistory     || [];
+    STATE.draftKitchenId   = next.kitchenDraftId  || null;
+    STATE.kitchenSentQtys  = next.kitchenSentQtys || {};
   }
   _persistDrafts();
   renderDraftTabs();
@@ -582,10 +592,12 @@ function _closeDraftAfterCheckout() {
   }
 
   const next = STATE._drafts[0];
-  STATE._activeDraftId = next.id;
-  STATE.cart           = next.cart         || {};
-  STATE._cartDiscount  = next.discount     || null;
-  STATE.scanHistory    = next.scanHistory  || [];
+  STATE._activeDraftId   = next.id;
+  STATE.cart             = next.cart            || {};
+  STATE._cartDiscount    = next.discount        || null;
+  STATE.scanHistory      = next.scanHistory     || [];
+  STATE.draftKitchenId   = next.kitchenDraftId  || null;
+  STATE.kitchenSentQtys  = next.kitchenSentQtys || {};
 
   _persistDrafts();
   renderDraftTabs();
@@ -8126,6 +8138,39 @@ function renderCart() {
       hide(discLabel);
     }
   }
+
+  // Show/hide Send to Kitchen button
+  const kitchenBtn = document.getElementById('btn-send-kitchen');
+  if (kitchenBtn) {
+    const cartItems = Object.values(STATE.cart);
+    const hasKitchenItems = cartItems.some(item => {
+      const p = STATE.products.find(pr => pr.id === item.product_id);
+      return p && (p.is_prepared || p.product_type === 'recipe');
+    });
+    if (!hasKitchenItems || !cartItems.length) {
+      kitchenBtn.classList.add('hidden');
+    } else {
+      kitchenBtn.classList.remove('hidden');
+      let newItemCount = 0;
+      for (const item of cartItems) {
+        const p = STATE.products.find(pr => pr.id === item.product_id);
+        if (!p || (!p.is_prepared && p.product_type !== 'recipe')) continue;
+        const qty  = item.is_weight ? parseFloat(item.qty || 0) : (item.qty || 1);
+        const sent = STATE.kitchenSentQtys[item.product_id] || 0;
+        if (qty - sent > 0) newItemCount++;
+      }
+      if (newItemCount === 0) {
+        kitchenBtn.innerHTML = '<i class="bi bi-check-lg me-1"></i>All Sent';
+        kitchenBtn.disabled  = true;
+      } else if (STATE.draftKitchenId) {
+        kitchenBtn.innerHTML = `<i class="bi bi-fire me-1"></i>Send ${newItemCount} New`;
+        kitchenBtn.disabled  = false;
+      } else {
+        kitchenBtn.innerHTML = '<i class="bi bi-fire me-1"></i>Send to Kitchen';
+        kitchenBtn.disabled  = false;
+      }
+    }
+  }
 }
 
 // Per-product debounce timestamps — prevents rapid double-tap on the teller grid
@@ -8341,6 +8386,51 @@ document.getElementById('btn-cart-packaging')?.addEventListener('click', () => {
   openPackagingModal(null, 0, totalQty);
 });
 
+// ── Send to Kitchen ──
+async function sendCartToKitchen() {
+  const cartItems = Object.values(STATE.cart);
+  if (!cartItems.length) return toast('Cart is empty', 'warning');
+
+  if (!STATE.draftKitchenId) STATE.draftKitchenId = crypto.randomUUID();
+
+  const items = [];
+  for (const item of cartItems) {
+    const p = STATE.products.find(pr => pr.id === item.product_id);
+    if (!p || (!p.is_prepared && p.product_type !== 'recipe')) continue;
+    const qty   = item.is_weight ? parseFloat(item.qty || 0) : (item.qty || 1);
+    const sent  = STATE.kitchenSentQtys[item.product_id] || 0;
+    const delta = qty - sent;
+    if (delta > 0) {
+      items.push({ product_id: item.product_id, qty: delta, subs: item.subs || {}, extras: item.extras || [] });
+    }
+  }
+
+  if (!items.length) return toast('All kitchen items already sent', 'info');
+
+  try {
+    const j = await api('/api/kitchen/send-cart', {
+      method: 'POST',
+      body: JSON.stringify({ draft_order_id: STATE.draftKitchenId, items }),
+    });
+    if (j.kitchen_orders === 0) return toast('No prepared items in cart', 'info');
+    for (const item of items) {
+      const pid = item.product_id;
+      STATE.kitchenSentQtys[pid] = (STATE.kitchenSentQtys[pid] || 0) + item.qty;
+    }
+    _saveDraft();
+    renderCart();
+    toast(`${j.kitchen_orders} kitchen order${j.kitchen_orders !== 1 ? 's' : ''} sent to kitchen`, 'success', 3000);
+    const badge = document.getElementById('kitchen-badge');
+    if (badge) {
+      const cur = parseInt(badge.textContent || '0') + j.kitchen_orders;
+      badge.textContent = cur;
+      badge.style.display = '';
+    }
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+document.getElementById('btn-send-kitchen')?.addEventListener('click', sendCartToKitchen);
+
 // ── Checkout ──
 let _checkoutInFlight = false;
 document.getElementById('btn-checkout')?.addEventListener('click', async () => {
@@ -8407,13 +8497,16 @@ document.getElementById('btn-checkout')?.addEventListener('click', async () => {
     payment_method: payMethod,
     ...(cashTendered != null        ? { cash_tendered: cashTendered } : {}),
     ...(cardAmount != null          ? { card_amount:   cardAmount   } : {}),
-    ...(STATE.activeCustomer?.customer_id ? { customer_id:   STATE.activeCustomer.customer_id } : {}),
-    ...(STATE._cartDiscount               ? { cart_discount: STATE._cartDiscount               } : {}),
+    ...(STATE.activeCustomer?.customer_id              ? { customer_id:           STATE.activeCustomer.customer_id              } : {}),
+    ...(STATE._cartDiscount                            ? { cart_discount:         STATE._cartDiscount                           } : {}),
+    ...(STATE.draftKitchenId                           ? { draft_order_id:        STATE.draftKitchenId                         } : {}),
+    ...(Object.keys(STATE.kitchenSentQtys).length      ? { kitchen_already_sent:  STATE.kitchenSentQtys                        } : {}),
   };
 
   async function _doSubmitSale(body) {
     const j = await api('/api/transactions', { method: 'POST', body: JSON.stringify(body) });
     STATE.cart = {}; STATE.scanHistory = []; STATE._cartDiscount = null; STATE.packagingHints = {};
+    STATE.draftKitchenId = null; STATE.kitchenSentQtys = {};
     _closeDraftAfterCheckout();
     renderCart();
     // Reset split inputs for the next sale
