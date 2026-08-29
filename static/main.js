@@ -11306,7 +11306,7 @@ async function loadStats() {
       const empName       = fromUsers || fromStats || fromDom || `Employee #${userId}`;
       addChip(`Employee: ${empName}`, () => {
         const el = document.getElementById('stats-user-filter');
-        if (el) el.value = '';
+        if (el) { el.value = ''; _tomSelectSync('stats-user-filter'); }
         loadStats();
       });
     }
@@ -11314,7 +11314,7 @@ async function loadStats() {
       const pname = `Product: ${STATE.products.find(p => String(p.id) === productId)?.name || productId}`;
       addChip(pname, () => {
         const el = document.getElementById('stats-product-filter');
-        if (el) el.value = '';
+        if (el) { el.value = ''; _tomSelectSync('stats-product-filter'); }
         loadStats();
       });
     }
@@ -11322,7 +11322,7 @@ async function loadStats() {
       const sname = `Supplier: ${_suppliers.find(s => String(s.id) === supplierId)?.name || supplierId}`;
       addChip(sname, () => {
         const el = document.getElementById('stats-supplier-filter');
-        if (el) el.value = '';
+        if (el) { el.value = ''; _tomSelectSync('stats-supplier-filter'); }
         loadStats();
       });
     }
