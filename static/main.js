@@ -11828,14 +11828,25 @@ async function openConsignmentSupplierDrilldown(sid) {
           <th class="text-end">Sold</th><th class="text-end">Unit Cost</th><th class="text-end">Owed</th>
         </tr></thead><tbody>`;
       j.batches.forEach(b => {
-        html += `<tr>
-          <td>${escapeHtml(b.product_name)}</td>
-          <td class="text-end">${b.qty_received}</td>
-          <td class="text-end">${b.qty_remaining}</td>
-          <td class="text-end">${b.qty_sold.toFixed(2)}</td>
-          <td class="text-end">R${fmt(b.consignment_unit_cost)}</td>
-          <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
-        </tr>`;
+        if (b.is_backfill) {
+          html += `<tr class="table-warning">
+            <td>${escapeHtml(b.product_name)} <span class="badge bg-warning text-dark ms-1" title="Units sold before this stock was received">Pre-batch</span></td>
+            <td class="text-end text-muted">—</td>
+            <td class="text-end text-muted">—</td>
+            <td class="text-end">${b.qty_sold.toFixed(2)}</td>
+            <td class="text-end">R${fmt(b.consignment_unit_cost)}</td>
+            <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
+          </tr>`;
+        } else {
+          html += `<tr>
+            <td>${escapeHtml(b.product_name)}</td>
+            <td class="text-end">${b.qty_received}</td>
+            <td class="text-end">${b.qty_remaining}</td>
+            <td class="text-end">${b.qty_sold.toFixed(2)}</td>
+            <td class="text-end">R${fmt(b.consignment_unit_cost)}</td>
+            <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
+          </tr>`;
+        }
       });
       html += `</tbody></table></div>`;
     }

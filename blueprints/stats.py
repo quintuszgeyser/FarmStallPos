@@ -449,8 +449,24 @@ def api_stats():
     total_receipts_ct   = int(cr.total_receipts or 0)
     voided_receipts_ct  = int(cr.voided_receipts or 0)
     all_receipts_ct     = total_receipts_ct + voided_receipts_ct
-    online_revenue      = float(cr.online_revenue or 0)
-    instore_revenue     = float(cr.instore_revenue or 0)
+    # When a product/user filter is active, the SQL receipt_total is the full basket
+    # total for any sale containing the filtered item — not just the item's revenue.
+    # Override with values computed from the already-filtered rows.
+    if sale_ids and rows:
+        if _has_online_orders:
+            _online_sids = {
+                r[0] for r in db.session.execute(
+                    _text("SELECT pos_sale_id::text FROM online_orders WHERE pos_sale_id::text = ANY(:ids)"),
+                    {'ids': list(sale_ids)}
+                ).fetchall()
+            }
+        else:
+            _online_sids = set()
+        online_revenue  = float(sum(Decimal(str(r.qty)) * r.unit_price for r in rows if r.sale_id in _online_sids))
+        instore_revenue = float(sum(Decimal(str(r.qty)) * r.unit_price for r in rows if r.sale_id not in _online_sids))
+    else:
+        online_revenue  = float(cr.online_revenue or 0)
+        instore_revenue = float(cr.instore_revenue or 0)
     repeat_customer_rate = round(int(cr.repeat_customers or 0) / distinct_customers * 100, 1) if distinct_customers else 0
     revenue_per_customer = round(total_sales_value / distinct_customers, 2) if distinct_customers else None
     void_receipt_rate    = round(voided_receipts_ct / all_receipts_ct * 100, 1) if all_receipts_ct else 0

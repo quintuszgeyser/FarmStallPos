@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
 
@@ -104,11 +105,15 @@ def api_consignment_supplier(sid):
             'product_name': prod.name if prod else f'Product {b.product_id}',
             'qty_received': float(b.qty_purchased_base),
             'qty_remaining': float(b.qty_remaining_base),
-            'qty_sold': float(b.qty_purchased_base) - float(b.qty_remaining_base),
+            'qty_sold': 0.0,  # accumulated from liabilities below
             'consignment_unit_cost': float(b.consignment_unit_cost or b.cost_per_base_unit),
             'amount_owed': 0.0,
             'purchased_at': b.purchased_at.date().isoformat() if b.purchased_at else None,
+            'is_backfill': False,
         }
+
+    # Backfill: liabilities with no batch_id (sold before stock arrived), grouped by product
+    backfill_by_product: dict = defaultdict(lambda: {'qty': 0.0, 'amount': 0.0, 'product_name': '', 'unit_cost': 0.0})
 
     total_outstanding = Decimal('0')
     for lib in liabilities:
@@ -117,6 +122,34 @@ def api_consignment_supplier(sid):
             batch_map[lib.batch_id]['amount_owed'] = round(
                 batch_map[lib.batch_id]['amount_owed'] + float(lib.amount_owed), 2
             )
+            batch_map[lib.batch_id]['qty_sold'] = round(
+                batch_map[lib.batch_id]['qty_sold'] + float(lib.qty_consumed), 2
+            )
+        else:
+            bf = backfill_by_product[lib.product_id]
+            bf['qty']    = round(bf['qty']    + float(lib.qty_consumed), 2)
+            bf['amount'] = round(bf['amount'] + float(lib.amount_owed),  2)
+            bf['unit_cost'] = float(lib.unit_cost or 0)
+            if not bf['product_name']:
+                p = db.session.get(Product, lib.product_id)
+                bf['product_name'] = p.name if p else f'Product {lib.product_id}'
+
+    backfill_rows = [
+        {
+            'batch_id': None,
+            'product_id': pid,
+            'product_name': bf['product_name'],
+            'qty_received': None,
+            'qty_remaining': None,
+            'qty_sold': bf['qty'],
+            'consignment_unit_cost': bf['unit_cost'],
+            'amount_owed': bf['amount'],
+            'purchased_at': None,
+            'is_backfill': True,
+        }
+        for pid, bf in backfill_by_product.items()
+        if bf['amount'] > 0
+    ]
 
     # Recent settlements
     settlements = (ConsignmentSettlement.query
@@ -129,7 +162,7 @@ def api_consignment_supplier(sid):
         'supplier_id': sid,
         'name': supplier.name,
         'outstanding': float(total_outstanding.quantize(Decimal('0.01'))),
-        'batches': [b for b in batch_map.values() if b['qty_received'] > 0],
+        'batches': [b for b in batch_map.values() if b['qty_received'] > 0] + backfill_rows,
         'settlements': [
             {
                 'id': s.id,
