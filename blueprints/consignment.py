@@ -109,8 +109,8 @@ def api_consignment_supplier(sid):
             'qty_received': float(b.qty_purchased_base),
             'qty_remaining': float(b.qty_remaining_base),
             'qty_sold': 0.0,  # accumulated from liabilities below
-            'consignment_unit_cost': float(b.consignment_unit_cost or b.cost_per_base_unit),
-            'current_unit_cost': float(b.consignment_unit_cost or b.cost_per_base_unit),
+            'consignment_unit_cost': round(float(b.consignment_unit_cost or b.cost_per_base_unit), 4),
+            'current_unit_cost': round(float(b.consignment_unit_cost or b.cost_per_base_unit), 4),
             'amount_owed': 0.0,
             'purchased_at': b.purchased_at.date().isoformat() if b.purchased_at else None,
             'is_backfill': False,
@@ -148,7 +148,7 @@ def api_consignment_supplier(sid):
     # (write-offs, adjustments, pre-batch backfill absorption) — for reconciliation display.
     for entry in batch_map.values():
         if entry['qty_sold'] > 0:
-            entry['consignment_unit_cost'] = round(entry['amount_owed'] / entry['qty_sold'], 6)
+            entry['consignment_unit_cost'] = round(entry['amount_owed'] / entry['qty_sold'], 4)
         qty_consumed_total = entry['qty_received'] - entry['qty_remaining']
         entry['qty_other'] = round(max(0.0, qty_consumed_total - entry['qty_sold']), 4)
 
@@ -163,8 +163,8 @@ def api_consignment_supplier(sid):
             'qty_remaining': None,
             'qty_sold': bf['qty'],
             'qty_other': 0.0,
-            'consignment_unit_cost': round(bf['amount'] / bf['qty'], 6) if bf['qty'] > 0 else bf['unit_cost'],
-            'current_unit_cost': bf['unit_cost'],
+            'consignment_unit_cost': round(bf['amount'] / bf['qty'], 4) if bf['qty'] > 0 else round(bf['unit_cost'], 4),
+            'current_unit_cost': round(bf['unit_cost'], 4),
             'amount_owed': bf['amount'],
             'purchased_at': None,
             'is_backfill': True,
