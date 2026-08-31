@@ -11973,21 +11973,30 @@ async function openConsignmentSupplierDrilldown(sid) {
   modal.show();
   try {
     const j = await api(`/api/consignment/supplier/${sid}`);
-    let html = `<div class="mb-2 fw-semibold">${escapeHtml(j.name)} — Outstanding: <span class="text-danger">R${fmt(j.outstanding)}</span></div>`;
+    // Detect if any batch has a stale unit cost (effective != current)
+    const hasStale = j.batches.some(b => b.current_unit_cost != null && Math.abs((b.consignment_unit_cost || 0) - b.current_unit_cost) > 0.000001);
+    let html = `<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+      <span class="fw-semibold">${escapeHtml(j.name)} — Outstanding: <span class="text-danger">R${fmt(j.outstanding)}</span></span>
+      ${hasStale ? `<button class="btn btn-sm btn-outline-warning" onclick="recalculateConsignmentCosts(${sid})"><i class="bi bi-arrow-clockwise me-1"></i>Recalculate Costs</button>
+      <span class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>Unit costs may be outdated — batch costs have changed</span>` : ''}
+    </div>`;
     if (j.batches.length) {
       html += `<div class="table-responsive mb-3"><table class="table table-sm align-middle mb-0">
         <thead class="table-light"><tr>
           <th>Product</th><th class="text-end">Received</th><th class="text-end">Remaining</th>
-          <th class="text-end">Sold</th><th class="text-end">Unit Cost</th><th class="text-end">Owed</th>
+          <th class="text-end">Sold</th><th class="text-end">Effective Cost</th><th class="text-end">Owed</th>
         </tr></thead><tbody>`;
       j.batches.forEach(b => {
+        const staleHint = (b.current_unit_cost != null && Math.abs((b.consignment_unit_cost || 0) - b.current_unit_cost) > 0.000001)
+          ? ` <span class="text-warning small" title="Batch currently set to R${fmt(b.current_unit_cost)} — click Recalculate to update">→ R${fmt(b.current_unit_cost)}</span>`
+          : '';
         if (b.is_backfill) {
           html += `<tr class="table-warning">
             <td>${escapeHtml(b.product_name)} <span class="badge bg-warning text-dark ms-1" title="Units sold before this stock was received">Pre-batch</span></td>
             <td class="text-end text-muted">—</td>
             <td class="text-end text-muted">—</td>
             <td class="text-end">${b.qty_sold.toFixed(2)}</td>
-            <td class="text-end">R${fmt(b.consignment_unit_cost)}</td>
+            <td class="text-end">R${fmt(b.consignment_unit_cost)}${staleHint}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;
         } else {
@@ -11996,7 +12005,7 @@ async function openConsignmentSupplierDrilldown(sid) {
             <td class="text-end">${b.qty_received}</td>
             <td class="text-end">${b.qty_remaining}</td>
             <td class="text-end">${b.qty_sold.toFixed(2)}</td>
-            <td class="text-end">R${fmt(b.consignment_unit_cost)}</td>
+            <td class="text-end">R${fmt(b.consignment_unit_cost)}${staleHint}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;
         }
@@ -12015,6 +12024,18 @@ async function openConsignmentSupplierDrilldown(sid) {
     document.getElementById('drilldown-body').innerHTML = html;
   } catch (e) {
     document.getElementById('drilldown-body').innerHTML = `<div class="text-danger small">${e.message}</div>`;
+  }
+}
+
+async function recalculateConsignmentCosts(sid) {
+  if (!confirm('Recalculate all outstanding liability amounts using the current batch unit costs?\n\nThis will update what is owed to match the current prices set on each batch.')) return;
+  try {
+    const j = await api(`/api/consignment/recalculate-costs/${sid}`, { method: 'POST' });
+    const delta = j.amount_delta >= 0 ? `+R${fmt(j.amount_delta)}` : `-R${fmt(Math.abs(j.amount_delta))}`;
+    toast(`Updated ${j.liabilities_updated} record${j.liabilities_updated !== 1 ? 's' : ''} (${delta})`, 'success', 4000);
+    await openConsignmentSupplierDrilldown(sid);
+  } catch (e) {
+    toast(e.message, 'error');
   }
 }
 

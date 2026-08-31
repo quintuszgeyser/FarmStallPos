@@ -96,6 +96,7 @@ def api_consignment_supplier(sid):
                .all())
 
     # Build batch map with liability sums
+    # current_unit_cost = what the batch is set to NOW (for reference/recalculate)
     batch_map = {}
     for b in batches:
         prod = db.session.get(Product, b.product_id)
@@ -107,6 +108,7 @@ def api_consignment_supplier(sid):
             'qty_remaining': float(b.qty_remaining_base),
             'qty_sold': 0.0,  # accumulated from liabilities below
             'consignment_unit_cost': float(b.consignment_unit_cost or b.cost_per_base_unit),
+            'current_unit_cost': float(b.consignment_unit_cost or b.cost_per_base_unit),
             'amount_owed': 0.0,
             'purchased_at': b.purchased_at.date().isoformat() if b.purchased_at else None,
             'is_backfill': False,
@@ -134,6 +136,13 @@ def api_consignment_supplier(sid):
                 p = db.session.get(Product, lib.product_id)
                 bf['product_name'] = p.name if p else f'Product {lib.product_id}'
 
+    # Derive effective unit cost from what was actually charged (amount_owed / qty_sold).
+    # This ensures the displayed unit cost always matches the owed amount, even if the
+    # batch cost was updated after liabilities were created.
+    for entry in batch_map.values():
+        if entry['qty_sold'] > 0:
+            entry['consignment_unit_cost'] = round(entry['amount_owed'] / entry['qty_sold'], 6)
+
     backfill_rows = [
         {
             'batch_id': None,
@@ -142,7 +151,8 @@ def api_consignment_supplier(sid):
             'qty_received': None,
             'qty_remaining': None,
             'qty_sold': bf['qty'],
-            'consignment_unit_cost': bf['unit_cost'],
+            'consignment_unit_cost': round(bf['amount'] / bf['qty'], 6) if bf['qty'] > 0 else bf['unit_cost'],
+            'current_unit_cost': bf['unit_cost'],
             'amount_owed': bf['amount'],
             'purchased_at': None,
             'is_backfill': True,
@@ -172,6 +182,55 @@ def api_consignment_supplier(sid):
             }
             for s in settlements
         ],
+    })
+
+
+@bp.route('/api/consignment/recalculate-costs/<int:sid>', methods=['POST'])
+def api_consignment_recalculate_costs(sid):
+    """Retroactively update all outstanding liability amounts to use the current batch cost."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    liabilities = (ConsignmentLiability.query
+                   .filter_by(supplier_id=sid, status='outstanding')
+                   .with_for_update()
+                   .all())
+
+    batches = StockBatch.query.filter_by(supplier_id=sid, ownership_type='CONSIGNMENT').all()
+    batch_cost_map = {b.id: Decimal(str(b.consignment_unit_cost or b.cost_per_base_unit)) for b in batches}
+
+    # For backfill liabilities (no batch): use most recent consignment batch cost for that product
+    all_consignment_batches = (StockBatch.query
+                               .filter_by(ownership_type='CONSIGNMENT')
+                               .order_by(StockBatch.purchased_at.desc())
+                               .all())
+    product_latest_cost: dict = {}
+    for b in all_consignment_batches:
+        if b.product_id not in product_latest_cost:
+            product_latest_cost[b.product_id] = Decimal(str(b.consignment_unit_cost or b.cost_per_base_unit))
+
+    updated = 0
+    total_delta = Decimal('0')
+    for lib in liabilities:
+        if lib.batch_id is not None:
+            new_cost = batch_cost_map.get(lib.batch_id)
+        else:
+            new_cost = product_latest_cost.get(lib.product_id)
+        if new_cost is None:
+            continue
+        old_amount = Decimal(str(lib.amount_owed))
+        new_amount = (Decimal(str(lib.qty_consumed)) * new_cost).quantize(Decimal('0.000001'))
+        if abs(new_amount - old_amount) >= Decimal('0.01'):
+            total_delta += new_amount - old_amount
+            lib.unit_cost   = float(new_cost)
+            lib.amount_owed = float(new_amount.quantize(Decimal('0.01')))
+            updated += 1
+
+    db.session.commit()
+    return jsonify({
+        'ok': True,
+        'liabilities_updated': updated,
+        'amount_delta': float(total_delta.quantize(Decimal('0.01'))),
     })
 
 
