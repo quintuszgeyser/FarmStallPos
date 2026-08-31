@@ -108,9 +108,12 @@ def _rebuild_sale_cogs_map(sale_id, sale_rows, all_consumes, corrected_batch_id,
     return result
 
 
+_WO_PREFIXES = ('wo-', 'adj-', 'archive-wo-', 'wo-edit-', 'adj-del-')
+
+
 def _classify_sale_id(sale_id):
     """Classify a consumption sale_id as sale | writeoff | production | unknown."""
-    if str(sale_id).startswith('wo-'):
+    if any(str(sale_id).startswith(p) for p in _WO_PREFIXES):
         return 'writeoff'
     has_sale = db.session.query(Sale.id).filter_by(sale_id=sale_id).limit(1).scalar() is not None
     if has_sale:

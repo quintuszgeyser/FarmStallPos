@@ -12037,16 +12037,17 @@ async function openConsignmentSupplierDrilldown(sid) {
           <th class="text-end">Unit Cost</th><th class="text-end">Owed</th>
         </tr></thead><tbody>`;
       j.batches.forEach(b => {
-        // Display costs and quantities in human-readable units (kg/L instead of g/ml)
-        const refQty = b.qty_received ?? b.qty_sold ?? 0;
-        const effCost  = displayCost(b.consignment_unit_cost || 0, refQty, b.unit_type);
-        const currCost = displayCost(b.current_unit_cost || 0, refQty, b.unit_type);
-        const costUnit = effCost.unit ? `/${effCost.unit}` : '';
+        // Always show settlement rates in the big unit (kg/L) for consistency across batches
+        const bigUnit = b.unit_type === 'weight' ? 'kg' : b.unit_type === 'volume' ? 'L' : null;
+        const toBase  = bigUnit ? (UNITS[b.unit_type]?.toBase?.[bigUnit] ?? 1) : 1;
+        const effCostHuman  = (b.consignment_unit_cost || 0) * toBase;
+        const currCostHuman = (b.current_unit_cost || 0) * toBase;
+        const costUnit = bigUnit ? `/${bigUnit}` : (b.base_unit ? `/${b.base_unit}` : '');
         const editBtn = b.batch_id
           ? ` <button class="btn btn-link btn-sm p-0 ms-1" style="font-size:11px;vertical-align:baseline" title="Edit settlement rate for this batch" onclick="editBatchSettlementRate(${b.batch_id}, ${b.current_unit_cost ?? b.consignment_unit_cost ?? 0}, '${b.unit_type}', ${sid})"><i class="bi bi-pencil-square"></i></button>`
           : '';
         const staleHint = (b.current_unit_cost != null && Math.abs((b.consignment_unit_cost || 0) - b.current_unit_cost) > 0.000001)
-          ? ` <span class="text-warning small" title="Settlement rate stored on this batch is R${fmt(currCost.cost)}${costUnit} — liabilities were created at a different rate. Fix by clicking the edit icon, then Recalculate to align past liabilities.">⚠ stored: R${fmt(currCost.cost)}${costUnit}</span>`
+          ? ` <span class="text-warning small" title="Settlement rate stored on this batch is R${fmt(currCostHuman)}${costUnit} — liabilities were created at a different rate. Fix by clicking the edit icon, then Recalculate to align past liabilities.">⚠ stored: R${fmt(currCostHuman)}${costUnit}</span>`
           : '';
         const otherQty = b.qty_other || 0;
         const otherCell = otherQty > 0
@@ -12059,7 +12060,7 @@ async function openConsignmentSupplierDrilldown(sid) {
             <td class="text-end text-muted">—</td>
             <td class="text-end">${displayQty(b.qty_sold, b.unit_type)}</td>
             <td class="text-end text-muted">—</td>
-            <td class="text-end">R${fmt(effCost.cost)}${costUnit}${staleHint}${editBtn}</td>
+            <td class="text-end">R${fmt(effCostHuman)}${costUnit}${staleHint}${editBtn}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;
         } else {
@@ -12071,7 +12072,7 @@ async function openConsignmentSupplierDrilldown(sid) {
             <td class="text-end">${displayQty(b.qty_remaining, b.unit_type)}</td>
             <td class="text-end">${displayQty(b.qty_sold, b.unit_type)}</td>
             ${otherCell}
-            <td class="text-end">R${fmt(effCost.cost)}${costUnit}${staleHint}${editBtn}</td>
+            <td class="text-end">R${fmt(effCostHuman)}${costUnit}${staleHint}${editBtn}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;
         }

@@ -306,7 +306,9 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
 
 
 def reverse_fifo(sale_id):
-    """Restore all batch quantities consumed by this sale_id. Delete consumption records."""
+    """Restore all batch quantities consumed by this sale_id. Delete consumption records.
+    IMPORTANT: For consignment products, also call reverse_consignment_liabilities(sale_id)
+    to void the corresponding liabilities. reverse_fifo alone leaves a ghost liability."""
     records = StockConsumption.query.filter_by(sale_id=sale_id).all()
     for r in records:
         batch = db.session.get(StockBatch, r.batch_id, with_for_update=True)

@@ -125,15 +125,21 @@ def api_consignment_supplier(sid):
 
     total_outstanding = Decimal('0')
     for lib in liabilities:
-        total_outstanding += Decimal(str(lib.amount_owed))
+        is_wo = lib.sale_id and any(lib.sale_id.startswith(p) for p in writeoff_prefixes)
+        if not is_wo:
+            total_outstanding += Decimal(str(lib.amount_owed))
         if lib.batch_id in batch_map:
-            batch_map[lib.batch_id]['amount_owed'] = round(
-                batch_map[lib.batch_id]['amount_owed'] + float(lib.amount_owed), 2
-            )
-            batch_map[lib.batch_id]['qty_sold'] = round(
-                batch_map[lib.batch_id]['qty_sold'] + float(lib.qty_consumed), 2
-            )
+            if not is_wo:
+                batch_map[lib.batch_id]['amount_owed'] = round(
+                    batch_map[lib.batch_id]['amount_owed'] + float(lib.amount_owed), 2
+                )
+                batch_map[lib.batch_id]['qty_sold'] = round(
+                    batch_map[lib.batch_id]['qty_sold'] + float(lib.qty_consumed), 2
+                )
+            # write-off qty falls into qty_other naturally (qty_consumed_total - qty_sold below)
         else:
+            if is_wo:
+                continue  # write-off backfills don't create a payable liability
             bf = backfill_by_product[lib.product_id]
             bf['qty']    = round(bf['qty']    + float(lib.qty_consumed), 2)
             bf['amount'] = round(bf['amount'] + float(lib.amount_owed),  2)
@@ -230,6 +236,8 @@ def api_consignment_recalculate_costs(sid):
     updated = 0
     total_delta = Decimal('0')
     for lib in liabilities:
+        if lib.sale_id and any(lib.sale_id.startswith(p) for p in _WRITEOFF_PREFIXES):
+            continue  # write-off liabilities should be voided, not repriced
         if lib.batch_id is not None:
             new_cost = batch_cost_map.get(lib.batch_id)
         else:
@@ -252,6 +260,7 @@ def api_consignment_recalculate_costs(sid):
     })
 
 
+# Reserved internal prefixes for write-off/adjustment consumptions — NEVER use for real sales.
 _WRITEOFF_PREFIXES = ('wo-', 'adj-', 'archive-wo-', 'wo-edit-', 'adj-del-')
 
 
@@ -367,6 +376,7 @@ def api_consignment_settle():
         lib_amount = Decimal(str(lib.amount_owed))
         if remaining <= 0:
             break
+        paid = min(lib_amount, remaining)
         db.session.add(ConsignmentSettlementLine(
             settlement_id=settlement.id,
             liability_id=lib.id,
@@ -375,11 +385,12 @@ def api_consignment_settle():
             batch_id=lib.batch_id,
             qty=lib.qty_consumed,
             unit_cost=lib.unit_cost,
-            amount=float(min(lib_amount, remaining).quantize(Decimal('0.01'))),
+            amount=float(paid.quantize(Decimal('0.01'))),
         ))
-        lib.status        = 'settled'
-        lib.settlement_id = settlement.id
-        lib.settled_at    = now
+        if paid >= lib_amount:
+            lib.status        = 'settled'
+            lib.settlement_id = settlement.id
+            lib.settled_at    = now
         remaining -= lib_amount
         lines_settled += 1
 
