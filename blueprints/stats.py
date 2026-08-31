@@ -542,6 +542,8 @@ def api_stats_drilldown():
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
     user_id_filter    = request.args.get('user_id',    type=int)
     product_id_filter = request.args.get('product_id', type=int)
+    try: supplier_id_filter = int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None
+    except (ValueError, TypeError): supplier_id_filter = None
     try: category_id_filter = int(request.args.get('category_id')) if request.args.get('category_id') else None
     except (ValueError, TypeError): category_id_filter = None
     voided_filter     = request.args.get('voided') == '1'
@@ -553,6 +555,10 @@ def api_stats_drilldown():
         q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, _not_return)
     if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
     if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
+    if supplier_id_filter:
+        _sup_pids = {r.product_id for r in db.session.query(StockBatch.product_id).filter(StockBatch.supplier_id == supplier_id_filter).all()}
+        _sup_pids |= {r.id for r in db.session.query(Product.id).filter(Product.consignment_supplier_id == supplier_id_filter).all()}
+        q = q.filter(Sale.product_id.in_(list(_sup_pids))) if _sup_pids else q.filter(db.false())
     if category_id_filter:
         _cat_pids = {r.id for r in db.session.query(Product.id).filter(Product.category_id == category_id_filter).all()}
         q = q.filter(Sale.product_id.in_(list(_cat_pids))) if _cat_pids else q.filter(db.false())
@@ -654,10 +660,16 @@ def api_stats_drilldown_profit():
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
     user_id_filter    = request.args.get('user_id',    type=int)
     product_id_filter = request.args.get('product_id', type=int)
+    try: supplier_id_filter = int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None
+    except (ValueError, TypeError): supplier_id_filter = None
     not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
     q = db.session.query(Sale).filter(Sale.date_time >= start_dt, Sale.date_time <= end_dt, Sale.voided == False, not_return)
     if user_id_filter:    q = q.filter(Sale.user_id    == user_id_filter)
     if product_id_filter: q = q.filter(Sale.product_id == product_id_filter)
+    if supplier_id_filter:
+        _sup_pids = {r.product_id for r in db.session.query(StockBatch.product_id).filter(StockBatch.supplier_id == supplier_id_filter).all()}
+        _sup_pids |= {r.id for r in db.session.query(Product.id).filter(Product.consignment_supplier_id == supplier_id_filter).all()}
+        q = q.filter(Sale.product_id.in_(list(_sup_pids))) if _sup_pids else q.filter(db.false())
     rows = q.all()
     sale_ids = list({r.sale_id for r in rows})
     consumptions = StockConsumption.query.filter(StockConsumption.sale_id.in_(sale_ids)).all() if sale_ids else []
