@@ -89,6 +89,10 @@ def api_consignment_supplier(sid):
                    .order_by(ConsignmentLiability.created_at.asc())
                    .all())
 
+    writeoff_prefixes = ('wo-', 'adj-', 'archive-wo-', 'wo-edit-', 'adj-del-')
+    writeoff_liabilities = [lib for lib in liabilities if lib.sale_id and any(lib.sale_id.startswith(p) for p in writeoff_prefixes)]
+    writeoff_amount = sum(float(lib.amount_owed) for lib in writeoff_liabilities)
+
     # All consignment batches for this supplier
     batches = (StockBatch.query
                .filter_by(supplier_id=sid, ownership_type='CONSIGNMENT')
@@ -184,6 +188,8 @@ def api_consignment_supplier(sid):
         'supplier_id': sid,
         'name': supplier.name,
         'outstanding': float(total_outstanding.quantize(Decimal('0.01'))),
+        'writeoff_count': len(writeoff_liabilities),
+        'writeoff_amount': round(writeoff_amount, 2),
         'batches': [b for b in batch_map.values() if b['qty_received'] > 0] + backfill_rows,
         'settlements': [
             {
@@ -243,6 +249,35 @@ def api_consignment_recalculate_costs(sid):
         'ok': True,
         'liabilities_updated': updated,
         'amount_delta': float(total_delta.quantize(Decimal('0.01'))),
+    })
+
+
+_WRITEOFF_PREFIXES = ('wo-', 'adj-', 'archive-wo-', 'wo-edit-', 'adj-del-')
+
+
+@bp.route('/api/consignment/void-writeoffs/<int:sid>', methods=['POST'])
+def api_void_writeoff_liabilities(sid):
+    """Void outstanding consignment liabilities that were created by write-offs (not real sales)."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    liabilities = (ConsignmentLiability.query
+                   .filter_by(supplier_id=sid, status='outstanding')
+                   .all())
+
+    voided = 0
+    total_voided = Decimal('0')
+    for lib in liabilities:
+        if lib.sale_id and any(lib.sale_id.startswith(p) for p in _WRITEOFF_PREFIXES):
+            lib.status = 'voided'
+            total_voided += Decimal(str(lib.amount_owed))
+            voided += 1
+
+    db.session.commit()
+    return jsonify({
+        'ok': True,
+        'voided': voided,
+        'amount_removed': float(total_voided.quantize(Decimal('0.01'))),
     })
 
 

@@ -12023,6 +12023,8 @@ async function openConsignmentSupplierDrilldown(sid) {
     const hasStale = j.batches.some(b => b.current_unit_cost != null && Math.abs((b.consignment_unit_cost || 0) - b.current_unit_cost) > 0.000001);
     let html = `<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
       <span class="fw-semibold">${escapeHtml(j.name)} — Outstanding: <span class="text-danger">R${fmt(j.outstanding)}</span></span>
+      ${(j.writeoff_count > 0) ? `<button class="btn btn-sm btn-outline-danger" onclick="voidWriteoffLiabilities(${sid}, ${j.writeoff_count}, ${j.writeoff_amount})"><i class="bi bi-trash me-1"></i>Void ${j.writeoff_count} write-off record${j.writeoff_count !== 1 ? 's' : ''} (R${fmt(j.writeoff_amount)})</button>
+      <span class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>Write-offs were incorrectly charged to this supplier — click to remove</span>` : ''}
       ${hasStale ? `<button class="btn btn-sm btn-outline-warning" onclick="recalculateConsignmentCosts(${sid})"><i class="bi bi-arrow-clockwise me-1"></i>Recalculate Liabilities</button>
       <span class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>Past liabilities were charged at a different rate to the stored batch rate — fix the batch rate first (pencil icon), then recalculate</span>` : ''}
     </div>`;
@@ -12110,6 +12112,17 @@ async function editBatchSettlementRate(batchId, currentRatePerBase, unitType, si
       body: JSON.stringify({ rate: newBase }),
     });
     toast(`Settlement rate updated to R${fmt(newHuman)}/${bigUnit}`, 'success');
+    await openConsignmentSupplierDrilldown(sid);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+async function voidWriteoffLiabilities(sid, count, amount) {
+  if (!confirm(`Remove ${count} write-off record${count !== 1 ? 's' : ''} (R${fmt(amount)}) from this supplier's outstanding balance?\n\nThese were incorrectly created when stock was written off — you do not owe your supplier for written-off goods.`)) return;
+  try {
+    const j = await api(`/api/consignment/void-writeoffs/${sid}`, { method: 'POST' });
+    toast(`Voided ${j.voided} write-off record${j.voided !== 1 ? 's' : ''} — removed R${fmt(j.amount_removed)} from balance`, 'success', 5000);
     await openConsignmentSupplierDrilldown(sid);
   } catch (e) {
     toast(e.message, 'error');

@@ -323,7 +323,7 @@ def api_stock_adjust():
     cost_written_off = Decimal('0')
     if diff < 0:
         loss_qty = abs(diff)
-        cost_written_off = consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now)
+        cost_written_off = consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now, is_writeoff=True)
     elif diff > 0:
         # Always create a new zero-cost batch so free units don't inherit the existing batch's cost.
         db.session.add(StockBatch(product_id=pid, qty_purchased_base=diff, qty_remaining_base=diff, cost_per_base_unit=Decimal('0'), purchased_at=now, user_id=u.id if u else None))
@@ -558,7 +558,7 @@ def api_stock_writeoff():
     if qty_base > system_before:
         return jsonify({'error': f'Cannot write off {float(qty_base)}{p.base_unit} - only {float(system_before)}{p.base_unit} in stock'}), 400
     u   = current_user(); now = datetime.utcnow()
-    cost_written_off = consume_fifo(pid, qty_base, f'wo-{uuid.uuid4()}', now)
+    cost_written_off = consume_fifo(pid, qty_base, f'wo-{uuid.uuid4()}', now, is_writeoff=True)
     db.session.add(StockAdjustment(product_id=pid, adjustment_type='writeoff', qty_change_base=-qty_base, system_qty_before=system_before, cost_written_off=cost_written_off, base_unit=p.base_unit, reason=reason, adjusted_at=now, user_id=u.id if u else None))
     db.session.commit()
     return jsonify({'ok': True, 'qty_written_off': float(qty_base), 'base_unit': p.base_unit, 'cost_written_off': float(cost_written_off)})
@@ -590,7 +590,7 @@ def api_stock_adjustment_edit(adj_id):
     if diff > 0:
         current_stock = Decimal(str(get_stock_level(p.id)))
         if diff > current_stock: return jsonify({'error': f'Cannot write off additional {float(diff)}{p.base_unit} - only {float(current_stock)}{p.base_unit} in stock'}), 400
-        extra_cost = consume_fifo(p.id, diff, f'wo-edit-{uuid.uuid4()}', now)
+        extra_cost = consume_fifo(p.id, diff, f'wo-edit-{uuid.uuid4()}', now, is_writeoff=True)
         adj.cost_written_off = Decimal(str(adj.cost_written_off or 0)) + Decimal(str(extra_cost))
     elif diff < 0:
         restore_qty = abs(diff)
@@ -643,7 +643,7 @@ def api_stock_adjustment_delete(adj_id):
         current_stock = Decimal(str(get_stock_level(p.id)))
         if diff > current_stock:
             return jsonify({'error': f'Cannot reverse — only {float(current_stock)}{p.base_unit} in stock but adjustment added {float(diff)}{p.base_unit}. Some has already been sold.'}), 400
-        consume_fifo(p.id, diff, f'adj-del-{uuid.uuid4()}', now)
+        consume_fifo(p.id, diff, f'adj-del-{uuid.uuid4()}', now, is_writeoff=True)
     db.session.delete(adj)
     db.session.commit()
     return jsonify({'ok': True})

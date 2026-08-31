@@ -194,13 +194,14 @@ def get_online_user_id():
 # FIFO inventory helpers
 # ---------------------------------------------------------------------------
 
-def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_unit_price=None):
+def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_unit_price=None, is_writeoff=False):
     """
     Consume qty_needed_base units of ingredient_id from FIFO batches.
     Recursive for compound ingredients (recipe within recipe).
     Returns total COGS as Decimal. Never raises - consumes what's available.
 
     sale_unit_price: selling price per base unit — required for PCT_OF_SALE consignment products.
+    is_writeoff: when True, no ConsignmentLiability is created (write-offs are absorbed loss, not owed to supplier).
     """
     if _depth > 10:
         return Decimal('0')
@@ -221,7 +222,7 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
             total_cost = Decimal('0')
             for sub in sub_lines:
                 sub_qty = sub.qty_base * qty_needed / batch_sz
-                total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1)
+                total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1, is_writeoff=is_writeoff)
             return total_cost
         # Batch-produced recipe: fall through to consume from its own finished-goods batch.
 
@@ -255,9 +256,9 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
             consumed_at=now
         ))
 
-        # Consignment liability: generate on every FIFO consumption of a consignment batch.
-        # Write-offs pass sale_id='wo-{uuid}' — still owed (shrinkage is supplier's risk too).
-        if getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT':
+        # Consignment liability: generate on every FIFO sale of a consignment batch.
+        # Write-offs are absorbed as your own loss — supplier is not owed for spoilage/damage.
+        if not is_writeoff and getattr(batch, 'ownership_type', 'NORMAL') == 'CONSIGNMENT':
             _prod = db.session.get(Product, ingredient_id)
             # Batch supplier takes priority; fall back to product-level consignment_supplier_id
             _eff_supplier = batch.supplier_id or (getattr(_prod, 'consignment_supplier_id', None) if _prod else None)

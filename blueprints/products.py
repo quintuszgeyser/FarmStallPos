@@ -1505,7 +1505,7 @@ def api_product_archive(pid):
         )
         if stock_level > 0:
             u = current_user(); now = datetime.utcnow()
-            consume_fifo(pid, stock_level, f'archive-wo-{uuid.uuid4()}', now)
+            consume_fifo(pid, stock_level, f'archive-wo-{uuid.uuid4()}', now, is_writeoff=True)
             db.session.add(StockAdjustment(
                 product_id=pid, adjustment_type='writeoff',
                 qty_change_base=-stock_level, system_qty_before=stock_level,
