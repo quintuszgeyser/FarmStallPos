@@ -11984,27 +11984,37 @@ async function openConsignmentSupplierDrilldown(sid) {
       html += `<div class="table-responsive mb-3"><table class="table table-sm align-middle mb-0">
         <thead class="table-light"><tr>
           <th>Product</th><th class="text-end">Received</th><th class="text-end">Remaining</th>
-          <th class="text-end">Sold</th><th class="text-end">Effective Cost</th><th class="text-end">Owed</th>
+          <th class="text-end">Sold</th>
+          <th class="text-end" title="Units that left the batch through write-offs or adjustments — not billed to you">WO/Adj <i class="bi bi-info-circle text-muted" style="font-size:11px"></i></th>
+          <th class="text-end">Unit Cost</th><th class="text-end">Owed</th>
         </tr></thead><tbody>`;
       j.batches.forEach(b => {
         const staleHint = (b.current_unit_cost != null && Math.abs((b.consignment_unit_cost || 0) - b.current_unit_cost) > 0.000001)
           ? ` <span class="text-warning small" title="Batch currently set to R${fmt(b.current_unit_cost)} — click Recalculate to update">→ R${fmt(b.current_unit_cost)}</span>`
           : '';
+        const otherQty = b.qty_other || 0;
+        const otherCell = otherQty > 0
+          ? `<td class="text-end text-warning" title="These units left the batch via write-off or stock adjustment — no supplier liability was created for them">${otherQty.toFixed(2)}</td>`
+          : `<td class="text-end text-muted">—</td>`;
         if (b.is_backfill) {
           html += `<tr class="table-warning">
-            <td>${escapeHtml(b.product_name)} <span class="badge bg-warning text-dark ms-1" title="Units sold before this stock was received">Pre-batch</span></td>
+            <td>${escapeHtml(b.product_name)} <span class="badge bg-warning text-dark ms-1" title="Units sold before this stock batch was received — owed at the same rate">Pre-batch</span></td>
             <td class="text-end text-muted">—</td>
             <td class="text-end text-muted">—</td>
             <td class="text-end">${b.qty_sold.toFixed(2)}</td>
+            <td class="text-end text-muted">—</td>
             <td class="text-end">R${fmt(b.consignment_unit_cost)}${staleHint}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;
         } else {
-          html += `<tr>
-            <td>${escapeHtml(b.product_name)}</td>
+          // Reconciliation check: received should equal remaining + sold + other
+          const reconciled = Math.abs((b.qty_received || 0) - (b.qty_remaining || 0) - (b.qty_sold || 0) - otherQty) < 0.01;
+          html += `<tr${reconciled ? '' : ' class="table-danger"'}>
+            <td>${escapeHtml(b.product_name)}${!reconciled ? ' <i class="bi bi-exclamation-triangle text-danger" title="Reconciliation mismatch — numbers don\'t add up"></i>' : ''}</td>
             <td class="text-end">${b.qty_received}</td>
             <td class="text-end">${b.qty_remaining}</td>
             <td class="text-end">${b.qty_sold.toFixed(2)}</td>
+            ${otherCell}
             <td class="text-end">R${fmt(b.consignment_unit_cost)}${staleHint}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;

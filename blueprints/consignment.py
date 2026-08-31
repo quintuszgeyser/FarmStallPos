@@ -139,9 +139,13 @@ def api_consignment_supplier(sid):
     # Derive effective unit cost from what was actually charged (amount_owed / qty_sold).
     # This ensures the displayed unit cost always matches the owed amount, even if the
     # batch cost was updated after liabilities were created.
+    # Also compute qty_other = units that left the batch without a ConsignmentLiability
+    # (write-offs, adjustments, pre-batch backfill absorption) — for reconciliation display.
     for entry in batch_map.values():
         if entry['qty_sold'] > 0:
             entry['consignment_unit_cost'] = round(entry['amount_owed'] / entry['qty_sold'], 6)
+        qty_consumed_total = entry['qty_received'] - entry['qty_remaining']
+        entry['qty_other'] = round(max(0.0, qty_consumed_total - entry['qty_sold']), 4)
 
     backfill_rows = [
         {
@@ -151,6 +155,7 @@ def api_consignment_supplier(sid):
             'qty_received': None,
             'qty_remaining': None,
             'qty_sold': bf['qty'],
+            'qty_other': 0.0,
             'consignment_unit_cost': round(bf['amount'] / bf['qty'], 6) if bf['qty'] > 0 else bf['unit_cost'],
             'current_unit_cost': bf['unit_cost'],
             'amount_owed': bf['amount'],
