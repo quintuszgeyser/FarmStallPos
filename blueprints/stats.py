@@ -535,6 +535,61 @@ def api_stats():
     })
 
 
+@bp.route('/api/stats/filter-options')
+def api_stats_filter_options():
+    """Return valid product/supplier/category options given current filter selections."""
+    if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
+
+    try: supplier_id = int(request.args.get('supplier_id')) if request.args.get('supplier_id') else None
+    except (ValueError, TypeError): supplier_id = None
+    try: product_id = int(request.args.get('product_id')) if request.args.get('product_id') else None
+    except (ValueError, TypeError): product_id = None
+    try: category_id = int(request.args.get('category_id')) if request.args.get('category_id') else None
+    except (ValueError, TypeError): category_id = None
+
+    all_products = Product.query.filter_by(is_archived=False).with_entities(
+        Product.id, Product.name, Product.category_id, Product.consignment_supplier_id
+    ).all()
+
+    batch_sup_rows = db.session.query(StockBatch.product_id, StockBatch.supplier_id).filter(
+        StockBatch.supplier_id.isnot(None)
+    ).distinct().all()
+    prod_suppliers = defaultdict(set)
+    for row in batch_sup_rows:
+        prod_suppliers[row.product_id].add(row.supplier_id)
+    for p in all_products:
+        if p.consignment_supplier_id:
+            prod_suppliers[p.id].add(p.consignment_supplier_id)
+
+    candidate_pids = {p.id for p in all_products}
+    if supplier_id:
+        candidate_pids &= {pid for pid, sups in prod_suppliers.items() if supplier_id in sups}
+    if category_id:
+        candidate_pids &= {p.id for p in all_products if p.category_id == category_id}
+    if product_id and product_id in candidate_pids:
+        candidate_pids = {product_id}
+
+    cand_products = [p for p in all_products if p.id in candidate_pids]
+
+    valid_supplier_ids = set()
+    for p in cand_products:
+        valid_supplier_ids |= prod_suppliers.get(p.id, set())
+    valid_category_ids = {p.category_id for p in cand_products if p.category_id}
+
+    sup_rows = Supplier.query.filter(Supplier.id.in_(valid_supplier_ids)).with_entities(
+        Supplier.id, Supplier.name
+    ).all() if valid_supplier_ids else []
+    cat_rows = Category.query.filter(Category.id.in_(valid_category_ids)).with_entities(
+        Category.id, Category.name
+    ).all() if valid_category_ids else []
+
+    return jsonify({
+        'products':   [{'id': p.id, 'name': p.name} for p in sorted(cand_products, key=lambda x: x.name or '')],
+        'suppliers':  [{'id': s.id, 'name': s.name} for s in sorted(sup_rows,      key=lambda x: x.name or '')],
+        'categories': [{'id': c.id, 'name': c.name} for c in sorted(cat_rows,      key=lambda x: x.name or '')],
+    })
+
+
 @bp.route('/api/stats/drilldown')
 def api_stats_drilldown():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403

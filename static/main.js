@@ -10547,6 +10547,66 @@ function _statsFilterParams() {
   return p;
 }
 
+let _syncFilterSeq = 0;
+
+async function _syncStatsFilterOptions() {
+  const seq = ++_syncFilterSeq;
+  const supplierId = document.getElementById('stats-supplier-filter')?.value || '';
+  const productId  = document.getElementById('stats-product-filter')?.value  || '';
+  const categoryId = document.getElementById('stats-category-filter')?.value || '';
+
+  if (!supplierId && !productId && !categoryId) {
+    _restoreStatsFilterOptions();
+    return;
+  }
+
+  const params = new URLSearchParams();
+  if (supplierId) params.set('supplier_id', supplierId);
+  if (productId)  params.set('product_id',  productId);
+  if (categoryId) params.set('category_id', categoryId);
+
+  let data;
+  try { data = await api(`/api/stats/filter-options?${params}`); }
+  catch (e) { return; }
+  if (seq !== _syncFilterSeq) return; // stale — a newer call is in flight
+
+  const maps = {
+    'stats-product-filter':  { key: 'products',   selectedVal: productId },
+    'stats-supplier-filter': { key: 'suppliers',  selectedVal: supplierId },
+    'stats-category-filter': { key: 'categories', selectedVal: categoryId },
+  };
+
+  for (const [elId, cfg] of Object.entries(maps)) {
+    if (cfg.selectedVal) continue; // don't narrow the one the user just chose
+    const el = document.getElementById(elId);
+    if (!el) continue;
+    const ts = el.tomselect;
+    if (!ts) continue;
+    if (!el._allOptions) {
+      el._allOptions = Object.values(ts.options).map(o => ({ value: String(o.value), text: o.text }));
+    }
+    const items = data[cfg.key] || [];
+    ts.clearOptions();
+    for (const item of items) ts.addOption({ value: String(item.id), text: item.name });
+    ts.refreshOptions(false);
+  }
+}
+
+function _restoreStatsFilterOptions() {
+  for (const elId of ['stats-product-filter', 'stats-supplier-filter', 'stats-category-filter']) {
+    const el = document.getElementById(elId);
+    if (!el || !el._allOptions) continue;
+    const ts = el.tomselect;
+    if (!ts) continue;
+    const cur = ts.getValue();
+    ts.clearOptions();
+    for (const opt of el._allOptions) ts.addOption({ value: opt.value, text: opt.text });
+    if (cur) ts.setValue(cur, true);
+    ts.refreshOptions(false);
+    el._allOptions = null;
+  }
+}
+
 async function openDrilldown(title, type, value, opts = {}) {
   document.getElementById('drilldown-title').textContent = title;
   document.getElementById('drilldown-body').innerHTML = '<div class="text-center text-muted p-3">Loading…</div>';
@@ -10956,7 +11016,7 @@ async function _renderForecast() {
         const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
         const projVals = cats.map(([k]) => catProjMap[k] || 0);
         drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), { color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Category', projectedValues: projVals,
-          onBarClick: (lbl) => { const cat = STATE.categories?.find(c => c.name === lbl); if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); } } });
+          onBarClick: (lbl) => { const cat = STATE.categories?.find(c => c.name === lbl); if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } _syncStatsFilterOptions(); loadStats(); } } });
       } else {
         const projVals = products.map(p => p.revenue * (projMultiplier - 1));
         drawBarChart(c, products.map(x => x.name), products.map(x => x.revenue), { color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Product', projectedValues: projVals,
@@ -10974,7 +11034,7 @@ async function _renderForecast() {
         const cats = Object.entries(catMap).sort((a, b) => b[1] - a[1]);
         const projVals = cats.map(([, v]) => v * (projMultiplier - 1));
         drawBarChart(c, cats.map(x => x[0]), cats.map(x => x[1]), { color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Category', projectedValues: projVals,
-          onBarClick: (lbl) => { const cat = STATE.categories?.find(c => c.name === lbl); if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); } } });
+          onBarClick: (lbl) => { const cat = STATE.categories?.find(c => c.name === lbl); if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } _syncStatsFilterOptions(); loadStats(); } } });
       } else {
         const projVals = products.map(p => (p.profit || 0) * (projMultiplier - 1));
         drawBarChart(c, products.map(x => x.name), products.map(x => x.profit), { color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Product', projectedValues: projVals,
@@ -11147,7 +11207,7 @@ function _showChartTab(tab) {
         color: '#7b1fa2', valuePrefix: 'R', yLabel: 'Revenue (R)', xLabel: 'Category',
         onBarClick: (lbl) => {
           const cat = STATE.categories?.find(c => c.name === lbl);
-          if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); }
+          if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } _syncStatsFilterOptions(); loadStats(); }
           else { toast('Assign products to a category to filter by it', 'info'); }
         },
       });
@@ -11172,7 +11232,7 @@ function _showChartTab(tab) {
         color: '#2e7d32', valuePrefix: 'R', yLabel: 'Profit (R)', xLabel: 'Category',
         onBarClick: (lbl) => {
           const cat = STATE.categories?.find(c => c.name === lbl);
-          if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } loadStats(); }
+          if (cat) { const el = document.getElementById('stats-category-filter'); if (el) { el.value = cat.id; _tomSelectSync('stats-category-filter'); } _syncStatsFilterOptions(); loadStats(); }
           else { toast('Assign products to a category to filter by it', 'info'); }
         },
       });
@@ -11408,7 +11468,7 @@ async function loadStats() {
       addChip(pname, () => {
         const el = document.getElementById('stats-product-filter');
         if (el) { el.value = ''; _tomSelectSync('stats-product-filter'); }
-        loadStats();
+        _syncStatsFilterOptions(); loadStats();
       });
     }
     if (supplierId) {
@@ -11416,7 +11476,7 @@ async function loadStats() {
       addChip(sname, () => {
         const el = document.getElementById('stats-supplier-filter');
         if (el) { el.value = ''; _tomSelectSync('stats-supplier-filter'); }
-        loadStats();
+        _syncStatsFilterOptions(); loadStats();
       });
     }
     if (categoryId) {
@@ -11424,7 +11484,7 @@ async function loadStats() {
       addChip(cname, () => {
         const el = document.getElementById('stats-category-filter');
         if (el) { el.value = ''; _tomSelectSync('stats-category-filter'); }
-        loadStats();
+        _syncStatsFilterOptions(); loadStats();
       });
     }
     chipArea.style.display = (userId || productId || supplierId || categoryId) ? '' : 'none';
@@ -12199,9 +12259,9 @@ document.getElementById('top-products-groupby')?.addEventListener('click', e => 
   _showChartTab(_statsChartTab);
 });
 document.getElementById('btn-refresh-stats')?.addEventListener('click', loadStats);
-document.getElementById('stats-product-filter')?.addEventListener('change', loadStats);
-document.getElementById('stats-supplier-filter')?.addEventListener('change', loadStats);
-document.getElementById('stats-category-filter')?.addEventListener('change', loadStats);
+document.getElementById('stats-product-filter')?.addEventListener('change', () => { _syncStatsFilterOptions(); loadStats(); });
+document.getElementById('stats-supplier-filter')?.addEventListener('change', () => { _syncStatsFilterOptions(); loadStats(); });
+document.getElementById('stats-category-filter')?.addEventListener('change', () => { _syncStatsFilterOptions(); loadStats(); });
 document.getElementById('stats-user-filter')?.addEventListener('change', loadStats);
 document.getElementById('stats-start')?.addEventListener('change', loadStats);
 document.getElementById('stats-end')?.addEventListener('change', loadStats);
