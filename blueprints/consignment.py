@@ -104,6 +104,8 @@ def api_consignment_supplier(sid):
             'batch_id': b.id,
             'product_id': b.product_id,
             'product_name': prod.name if prod else f'Product {b.product_id}',
+            'unit_type': prod.unit_type if prod else 'count',
+            'base_unit': prod.base_unit if prod else 'unit',
             'qty_received': float(b.qty_purchased_base),
             'qty_remaining': float(b.qty_remaining_base),
             'qty_sold': 0.0,  # accumulated from liabilities below
@@ -115,7 +117,7 @@ def api_consignment_supplier(sid):
         }
 
     # Backfill: liabilities with no batch_id (sold before stock arrived), grouped by product
-    backfill_by_product: dict = defaultdict(lambda: {'qty': 0.0, 'amount': 0.0, 'product_name': '', 'unit_cost': 0.0})
+    backfill_by_product: dict = defaultdict(lambda: {'qty': 0.0, 'amount': 0.0, 'product_name': '', 'unit_cost': 0.0, 'unit_type': 'count', 'base_unit': 'unit'})
 
     total_outstanding = Decimal('0')
     for lib in liabilities:
@@ -135,6 +137,9 @@ def api_consignment_supplier(sid):
             if not bf['product_name']:
                 p = db.session.get(Product, lib.product_id)
                 bf['product_name'] = p.name if p else f'Product {lib.product_id}'
+                if p:
+                    bf['unit_type'] = p.unit_type or 'count'
+                    bf['base_unit'] = p.base_unit or 'unit'
 
     # Derive effective unit cost from what was actually charged (amount_owed / qty_sold).
     # This ensures the displayed unit cost always matches the owed amount, even if the
@@ -152,6 +157,8 @@ def api_consignment_supplier(sid):
             'batch_id': None,
             'product_id': pid,
             'product_name': bf['product_name'],
+            'unit_type': bf['unit_type'],
+            'base_unit': bf['base_unit'],
             'qty_received': None,
             'qty_remaining': None,
             'qty_sold': bf['qty'],
@@ -237,6 +244,29 @@ def api_consignment_recalculate_costs(sid):
         'liabilities_updated': updated,
         'amount_delta': float(total_delta.quantize(Decimal('0.01'))),
     })
+
+
+@bp.route('/api/consignment/batches/<int:batch_id>/settlement-rate', methods=['PATCH'])
+def api_update_settlement_rate(batch_id):
+    """Update only the consignment_unit_cost on a batch (settlement rate owed per base unit sold)."""
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    data = request.json or {}
+    rate = data.get('rate')
+    if rate is None:
+        return jsonify({'error': 'rate is required'}), 400
+    try:
+        rate = float(rate)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'rate must be a number'}), 400
+    if rate < 0:
+        return jsonify({'error': 'rate must be >= 0'}), 400
+    batch = StockBatch.query.get_or_404(batch_id)
+    if batch.ownership_type != 'CONSIGNMENT':
+        return jsonify({'error': 'Not a consignment batch'}), 400
+    batch.consignment_unit_cost = rate
+    db.session.commit()
+    return jsonify({'ok': True, 'batch_id': batch_id, 'consignment_unit_cost': rate})
 
 
 @bp.route('/api/consignment/settle', methods=['POST'])

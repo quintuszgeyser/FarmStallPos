@@ -6086,6 +6086,20 @@ function _editInvoice(inv) {
     }
     if (priceInput) priceInput.value = b.base_cost_total != null ? parseFloat(b.base_cost_total).toFixed(2) : '';
 
+    // Pre-fill settlement rate for consignment batches (convert from per-base to per-big-unit)
+    if (b.consignment_unit_cost != null) {
+      const cucInput = lineEl.querySelector('[data-cuc]');
+      const cucUnit  = lineEl.querySelector('[data-cuc-unit]');
+      const cucRow   = lineEl.querySelector('[data-cuc-row]');
+      if (cucInput && cucRow) {
+        const bigUnit = b.unit_type === 'weight' ? 'kg' : b.unit_type === 'volume' ? 'L' : 'unit';
+        const toBaseConv = UNITS[b.unit_type]?.toBase?.[bigUnit] ?? 1;
+        cucInput.value = (parseFloat(b.consignment_unit_cost) * toBaseConv).toFixed(3);
+        if (cucUnit) cucUnit.textContent = `/ ${bigUnit}`;
+        cucRow.style.display = '';
+      }
+    }
+
     // Pre-fill per-line discount from batch additional_costs
     const batchAddl = b.additional_costs ? (() => { try { return JSON.parse(b.additional_costs); } catch { return []; } })() : [];
     const lineDisc  = batchAddl.find(a => a.type === 'discount' && a.amount < 0);
@@ -7051,6 +7065,15 @@ function addPurchaseLine() {
         <button type="button" class="btn btn-outline-danger btn-sm" data-clear-line-disc><i class="bi bi-x-lg"></i></button>
       </div>
     </div>
+    <div data-cuc-row style="display:none" class="mt-1 d-flex align-items-center gap-2">
+      <label class="small text-muted mb-0" style="white-space:nowrap">Settlement rate</label>
+      <div class="input-group input-group-sm" style="max-width:160px">
+        <span class="input-group-text">R</span>
+        <input type="number" step="0.001" min="0" class="form-control" placeholder="0.00" data-cuc>
+        <span class="input-group-text" data-cuc-unit>/ unit</span>
+      </div>
+      <span class="text-muted small" style="font-size:11px">Amount owed to supplier per unit sold (excl. shipping)</span>
+    </div>
     <div class="small mt-1" data-line-addl-preview></div>
   `;
 
@@ -7094,6 +7117,21 @@ function addPurchaseLine() {
     // Sync closure conv tracker to the first (currently selected) option
     _lineUnitConv = _getOptConv(unitSel.value);
     _linePrevVal  = unitSel.value;
+
+    // Show settlement rate row for consignment products; update unit label
+    const cucRow  = line.querySelector('[data-cuc-row]');
+    const cucUnit = line.querySelector('[data-cuc-unit]');
+    if (cucRow && cucUnit) {
+      if (p?.is_consignment) {
+        const bigUnit = p.unit_type === 'weight' ? 'kg' : p.unit_type === 'volume' ? 'L' : 'unit';
+        cucUnit.textContent = `/ ${bigUnit}`;
+        cucRow.style.display = '';
+      } else {
+        cucRow.style.display = 'none';
+        const cucInput = line.querySelector('[data-cuc]');
+        if (cucInput) cucInput.value = '';
+      }
+    }
   }
 
   // Hidden input drives unit updates; typeahead click dispatches 'change' on it too
@@ -7525,6 +7563,14 @@ document.getElementById('btn-submit-purchase-run')?.addEventListener('click', as
     if (qty <= 0)   return toast('Quantity must be greater than 0', 'warning');
     if (price < 0)  return toast('Price cannot be negative', 'warning');
     const lineObj = { product_id: productId, qty, unit, total_price: price };
+    // Settlement rate for consignment products (entered in big units: kg/L/unit → convert to per base unit)
+    const cucRaw = parseFloat(lineEl.querySelector('[data-cuc]')?.value || '');
+    if (!isNaN(cucRaw) && cucRaw > 0) {
+      const pState = (STATE.products || []).find(p => p.id === productId);
+      const bigUnit = pState?.unit_type === 'weight' ? 'kg' : pState?.unit_type === 'volume' ? 'L' : 'unit';
+      const toBaseConv = UNITS[pState?.unit_type]?.toBase?.[bigUnit] ?? 1;
+      lineObj.consignment_unit_cost = cucRaw / toBaseConv;
+    }
     // Per-line discount
     const lineDiscAmt   = _resolveLineDiscAmount(lineEl);
     const lineDiscLabel = lineEl.querySelector('[data-line-disc-label]')?.value?.trim() || '';
@@ -11977,8 +12023,8 @@ async function openConsignmentSupplierDrilldown(sid) {
     const hasStale = j.batches.some(b => b.current_unit_cost != null && Math.abs((b.consignment_unit_cost || 0) - b.current_unit_cost) > 0.000001);
     let html = `<div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
       <span class="fw-semibold">${escapeHtml(j.name)} — Outstanding: <span class="text-danger">R${fmt(j.outstanding)}</span></span>
-      ${hasStale ? `<button class="btn btn-sm btn-outline-warning" onclick="recalculateConsignmentCosts(${sid})"><i class="bi bi-arrow-clockwise me-1"></i>Recalculate Costs</button>
-      <span class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>Unit costs may be outdated — batch costs have changed</span>` : ''}
+      ${hasStale ? `<button class="btn btn-sm btn-outline-warning" onclick="recalculateConsignmentCosts(${sid})"><i class="bi bi-arrow-clockwise me-1"></i>Recalculate Liabilities</button>
+      <span class="text-warning small"><i class="bi bi-exclamation-triangle me-1"></i>Past liabilities were charged at a different rate to the stored batch rate — fix the batch rate first (pencil icon), then recalculate</span>` : ''}
     </div>`;
     if (j.batches.length) {
       html += `<div class="table-responsive mb-3"><table class="table table-sm align-middle mb-0">
@@ -11989,21 +12035,29 @@ async function openConsignmentSupplierDrilldown(sid) {
           <th class="text-end">Unit Cost</th><th class="text-end">Owed</th>
         </tr></thead><tbody>`;
       j.batches.forEach(b => {
+        // Display costs and quantities in human-readable units (kg/L instead of g/ml)
+        const refQty = b.qty_received ?? b.qty_sold ?? 0;
+        const effCost  = displayCost(b.consignment_unit_cost || 0, refQty, b.unit_type);
+        const currCost = displayCost(b.current_unit_cost || 0, refQty, b.unit_type);
+        const costUnit = effCost.unit ? `/${effCost.unit}` : '';
+        const editBtn = b.batch_id
+          ? ` <button class="btn btn-link btn-sm p-0 ms-1" style="font-size:11px;vertical-align:baseline" title="Edit settlement rate for this batch" onclick="editBatchSettlementRate(${b.batch_id}, ${b.current_unit_cost ?? b.consignment_unit_cost ?? 0}, '${b.unit_type}', ${sid})"><i class="bi bi-pencil-square"></i></button>`
+          : '';
         const staleHint = (b.current_unit_cost != null && Math.abs((b.consignment_unit_cost || 0) - b.current_unit_cost) > 0.000001)
-          ? ` <span class="text-warning small" title="Batch currently set to R${fmt(b.current_unit_cost)} — click Recalculate to update">→ R${fmt(b.current_unit_cost)}</span>`
+          ? ` <span class="text-warning small" title="Settlement rate stored on this batch is R${fmt(currCost.cost)}${costUnit} — liabilities were created at a different rate. Fix by clicking the edit icon, then Recalculate to align past liabilities.">⚠ stored: R${fmt(currCost.cost)}${costUnit}</span>`
           : '';
         const otherQty = b.qty_other || 0;
         const otherCell = otherQty > 0
-          ? `<td class="text-end text-warning" title="These units left the batch via write-off or stock adjustment — no supplier liability was created for them">${otherQty.toFixed(2)}</td>`
+          ? `<td class="text-end text-warning" title="These units left the batch via write-off or stock adjustment — no supplier liability was created for them">${displayQty(otherQty, b.unit_type)}</td>`
           : `<td class="text-end text-muted">—</td>`;
         if (b.is_backfill) {
           html += `<tr class="table-warning">
             <td>${escapeHtml(b.product_name)} <span class="badge bg-warning text-dark ms-1" title="Units sold before this stock batch was received — owed at the same rate">Pre-batch</span></td>
             <td class="text-end text-muted">—</td>
             <td class="text-end text-muted">—</td>
-            <td class="text-end">${b.qty_sold.toFixed(2)}</td>
+            <td class="text-end">${displayQty(b.qty_sold, b.unit_type)}</td>
             <td class="text-end text-muted">—</td>
-            <td class="text-end">R${fmt(b.consignment_unit_cost)}${staleHint}</td>
+            <td class="text-end">R${fmt(effCost.cost)}${costUnit}${staleHint}${editBtn}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;
         } else {
@@ -12011,11 +12065,11 @@ async function openConsignmentSupplierDrilldown(sid) {
           const reconciled = Math.abs((b.qty_received || 0) - (b.qty_remaining || 0) - (b.qty_sold || 0) - otherQty) < 0.01;
           html += `<tr${reconciled ? '' : ' class="table-danger"'}>
             <td>${escapeHtml(b.product_name)}${!reconciled ? ' <i class="bi bi-exclamation-triangle text-danger" title="Reconciliation mismatch — numbers don\'t add up"></i>' : ''}</td>
-            <td class="text-end">${b.qty_received}</td>
-            <td class="text-end">${b.qty_remaining}</td>
-            <td class="text-end">${b.qty_sold.toFixed(2)}</td>
+            <td class="text-end">${displayQty(b.qty_received, b.unit_type)}</td>
+            <td class="text-end">${displayQty(b.qty_remaining, b.unit_type)}</td>
+            <td class="text-end">${displayQty(b.qty_sold, b.unit_type)}</td>
             ${otherCell}
-            <td class="text-end">R${fmt(b.consignment_unit_cost)}${staleHint}</td>
+            <td class="text-end">R${fmt(effCost.cost)}${costUnit}${staleHint}${editBtn}</td>
             <td class="text-end fw-semibold text-danger">R${fmt(b.amount_owed)}</td>
           </tr>`;
         }
@@ -12037,8 +12091,33 @@ async function openConsignmentSupplierDrilldown(sid) {
   }
 }
 
+async function editBatchSettlementRate(batchId, currentRatePerBase, unitType, sid) {
+  const bigUnit = unitType === 'weight' ? 'kg' : unitType === 'volume' ? 'L' : 'unit';
+  const toBaseConv = UNITS[unitType]?.toBase?.[bigUnit] ?? 1;
+  const currentHuman = (currentRatePerBase * toBaseConv).toFixed(3);
+  const input = window.prompt(
+    `Settlement rate for this batch (R per ${bigUnit}):\n\nThis is what you owe the supplier per ${bigUnit} sold.\nCurrent value: R${currentHuman}/${bigUnit}`,
+    currentHuman
+  );
+  if (input === null) return; // cancelled
+  const newHuman = parseFloat(input);
+  if (isNaN(newHuman) || newHuman < 0) { toast('Invalid rate', 'warning'); return; }
+  const newBase = newHuman / toBaseConv;
+  try {
+    await api(`/api/consignment/batches/${batchId}/settlement-rate`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rate: newBase }),
+    });
+    toast(`Settlement rate updated to R${fmt(newHuman)}/${bigUnit}`, 'success');
+    await openConsignmentSupplierDrilldown(sid);
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
 async function recalculateConsignmentCosts(sid) {
-  if (!confirm('Recalculate all outstanding liability amounts using the current batch unit costs?\n\nThis will update what is owed to match the current prices set on each batch.')) return;
+  if (!confirm('Recalculate all outstanding liability amounts using the current batch settlement rates?\n\nOnly do this AFTER confirming the batch settlement rates are correct (use the pencil icon to fix any wrong rates first).\n\nThis will update what is owed to the supplier to match the rates stored on each batch.')) return;
   try {
     const j = await api(`/api/consignment/recalculate-costs/${sid}`, { method: 'POST' });
     const delta = j.amount_delta >= 0 ? `+R${fmt(j.amount_delta)}` : `-R${fmt(Math.abs(j.amount_delta))}`;
