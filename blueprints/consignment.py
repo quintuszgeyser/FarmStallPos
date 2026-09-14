@@ -490,8 +490,8 @@ def api_consignment_statement(sid):
         product_map[lb.product_id]['qty'] += Decimal(str(lb.qty_consumed))
         product_map[lb.product_id]['amount'] += Decimal(str(lb.amount_owed))
 
-    total_sales = sum(v['amount'] for v in product_map.values())
-    total_settled = sum(Decimal(str(s.total_amount)) for s in settlements)
+    total_sales = sum((v['amount'] for v in product_map.values()), Decimal('0'))
+    total_settled = sum((Decimal(str(s.total_amount)) for s in settlements), Decimal('0'))
     outstanding = total_sales - total_settled
 
     # Build product rows HTML
