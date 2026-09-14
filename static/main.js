@@ -15480,7 +15480,11 @@ function renderSpecialsList() {
     // Build group summary: "any Cake + any Coffee" style
     const groups = _groupSpecialLines(s.lines || []);
     const groupSummary = groups.map(g => {
-      const names = g.products.map(p => p.product_name || `#${p.product_id}`);
+      const names = g.products.map(p => {
+        if (p.product_id) return p.product_name || `#${p.product_id}`;
+        if (p.category_id) return p.sub_category_name ? `${p.category_name} › ${p.sub_category_name}` : `any ${p.category_name}`;
+        return '?';
+      });
       return names.length === 1 ? `${g.products[0].qty}× ${names[0]}` : `any of: ${names.join(', ')}`;
     }).join(' + ');
     const discountLabel = _discountLabel(s);
@@ -15519,8 +15523,10 @@ function _discountLabel(s) {
 // Convert flat lines array (with group_id) to [{group_id, products:[{product_id,product_name,qty}]}]
 function _groupSpecialLines(lines) {
   const map = {};
+  let _autoGid = 0;
   lines.forEach(l => {
-    const gid = l.group_id ?? l.product_id; // fallback: treat each product as its own group
+    // group_id is authoritative; fall back to product_id for old lines; use a unique counter for category lines
+    const gid = l.group_id ?? (l.product_id != null ? l.product_id : --_autoGid);
     if (!map[gid]) map[gid] = { group_id: gid, products: [] };
     map[gid].products.push(l);
   });
@@ -15707,19 +15713,51 @@ function renderSpecialGroups() {
 
     const tbody = card.querySelector(`tbody[data-grp="${gIdx}"]`);
     group.products.forEach((prod, pIdx) => {
+      const lineType = prod.category_id != null ? 'category' : 'product';
       const tr = document.createElement('tr');
-      let selHTML = `<select class="form-select form-select-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="product_id"><option value="">- select -</option>`;
-      forSaleProducts.forEach(p => {
-        selHTML += `<option value="${p.id}" ${p.id === prod.product_id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`;
-      });
-      selHTML += '</select>';
+
+      // Product/Category type toggle
+      const typeToggle = `<div class="btn-group btn-group-sm mb-1" role="group">
+        <button type="button" class="btn ${lineType==='product'?'btn-primary':'btn-outline-primary'}" data-lt-g="${gIdx}" data-lt-p="${pIdx}" data-lt-type="product">Product</button>
+        <button type="button" class="btn ${lineType==='category'?'btn-primary':'btn-outline-primary'}" data-lt-g="${gIdx}" data-lt-p="${pIdx}" data-lt-type="category">Category</button>
+      </div>`;
+
+      let selectorHTML;
+      if (lineType === 'category') {
+        let catSel = `<select class="form-select form-select-sm mb-1" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="category_id"><option value="">— select category —</option>`;
+        (STATE.categories || []).slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
+          catSel += `<option value="${c.id}" ${c.id === prod.category_id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`;
+        });
+        catSel += '</select>';
+        const subCats = (STATE.subcategories || []).filter(sc => sc.category_id === prod.category_id);
+        let subCatSel = '';
+        if (subCats.length > 0 || prod.sub_category_id) {
+          subCatSel = `<select class="form-select form-select-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="sub_category_id"><option value="">All sub-categories</option>`;
+          subCats.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(sc => {
+            subCatSel += `<option value="${sc.id}" ${sc.id === prod.sub_category_id ? 'selected' : ''}>${escapeHtml(sc.name)}</option>`;
+          });
+          subCatSel += '</select>';
+        }
+        selectorHTML = catSel + subCatSel;
+      } else {
+        let selHTML = `<select class="form-select form-select-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="product_id"><option value="">— select product —</option>`;
+        forSaleProducts.forEach(p => {
+          selHTML += `<option value="${p.id}" ${p.id === prod.product_id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`;
+        });
+        selHTML += '</select>';
+        selectorHTML = selHTML;
+      }
+
       tr.innerHTML = `
-        <td>${selHTML}</td>
+        <td>${typeToggle}${selectorHTML}</td>
         <td><input type="number" min="1" value="${prod.qty || 1}" class="form-control form-control-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="qty"></td>
         <td><button class="btn btn-outline-danger btn-sm" data-rp-g="${gIdx}" data-rp-p="${pIdx}"><i class="bi bi-dash"></i></button></td>`;
       tbody.appendChild(tr);
-      const sel = tr.querySelector('select[data-sf="product_id"]');
-      if (sel && window.TomSelect) new TomSelect(sel, { maxOptions: null, placeholder: '— select product —' });
+
+      if (lineType === 'product') {
+        const sel = tr.querySelector('select[data-sf="product_id"]');
+        if (sel && window.TomSelect) new TomSelect(sel, { maxOptions: null, placeholder: '— select product —' });
+      }
     });
   });
 
@@ -15733,8 +15771,14 @@ function renderSpecialGroups() {
   host.querySelectorAll('[data-sg]').forEach(el => {
     el.addEventListener('change', () => {
       const g = parseInt(el.dataset.sg), p = parseInt(el.dataset.sp), f = el.dataset.sf;
-      if (f === 'product_id') _specialGroups[g].products[p].product_id = parseInt(el.value) || null;
-      if (f === 'qty')        _specialGroups[g].products[p].qty = parseInt(el.value) || 1;
+      if (f === 'product_id')      _specialGroups[g].products[p].product_id      = parseInt(el.value) || null;
+      if (f === 'qty')             _specialGroups[g].products[p].qty             = parseInt(el.value) || 1;
+      if (f === 'category_id') {
+        _specialGroups[g].products[p].category_id    = parseInt(el.value) || null;
+        _specialGroups[g].products[p].sub_category_id = null;
+        renderSpecialGroups(); // re-render to update sub-category options
+      }
+      if (f === 'sub_category_id') _specialGroups[g].products[p].sub_category_id = parseInt(el.value) || null;
     });
   });
   host.querySelectorAll('[data-rp-g]').forEach(btn => {
@@ -15749,6 +15793,17 @@ function renderSpecialGroups() {
     btn.addEventListener('click', () => {
       const g = parseInt(btn.dataset.apGrp);
       _specialGroups[g].products.push({ product_id: null, qty: 1 });
+      renderSpecialGroups();
+    });
+  });
+  // Line type toggle (Product ↔ Category)
+  host.querySelectorAll('[data-lt-g]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const g = parseInt(btn.dataset.ltG), p = parseInt(btn.dataset.ltP), type = btn.dataset.ltType;
+      const qty = _specialGroups[g].products[p].qty || 1;
+      _specialGroups[g].products[p] = type === 'category'
+        ? { category_id: null, sub_category_id: null, qty }
+        : { product_id: null, qty };
       renderSpecialGroups();
     });
   });
@@ -15776,10 +15831,14 @@ document.getElementById('btn-save-special')?.addEventListener('click', async () 
     const gid = group.group_id || nextGid;
     nextGid = gid + 1;
     group.products.forEach(prod => {
-      if (prod.product_id) lines.push({ product_id: prod.product_id, qty: prod.qty || 1, group_id: gid });
+      if (prod.product_id) {
+        lines.push({ product_id: prod.product_id, qty: prod.qty || 1, group_id: gid });
+      } else if (prod.category_id) {
+        lines.push({ category_id: prod.category_id, sub_category_id: prod.sub_category_id || null, qty: prod.qty || 1, group_id: gid });
+      }
     });
   });
-  if (!lines.length) return toast('Add at least one product group', 'warning');
+  if (!lines.length) return toast('Add at least one product or category group', 'warning');
 
   const payload = {
     name,
@@ -15838,6 +15897,30 @@ function reapplySpecials() {
   detectAndOfferSpecials();
 }
 
+// Expand category-based lines in a special to individual product lines that are present in the cart.
+// cartProductIds: Set of product ids currently in the cart.
+function _expandSpecialLines(special, cartProductIds) {
+  const expanded = { ...special, lines: [] };
+  (special.lines || []).forEach(line => {
+    if (line.product_id) {
+      expanded.lines.push(line);
+    } else if (line.category_id) {
+      const matches = (STATE.products || []).filter(p =>
+        !p.is_archived && p.is_for_sale &&
+        p.category_id === line.category_id &&
+        (!line.sub_category_id || p.sub_category_id === line.sub_category_id) &&
+        cartProductIds.has(p.id)
+      );
+      if (matches.length === 0) {
+        expanded.lines.push({ ...line, product_id: -1 }); // placeholder so maxFit returns 0
+      } else {
+        matches.forEach(p => expanded.lines.push({ ...line, product_id: p.id }));
+      }
+    }
+  });
+  return expanded;
+}
+
 // Exhaustive search for the combination of specials (and how many times each applies)
 // that maximises total customer savings, subject to each product unit being used by
 // at most one special.  For a typical farm-stall scenario (< 15 specials, small qty)
@@ -15846,7 +15929,10 @@ function reapplySpecials() {
 // Supports group-based specials: lines with the same group_id are product alternatives
 // (OR within a group). All groups must be satisfied (AND across groups).
 function _computeOptimalSpecials(cartQtyMap) {
-  const active = (STATE.specials || []).filter(s => s.active && s.lines.length > 0 && specialIsScheduledNow(s));
+  const cartProductIds = new Set(Object.keys(cartQtyMap).map(Number));
+  const active = (STATE.specials || [])
+    .filter(s => s.active && s.lines.length > 0 && specialIsScheduledNow(s))
+    .map(s => _expandSpecialLines(s, cartProductIds));
   if (!active.length) return [];
 
   function productBase(pid) {
@@ -15949,6 +16035,9 @@ function detectAndOfferSpecials() {
 }
 
 function applySpecial(special, times) {
+  // Expand category lines to actual cart products before applying
+  const cartProductIds = new Set(Object.values(STATE.cart).map(c => c.product_id));
+  special = _expandSpecialLines(special, cartProductIds);
   // For group-based specials: for each group greedily select cart products, then apply discount.
   // Returns total savings for toast notification.
   const groups = _groupSpecialLines(special.lines);
@@ -22518,6 +22607,16 @@ async function loadTimesheetCalendar() {
     EMP.publicHolidays  = holidays;
     EMP.tsCalendarData  = {};
     for (const a of attData.attendance) EMP.tsCalendarData[a.work_date] = a;
+    // Build a set of date strings that are locked by a paid payslip
+    EMP.paidLockedDates = new Set();
+    for (const pr of (attData.paid_periods || [])) {
+      let d = new Date(pr.period_start + 'T00:00:00');
+      const end = new Date(pr.period_end + 'T00:00:00');
+      while (d <= end) {
+        EMP.paidLockedDates.add(d.toISOString().split('T')[0]);
+        d.setDate(d.getDate() + 1);
+      }
+    }
 
     _renderCalendar(year, month, empId);
     _renderTimesheetSummary(attData.attendance);

@@ -628,11 +628,13 @@ class Invoice(db.Model):
 
 class SpecialLine(db.Model):
     __tablename__ = 'special_lines'
-    id         = db.Column(db.Integer, primary_key=True)
-    special_id = db.Column(db.Integer, db.ForeignKey('specials.id'), nullable=False)
-    product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
-    qty        = db.Column(db.Integer, nullable=False, default=1)
-    group_id   = db.Column(db.Integer, nullable=True)  # lines sharing a group_id are alternatives (OR); different group_ids are all required (AND)
+    id              = db.Column(db.Integer, primary_key=True)
+    special_id      = db.Column(db.Integer, db.ForeignKey('specials.id'), nullable=False)
+    product_id      = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=True)   # nullable — category lines have no product_id
+    qty             = db.Column(db.Integer, nullable=False, default=1)
+    group_id        = db.Column(db.Integer, nullable=True)  # lines sharing a group_id are alternatives (OR); different group_ids are all required (AND)
+    category_id     = db.Column(db.Integer, db.ForeignKey('categories.id', ondelete='SET NULL'), nullable=True)
+    sub_category_id = db.Column(db.Integer, db.ForeignKey('sub_categories.id', ondelete='SET NULL'), nullable=True)
 
 
 class Customer(db.Model):

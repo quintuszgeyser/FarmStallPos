@@ -2036,6 +2036,10 @@ def strong_migrate():
         # Migrate existing lines: each line gets a unique group_id (= its own id) so each product
         # remains individually required (AND logic), preserving all existing special behaviour.
         pg_try("UPDATE special_lines SET group_id = id WHERE group_id IS NULL")
+        # Category/subcategory group lines for specials
+        pg_try("ALTER TABLE special_lines ALTER COLUMN product_id DROP NOT NULL")
+        pg_try("ALTER TABLE special_lines ADD COLUMN IF NOT EXISTS category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL")
+        pg_try("ALTER TABLE special_lines ADD COLUMN IF NOT EXISTS sub_category_id INTEGER REFERENCES sub_categories(id) ON DELETE SET NULL")
 
         # VAT type per product (standard / zero_rated / exempt)
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_type VARCHAR(20) NOT NULL DEFAULT 'standard'")

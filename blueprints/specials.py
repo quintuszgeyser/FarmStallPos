@@ -5,7 +5,7 @@ from decimal import Decimal
 from flask import Blueprint, jsonify, request
 
 from helpers import require_login, require_role
-from models import db, Special, SpecialLine, Product
+from models import db, Special, SpecialLine, Product, Category, SubCategory
 
 _TIME_RE = _re.compile(r'^\d{2}:\d{2}$')
 
@@ -44,10 +44,14 @@ def _serialize_special(s):
         'schedule':       schedule,
         'lines': [
             {
-                'product_id':   l.product_id,
-                'product_name': (lambda _p: _p.name if _p else None)(db.session.get(Product, l.product_id)),
-                'qty':          l.qty,
-                'group_id':     l.group_id,
+                'product_id':        l.product_id,
+                'product_name':      (lambda _p: _p.name if _p else None)(db.session.get(Product, l.product_id)) if l.product_id else None,
+                'category_id':       l.category_id,
+                'category_name':     (lambda c: c.name if c else None)(db.session.get(Category, l.category_id)) if l.category_id else None,
+                'sub_category_id':   l.sub_category_id,
+                'sub_category_name': (lambda sc: sc.name if sc else None)(db.session.get(SubCategory, l.sub_category_id)) if l.sub_category_id else None,
+                'qty':               l.qty,
+                'group_id':          l.group_id,
             }
             for l in lines
         ],
@@ -73,15 +77,38 @@ def _save_lines(special_id, lines):
             l['group_id'] = _next_gid
         _next_gid = max(_next_gid, l['group_id']) + 1
     for l in lines:
-        p = db.session.get(Product, int(l['product_id']))
-        if not p or p.is_archived or not p.is_for_sale:
-            return f'Product {l["product_id"]} is archived or not for sale'
-        db.session.add(SpecialLine(
-            special_id=special_id,
-            product_id=p.id,
-            qty=int(l.get('qty', 1)),
-            group_id=int(l['group_id']),
-        ))
+        pid  = l.get('product_id')
+        cid  = l.get('category_id')
+        scid = l.get('sub_category_id')
+        if pid:
+            p = db.session.get(Product, int(pid))
+            if not p or p.is_archived or not p.is_for_sale:
+                return f'Product {pid} is archived or not for sale'
+            db.session.add(SpecialLine(
+                special_id=special_id,
+                product_id=p.id,
+                qty=int(l.get('qty', 1)),
+                group_id=int(l['group_id']),
+            ))
+        elif cid:
+            cat = db.session.get(Category, int(cid))
+            if not cat:
+                return f'Category {cid} not found'
+            sc_id = int(scid) if scid else None
+            if sc_id:
+                sc = db.session.get(SubCategory, sc_id)
+                if not sc:
+                    return f'Sub-category {scid} not found'
+            db.session.add(SpecialLine(
+                special_id=special_id,
+                product_id=None,
+                category_id=int(cid),
+                sub_category_id=sc_id,
+                qty=int(l.get('qty', 1)),
+                group_id=int(l['group_id']),
+            ))
+        else:
+            return 'Each special line must have a product_id or category_id'
     return None
 
 
