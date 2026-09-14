@@ -22716,6 +22716,7 @@ function _renderCalendar(year, month, empId) {
     const isHol   = !!EMP.publicHolidays[ds];
     const isSun   = d.getDay() === 0;
     const att     = EMP.tsCalendarData[ds];
+    const isLocked = isThisMonth && EMP.paidLockedDates?.has(ds);
 
     let cls = 'emp-cal-day';
     if (!isThisMonth) cls += ' other-month';
@@ -22723,7 +22724,7 @@ function _renderCalendar(year, month, empId) {
     if (isHol)        cls += ' holiday';
     else if (isSun)   cls += ' sunday-day';
 
-    let inner = `<div class="emp-cal-day-num">${dayNum}</div>`;
+    let inner = `<div class="emp-cal-day-num">${dayNum}${isLocked ? ' <i class="bi bi-lock-fill text-secondary" style="font-size:9px" title="Covered by paid payslip"></i>' : ''}</div>`;
     if (isHol && isThisMonth) inner += `<div style="font-size:9px;color:#6b21a8">${EMP.publicHolidays[ds]}</div>`;
     if (att) {
       const h   = att.hours_worked !== null ? att.hours_worked.toFixed(2) + 'h' : '';
@@ -22940,9 +22941,13 @@ async function empSaveAttendance() {
     source:        'admin_entry',
   };
   try {
-    await api(`/api/employees/${empId}/attendance`, { method:'POST', body: JSON.stringify(payload) });
+    const r = await api(`/api/employees/${empId}/attendance`, { method:'POST', body: JSON.stringify(payload) });
     bootstrap.Modal.getInstance(document.getElementById('empAttendanceModal'))?.hide();
-    toast('Attendance saved', 'success');
+    if (r?.skipped) {
+      toast(r.reason || 'Skipped — date is locked by a paid payslip', 'warning', 5000);
+    } else {
+      toast('Attendance saved', 'success');
+    }
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
 }
@@ -22954,9 +22959,13 @@ async function empDeleteAttendance() {
   if (!rowId) return;
   if (!confirm(`Delete attendance entry for ${date}? This cannot be undone.`)) return;
   try {
-    await api(`/api/employees/${empId}/attendance/${rowId}`, { method: 'DELETE' });
+    const r = await api(`/api/employees/${empId}/attendance/${rowId}`, { method: 'DELETE' });
     bootstrap.Modal.getInstance(document.getElementById('empAttendanceModal'))?.hide();
-    toast('Entry deleted', 'success');
+    if (r?.skipped) {
+      toast(r.reason || 'Skipped — date is locked by a paid payslip', 'warning', 5000);
+    } else {
+      toast('Entry deleted', 'success');
+    }
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
 }

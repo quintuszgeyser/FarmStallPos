@@ -774,10 +774,25 @@ def api_attendance_list(eid):
     if d_to.year != d_from.year:
         holidays.update(sa_public_holidays(d_to.year))
 
+    paid_runs = PayRun.query.filter(
+        PayRun.employee_id == eid,
+        PayRun.status == 'paid',
+        PayRun.period_end >= d_from,
+        PayRun.period_start <= d_to,
+    ).all()
+
     return jsonify({
         'attendance': [_serialize_attendance(a) for a in rows],
         'public_holidays': {d.isoformat(): name for d, name in holidays.items()
                             if d_from <= d <= d_to},
+        'paid_periods': [
+            {
+                'period_start': pr.period_start.isoformat(),
+                'period_end':   pr.period_end.isoformat(),
+                'reference':    pr.reference,
+            }
+            for pr in paid_runs
+        ],
     })
 
 
@@ -1055,7 +1070,7 @@ def api_attendance_upsert(eid):
         PayRun.period_end >= work_date,
     ).first()
     if paid_lock:
-        return jsonify({'error': f'This date is covered by paid payslip {paid_lock.reference}. Revert the payslip to draft first.'}), 403
+        return jsonify({'skipped': True, 'reason': f'Skipped — date is covered by paid payslip {paid_lock.reference}. Revert to draft to edit.'})
 
     # Auto-detect day type if not provided
     holidays = sa_public_holidays(work_date.year)
@@ -1114,7 +1129,7 @@ def api_attendance_delete(eid, aid):
         PayRun.period_end >= row.work_date,
     ).first()
     if paid_lock:
-        return jsonify({'error': f'This date is covered by paid payslip {paid_lock.reference}. Revert the payslip to draft first.'}), 403
+        return jsonify({'skipped': True, 'reason': f'Skipped — date is covered by paid payslip {paid_lock.reference}. Revert to draft to edit.'})
     db.session.delete(row)
     db.session.commit()
     return jsonify({'ok': True})
