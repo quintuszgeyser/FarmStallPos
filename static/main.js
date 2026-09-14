@@ -10629,7 +10629,9 @@ async function _syncStatsFilterOptions() {
     const ts = el.tomselect;
     if (!ts) continue;
     if (!el._allOptions) {
-      el._allOptions = Object.values(ts.options).map(o => ({ value: String(o.value), text: o.text }));
+      const snapshot = Object.values(ts.options).map(o => ({ value: String(o.value), text: o.text }));
+      // Only save snapshot if it has content — an empty snapshot would lock out all options
+      if (snapshot.length > 0) el._allOptions = snapshot;
     }
     const items = data[cfg.key] || [];
     ts.clearOptions();
@@ -11811,7 +11813,7 @@ async function loadStats() {
     loadOverheadStats(start, end, productId).catch(e => console.error('overhead stats', e));
     loadSupplierVatStats(start, end, productId).catch(e => console.error('supplier vat stats', e));
     loadSupplierDiscountStats(start, end, productId).catch(e => console.error('supplier discount stats', e));
-    loadConsignmentStats().catch(e => console.error('consignment stats', e));
+    loadConsignmentStats(supplierId).catch(e => console.error('consignment stats', e));
     loadInventoryStats(start, end, productId).catch(e => console.error('inventory stats', e));
 
   } catch (e) { console.error('loadStats', e); toast('Could not load stats', 'error'); }
@@ -11905,7 +11907,7 @@ async function loadOverheadStats(start, end, productId) {
   wrap.innerHTML = html;
 }
 
-async function loadConsignmentStats() {
+async function loadConsignmentStats(filterSupplierId) {
   const wrap = document.getElementById('consignment-stats-body');
   if (!wrap) return;
 
@@ -11921,8 +11923,17 @@ async function loadConsignmentStats() {
     return;
   }
 
+  // When a supplier is filtered on the stats tab, focus the consignment section on that supplier
+  const filteredSid = filterSupplierId ? String(filterSupplierId) : null;
+  const visibleSuppliers = filteredSid
+    ? j.suppliers.filter(s => String(s.supplier_id) === filteredSid)
+    : j.suppliers;
+
+  const filteredOutstanding   = filteredSid ? visibleSuppliers.reduce((a, s) => a + s.outstanding, 0) : j.total_outstanding;
+  const filteredUnitsPending  = filteredSid ? visibleSuppliers.reduce((a, s) => a + s.units, 0)       : j.total_units_pending;
+
   let suppRows = '';
-  j.suppliers.forEach(s => {
+  visibleSuppliers.forEach(s => {
     suppRows += `<tr style="cursor:pointer" onclick="openConsignmentSupplierDrilldown(${s.supplier_id})">
       <td>${escapeHtml(s.name)}</td>
       <td class="text-end">${s.units.toFixed(2)}</td>
@@ -11930,11 +11941,16 @@ async function loadConsignmentStats() {
     </tr>`;
   });
 
+  const filterNote = filteredSid && j.suppliers.length > 1
+    ? `<div class="text-muted small mb-2"><i class="bi bi-funnel"></i> Showing filtered supplier — <a href="#" onclick="event.preventDefault();document.getElementById('stats-supplier-filter').value='';_tomSelectSync('stats-supplier-filter');_syncStatsFilterOptions();loadStats();">Show all</a></div>`
+    : '';
+
   wrap.innerHTML = `
+    ${filterNote}
     <div class="d-flex gap-4 mb-3 flex-wrap">
-      <div><div class="small text-muted">Outstanding Liability</div><div class="fw-semibold text-danger fs-5">R${fmt(j.total_outstanding)}</div></div>
-      <div><div class="small text-muted">Units Pending Settlement</div><div class="fw-semibold">${j.total_units_pending}</div></div>
-      <div><div class="small text-muted">Unsold Consignment Stock</div><div class="fw-semibold text-warning">R${fmt(j.unsold_stock_value)}</div></div>
+      <div><div class="small text-muted">Outstanding Liability</div><div class="fw-semibold text-danger fs-5">R${fmt(filteredOutstanding)}</div></div>
+      <div><div class="small text-muted">Units Pending Settlement</div><div class="fw-semibold">${typeof filteredUnitsPending === 'number' ? filteredUnitsPending.toFixed(2) : filteredUnitsPending}</div></div>
+      ${!filteredSid ? `<div><div class="small text-muted">Unsold Consignment Stock</div><div class="fw-semibold text-warning">R${fmt(j.unsold_stock_value)}</div></div>` : ''}
       <div><div class="small text-muted">Settled This Month</div><div class="fw-semibold text-success">R${fmt(j.settled_this_month)}</div></div>
     </div>
     ${suppRows ? `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
@@ -15397,6 +15413,10 @@ document.addEventListener('shown.bs.tab', async (evt) => {
     await loadSuppliers();
     if (_kitchenRefreshTimer) { clearInterval(_kitchenRefreshTimer); _kitchenRefreshTimer = null; }
   } else if (target === '#stats') {
+    // Ensure suppliers are loaded — they may not be if the user hasn't opened the Suppliers tab
+    if (!_suppliers?.length) {
+      try { await loadSuppliers(); } catch(e) { console.warn('Could not preload suppliers for stats filter', e); }
+    }
     _populateStatsProductFilter();
     _populateStatsSupplierFilter();
     _populateStatsCategoryFilter();
