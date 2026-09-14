@@ -1,10 +1,10 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, date
 from decimal import Decimal
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, make_response
 
-from helpers import require_role, current_user
+from helpers import require_role, current_user, get_setting
 from models import (
     db,
     Product, StockBatch, Supplier,
@@ -440,3 +440,202 @@ def api_consignment_settlement_detail(settlement_id):
             for ln in lines
         ],
     })
+
+
+@bp.route('/api/consignment/statement/<int:sid>', methods=['GET'])
+def api_consignment_statement(sid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    supplier = db.session.get(Supplier, sid)
+    if not supplier:
+        return jsonify({'error': 'Not found'}), 404
+
+    today = date.today()
+    try:
+        start_str = request.args.get('start', today.replace(day=1).isoformat())
+        end_str = request.args.get('end', today.isoformat())
+        start_dt = datetime.fromisoformat(start_str)
+        end_dt = datetime.fromisoformat(end_str).replace(hour=23, minute=59, second=59)
+    except Exception:
+        start_dt = datetime(today.year, today.month, 1)
+        end_dt = datetime(today.year, today.month, today.day, 23, 59, 59)
+
+    store_name = get_setting('store_name') or 'Lady Coleen'
+
+    liabilities = ConsignmentLiability.query.filter(
+        ConsignmentLiability.supplier_id == sid,
+        ConsignmentLiability.status.in_(['outstanding', 'settled']),
+        ConsignmentLiability.created_at >= start_dt,
+        ConsignmentLiability.created_at <= end_dt,
+    ).order_by(ConsignmentLiability.created_at).all()
+
+    settlements = ConsignmentSettlement.query.filter(
+        ConsignmentSettlement.supplier_id == sid,
+        ConsignmentSettlement.created_at >= start_dt,
+        ConsignmentSettlement.created_at <= end_dt,
+    ).order_by(ConsignmentSettlement.created_at).all()
+
+    # Group liabilities by product
+    product_map = {}
+    for lb in liabilities:
+        if lb.product_id not in product_map:
+            p = db.session.get(Product, lb.product_id)
+            product_map[lb.product_id] = {
+                'name': p.name if p else f'Product {lb.product_id}',
+                'qty': Decimal('0'),
+                'amount': Decimal('0'),
+                'unit_cost': Decimal(str(lb.unit_cost)),
+            }
+        product_map[lb.product_id]['qty'] += Decimal(str(lb.qty_consumed))
+        product_map[lb.product_id]['amount'] += Decimal(str(lb.amount_owed))
+
+    total_sales = sum(v['amount'] for v in product_map.values())
+    total_settled = sum(Decimal(str(s.total_amount)) for s in settlements)
+    outstanding = total_sales - total_settled
+
+    # Build product rows HTML
+    product_rows = ''
+    for pid, v in product_map.items():
+        product_rows += f'''
+        <tr>
+          <td>{v["name"]}</td>
+          <td class="num">{float(v["qty"]):.3f}</td>
+          <td class="num">R {float(v["unit_cost"]):.2f}</td>
+          <td class="num">R {float(v["amount"]):.2f}</td>
+        </tr>'''
+
+    # Build settlement rows HTML
+    settlement_rows = ''
+    for s in settlements:
+        settlement_rows += f'''
+        <tr>
+          <td>{s.created_at.strftime("%d %b %Y")}</td>
+          <td>{s.note or ""}</td>
+          <td class="num">R {float(s.total_amount):.2f}</td>
+        </tr>'''
+
+    settlements_section = ''
+    if settlements:
+        settlements_section = f'''
+    <h3>Settlements in Period</h3>
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Note</th><th class="num">Amount Paid</th></tr>
+      </thead>
+      <tbody>
+        {settlement_rows}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="2"><strong>Total Settled</strong></td>
+          <td class="num"><strong>R {float(total_settled):.2f}</strong></td>
+        </tr>
+      </tfoot>
+    </table>'''
+
+    period_label = f'{start_dt.strftime("%d %b %Y")} – {end_dt.strftime("%d %b %Y")}'
+    generated_on = today.strftime('%d %b %Y')
+
+    outstanding_class = 'outstanding-pos' if outstanding > 0 else 'outstanding-zero'
+    outstanding_label = f'R {float(outstanding):.2f}'
+
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Consignment Statement – {supplier.name}</title>
+  <style>
+    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+    body {{ font-family: Arial, sans-serif; font-size: 12px; color: #222; background: #fff; padding: 24px 32px; }}
+    .header {{ display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #b8860b; padding-bottom: 12px; margin-bottom: 20px; }}
+    .store-name {{ font-size: 22px; font-weight: bold; color: #b8860b; }}
+    .doc-title {{ font-size: 16px; font-weight: bold; margin-top: 4px; }}
+    .meta {{ text-align: right; font-size: 11px; color: #555; line-height: 1.6; }}
+    .supplier-block {{ margin-bottom: 20px; }}
+    .supplier-block .label {{ font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }}
+    .supplier-block .value {{ font-size: 14px; font-weight: bold; }}
+    h3 {{ font-size: 13px; margin: 18px 0 8px; border-bottom: 1px solid #ddd; padding-bottom: 4px; color: #444; text-transform: uppercase; letter-spacing: 0.5px; }}
+    table {{ width: 100%; border-collapse: collapse; margin-bottom: 16px; }}
+    th {{ background: #f5f0e0; text-align: left; padding: 6px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 2px solid #ddd; }}
+    td {{ padding: 5px 8px; border-bottom: 1px solid #eee; vertical-align: top; }}
+    tfoot td {{ border-top: 2px solid #ccc; border-bottom: none; background: #fafafa; }}
+    .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+    .summary-box {{ margin-top: 24px; border: 1px solid #ddd; border-radius: 4px; overflow: hidden; }}
+    .summary-row {{ display: flex; justify-content: space-between; padding: 8px 16px; border-bottom: 1px solid #eee; }}
+    .summary-row:last-child {{ border-bottom: none; }}
+    .summary-row.total {{ background: #f5f0e0; font-weight: bold; font-size: 13px; }}
+    .outstanding-pos {{ color: #c0392b; }}
+    .outstanding-zero {{ color: #27ae60; }}
+    .footer {{ margin-top: 32px; font-size: 10px; color: #aaa; border-top: 1px solid #eee; padding-top: 8px; }}
+    @media print {{
+      body {{ padding: 0; }}
+      .no-print {{ display: none; }}
+    }}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="store-name">{store_name}</div>
+      <div class="doc-title">Consignment Statement</div>
+    </div>
+    <div class="meta">
+      <div><strong>Period:</strong> {period_label}</div>
+      <div><strong>Generated:</strong> {generated_on}</div>
+    </div>
+  </div>
+
+  <div class="supplier-block">
+    <div class="label">Supplier</div>
+    <div class="value">{supplier.name}</div>
+  </div>
+
+  <h3>Sales in Period</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Product</th>
+        <th class="num">Qty Sold</th>
+        <th class="num">Unit Cost</th>
+        <th class="num">Amount Owed</th>
+      </tr>
+    </thead>
+    <tbody>
+      {product_rows if product_rows else '<tr><td colspan="4" style="color:#aaa;text-align:center;padding:16px;">No sales recorded in this period</td></tr>'}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3"><strong>Total Sales Owed</strong></td>
+        <td class="num"><strong>R {float(total_sales):.2f}</strong></td>
+      </tr>
+    </tfoot>
+  </table>
+
+  {settlements_section}
+
+  <div class="summary-box">
+    <div class="summary-row">
+      <span>Total Sales Owed</span>
+      <span>R {float(total_sales):.2f}</span>
+    </div>
+    <div class="summary-row">
+      <span>Less: Settlements Paid</span>
+      <span>R {float(total_settled):.2f}</span>
+    </div>
+    <div class="summary-row total">
+      <span>Outstanding Balance</span>
+      <span class="{outstanding_class}">{outstanding_label}</span>
+    </div>
+  </div>
+
+  <div class="footer">
+    This statement was generated by {store_name} POS on {generated_on}. For queries contact the store.
+  </div>
+</body>
+</html>'''
+
+    resp = make_response(html, 200)
+    resp.headers['Content-Type'] = 'text/html; charset=utf-8'
+    return resp

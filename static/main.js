@@ -11932,12 +11932,17 @@ async function loadConsignmentStats(filterSupplierId) {
   const filteredOutstanding   = filteredSid ? visibleSuppliers.reduce((a, s) => a + s.outstanding, 0) : j.total_outstanding;
   const filteredUnitsPending  = filteredSid ? visibleSuppliers.reduce((a, s) => a + s.units, 0)       : j.total_units_pending;
 
+  const _stStart = document.getElementById('stats-start')?.value || todayISO();
+  const _stEnd   = document.getElementById('stats-end')?.value   || todayISO();
+
   let suppRows = '';
   visibleSuppliers.forEach(s => {
-    suppRows += `<tr style="cursor:pointer" onclick="openConsignmentSupplierDrilldown(${s.supplier_id})">
-      <td>${escapeHtml(s.name)}</td>
-      <td class="text-end">${s.units.toFixed(2)}</td>
-      <td class="text-end fw-semibold text-danger">R${fmt(s.outstanding)}</td>
+    const stmtUrl = `/api/consignment/statement/${s.supplier_id}?start=${encodeURIComponent(_stStart)}&end=${encodeURIComponent(_stEnd)}`;
+    suppRows += `<tr>
+      <td style="cursor:pointer" onclick="openConsignmentSupplierDrilldown(${s.supplier_id})">${escapeHtml(s.name)}</td>
+      <td class="text-end" style="cursor:pointer" onclick="openConsignmentSupplierDrilldown(${s.supplier_id})">${s.units.toFixed(2)}</td>
+      <td class="text-end fw-semibold text-danger" style="cursor:pointer" onclick="openConsignmentSupplierDrilldown(${s.supplier_id})">R${fmt(s.outstanding)}</td>
+      <td class="text-end"><a href="${stmtUrl}" target="_blank" class="btn btn-outline-secondary btn-sm py-0 px-2" title="Download statement"><i class="bi bi-file-earmark-text"></i></a></td>
     </tr>`;
   });
 
@@ -11955,7 +11960,7 @@ async function loadConsignmentStats(filterSupplierId) {
     </div>
     ${suppRows ? `<div class="table-responsive"><table class="table table-sm table-hover align-middle mb-0">
       <thead class="table-light"><tr>
-        <th>Supplier</th><th class="text-end">Units Sold</th><th class="text-end">Amount Owed</th>
+        <th>Supplier</th><th class="text-end">Units Sold</th><th class="text-end">Amount Owed</th><th class="text-end">Statement</th>
       </tr></thead>
       <tbody>${suppRows}</tbody>
     </table></div>
