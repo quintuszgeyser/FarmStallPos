@@ -11,7 +11,7 @@ from flask import current_app
 from helpers import (
     require_login, require_role, current_user,
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
-    qty_bucket, get_stock_level, collect_kitchen_items,
+    qty_bucket, get_stock_level, collect_kitchen_items, auto_produce_on_negative,
 )
 from decimal import ROUND_HALF_UP
 from models import (
@@ -327,6 +327,22 @@ def api_transactions_post():
         return jsonify({'warn': True,
                         'message': 'Some items are out of stock. Confirm to sell anyway.',
                         'warnings': _sale_warns}), 409
+
+    # Auto-produce any produced recipes that would go negative so consume_fifo
+    # finds stock and correctly records COGS (no negative placeholder needed).
+    for _pid, _total_qty in _required.items():
+        _pc = db.session.get(Product, _pid)
+        if not (_pc and _pc.product_type == 'recipe' and _pc.is_produced):
+            continue
+        _pol = getattr(_pc, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
+        if _pol not in ('ALLOW_NEGATIVE', 'WARN'):
+            continue
+        _stk = _pre_stock.get(_pid, Decimal('0'))
+        if _stk < _total_qty:
+            _shortfall = _total_qty - max(Decimal('0'), _stk)
+            auto_produce_on_negative(_pid, _shortfall, now, u)
+            # Refresh pre_stock so the negative-placeholder logic below sees the new level
+            _pre_stock[_pid] = Decimal(str(get_stock_level(_pid)))
 
     for item in cart:
         pid        = int(item['product_id'])

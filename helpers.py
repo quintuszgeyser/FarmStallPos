@@ -24,7 +24,7 @@ from models import (
     db,
     User, UserSession, Setting,
     Product, ProductImage, RecipeLine, Category,
-    StockBatch, StockConsumption,
+    StockBatch, StockConsumption, StockAdjustment,
     Sale, Purchase,
     ConsignmentLiability,
     ProductPurchaseOption,
@@ -302,6 +302,26 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
 
         qty_to_consume -= take
 
+    # Stock exhausted before qty satisfied — use last known cost so COGS isn't silently zeroed
+    if qty_to_consume > 0:
+        last_batch = (StockBatch.query
+                      .filter_by(product_id=ingredient_id)
+                      .filter(StockBatch.batch_type != 'negative_placeholder')
+                      .filter(StockBatch.cost_per_base_unit > 0)
+                      .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
+                      .first())
+        if last_batch:
+            last_cost = Decimal(str(last_batch.cost_per_base_unit))
+            total_cost += qty_to_consume * last_cost
+            db.session.add(StockConsumption(
+                sale_id=sale_id,
+                ingredient_id=ingredient_id,
+                batch_id=last_batch.id,
+                qty_consumed_base=qty_to_consume,
+                cost_per_base_unit=last_cost,
+                consumed_at=now,
+            ))
+
     return total_cost
 
 
@@ -450,7 +470,81 @@ def get_fifo_cost_per_unit(product_id):
              .order_by(StockBatch.sort_order.asc().nulls_last(),
                        StockBatch.purchased_at.asc(), StockBatch.id.asc())
              .first())
-    return float(batch.cost_per_base_unit) if batch else 0.0
+    if batch:
+        return float(batch.cost_per_base_unit)
+    # No stock remaining — fall back to last known cost from most recently received batch
+    last_batch = (StockBatch.query
+                  .filter_by(product_id=product_id)
+                  .filter(StockBatch.batch_type != 'negative_placeholder')
+                  .filter(StockBatch.cost_per_base_unit > 0)
+                  .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
+                  .first())
+    return float(last_batch.cost_per_base_unit) if last_batch else 0.0
+
+
+def auto_produce_on_negative(product_id, shortfall, now, u):
+    """Auto-produce enough batches of a produced recipe to cover a negative shortfall.
+    Consumes ingredients, creates a finished-goods StockBatch, and reconciles any
+    existing negative placeholder. Runs within the caller's DB transaction (no commit).
+    Returns (batches_produced: int, units_added: int).
+    """
+    from decimal import ROUND_CEILING
+    p = db.session.get(Product, product_id)
+    if not p or p.product_type != 'recipe' or not p.is_produced:
+        return 0, 0
+    batch_sz = Decimal(str(p.batch_size or 1))
+    if batch_sz <= 0:
+        batch_sz = Decimal('1')
+    batches_needed = (Decimal(str(shortfall)) / batch_sz).to_integral_value(rounding=ROUND_CEILING)
+    if batches_needed <= 0:
+        return 0, 0
+
+    produce_uuid     = str(uuid.uuid4())
+    total_cost       = Decimal('0')
+    available_before = Decimal(str(get_stock_level(product_id)))
+
+    for rl in RecipeLine.query.filter_by(product_id=product_id).all():
+        total_cost += consume_fifo(rl.ingredient_id, Decimal(str(rl.qty_base)) * batches_needed, produce_uuid, now)
+
+    units_added = int((batch_sz * batches_needed).to_integral_value())
+    cost_per    = total_cost / units_added if units_added > 0 else Decimal('0')
+
+    # Reconcile any existing negative placeholder so net stock is correct
+    _neg_ph = (StockBatch.query
+               .filter_by(product_id=product_id, batch_type='negative_placeholder')
+               .filter(StockBatch.qty_remaining_base < 0)
+               .with_for_update()
+               .first())
+    reconciled = 0
+    if _neg_ph:
+        _neg_qty  = abs(Decimal(str(_neg_ph.qty_remaining_base)))
+        _cancel   = min(_neg_qty, Decimal(str(units_added)))
+        _neg_ph.qty_remaining_base = Decimal(str(_neg_ph.qty_remaining_base)) + _cancel
+        reconciled = int(_cancel.to_integral_value())
+
+    db.session.add(StockBatch(
+        product_id=product_id,
+        qty_purchased_base=units_added,
+        qty_remaining_base=units_added - reconciled,
+        cost_per_base_unit=cost_per,
+        base_cost_total=total_cost,
+        purchased_at=now,
+        user_id=u.id if u else None,
+        produce_ref=produce_uuid,
+        produce_cost=total_cost,
+    ))
+    db.session.add(StockAdjustment(
+        product_id=product_id,
+        adjustment_type='produce',
+        qty_change_base=units_added,
+        system_qty_before=available_before,
+        cost_written_off=total_cost,
+        base_unit=p.base_unit,
+        reason=f'Auto-produce (sold at zero stock): {int(batches_needed)} batch(es)',
+        adjusted_at=now,
+        user_id=u.id if u else None,
+    ))
+    return int(batches_needed), units_added
 
 
 def _auto_price_products(product_ids, min_drift_pct=0):

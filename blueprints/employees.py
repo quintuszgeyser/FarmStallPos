@@ -819,7 +819,11 @@ def api_generate_schedule():
         all_days.append(d_iter)
         d_iter += timedelta(days=1)
 
-    employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
+    emp_id_filter = d.get('employee_id')
+    if emp_id_filter:
+        employees = Employee.query.filter(Employee.id == int(emp_id_filter), Employee.is_active == True).all()
+    else:
+        employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
     holidays  = sa_public_holidays(y)
     u         = current_user()
     created   = 0
@@ -1044,6 +1048,15 @@ def api_attendance_upsert(eid):
     except (KeyError, ValueError):
         return jsonify({'error': 'date required (YYYY-MM-DD)'}), 400
 
+    paid_lock = PayRun.query.filter(
+        PayRun.employee_id == eid,
+        PayRun.status == 'paid',
+        PayRun.period_start <= work_date,
+        PayRun.period_end >= work_date,
+    ).first()
+    if paid_lock:
+        return jsonify({'error': f'This date is covered by paid payslip {paid_lock.reference}. Revert the payslip to draft first.'}), 403
+
     # Auto-detect day type if not provided
     holidays = sa_public_holidays(work_date.year)
     day_type  = d.get('day_type') or _auto_day_type(work_date, holidays)
@@ -1094,6 +1107,14 @@ def api_attendance_delete(eid, aid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     row = EmployeeAttendance.query.filter_by(id=aid, employee_id=eid).first_or_404()
+    paid_lock = PayRun.query.filter(
+        PayRun.employee_id == eid,
+        PayRun.status == 'paid',
+        PayRun.period_start <= row.work_date,
+        PayRun.period_end >= row.work_date,
+    ).first()
+    if paid_lock:
+        return jsonify({'error': f'This date is covered by paid payslip {paid_lock.reference}. Revert the payslip to draft first.'}), 403
     db.session.delete(row)
     db.session.commit()
     return jsonify({'ok': True})
@@ -1954,6 +1975,33 @@ def api_pay_runs_paid(eid, pid):
     pr.paid_at = datetime.utcnow()
     db.session.commit()
     return jsonify({'ok': True, 'status': 'paid'})
+
+
+@bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/revert_to_draft', methods=['PUT'])
+def api_pay_runs_revert_to_draft(eid, pid):
+    if not require_role('admin'):
+        return jsonify({'error': 'Forbidden'}), 403
+    pr = PayRun.query.filter_by(id=pid, employee_id=eid).first_or_404()
+    if pr.status not in ('approved', 'paid'):
+        return jsonify({'error': f'Cannot revert a {pr.status} pay run to draft'}), 400
+    for adv_snap in json.loads(pr.advances_json or '[]'):
+        adv = EmployeeAdvance.query.get(adv_snap.get('id'))
+        if adv and adv.status == 'deducted' and adv.pay_run_id == pr.id:
+            adv.status     = 'outstanding'
+            adv.pay_run_id = None
+    for ded in json.loads(pr.deductions_json or '[]'):
+        if ded.get('type') == 'loan' and ded.get('loan_id'):
+            loan = EmployeeLoan.query.get(ded['loan_id'])
+            if loan:
+                loan.balance = Decimal(str(loan.balance)) + Decimal(str(ded['amount']))
+                if loan.status == 'settled':
+                    loan.status = 'active'
+    pr.status      = 'draft'
+    pr.approved_by = None
+    pr.approved_at = None
+    pr.paid_at     = None
+    db.session.commit()
+    return jsonify({'ok': True, 'status': 'draft'})
 
 
 @bp.route('/api/employees/<int:eid>/leave_balance', methods=['GET'])

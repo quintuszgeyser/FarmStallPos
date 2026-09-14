@@ -22410,14 +22410,6 @@ function empSwitchSub(sub) {
       const today = new Date();
       m.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
     }
-    const w = document.getElementById('emp-ts-week');
-    if (w && !w.value) {
-      // Set to current ISO week  e.g. "2026-W35"
-      const today = new Date();
-      const jan4  = new Date(today.getFullYear(), 0, 4);
-      const weekNum = Math.ceil(((today - jan4) / 86400000 + (jan4.getDay() + 6) % 7 + 1) / 7);
-      w.value = `${today.getFullYear()}-W${String(weekNum).padStart(2,'0')}`;
-    }
     if (!EMP.employees.length) {
       _empLoadEmployees().then(() => loadTimesheetCalendar());
     } else {
@@ -22734,28 +22726,35 @@ function _weekInputToDates(weekVal) {
   return { date_from: fmt(mon), date_to: fmt(sun) };
 }
 
-async function empGenerateRange(rotation = false, scope = 'month') {
-  let payload = { rotation };
+async function empGenerateRange(scope = 'month') {
+  let payload = {};
   let label;
   if (scope === 'week') {
-    const weekVal = document.getElementById('emp-ts-week').value;
-    if (!weekVal) { toast('Select a week first', 'warning'); return; }
-    const { date_from, date_to } = _weekInputToDates(weekVal);
-    payload.date_from = date_from;
-    payload.date_to   = date_to;
-    label = `${date_from} → ${date_to}`;
+    const today = new Date();
+    const dow   = (today.getDay() + 6) % 7; // Mon=0
+    const mon   = new Date(today); mon.setDate(today.getDate() - dow);
+    const sun   = new Date(mon);  sun.setDate(mon.getDate() + 6);
+    const fmt   = d => d.toISOString().split('T')[0];
+    payload.date_from = fmt(mon);
+    payload.date_to   = fmt(sun);
+    label = `${fmt(mon)} → ${fmt(sun)}`;
   } else {
     const month = document.getElementById('emp-ts-month').value;
     if (!month) { toast('Select a month first', 'warning'); return; }
     payload.month = month;
     label = month;
   }
-  const modeLabel = rotation ? 'ROTATING ' : '';
-  if (!confirm(`Generate ${modeLabel}schedule for ALL employees for ${label}?\n\nDays already logged will not be overwritten. Manual entries will not be touched.`)) return;
+  const empId   = document.getElementById('emp-ts-employee').value;
+  const empName = empId && empId !== 'all'
+    ? (EMP.employees.find(e => e.id == empId)?.name || `Employee ${empId}`)
+    : null;
+  if (empId && empId !== 'all') payload.employee_id = parseInt(empId);
+  const target = empName ? `for ${empName}` : 'for ALL employees';
+  if (!confirm(`Generate schedule ${target} for ${label}?\n\nDays already logged will not be overwritten. Manual entries will not be touched.`)) return;
   try {
     const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify(payload) });
     const delMsg = r.deleted > 0 ? `, cleared ${r.deleted} off-day entries` : '';
-    toast(`Generated ${r.created} entries for ${r.employees} employees (${r.skipped} skipped${delMsg})`, 'success', 5000);
+    toast(`Generated ${r.created} entries for ${r.employees} employee(s) (${r.skipped} skipped${delMsg})`, 'success', 5000);
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
 }
@@ -22764,12 +22763,14 @@ async function empClearSchedule(scope = 'month') {
   let payload = {};
   let label;
   if (scope === 'week') {
-    const weekVal = document.getElementById('emp-ts-week').value;
-    if (!weekVal) { toast('Select a week first', 'warning'); return; }
-    const { date_from, date_to } = _weekInputToDates(weekVal);
-    payload.date_from = date_from;
-    payload.date_to   = date_to;
-    label = `${date_from} → ${date_to}`;
+    const today = new Date();
+    const dow   = (today.getDay() + 6) % 7;
+    const mon   = new Date(today); mon.setDate(today.getDate() - dow);
+    const sun   = new Date(mon);  sun.setDate(mon.getDate() + 6);
+    const fmt   = d => d.toISOString().split('T')[0];
+    payload.date_from = fmt(mon);
+    payload.date_to   = fmt(sun);
+    label = `${fmt(mon)} → ${fmt(sun)}`;
   } else {
     const month = document.getElementById('emp-ts-month').value;
     if (!month) { toast('Select a month first', 'warning'); return; }
@@ -22785,7 +22786,7 @@ async function empClearSchedule(scope = 'month') {
 }
 
 // Keep old name as alias for any remaining references
-const empGenerateMonth = (rotation) => empGenerateRange(rotation, 'month');
+const empGenerateMonth = () => empGenerateRange('month');
 
 function empOpenShiftModal() {
   const empId = document.getElementById('emp-ts-employee').value;
@@ -22845,19 +22846,8 @@ async function empOpenScheduleConfig() {
   const modal = new bootstrap.Modal(document.getElementById('empScheduleConfigModal'));
   modal.show();
 
-  // Load global rules and populate the checkboxes at the top of the modal
   try {
     const rules = await api('/api/employees/schedule_rules');
-    const mandSet = new Set((rules.mandatory_days || '5').split(',').map(Number).filter(n => !isNaN(n)));
-    const rotSet  = new Set((rules.rotation_days  || '0,1,2,3,4').split(',').map(Number).filter(n => !isNaN(n)));
-    for (let d = 0; d <= 6; d++) {
-      const mc = document.getElementById(`smand-${d}`);
-      const rc = document.getElementById(`srot-${d}`);
-      if (mc) mc.checked = mandSet.has(d);
-      if (rc) rc.checked = rotSet.has(d);
-    }
-    const modeEl = document.getElementById('sched-rotation-mode');
-    if (modeEl) modeEl.value = rules.rotation_mode || 'fixed';
     const ciEl = document.getElementById('sched-default-clock-in');
     const coEl = document.getElementById('sched-default-clock-out');
     if (ciEl) ciEl.value = rules.default_clock_in  || '07:30';
@@ -22875,24 +22865,19 @@ async function empOpenScheduleConfig() {
     for (const emp of employees) {
       const wdJson   = emp.work_days_json || '0,1,2,3,4,5';
       const workDays = new Set(wdJson.split(',').map(x => parseInt(x.trim())).filter(x => !isNaN(x)));
-      const rotStart = emp.rotation_start_day != null ? emp.rotation_start_day : '';
-      const rotSlot  = emp.rotation_slot != null ? emp.rotation_slot : '';
       const checks = DAY_NAMES.map((name, i) => `
         <div class="form-check form-check-inline mb-0">
           <input class="form-check-input" type="checkbox" id="scfg-wd-${emp.id}-${i}" ${workDays.has(i) ? 'checked' : ''}>
           <label class="form-check-label small" for="scfg-wd-${emp.id}-${i}">${name}</label>
         </div>`).join('');
-      const rotOpts = `<option value="">Auto</option>` + DAY_NAMES.map((n, i) => `<option value="${i}" ${rotStart === i ? 'selected' : ''}>${n}</option>`).join('');
       rows += `<tr>
         <td class="fw-semibold small align-middle" style="white-space:nowrap">${emp.name}</td>
         <td>${checks}</td>
-        <td><input type="number" class="form-control form-control-sm" id="scfg-slot-${emp.id}" value="${rotSlot}" placeholder="Auto" min="0" style="width:65px"></td>
-        <td><select class="form-select form-select-sm" id="scfg-rotstart-${emp.id}" style="min-width:100px">${rotOpts}</select></td>
         <td><button class="btn btn-sm btn-outline-primary py-0 px-2" onclick="empSaveScheduleRule(${emp.id})">Save</button></td>
       </tr>`;
     }
     body.innerHTML = `<table class="table table-sm mb-0">
-      <thead class="table-light"><tr><th>Employee</th><th>Working Days</th><th>Slot #</th><th>Rotation Start</th><th></th></tr></thead>
+      <thead class="table-light"><tr><th>Employee</th><th>Working Days</th><th></th></tr></thead>
       <tbody>${rows}</tbody></table>`;
   } catch(e) { toast(e.message, 'danger'); }
 }
@@ -22901,18 +22886,12 @@ async function empSaveScheduleRule(empId) {
   const wdCsv = [0,1,2,3,4,5,6]
     .filter(d => { const cb = document.getElementById(`scfg-wd-${empId}-${d}`); return cb && cb.checked; })
     .join(',');
-  const rotStartEl = document.getElementById(`scfg-rotstart-${empId}`);
-  const rotVal     = rotStartEl && rotStartEl.value !== '' ? parseInt(rotStartEl.value) : null;
-  const slotEl     = document.getElementById(`scfg-slot-${empId}`);
-  const slotVal    = slotEl && slotEl.value.trim() !== '' ? parseInt(slotEl.value) : null;
   try {
     await api(`/api/employees/${empId}`, { method: 'PUT', body: JSON.stringify({
-      work_days_json:    wdCsv || '0,1,2,3,4,5',
-      rotation_start_day: rotVal,
-      rotation_slot:     slotVal,
+      work_days_json: wdCsv || '0,1,2,3,4,5',
     }) });
     const emp = EMP.employees.find(e => e.id == empId);
-    if (emp) { emp.work_days_json = wdCsv || '0,1,2,3,4,5'; emp.rotation_start_day = rotVal; emp.rotation_slot = slotVal; }
+    if (emp) emp.work_days_json = wdCsv || '0,1,2,3,4,5';
     toast(`Saved for ${emp?.name || empId}`, 'success');
   } catch(e) { toast(e.message, 'danger'); }
 }
@@ -22955,6 +22934,7 @@ async function loadPayRunList() {
           <button class="btn btn-xs btn-outline-secondary" onclick="empOpenPayslip(${r.employee_id}, ${r.id})" title="View payslip"><i class="bi bi-file-earmark-text"></i></button>
           ${r.status === 'draft' ? `<button class="btn btn-xs btn-success ms-1" onclick="empApprovePayRun(${r.employee_id}, ${r.id})">Approve</button>` : ''}
           ${r.status === 'approved' ? `<button class="btn btn-xs btn-primary ms-1" onclick="empMarkPaid(${r.employee_id}, ${r.id})">Mark Paid</button>` : ''}
+          ${r.status === 'approved' || r.status === 'paid' ? `<button class="btn btn-xs btn-outline-warning ms-1" onclick="empRevertToDraft(${r.employee_id}, ${r.id})" title="Revert to draft">Draft</button>` : ''}
           ${r.status !== 'paid' ? `<button class="btn btn-xs btn-outline-danger ms-1" onclick="empDeletePayRun(${r.employee_id}, ${r.id}, '${r.status}')" title="Delete pay run"><i class="bi bi-trash"></i></button>` : ''}
         </td>
       </tr>`).join('') || '<tr><td colspan="8" class="text-center text-muted">No pay runs</td></tr>';
@@ -23104,6 +23084,15 @@ function empOpenPayslip(empId, prId) {
   window.open(`/api/employees/${empId}/pay_runs/${prId}/payslip`, '_blank');
 }
 
+async function empRevertToDraft(empId, prId) {
+  if (!confirm('Revert this pay run to draft?\n\nAdvance deductions and loan repayments will be reversed. The payslip dates will be unlocked for editing.')) return;
+  try {
+    await api(`/api/employees/${empId}/pay_runs/${prId}/revert_to_draft`, { method: 'PUT' });
+    toast('Pay run reverted to draft', 'success');
+    loadPayRunList();
+  } catch(e) { toast(e.message, 'danger'); }
+}
+
 async function empDeletePayRun(empId, prId, status) {
   const warn = status === 'approved'
     ? 'This pay run is APPROVED. Deleting will reverse advance deductions and loan repayments. Are you sure?'
@@ -23207,21 +23196,14 @@ async function empRunBulkPayRun() {
 // ── Schedule Rules ────────────────────────────────────────────────────────────
 
 async function empSaveScheduleRules() {
-  const mandDays = [0,1,2,3,4,5,6]
-    .filter(d => { const cb = document.getElementById(`smand-${d}`); return cb && cb.checked; })
-    .join(',');
-  const rotDays = [0,1,2,3,4,5,6]
-    .filter(d => { const cb = document.getElementById(`srot-${d}`); return cb && cb.checked; })
-    .join(',');
-  const mode    = document.getElementById('sched-rotation-mode')?.value || 'fixed';
   const clockIn  = document.getElementById('sched-default-clock-in')?.value  || '07:30';
   const clockOut = document.getElementById('sched-default-clock-out')?.value || '17:00';
   try {
     await api('/api/employees/schedule_rules', {
       method: 'POST',
-      body: JSON.stringify({ mandatory_days: mandDays, rotation_days: rotDays, rotation_mode: mode, default_clock_in: clockIn, default_clock_out: clockOut })
+      body: JSON.stringify({ default_clock_in: clockIn, default_clock_out: clockOut })
     });
-    toast('Schedule rules saved', 'success');
+    toast('Schedule settings saved', 'success');
   } catch(e) { toast(e.message, 'danger'); }
 }
 
@@ -23267,11 +23249,6 @@ async function empOpenEmployeeModal(id = null) {
   document.getElementById('emp-ed-user-id').value   = '';
   // Reset schedule tab defaults (Mon–Sat on, Sun off, no rotation start/slot)
   for (let wd = 0; wd <= 6; wd++) { const cb = document.getElementById(`emp-wd-${wd}`); if (cb) cb.checked = wd < 6; }
-  const rotStartEl = document.getElementById('emp-ed-rot-start');
-  if (rotStartEl) rotStartEl.value = '';
-  const rotSlotEl = document.getElementById('emp-ed-rot-slot');
-  if (rotSlotEl) rotSlotEl.value = '';
-
   // Populate user select
   try {
     const users = await api('/api/users');
@@ -23315,10 +23292,6 @@ async function empOpenEmployeeModal(id = null) {
       const wdJson = emp.work_days_json || '0,1,2,3,4,5';
       const workDays = new Set(wdJson.split(',').map(x => x.trim()).filter(Boolean).map(Number));
       for (let wd = 0; wd <= 6; wd++) { const cb = document.getElementById(`emp-wd-${wd}`); if (cb) cb.checked = workDays.has(wd); }
-      const rotStart = document.getElementById('emp-ed-rot-start');
-      if (rotStart) rotStart.value = (emp.rotation_start_day != null) ? String(emp.rotation_start_day) : '';
-      const rotSlot = document.getElementById('emp-ed-rot-slot');
-      if (rotSlot) rotSlot.value = (emp.rotation_slot != null) ? String(emp.rotation_slot) : '';
       const payTypeEl = document.getElementById('emp-ed-pay-type');
       if (payTypeEl) payTypeEl.value = emp.pay_type || 'hourly';
 
@@ -23365,8 +23338,6 @@ async function empSaveEmployee() {
     employment_type:      document.getElementById('emp-ed-emp-type').value,
     user_id:              parseInt(document.getElementById('emp-ed-user-id').value) || null,
     work_days_json:       [0,1,2,3,4,5,6].filter(d => { const cb = document.getElementById(`emp-wd-${d}`); return cb && cb.checked; }).join(',') || '0,1,2,3,4,5',
-    rotation_start_day:   (() => { const el = document.getElementById('emp-ed-rot-start'); return el && el.value !== '' ? parseInt(el.value) : null; })(),
-    rotation_slot:        (() => { const el = document.getElementById('emp-ed-rot-slot'); return el && el.value.trim() !== '' ? parseInt(el.value) : null; })(),
     pay_type:             (() => { const el = document.getElementById('emp-ed-pay-type'); return el ? el.value : 'hourly'; })(),
   };
   if (!payload.name) { toast('Name is required', 'warning'); return; }

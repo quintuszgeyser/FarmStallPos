@@ -1798,6 +1798,9 @@ def api_recipe_cost(pid):
     if not lines:
         return jsonify({'product_id': pid, 'recipe_cost': 0, 'lines': [], 'suggested_prices': {}})
 
+    def _has_stock(product_id):
+        return StockBatch.query.filter_by(product_id=product_id).filter(StockBatch.qty_remaining_base > 0).first() is not None
+
     def _cost_recursive(product_id, multiplier=1.0, _depth=0):
         if _depth > 10: return 0.0, []
         total, lines_out = 0.0, []
@@ -1813,7 +1816,9 @@ def api_recipe_cost(pid):
                 cost_per = get_fifo_cost_per_unit(ln.ingredient_id) if ing else 0
                 line_cost = scaled * cost_per
                 total += line_cost
-                lines_out.append({'ingredient_id': ln.ingredient_id, 'ingredient_name': ing.name if ing else None, 'base_unit': ing.base_unit if ing else None, 'qty_base': scaled, 'cost_per_unit': cost_per, 'line_cost': round(line_cost, 4), 'is_sub_recipe': False})
+                in_stock = _has_stock(ln.ingredient_id) if ing else False
+                cost_source = 'current' if in_stock else ('last_known' if cost_per > 0 else 'unknown')
+                lines_out.append({'ingredient_id': ln.ingredient_id, 'ingredient_name': ing.name if ing else None, 'base_unit': ing.base_unit if ing else None, 'qty_base': scaled, 'cost_per_unit': cost_per, 'line_cost': round(line_cost, 4), 'is_sub_recipe': False, 'cost_source': cost_source})
         return total, lines_out
 
     total_cost, result_lines = _cost_recursive(pid)

@@ -67,6 +67,17 @@ def api_stock_ingredients():
     for p in products:
         batches     = StockBatch.query.filter_by(product_id=p.id).filter(StockBatch.qty_remaining_base > 0).order_by(StockBatch.sort_order.asc().nulls_last(), StockBatch.purchased_at.asc(), StockBatch.id.asc()).all()
         stock_level = sum(float(b.qty_remaining_base) for b in batches)
+        # When stock is depleted, include the last real batch so the frontend can show
+        # last-known cost for recipe cost estimates and margin calculations.
+        if not batches:
+            last_batch = (StockBatch.query
+                          .filter_by(product_id=p.id)
+                          .filter(StockBatch.batch_type != 'negative_placeholder')
+                          .filter(StockBatch.cost_per_base_unit > 0)
+                          .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
+                          .first())
+            if last_batch:
+                batches = [last_batch]
         result.append({
             'id': p.id, 'name': p.name, 'unit_type': p.unit_type, 'base_unit': p.base_unit, 'stock_unit': p.stock_unit,
             'package_size': float(p.package_size) if p.package_size else None,
@@ -921,7 +932,16 @@ def api_stock_negative():
     if not rows:
         return jsonify([])
     pids = [r.product_id for r in rows]
-    products = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()}
+    # Exclude batch-produced recipes — they auto-produce when sold negative
+    all_products = {p.id: p for p in Product.query.filter(Product.id.in_(pids)).all()}
+    pids = [pid for pid in pids if not (
+        all_products.get(pid) and
+        all_products[pid].product_type == 'recipe' and
+        all_products[pid].is_produced
+    )]
+    if not pids:
+        return jsonify([])
+    products = {pid: all_products[pid] for pid in pids}
 
     # Pull negative placeholder batches to get when each product first went negative
     neg_placeholders = (StockBatch.query
