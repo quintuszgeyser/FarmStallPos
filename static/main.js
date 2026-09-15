@@ -15194,21 +15194,27 @@ function fmtWait(seconds) {
 }
 
 function _kitchenIngHtml(ingredients) {
+  // Only show modifications — removals, extras, substitutions.
+  // Standard ingredients are not shown; the kitchen already knows the recipe.
   if (!ingredients || !ingredients.length) return '';
+  const mods = ingredients.filter(i => i.removed || i.extra || i.substituted);
+  if (!mods.length) return '';
   return `<ul class="kitchen-ingredient-list list-unstyled mb-0">` +
-    ingredients.map(i => {
+    mods.map(i => {
       const qtyDisplay = i.qty >= 1000 && i.base_unit === 'ml'
         ? `${(i.qty/1000).toFixed(2)}L`
         : i.qty >= 1000 && i.base_unit === 'g'
         ? `${(i.qty/1000).toFixed(2)}kg`
-        : `${i.qty % 1 === 0 ? i.qty : i.qty.toFixed(1)}${i.base_unit}`;
-      if (i.removed)     return `<li style="background:#f8d7da;border-radius:4px;padding:2px 6px;font-weight:700;color:#842029;text-decoration:line-through"><i class="bi bi-x-lg me-1"></i>NO ${i.name}</li>`;
-      if (i.extra)       return `<li style="background:#d1e7dd;border-radius:4px;padding:2px 6px;font-weight:700;color:#0a3622">+ EXTRA: ${i.name} - <strong>${qtyDisplay}</strong></li>`;
+        : `${i.qty % 1 === 0 ? i.qty : i.qty.toFixed(1)}${i.base_unit || ''}`;
+      if (i.removed)
+        return `<li style="background:#f8d7da;border-radius:4px;padding:2px 6px;font-weight:700;color:#842029"><i class="bi bi-x-lg me-1"></i>NO ${escapeHtml(i.name)}</li>`;
+      if (i.extra)
+        return `<li style="background:#d1e7dd;border-radius:4px;padding:2px 6px;font-weight:700;color:#0a3622"><i class="bi bi-plus-lg me-1"></i>EXTRA: ${escapeHtml(i.name)}${qtyDisplay ? ` <strong>${qtyDisplay}</strong>` : ''}</li>`;
       if (i.substituted) {
-        const origNote = i.original_name ? ` <span style="text-decoration:line-through;opacity:.6">${i.original_name}</span>` : '';
-        return `<li style="background:#fff3cd;border-radius:4px;padding:2px 6px;font-weight:700;color:#856404"><i class="bi bi-flag me-1"></i>SWAP: ${i.name}${origNote} - <strong>${qtyDisplay}</strong></li>`;
+        const origNote = i.original_name ? ` <span style="text-decoration:line-through;opacity:.6">${escapeHtml(i.original_name)}</span>` : '';
+        return `<li style="background:#fff3cd;border-radius:4px;padding:2px 6px;font-weight:700;color:#856404"><i class="bi bi-arrow-left-right me-1"></i>SWAP${origNote} → ${escapeHtml(i.name)}</li>`;
       }
-      return `<li>• ${i.name} - <strong>${qtyDisplay}</strong></li>`;
+      return '';
     }).join('') + `</ul>`;
 }
 
