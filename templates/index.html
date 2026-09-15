@@ -4565,6 +4565,11 @@
           <div class="text-muted small mt-1">
             Creates missing consumption records for sales where stock was zero at the time (sold into negative before the system tracked it). Assigns the corrected cost to those gaps. Only needed if the product was sold while out of stock on an older version.
           </div>
+          <div id="edit-batch-backfill-since-wrap" class="hidden mt-2 ms-3">
+            <label class="form-label small mb-1">Only backfill sales from this date onwards</label>
+            <input type="date" id="edit-batch-backfill-since" class="form-control form-control-sm" style="max-width:180px">
+            <div class="text-muted small mt-1">Defaults to this batch's received date. Move it earlier to cover older sales, or later to skip sales you don't want touched.</div>
+          </div>
         </div>
         <div id="edit-batch-addl-costs-wrap" class="mt-2"></div>
         <div class="mt-2">

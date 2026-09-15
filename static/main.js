@@ -5103,6 +5103,10 @@ function _updateEditBatchPreview() {
 
 document.getElementById('edit-batch-qty-purchased')?.addEventListener('input', _updateEditBatchPreview);
 document.getElementById('edit-batch-unit')?.addEventListener('change', _updateEditBatchPreview);
+document.getElementById('edit-batch-backfill-cogs')?.addEventListener('change', function() {
+  const wrap = document.getElementById('edit-batch-backfill-since-wrap');
+  if (wrap) this.checked ? show(wrap) : hide(wrap);
+});
 
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-edit-batch-id]');
@@ -5172,8 +5176,12 @@ document.addEventListener('click', (e) => {
       show(ebWarnEl);
       if (ebRetroWrap) show(ebRetroWrap);
       if (ebRetroCb)   ebRetroCb.checked = false;
-      const ebBackfillCb = document.getElementById('edit-batch-backfill-cogs');
-      if (ebBackfillCb) ebBackfillCb.checked = false;
+      const ebBackfillCb        = document.getElementById('edit-batch-backfill-cogs');
+      const ebBackfillSinceWrap = document.getElementById('edit-batch-backfill-since-wrap');
+      const ebBackfillSince     = document.getElementById('edit-batch-backfill-since');
+      if (ebBackfillCb)    ebBackfillCb.checked = false;
+      if (ebBackfillSince) ebBackfillSince.value = date; // default to this batch's received date
+      if (ebBackfillSinceWrap) hide(ebBackfillSinceWrap);
     } else {
       hide(ebWarnEl);
       if (ebRetroWrap) hide(ebRetroWrap);
@@ -5211,6 +5219,7 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
   const ebUpdatedAt = document.getElementById('edit-batch-updated-at')?.value || null;
   const ebRetroCogs    = document.getElementById('edit-batch-retro-cogs')?.checked    || false;
   const ebBackfillCogs = document.getElementById('edit-batch-backfill-cogs')?.checked || false;
+  const ebBackfillSince = document.getElementById('edit-batch-backfill-since')?.value || null;
   if (ebAddlCosts.length) _checkOverheadWarning(_addlCostsTotal(ebAddlCosts), totalPrice);
 
   if (ebRetroCogs || ebBackfillCogs) {
@@ -5232,13 +5241,16 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
     if (ebReason)       ebBody.cost_adjustment_reason    = ebReason;
     if (ebUpdatedAt)    ebBody.updated_at                = ebUpdatedAt;
     if (ebRetroCogs)    ebBody.recalculate_historical_cogs = true;
-    if (ebBackfillCogs) ebBody.backfill_missing_cogs       = true;
+    if (ebBackfillCogs) {
+      ebBody.backfill_missing_cogs = true;
+      if (ebBackfillSince) ebBody.backfill_since = ebBackfillSince;
+    }
 
     const ebResult = await api(`/api/stock/batches/${batchId}`, { method: 'PATCH', body: JSON.stringify(ebBody) });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editBatchModal')).hide();
     const parts = [];
     if (ebResult.retro_updated > 0)  parts.push(`COGS corrected on ${ebResult.retro_updated} existing record(s)`);
-    if (ebResult.backfilled     > 0)  parts.push(`${ebResult.backfilled} missing record(s) created`);
+    if (ebResult.backfilled     > 0)  parts.push(`${ebResult.backfilled} missing record(s) created${ebBackfillSince ? ` (from ${ebBackfillSince})` : ''}`);
     if (parts.length) {
       toast(`Batch updated — ${parts.join(', ')}. Reload stats to see updated figures.`, 'success', 7000);
     } else {

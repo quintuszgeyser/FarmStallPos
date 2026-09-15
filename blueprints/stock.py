@@ -459,11 +459,19 @@ def api_stock_batch_edit(batch_id):
             .all()
         )
         _not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
-        all_sales = Sale.query.filter(
+        sales_q = Sale.query.filter(
             Sale.product_id == pid,
             Sale.voided == False,
             _not_return,
-        ).all()
+        )
+        backfill_since_str = data.get('backfill_since')
+        if backfill_since_str:
+            try:
+                since_dt = datetime.fromisoformat(backfill_since_str)
+                sales_q = sales_q.filter(Sale.date_time >= since_dt)
+            except (ValueError, TypeError):
+                pass
+        all_sales = sales_q.all()
         new_records = []
         for s in all_sales:
             already = Decimal(str(consumed_by_sale.get(s.sale_id, 0)))
