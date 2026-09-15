@@ -85,129 +85,375 @@ _VIEW_HTML = """<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Lady Coleen CCTV</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
-    #frigate-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: none; }
-    #cctv-hud {
-      position: fixed; bottom: 16px; right: 16px; z-index: 9999;
-      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
-      font-family: system-ui, sans-serif;
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --cols: 4; --amber: #d4af37; }
+    html, body { width: 100%; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(var(--cols), 1fr);
+      grid-auto-rows: 1fr;
+      gap: 2px;
+      width: 100%;
+      height: 100%;
+      background: #111;
+      padding: 2px;
     }
+
+    .tile {
+      position: relative;
+      background: #090909;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .tile video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #090909;
+    }
+
+    .tile-gradient {
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 35%);
+      pointer-events: none;
+    }
+
+    .tile-label {
+      position: absolute;
+      bottom: 7px;
+      left: 9px;
+      color: rgba(255,255,255,0.9);
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: .04em;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+      pointer-events: none;
+    }
+
+    .tile-dot {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      pointer-events: none;
+    }
+    .tile-dot.connecting { background: #555; animation: blink 1.4s infinite; }
+    .tile-dot.live       { background: #43a047; box-shadow: 0 0 5px #43a047; }
+    .tile-dot.error      { background: #c62828; }
+
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* Fullscreen: show full frame, not cropped */
+    .tile:fullscreen video,
+    .tile:-webkit-full-screen video { object-fit: contain; background: #000; }
+
+    /* HUD */
+    #hud {
+      position: fixed;
+      bottom: max(14px, env(safe-area-inset-bottom, 14px));
+      right: max(14px, env(safe-area-inset-right, 14px));
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
     #settings-panel {
-      background: rgba(18,18,18,0.96); border: 1px solid #3a3a3a; border-radius: 10px;
-      padding: 12px 14px; display: none; min-width: 190px;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.7);
+      background: rgba(12,12,12,0.97);
+      border: 1px solid #252525;
+      border-radius: 10px;
+      padding: 13px 14px;
+      display: none;
+      min-width: 195px;
+      box-shadow: 0 8px 28px rgba(0,0,0,0.85);
     }
-    .sp-title { color: #888; font-size: 0.72rem; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 8px; }
-    .sp-option {
-      display: block; color: #ccc; font-size: 0.84rem; cursor: pointer;
-      padding: 6px 10px; border-radius: 6px; background: none; border: none;
-      width: 100%; text-align: left;
+
+    .sp-head {
+      font-size: 10px;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: #444;
+      margin-bottom: 7px;
     }
-    .sp-option:hover { background: rgba(212,175,55,0.15); color: #fff; }
-    .sp-option.active { background: #d4af37; color: #111; font-weight: 600; }
-    .sp-divider { border: none; border-top: 1px solid #333; margin: 8px 0; }
+    .sp-head + .sp-head, .sp-divider + .sp-head { margin-top: 10px; }
+
+    .sp-cols { display: flex; gap: 5px; margin-bottom: 3px; }
+
+    .sp-col-btn {
+      flex: 1;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      color: #777;
+      font-size: 12px;
+      padding: 6px 2px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .sp-col-btn:hover { color: #ccc; background: #222; }
+    .sp-col-btn.active { background: var(--amber); border-color: var(--amber); color: #111; font-weight: 600; }
+
+    .sp-action {
+      display: block;
+      width: 100%;
+      background: none;
+      border: none;
+      border-radius: 6px;
+      color: #999;
+      font-size: 12.5px;
+      padding: 7px 8px;
+      cursor: pointer;
+      text-align: left;
+    }
+    .sp-action:hover { background: rgba(255,255,255,0.05); color: #ddd; }
+    .sp-action.danger { color: #b05050; }
+    .sp-action.danger:hover { color: #e07070; }
+
+    .sp-divider { border: none; border-top: 1px solid #1e1e1e; margin: 8px 0; }
+
     #gear-btn {
-      background: rgba(18,18,18,0.88); border: 1px solid #444; border-radius: 50%;
-      color: #d4af37; font-size: 1.3rem; width: 44px; height: 44px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      box-shadow: 0 2px 8px rgba(0,0,0,0.5); user-select: none;
+      background: rgba(12,12,12,0.9);
+      border: 1px solid #2e2e2e;
+      border-radius: 50%;
+      color: var(--amber);
+      font-size: 1.25rem;
+      width: 42px;
+      height: 42px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.7);
+      user-select: none;
     }
-    #gear-btn:hover { background: rgba(30,30,30,0.95); }
-    #refresh-countdown {
-      background: rgba(18,18,18,0.8); border: 1px solid #2a2a2a; border-radius: 8px;
-      color: #666; font-size: 0.7rem; padding: 4px 10px;
-    }
+    #gear-btn:hover { background: rgba(22,22,22,0.97); }
+
+    @media (max-width: 600px) { :root { --cols: 2; } }
   </style>
 </head>
 <body>
-  <iframe id="frigate-frame" src="/"></iframe>
 
-  <div id="cctv-hud">
-    <div id="refresh-countdown" style="display:none"></div>
-    <div id="settings-panel">
-      <div class="sp-title">Auto-refresh</div>
-      <button class="sp-option" data-secs="0">Off</button>
-      <button class="sp-option" data-secs="60">Every 1 minute</button>
-      <button class="sp-option" data-secs="300">Every 5 minutes</button>
-      <button class="sp-option" data-secs="600">Every 10 minutes</button>
-      <button class="sp-option" data-secs="1800">Every 30 minutes</button>
-      <hr class="sp-divider">
-      <button class="sp-option" id="sp-logout" style="color:#c07070">Sign out</button>
+<div id="grid"></div>
+
+<div id="hud">
+  <div id="settings-panel">
+    <div class="sp-head">Layout</div>
+    <div class="sp-cols">
+      <button class="sp-col-btn" data-cols="2">2</button>
+      <button class="sp-col-btn" data-cols="3">3</button>
+      <button class="sp-col-btn" data-cols="4">4</button>
     </div>
-    <button id="gear-btn" title="Settings">&#9881;</button>
+    <div class="sp-divider"></div>
+    <div class="sp-head">Actions</div>
+    <button class="sp-action" id="sp-reconnect">&#8635; Reconnect all</button>
+    <div class="sp-divider"></div>
+    <button class="sp-action danger" id="sp-logout">Sign out</button>
   </div>
+  <button id="gear-btn" title="Settings">&#9881;</button>
+</div>
 
-  <script>
-    const LS_KEY = 'cctv_refresh_secs';
-    let _refreshHandle = null;
-    let _countdownHandle = null;
-    let _nextAt = 0;
+<script>
+  // Camera list matches Frigate config
+  var CAMERAS = [
+    {id: 'kombuis',    label: 'Kombuis'},
+    {id: 'counter',    label: 'Toonbank'},
+    {id: 'rakke',      label: 'Rakke'},
+    {id: 'agter',      label: 'Agter'},
+    {id: 'badkamer',   label: 'Badkamer'},
+    {id: 'stoepagter', label: 'Stoep Agter'},
+    {id: 'stoepvoor',  label: 'Stoep Voor'},
+    {id: 'Stoor',      label: 'Stoor'},
+    {id: 'AgterTenk',  label: 'Agter Tenk'},
+    {id: 'parkering',  label: 'Parkering'},
+    {id: 'paal',       label: 'Paal'},
+    {id: 'pad',        label: 'Pad'},
+  ];
 
-    function savedSecs() { return parseInt(localStorage.getItem(LS_KEY) || '0', 10); }
+  var streams = {};
 
-    function applySetting(secs) {
-      localStorage.setItem(LS_KEY, secs);
-      clearTimeout(_refreshHandle);
-      clearInterval(_countdownHandle);
-      const cd = document.getElementById('refresh-countdown');
-      if (!secs) { cd.style.display = 'none'; return; }
-      _nextAt = Date.now() + secs * 1000;
-      cd.style.display = 'block';
-      _countdownHandle = setInterval(() => {
-        const rem = Math.ceil((_nextAt - Date.now()) / 1000);
-        if (rem <= 0) { cd.textContent = 'Refreshing…'; return; }
-        const m = Math.floor(rem / 60), s = rem % 60;
-        cd.textContent = 'Refresh in ' + (m ? m + 'm ' : '') + s + 's';
-      }, 1000);
-      (function schedule() {
-        _refreshHandle = setTimeout(() => {
-          document.getElementById('frigate-frame').src = '/';
-          _nextAt = Date.now() + secs * 1000;
-          schedule();
-        }, secs * 1000);
-      })();
-    }
+  // Build grid
+  var grid = document.getElementById('grid');
+  CAMERAS.forEach(function(cam) {
+    var tile = document.createElement('div');
+    tile.className = 'tile';
 
-    function syncHighlight(secs) {
-      document.querySelectorAll('.sp-option[data-secs]').forEach(b => {
-        b.classList.toggle('active', parseInt(b.dataset.secs) === secs);
-      });
-    }
+    var video = document.createElement('video');
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
 
-    document.querySelectorAll('.sp-option[data-secs]').forEach(b => {
-      b.addEventListener('click', () => {
-        const v = parseInt(b.dataset.secs);
-        syncHighlight(v);
-        applySetting(v);
-        document.getElementById('settings-panel').style.display = 'none';
-      });
-    });
+    var gradient = document.createElement('div');
+    gradient.className = 'tile-gradient';
 
-    document.getElementById('gear-btn').addEventListener('click', e => {
-      const p = document.getElementById('settings-panel');
-      p.style.display = p.style.display === 'none' ? 'block' : 'none';
-      e.stopPropagation();
-    });
+    var label = document.createElement('div');
+    label.className = 'tile-label';
+    label.textContent = cam.label;
 
-    document.getElementById('sp-logout').addEventListener('click', () => {
-      window.location.href = '/cctv/logout';
-    });
+    var dot = document.createElement('div');
+    dot.className = 'tile-dot connecting';
 
-    document.addEventListener('click', e => {
-      const p = document.getElementById('settings-panel');
-      if (p.style.display !== 'none' && !p.contains(e.target)) {
-        p.style.display = 'none';
+    tile.appendChild(video);
+    tile.appendChild(gradient);
+    tile.appendChild(label);
+    tile.appendChild(dot);
+    grid.appendChild(tile);
+
+    tile.addEventListener('click', function() {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        tile.requestFullscreen().catch(function(){});
       }
     });
 
-    const init = savedSecs();
-    syncHighlight(init);
-    applySetting(init);
-  </script>
+    streams[cam.id] = new CamStream(cam.id, video, dot);
+  });
+
+  // WebRTC stream per camera
+  function CamStream(id, video, dot) {
+    this.id = id;
+    this.video = video;
+    this.dot = dot;
+    this.pc = null;
+    this.ws = null;
+    this.retryDelay = 3000;
+    this._timer = null;
+    this.connect();
+  }
+
+  CamStream.prototype.setDot = function(state) {
+    this.dot.className = 'tile-dot ' + state;
+  };
+
+  CamStream.prototype.connect = function() {
+    var self = this;
+    self._clear();
+    self.setDot('connecting');
+
+    var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    var ws = new WebSocket(proto + '://' + location.host + '/api/ws?src=' + encodeURIComponent(self.id));
+    self.ws = ws;
+
+    var pc = new RTCPeerConnection({iceServers: []});
+    self.pc = pc;
+
+    // Video only — no audio to keep bandwidth lean
+    pc.addTransceiver('video', {direction: 'recvonly'});
+
+    pc.ontrack = function(e) {
+      self.video.srcObject = e.streams[0];
+      self.setDot('live');
+      self.retryDelay = 3000;
+    };
+
+    pc.onconnectionstatechange = function() {
+      var s = pc.connectionState;
+      if (s === 'failed' || s === 'disconnected') { self.scheduleRetry(); }
+    };
+
+    pc.onicecandidate = function(e) {
+      if (e.candidate && ws.readyState === 1) {
+        ws.send(JSON.stringify({type: 'webrtc/candidate', value: e.candidate.candidate}));
+      }
+    };
+
+    ws.onopen = function() {
+      pc.createOffer().then(function(offer) {
+        return pc.setLocalDescription(offer).then(function() {
+          ws.send(JSON.stringify({type: 'webrtc/offer', value: offer.sdp}));
+        });
+      }).catch(function() { self.scheduleRetry(); });
+    };
+
+    ws.onmessage = function(e) {
+      var msg;
+      try { msg = JSON.parse(e.data); } catch(_) { return; }
+      if (msg.type === 'webrtc/answer') {
+        pc.setRemoteDescription({type: 'answer', sdp: msg.value}).catch(function(){});
+      } else if (msg.type === 'webrtc/candidate' && msg.value) {
+        pc.addIceCandidate({candidate: msg.value, sdpMid: '0', sdpMLineIndex: 0}).catch(function(){});
+      } else if (msg.type === 'error') {
+        self.scheduleRetry();
+      }
+    };
+
+    ws.onerror = function() { self.setDot('error'); };
+    ws.onclose  = function() { if (self.pc === pc) self.scheduleRetry(); };
+  };
+
+  CamStream.prototype._clear = function() {
+    if (this.pc) { try { this.pc.close(); } catch(_){} this.pc = null; }
+    if (this.ws) { try { this.ws.close(); } catch(_){} this.ws = null; }
+    this.video.srcObject = null;
+  };
+
+  CamStream.prototype.scheduleRetry = function() {
+    var self = this;
+    if (self._timer) return;
+    self.setDot('error');
+    self._clear();
+    self._timer = setTimeout(function() {
+      self._timer = null;
+      self.retryDelay = Math.min(self.retryDelay * 1.5, 30000);
+      self.connect();
+    }, self.retryDelay);
+  };
+
+  CamStream.prototype.reconnect = function() {
+    clearTimeout(this._timer);
+    this._timer = null;
+    this.retryDelay = 3000;
+    this.connect();
+  };
+
+  // Layout
+  var LS_COLS = 'cctv_cols';
+  function applyLayout(n) {
+    document.documentElement.style.setProperty('--cols', n);
+    localStorage.setItem(LS_COLS, n);
+    document.querySelectorAll('.sp-col-btn').forEach(function(b) {
+      b.classList.toggle('active', parseInt(b.dataset.cols) === n);
+    });
+  }
+  applyLayout(parseInt(localStorage.getItem(LS_COLS) || '4'));
+  document.querySelectorAll('.sp-col-btn').forEach(function(b) {
+    b.addEventListener('click', function() { applyLayout(parseInt(b.dataset.cols)); });
+  });
+
+  // Gear menu
+  var gearBtn = document.getElementById('gear-btn');
+  var panel   = document.getElementById('settings-panel');
+
+  gearBtn.addEventListener('click', function(e) {
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    e.stopPropagation();
+  });
+
+  document.addEventListener('click', function(e) {
+    if (panel.style.display !== 'none' && !panel.contains(e.target)) {
+      panel.style.display = 'none';
+    }
+  });
+
+  document.getElementById('sp-reconnect').addEventListener('click', function() {
+    Object.values(streams).forEach(function(s) { s.reconnect(); });
+    panel.style.display = 'none';
+  });
+
+  document.getElementById('sp-logout').addEventListener('click', function() {
+    window.location.href = '/cctv/logout';
+  });
+</script>
 </body>
 </html>"""
 
