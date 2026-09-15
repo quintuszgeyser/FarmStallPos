@@ -502,6 +502,8 @@ _VIEW_HTML = """<!doctype html>
 
     pc.addTransceiver('video', {direction: 'recvonly'});
 
+    // ontrack fires on setRemoteDescription — it does NOT mean media is flowing.
+    // Only attach the stream here; the dot is driven by real connection state below.
     pc.ontrack = function(e) {
       if (e.streams && e.streams.length > 0) {
         self.video.srcObject = e.streams[0];
@@ -510,13 +512,17 @@ _VIEW_HTML = """<!doctype html>
         self.video.srcObject.addTrack(e.track);
       }
       self.video.play().catch(function(){});
-      self.setDot('live');
-      self.retryDelay = 3000;
     };
 
     pc.onconnectionstatechange = function() {
       var s = pc.connectionState;
-      if (s === 'failed' || s === 'disconnected') { self.scheduleRetry(); }
+      if (s === 'connected') {
+        self.setDot('live');
+        self.retryDelay = 3000;
+        self.video.play().catch(function(){});
+      } else if (s === 'failed' || s === 'disconnected') {
+        self.scheduleRetry();
+      }
     };
 
     pc.onicecandidate = function(e) {
