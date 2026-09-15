@@ -5162,14 +5162,19 @@ document.addEventListener('click', (e) => {
   const ebReasonEl = document.getElementById('edit-batch-reason');
   if (ebReasonEl) ebReasonEl.value = '';
 
-  // Consumed warning
-  const ebWarnEl = document.getElementById('edit-batch-consumed-warning');
+  // Consumed warning + retro-COGS checkbox
+  const ebWarnEl     = document.getElementById('edit-batch-consumed-warning');
+  const ebRetroWrap  = document.getElementById('edit-batch-retro-cogs-wrap');
+  const ebRetroCb    = document.getElementById('edit-batch-retro-cogs');
   if (ebWarnEl) {
     if (consumedPct > 0) {
-      ebWarnEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>${Math.round(consumedPct)}% consumed.</strong> Adding costs now updates only the remaining ${Math.round(100 - consumedPct)}%. <strong>Previous sales and historical profit reports will NOT change.</strong>`;
+      ebWarnEl.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1"></i><strong>${Math.round(consumedPct)}% consumed.</strong> Adding costs now updates only the remaining ${Math.round(100 - consumedPct)}%. <strong>Previous sales and historical profit reports will NOT change</strong> unless you tick the box below.`;
       show(ebWarnEl);
+      if (ebRetroWrap) show(ebRetroWrap);
+      if (ebRetroCb)   ebRetroCb.checked = false;
     } else {
       hide(ebWarnEl);
+      if (ebRetroWrap) hide(ebRetroWrap);
     }
   }
 
@@ -5202,7 +5207,13 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
   const ebAddlCosts = ebAddlWrap ? _readAdditionalCosts(ebAddlWrap) : [];
   const ebReason    = document.getElementById('edit-batch-reason')?.value?.trim() || null;
   const ebUpdatedAt = document.getElementById('edit-batch-updated-at')?.value || null;
+  const ebRetroCogs = document.getElementById('edit-batch-retro-cogs')?.checked || false;
   if (ebAddlCosts.length) _checkOverheadWarning(_addlCostsTotal(ebAddlCosts), totalPrice);
+
+  if (ebRetroCogs) {
+    const confirmMsg = 'This will retroactively update the cost on ALL past consumption records for this batch.\n\nAll profit reports and COGS figures for sales that used this batch will change.\n\nProceed?';
+    if (!confirm(confirmMsg)) return;
+  }
 
   try {
     const ebBody = {
@@ -5214,10 +5225,15 @@ document.getElementById('btn-edit-batch-confirm')?.addEventListener('click', asy
     };
     if (ebReason)    ebBody.cost_adjustment_reason = ebReason;
     if (ebUpdatedAt) ebBody.updated_at = ebUpdatedAt;
+    if (ebRetroCogs) ebBody.recalculate_historical_cogs = true;
 
-    await api(`/api/stock/batches/${batchId}`, { method: 'PATCH', body: JSON.stringify(ebBody) });
+    const ebResult = await api(`/api/stock/batches/${batchId}`, { method: 'PATCH', body: JSON.stringify(ebBody) });
     bootstrap.Modal.getOrCreateInstance(document.getElementById('editBatchModal')).hide();
-    toast('Batch updated', 'success', 2000);
+    if (ebRetroCogs && ebResult.retro_updated > 0) {
+      toast(`Batch updated — COGS corrected on ${ebResult.retro_updated} consumption record(s). Reload stats to see updated figures.`, 'success', 6000);
+    } else {
+      toast('Batch updated', 'success', 2000);
+    }
     await loadIngredients();
     if (_currentSupplier) loadSupplierInvoices(_currentSupplier.id);
   } catch (e) {

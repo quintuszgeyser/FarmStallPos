@@ -433,12 +433,24 @@ def api_stock_batch_edit(batch_id):
     reprice_product = batch.product_id if (costs_changed or 'total_price' in data) else None
 
     db.session.commit()
+    # Retroactively correct COGS on already-consumed stock if requested.
+    # Updates cost_per_base_unit on every StockConsumption row for this batch
+    # so profit reports and stats reflect the corrected purchase price.
+    retro_updated = 0
+    cost_was_updated = costs_changed or 'total_price' in data
+    if data.get('recalculate_historical_cogs') and cost_was_updated:
+        consumptions = StockConsumption.query.filter_by(batch_id=batch.id).all()
+        for sc in consumptions:
+            sc.cost_per_base_unit = batch.cost_per_base_unit
+        retro_updated = len(consumptions)
+        db.session.commit()
+
     if reprice_product:
         try:
             _auto_price_products([reprice_product])
         except Exception:
             pass
-    return jsonify({'ok': True, 'updated_at': batch.updated_at.isoformat()})
+    return jsonify({'ok': True, 'updated_at': batch.updated_at.isoformat(), 'retro_updated': retro_updated})
 
 
 @bp.route('/api/stock/batches/apply-costs', methods=['POST'])
