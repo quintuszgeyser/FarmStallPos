@@ -468,9 +468,6 @@ _VIEW_HTML = """<!doctype html>
     {id: 'stoepvoor',  label: 'Stoep Voor'},
     {id: 'Stoor',      label: 'Stoor'},
     {id: 'AgterTenk',  label: 'Agter Tenk'},
-    {id: 'parkering',  label: 'Parkering'},
-    {id: 'paal',       label: 'Paal'},
-    {id: 'pad',        label: 'Pad'},
   ];
 
   var streams = {};
