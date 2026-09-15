@@ -475,38 +475,6 @@ _VIEW_HTML = """<!doctype html>
 
   var streams = {};
 
-  // ── Grid ──
-  var grid = document.getElementById('grid');
-  CAMERAS.forEach(function(cam) {
-    var tile = document.createElement('div');
-    tile.className = 'tile';
-
-    var video = document.createElement('video');
-    video.autoplay = true;
-    video.muted = true;
-    video.playsInline = true;
-
-    var gradient = document.createElement('div');
-    gradient.className = 'tile-gradient';
-
-    var label = document.createElement('div');
-    label.className = 'tile-label';
-    label.textContent = cam.label;
-
-    var dot = document.createElement('div');
-    dot.className = 'tile-dot connecting';
-
-    tile.appendChild(video);
-    tile.appendChild(gradient);
-    tile.appendChild(label);
-    tile.appendChild(dot);
-    grid.appendChild(tile);
-
-    tile.addEventListener('click', function() { openDrilldown(cam); });
-
-    streams[cam.id] = new CamStream(cam.id, video, dot);
-  });
-
   // ── WebRTC CamStream ──
   function CamStream(id, video, dot) {
     this.id = id;
@@ -602,6 +570,38 @@ _VIEW_HTML = """<!doctype html>
     this.retryDelay = 3000;
     this.connect();
   };
+
+  // ── Grid — must come after all CamStream.prototype assignments ──
+  var grid = document.getElementById('grid');
+  CAMERAS.forEach(function(cam) {
+    var tile = document.createElement('div');
+    tile.className = 'tile';
+
+    var video = document.createElement('video');
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+
+    var gradient = document.createElement('div');
+    gradient.className = 'tile-gradient';
+
+    var label = document.createElement('div');
+    label.className = 'tile-label';
+    label.textContent = cam.label;
+
+    var dot = document.createElement('div');
+    dot.className = 'tile-dot connecting';
+
+    tile.appendChild(video);
+    tile.appendChild(gradient);
+    tile.appendChild(label);
+    tile.appendChild(dot);
+    grid.appendChild(tile);
+
+    tile.addEventListener('click', function() { openDrilldown(cam); });
+
+    streams[cam.id] = new CamStream(cam.id, video, dot);
+  });
 
   // ── Layout ──
   var LS_COLS = 'cctv_cols';
