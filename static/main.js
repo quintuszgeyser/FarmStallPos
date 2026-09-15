@@ -15704,63 +15704,94 @@ function renderSpecialGroups() {
   _specialGroups.forEach((group, gIdx) => {
     const card = document.createElement('div');
     card.className = 'border rounded p-2 mb-2';
+
+    const altCount = group.products.length;
+    const subtitle = altCount > 1
+      ? `<span class="text-muted fw-normal small">(any one of ${altCount} alternatives)</span>`
+      : `<span class="text-muted fw-normal small">(must be in cart)</span>`;
+
     card.innerHTML = `
       <div class="d-flex justify-content-between align-items-center mb-2">
-        <strong class="small">Group ${gIdx + 1} <span class="text-muted fw-normal">(any one product from this group)</span></strong>
+        <strong class="small">Group ${gIdx + 1} ${subtitle}</strong>
         <button class="btn btn-outline-danger btn-sm" data-rg-idx="${gIdx}"><i class="bi bi-x-lg"></i></button>
       </div>
-      <table class="table table-sm table-borderless mb-1">
-        <thead class="table-light"><tr><th>Product</th><th style="width:90px">Qty</th><th style="width:40px"></th></tr></thead>
-        <tbody data-grp="${gIdx}"></tbody>
-      </table>
-      <button class="btn btn-outline-secondary btn-sm" data-ap-grp="${gIdx}"><i class="bi bi-plus-lg me-1"></i>Add alternative</button>`;
+      <div data-lines-host="${gIdx}"></div>
+      <button class="btn btn-outline-secondary btn-sm mt-1" data-ap-grp="${gIdx}">
+        <i class="bi bi-plus-lg me-1"></i>Add alternative
+      </button>`;
     host.appendChild(card);
 
-    const tbody = card.querySelector(`tbody[data-grp="${gIdx}"]`);
+    const linesHost = card.querySelector(`[data-lines-host="${gIdx}"]`);
+
     group.products.forEach((prod, pIdx) => {
       const lineType = prod.category_id != null ? 'category' : 'product';
-      const tr = document.createElement('tr');
+      const row = document.createElement('div');
+      row.className = 'd-flex align-items-start gap-2 mb-2 flex-wrap';
 
-      // Product/Category type toggle
-      const typeToggle = `<div class="btn-group btn-group-sm mb-1" role="group">
-        <button type="button" class="btn ${lineType==='product'?'btn-primary':'btn-outline-primary'}" data-lt-g="${gIdx}" data-lt-p="${pIdx}" data-lt-type="product">Product</button>
-        <button type="button" class="btn ${lineType==='category'?'btn-primary':'btn-outline-primary'}" data-lt-g="${gIdx}" data-lt-p="${pIdx}" data-lt-type="category">Category</button>
-      </div>`;
+      // Type toggle — always visible as first element in the row
+      const toggleWrap = document.createElement('div');
+      toggleWrap.innerHTML = `
+        <div class="text-muted small mb-1" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em">Type</div>
+        <div class="btn-group btn-group-sm" role="group">
+          <button type="button" class="btn ${lineType==='product'?'btn-primary':'btn-outline-secondary'}" data-lt-g="${gIdx}" data-lt-p="${pIdx}" data-lt-type="product"><i class="bi bi-box me-1"></i>Product</button>
+          <button type="button" class="btn ${lineType==='category'?'btn-primary':'btn-outline-secondary'}" data-lt-g="${gIdx}" data-lt-p="${pIdx}" data-lt-type="category"><i class="bi bi-tag me-1"></i>Category</button>
+        </div>`;
+      row.appendChild(toggleWrap);
 
-      let selectorHTML;
+      // Selector(s)
+      const selectorWrap = document.createElement('div');
+      selectorWrap.style.flex = '1';
+      selectorWrap.style.minWidth = '180px';
+
       if (lineType === 'category') {
-        let catSel = `<select class="form-select form-select-sm mb-1" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="category_id"><option value="">— select category —</option>`;
+        selectorWrap.innerHTML = `<div class="text-muted small mb-1" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em">Category</div>`;
+        let catSelHTML = `<select class="form-select form-select-sm mb-1" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="category_id"><option value="">— select category —</option>`;
         (STATE.categories || []).slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(c => {
-          catSel += `<option value="${c.id}" ${c.id === prod.category_id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`;
+          catSelHTML += `<option value="${c.id}" ${c.id === prod.category_id ? 'selected' : ''}>${escapeHtml(c.name)}</option>`;
         });
-        catSel += '</select>';
+        catSelHTML += '</select>';
+        selectorWrap.insertAdjacentHTML('beforeend', catSelHTML);
+
         const subCats = (STATE.subcategories || []).filter(sc => sc.category_id === prod.category_id);
-        let subCatSel = '';
         if (subCats.length > 0 || prod.sub_category_id) {
-          subCatSel = `<select class="form-select form-select-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="sub_category_id"><option value="">All sub-categories</option>`;
+          let subSelHTML = `<div class="text-muted small mb-1" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em">Sub-category <span class="fw-normal">(optional)</span></div>`;
+          subSelHTML += `<select class="form-select form-select-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="sub_category_id"><option value="">All sub-categories</option>`;
           subCats.slice().sort((a, b) => a.name.localeCompare(b.name)).forEach(sc => {
-            subCatSel += `<option value="${sc.id}" ${sc.id === prod.sub_category_id ? 'selected' : ''}>${escapeHtml(sc.name)}</option>`;
+            subSelHTML += `<option value="${sc.id}" ${sc.id === prod.sub_category_id ? 'selected' : ''}>${escapeHtml(sc.name)}</option>`;
           });
-          subCatSel += '</select>';
+          subSelHTML += '</select>';
+          selectorWrap.insertAdjacentHTML('beforeend', subSelHTML);
         }
-        selectorHTML = catSel + subCatSel;
       } else {
+        selectorWrap.innerHTML = `<div class="text-muted small mb-1" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em">Product</div>`;
         let selHTML = `<select class="form-select form-select-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="product_id"><option value="">— select product —</option>`;
         forSaleProducts.forEach(p => {
           selHTML += `<option value="${p.id}" ${p.id === prod.product_id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`;
         });
         selHTML += '</select>';
-        selectorHTML = selHTML;
+        selectorWrap.insertAdjacentHTML('beforeend', selHTML);
       }
+      row.appendChild(selectorWrap);
 
-      tr.innerHTML = `
-        <td>${typeToggle}${selectorHTML}</td>
-        <td><input type="number" min="1" value="${prod.qty || 1}" class="form-control form-control-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="qty"></td>
-        <td><button class="btn btn-outline-danger btn-sm" data-rp-g="${gIdx}" data-rp-p="${pIdx}"><i class="bi bi-dash"></i></button></td>`;
-      tbody.appendChild(tr);
+      // Qty
+      const qtyWrap = document.createElement('div');
+      qtyWrap.style.width = '80px';
+      qtyWrap.innerHTML = `
+        <div class="text-muted small mb-1" style="font-size:0.7rem;text-transform:uppercase;letter-spacing:.05em">Qty</div>
+        <input type="number" min="1" value="${prod.qty || 1}" class="form-control form-control-sm" data-sg="${gIdx}" data-sp="${pIdx}" data-sf="qty">`;
+      row.appendChild(qtyWrap);
+
+      // Remove button
+      const removeWrap = document.createElement('div');
+      removeWrap.innerHTML = `
+        <div class="mb-1" style="font-size:0.7rem">&nbsp;</div>
+        <button class="btn btn-outline-danger btn-sm" data-rp-g="${gIdx}" data-rp-p="${pIdx}"><i class="bi bi-dash"></i></button>`;
+      row.appendChild(removeWrap);
+
+      linesHost.appendChild(row);
 
       if (lineType === 'product') {
-        const sel = tr.querySelector('select[data-sf="product_id"]');
+        const sel = row.querySelector('select[data-sf="product_id"]');
         if (sel && window.TomSelect) new TomSelect(sel, { maxOptions: null, placeholder: '— select product —' });
       }
     });
@@ -15779,9 +15810,9 @@ function renderSpecialGroups() {
       if (f === 'product_id')      _specialGroups[g].products[p].product_id      = parseInt(el.value) || null;
       if (f === 'qty')             _specialGroups[g].products[p].qty             = parseInt(el.value) || 1;
       if (f === 'category_id') {
-        _specialGroups[g].products[p].category_id    = parseInt(el.value) || null;
+        _specialGroups[g].products[p].category_id     = parseInt(el.value) || null;
         _specialGroups[g].products[p].sub_category_id = null;
-        renderSpecialGroups(); // re-render to update sub-category options
+        renderSpecialGroups();
       }
       if (f === 'sub_category_id') _specialGroups[g].products[p].sub_category_id = parseInt(el.value) || null;
     });
@@ -15801,7 +15832,6 @@ function renderSpecialGroups() {
       renderSpecialGroups();
     });
   });
-  // Line type toggle (Product ↔ Category)
   host.querySelectorAll('[data-lt-g]').forEach(btn => {
     btn.addEventListener('click', () => {
       const g = parseInt(btn.dataset.ltG), p = parseInt(btn.dataset.ltP), type = btn.dataset.ltType;
