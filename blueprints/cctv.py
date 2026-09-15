@@ -257,6 +257,8 @@ _VIEW_HTML = """<!doctype html>
     <div class="sp-head">Actions</div>
     <button class="sp-action" id="sp-reconnect">&#8635; Reconnect all</button>
     <div class="sp-divider"></div>
+    <button class="sp-action" id="sp-frigate">&#128247; Open Frigate</button>
+    <div class="sp-divider"></div>
     <button class="sp-action danger" id="sp-logout">Sign out</button>
   </div>
   <button id="gear-btn" title="Settings">&#9881;</button>
@@ -447,6 +449,11 @@ _VIEW_HTML = """<!doctype html>
 
   document.getElementById('sp-reconnect').addEventListener('click', function() {
     Object.values(streams).forEach(function(s) { s.reconnect(); });
+    panel.style.display = 'none';
+  });
+
+  document.getElementById('sp-frigate').addEventListener('click', function() {
+    window.open('/', '_blank');
     panel.style.display = 'none';
   });
 
