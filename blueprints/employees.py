@@ -1030,24 +1030,39 @@ def api_clear_schedule():
 
 @bp.route('/api/employees/attendance/summary', methods=['GET'])
 def api_attendance_summary():
-    """Returns attendance for ALL active employees for a given month — used by the
-    all-employees calendar grid view."""
+    """Returns attendance for ALL active employees for a date range — used by the
+    all-employees calendar grid view. Accepts ?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
+    or legacy ?month=YYYY-MM."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    month_str = request.args.get('month')
-    try:
-        y, m   = map(int, month_str.split('-'))
-        d_from = date(y, m, 1)
-    except Exception:
-        return jsonify({'error': 'month required (YYYY-MM)'}), 400
+    date_from_str = request.args.get('date_from')
+    date_to_str   = request.args.get('date_to')
+    if date_from_str and date_to_str:
+        try:
+            d_from = date.fromisoformat(date_from_str)
+            d_to   = date.fromisoformat(date_to_str)
+        except Exception:
+            return jsonify({'error': 'date_from and date_to must be YYYY-MM-DD'}), 400
+    else:
+        month_str = request.args.get('month')
+        try:
+            import calendar as _cal
+            y, m   = map(int, month_str.split('-'))
+            d_from = date(y, m, 1)
+            d_to   = date(y, m, _cal.monthrange(y, m)[1])
+        except Exception:
+            return jsonify({'error': 'date_from/date_to or month required'}), 400
 
-    import calendar as _cal
-    days_in_month = _cal.monthrange(y, m)[1]
-    d_to          = date(y, m, days_in_month)
-    all_dates     = [date(y, m, day) for day in range(1, days_in_month + 1)]
+    all_dates = []
+    cur = d_from
+    while cur <= d_to:
+        all_dates.append(cur)
+        cur += timedelta(days=1)
 
     employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
-    holidays  = sa_public_holidays(y)
+    holidays  = sa_public_holidays(d_from.year)
+    if d_to.year != d_from.year:
+        holidays.update(sa_public_holidays(d_to.year))
 
     att_rows = EmployeeAttendance.query.filter(
         EmployeeAttendance.employee_id.in_([e.id for e in employees]),

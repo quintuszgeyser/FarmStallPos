@@ -22669,13 +22669,11 @@ async function loadTimesheetCalendar() {
   const sumEl  = document.getElementById('emp-ts-summary');
 
   if (empId === 'all') {
-    // All-employees grid: derive month from date range start for the summary API
-    const monthStr = dateFrom.slice(0, 7);
     if (calEl)  calEl.style.display  = 'none';
     if (sumEl)  sumEl.style.display  = 'none';
     if (gridEl) gridEl.style.display = 'block';
     try {
-      const data = await api(`/api/employees/attendance/summary?month=${monthStr}`);
+      const data = await api(`/api/employees/attendance/summary?date_from=${dateFrom}&date_to=${dateTo}`);
       _renderAllEmployeesGrid(data);
     } catch(e) { toast(e.message, 'danger'); }
     return;
