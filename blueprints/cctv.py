@@ -503,7 +503,13 @@ _VIEW_HTML = """<!doctype html>
     pc.addTransceiver('video', {direction: 'recvonly'});
 
     pc.ontrack = function(e) {
-      self.video.srcObject = e.streams[0];
+      if (e.streams && e.streams.length > 0) {
+        self.video.srcObject = e.streams[0];
+      } else {
+        if (!self.video.srcObject) self.video.srcObject = new MediaStream();
+        self.video.srcObject.addTrack(e.track);
+      }
+      self.video.play().catch(function(){});
       self.setDot('live');
       self.retryDelay = 3000;
     };
