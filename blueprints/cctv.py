@@ -109,7 +109,6 @@ _VIEW_HTML = """<!doctype html>
       overflow: hidden;
       cursor: pointer;
     }
-
     .tile video {
       width: 100%;
       height: 100%;
@@ -117,14 +116,12 @@ _VIEW_HTML = """<!doctype html>
       display: block;
       background: #090909;
     }
-
     .tile-gradient {
       position: absolute;
       inset: 0;
       background: linear-gradient(to top, rgba(0,0,0,0.65) 0%, transparent 35%);
       pointer-events: none;
     }
-
     .tile-label {
       position: absolute;
       bottom: 7px;
@@ -136,7 +133,6 @@ _VIEW_HTML = """<!doctype html>
       text-shadow: 0 1px 4px rgba(0,0,0,0.9);
       pointer-events: none;
     }
-
     .tile-dot {
       position: absolute;
       top: 8px;
@@ -149,12 +145,7 @@ _VIEW_HTML = """<!doctype html>
     .tile-dot.connecting { background: #555; animation: blink 1.4s infinite; }
     .tile-dot.live       { background: #43a047; box-shadow: 0 0 5px #43a047; }
     .tile-dot.error      { background: #c62828; }
-
     @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
-
-    /* Fullscreen: show full frame, not cropped */
-    .tile:fullscreen video,
-    .tile:-webkit-full-screen video { object-fit: contain; background: #000; }
 
     /* HUD */
     #hud {
@@ -167,7 +158,6 @@ _VIEW_HTML = """<!doctype html>
       align-items: flex-end;
       gap: 8px;
     }
-
     #settings-panel {
       background: rgba(12,12,12,0.97);
       border: 1px solid #252525;
@@ -177,7 +167,6 @@ _VIEW_HTML = """<!doctype html>
       min-width: 195px;
       box-shadow: 0 8px 28px rgba(0,0,0,0.85);
     }
-
     .sp-head {
       font-size: 10px;
       letter-spacing: .1em;
@@ -186,9 +175,7 @@ _VIEW_HTML = """<!doctype html>
       margin-bottom: 7px;
     }
     .sp-head + .sp-head, .sp-divider + .sp-head { margin-top: 10px; }
-
     .sp-cols { display: flex; gap: 5px; margin-bottom: 3px; }
-
     .sp-col-btn {
       flex: 1;
       background: #1a1a1a;
@@ -202,7 +189,6 @@ _VIEW_HTML = """<!doctype html>
     }
     .sp-col-btn:hover { color: #ccc; background: #222; }
     .sp-col-btn.active { background: var(--amber); border-color: var(--amber); color: #111; font-weight: 600; }
-
     .sp-action {
       display: block;
       width: 100%;
@@ -218,9 +204,7 @@ _VIEW_HTML = """<!doctype html>
     .sp-action:hover { background: rgba(255,255,255,0.05); color: #ddd; }
     .sp-action.danger { color: #b05050; }
     .sp-action.danger:hover { color: #e07070; }
-
     .sp-divider { border: none; border-top: 1px solid #1e1e1e; margin: 8px 0; }
-
     #gear-btn {
       background: rgba(12,12,12,0.9);
       border: 1px solid #2e2e2e;
@@ -238,7 +222,186 @@ _VIEW_HTML = """<!doctype html>
     }
     #gear-btn:hover { background: rgba(22,22,22,0.97); }
 
-    @media (max-width: 600px) { :root { --cols: 2; } }
+    /* ── Drill-down overlay ── */
+    #drilldown {
+      position: fixed;
+      inset: 0;
+      background: #0a0a0a;
+      z-index: 10000;
+      display: flex;
+      flex-direction: column;
+    }
+    #drilldown[hidden] { display: none !important; }
+
+    #dd-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: #0f0f0f;
+      border-bottom: 1px solid #1a1a1a;
+      flex-shrink: 0;
+      gap: 10px;
+    }
+    #dd-cam-name {
+      color: var(--amber);
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: .06em;
+    }
+    #dd-header-btns { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+
+    #dd-live-btn {
+      background: #1a2a1a;
+      border: 1px solid #2a4a2a;
+      border-radius: 6px;
+      color: #43a047;
+      font-size: 11px;
+      padding: 5px 11px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    #dd-live-btn.active { background: #43a047; color: #fff; border-color: #43a047; }
+    #dd-live-btn:hover { border-color: #43a047; }
+
+    #dd-close-btn {
+      background: none;
+      border: 1px solid #333;
+      border-radius: 6px;
+      color: #888;
+      font-size: 14px;
+      width: 30px;
+      height: 30px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    #dd-close-btn:hover { color: #ccc; border-color: #555; }
+
+    #dd-video-wrap {
+      position: relative;
+      flex: 1;
+      min-height: 0;
+      background: #000;
+    }
+    #dd-video {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    #dd-status-badge {
+      position: absolute;
+      top: 10px;
+      left: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      letter-spacing: .05em;
+    }
+    #dd-status-badge.live    { background: rgba(67,160,71,0.85); color: #fff; }
+    #dd-status-badge.playback { background: rgba(190,100,0,0.85); color: #fff; }
+
+    /* Controls panel */
+    #dd-controls {
+      flex-shrink: 0;
+      background: #0d0d0d;
+      border-top: 1px solid #1a1a1a;
+      padding: 10px 14px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      max-height: 44%;
+    }
+
+    #dd-date-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .dd-nav-btn {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 5px;
+      color: #888;
+      font-size: 18px;
+      width: 28px;
+      height: 28px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+    .dd-nav-btn:hover:not(:disabled) { color: #ccc; border-color: #444; }
+    .dd-nav-btn:disabled { opacity: 0.3; cursor: default; }
+    #dd-date-label { color: #ddd; font-size: 13px; flex: 1; }
+    #dd-rec-count  { color: #555; font-size: 11px; white-space: nowrap; }
+
+    /* 24-hour timeline strip */
+    #dd-timeline {
+      display: flex;
+      gap: 2px;
+      flex-shrink: 0;
+      height: 26px;
+    }
+    .dd-hour {
+      flex: 1;
+      border-radius: 3px;
+      position: relative;
+    }
+    .dd-hour.empty    { background: #181818; }
+    .dd-hour.has-recs { background: #1e3a1e; cursor: pointer; }
+    .dd-hour.has-recs:hover { background: #2b562b; }
+    .dd-hour.selected { background: var(--amber) !important; }
+    .dd-hour-tip {
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: #222;
+      color: #ccc;
+      font-size: 9px;
+      padding: 2px 5px;
+      border-radius: 3px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      z-index: 1;
+    }
+    .dd-hour:hover .dd-hour-tip { opacity: 1; }
+
+    /* Clips list */
+    #dd-clips-wrap {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+    #dd-clips-msg {
+      color: #444;
+      font-size: 12px;
+      padding: 8px 0;
+    }
+    .dd-clip {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      border-radius: 5px;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .dd-clip:hover { background: #151515; }
+    .dd-clip.active { background: #1c1c0c; border-color: #3a3a18; }
+    .dd-clip-time { color: #aaa; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .dd-clip-dur  { color: #555; font-size: 11px; white-space: nowrap; }
+    .dd-clip-play { color: var(--amber); font-size: 15px; margin-left: auto; flex-shrink: 0; }
+
   </style>
 </head>
 <body>
@@ -249,9 +412,11 @@ _VIEW_HTML = """<!doctype html>
   <div id="settings-panel">
     <div class="sp-head">Layout</div>
     <div class="sp-cols">
+      <button class="sp-col-btn" data-cols="auto">Auto</button>
       <button class="sp-col-btn" data-cols="2">2</button>
       <button class="sp-col-btn" data-cols="3">3</button>
       <button class="sp-col-btn" data-cols="4">4</button>
+      <button class="sp-col-btn" data-cols="6">6</button>
     </div>
     <div class="sp-divider"></div>
     <div class="sp-head">Actions</div>
@@ -264,8 +429,35 @@ _VIEW_HTML = """<!doctype html>
   <button id="gear-btn" title="Settings">&#9881;</button>
 </div>
 
+<!-- Drill-down overlay: live view + recordings timeline -->
+<div id="drilldown" hidden>
+  <div id="dd-header">
+    <span id="dd-cam-name"></span>
+    <div id="dd-header-btns">
+      <button id="dd-live-btn">&#9679; Live</button>
+      <button id="dd-close-btn">&#10005;</button>
+    </div>
+  </div>
+  <div id="dd-video-wrap">
+    <video id="dd-video" autoplay muted playsinline></video>
+    <div id="dd-status-badge" class="live">&#9679; LIVE</div>
+  </div>
+  <div id="dd-controls">
+    <div id="dd-date-nav">
+      <button class="dd-nav-btn" id="dd-prev-day">&#8249;</button>
+      <span id="dd-date-label"></span>
+      <span id="dd-rec-count"></span>
+      <button class="dd-nav-btn" id="dd-next-day">&#8250;</button>
+    </div>
+    <div id="dd-timeline"></div>
+    <div id="dd-clips-wrap">
+      <div id="dd-clips-msg">Select an hour above to view recordings</div>
+      <div id="dd-clips"></div>
+    </div>
+  </div>
+</div>
+
 <script>
-  // Camera list matches Frigate config
   var CAMERAS = [
     {id: 'kombuis',    label: 'Kombuis'},
     {id: 'counter',    label: 'Toonbank'},
@@ -283,7 +475,7 @@ _VIEW_HTML = """<!doctype html>
 
   var streams = {};
 
-  // Build grid
+  // ── Grid ──
   var grid = document.getElementById('grid');
   CAMERAS.forEach(function(cam) {
     var tile = document.createElement('div');
@@ -310,22 +502,16 @@ _VIEW_HTML = """<!doctype html>
     tile.appendChild(dot);
     grid.appendChild(tile);
 
-    tile.addEventListener('click', function() {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else {
-        tile.requestFullscreen().catch(function(){});
-      }
-    });
+    tile.addEventListener('click', function() { openDrilldown(cam); });
 
     streams[cam.id] = new CamStream(cam.id, video, dot);
   });
 
-  // WebRTC stream per camera
+  // ── WebRTC CamStream ──
   function CamStream(id, video, dot) {
     this.id = id;
     this.video = video;
-    this.dot = dot;
+    this.dot = dot;   // may be null for overlay stream
     this.pc = null;
     this.ws = null;
     this.retryDelay = 3000;
@@ -334,7 +520,7 @@ _VIEW_HTML = """<!doctype html>
   }
 
   CamStream.prototype.setDot = function(state) {
-    this.dot.className = 'tile-dot ' + state;
+    if (this.dot) this.dot.className = 'tile-dot ' + state;
   };
 
   CamStream.prototype.connect = function() {
@@ -349,7 +535,6 @@ _VIEW_HTML = """<!doctype html>
     var pc = new RTCPeerConnection({iceServers: []});
     self.pc = pc;
 
-    // Video only — no audio to keep bandwidth lean
     pc.addTransceiver('video', {direction: 'recvonly'});
 
     pc.ontrack = function(e) {
@@ -418,21 +603,62 @@ _VIEW_HTML = """<!doctype html>
     this.connect();
   };
 
-  // Layout
+  // ── Layout ──
   var LS_COLS = 'cctv_cols';
-  function applyLayout(n) {
-    document.documentElement.style.setProperty('--cols', n);
-    localStorage.setItem(LS_COLS, n);
+  var _autoMode = !localStorage.getItem(LS_COLS);
+
+  function _bestCols() {
+    var w = window.innerWidth, h = window.innerHeight, n = CAMERAS.length;
+    var best = 4, bestScore = Infinity;
+    [2, 3, 4, 6].forEach(function(c) {
+      var rows = Math.ceil(n / c);
+      var score = Math.abs((w / c) / (h / rows) - 16/9);
+      if (score < bestScore) { bestScore = score; best = c; }
+    });
+    return best;
+  }
+
+  function _markBtns(activeCols, isAuto) {
     document.querySelectorAll('.sp-col-btn').forEach(function(b) {
-      b.classList.toggle('active', parseInt(b.dataset.cols) === n);
+      var isAutoBtn = b.dataset.cols === 'auto';
+      b.classList.toggle('active', isAutoBtn ? isAuto : (!isAuto && parseInt(b.dataset.cols) === activeCols));
     });
   }
-  applyLayout(parseInt(localStorage.getItem(LS_COLS) || '4'));
+
+  function applyLayout(cols) {
+    _autoMode = false;
+    localStorage.setItem(LS_COLS, cols);
+    document.documentElement.style.setProperty('--cols', cols);
+    _markBtns(cols, false);
+  }
+
+  function applyAutoLayout() {
+    _autoMode = true;
+    localStorage.removeItem(LS_COLS);
+    var n = _bestCols();
+    document.documentElement.style.setProperty('--cols', n);
+    _markBtns(n, true);
+  }
+
+  // Init
+  if (localStorage.getItem(LS_COLS)) {
+    applyLayout(parseInt(localStorage.getItem(LS_COLS)));
+  } else {
+    applyAutoLayout();
+  }
+
   document.querySelectorAll('.sp-col-btn').forEach(function(b) {
-    b.addEventListener('click', function() { applyLayout(parseInt(b.dataset.cols)); });
+    b.addEventListener('click', function() {
+      if (b.dataset.cols === 'auto') { applyAutoLayout(); }
+      else { applyLayout(parseInt(b.dataset.cols)); }
+    });
   });
 
-  // Gear menu
+  window.addEventListener('resize', function() {
+    if (_autoMode) applyAutoLayout();
+  });
+
+  // ── Gear menu ──
   var gearBtn = document.getElementById('gear-btn');
   var panel   = document.getElementById('settings-panel');
 
@@ -460,6 +686,243 @@ _VIEW_HTML = """<!doctype html>
   document.getElementById('sp-logout').addEventListener('click', function() {
     window.location.href = '/cctv/logout';
   });
+
+  // ── Drill-down ──
+  var dd = {
+    overlay:      document.getElementById('drilldown'),
+    video:        document.getElementById('dd-video'),
+    camName:      document.getElementById('dd-cam-name'),
+    liveBtn:      document.getElementById('dd-live-btn'),
+    closeBtn:     document.getElementById('dd-close-btn'),
+    dateLabel:    document.getElementById('dd-date-label'),
+    recCount:     document.getElementById('dd-rec-count'),
+    prevDay:      document.getElementById('dd-prev-day'),
+    nextDay:      document.getElementById('dd-next-day'),
+    timeline:     document.getElementById('dd-timeline'),
+    clipsMsg:     document.getElementById('dd-clips-msg'),
+    clipsEl:      document.getElementById('dd-clips'),
+    badge:        document.getElementById('dd-status-badge'),
+    cam:          null,
+    stream:       null,   // CamStream for overlay live view (dot=null)
+    isLive:       true,
+    date:         null,   // local-midnight Date for selected day
+    dayRecs:      [],
+    selectedHour: -1,
+  };
+
+  function ddFmtTime(ts) {
+    var d = new Date(ts * 1000);
+    return String(d.getHours()).padStart(2,'0') + ':' +
+           String(d.getMinutes()).padStart(2,'0') + ':' +
+           String(d.getSeconds()).padStart(2,'0');
+  }
+
+  function ddFmtDur(secs) {
+    secs = Math.round(secs);
+    if (secs < 60) return secs + 's';
+    var m = Math.floor(secs / 60), s = secs % 60;
+    return m + 'm' + (s ? ' ' + s + 's' : '');
+  }
+
+  function openDrilldown(cam) {
+    dd.cam = cam;
+    dd.overlay.hidden = false;
+    dd.camName.textContent = cam.label;
+    var now = new Date();
+    dd.date = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    dd.selectedHour = -1;
+    ddStartLive();
+    ddLoadDay();
+  }
+
+  function closeDrilldown() {
+    dd.overlay.hidden = true;
+    if (dd.stream) { dd.stream._clear(); dd.stream = null; }
+    dd.video.src = '';
+    dd.video.srcObject = null;
+    dd.cam = null;
+  }
+
+  function ddStartLive() {
+    if (dd.stream) { dd.stream._clear(); dd.stream = null; }
+    dd.video.src = '';
+    dd.video.srcObject = null;
+    dd.isLive = true;
+    dd.liveBtn.classList.add('active');
+    dd.badge.className = 'live';
+    dd.badge.innerHTML = '&#9679; LIVE';
+    dd.stream = new CamStream(dd.cam.id, dd.video, null);
+  }
+
+  function ddLoadDay() {
+    var d = dd.date;
+    var start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
+    var end   = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
+    var after  = Math.floor(start.getTime() / 1000);
+    var before = Math.floor(end.getTime() / 1000);
+
+    dd.dateLabel.textContent = d.toLocaleDateString('en-ZA', {
+      weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+    });
+
+    var today = new Date();
+    today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    dd.nextDay.disabled = d >= today;
+
+    dd.timeline.innerHTML = '';
+    dd.clipsEl.innerHTML = '';
+    dd.clipsMsg.textContent = 'Loading...';
+    dd.recCount.textContent = '';
+    dd.dayRecs = [];
+    dd.selectedHour = -1;
+
+    fetch('/api/' + encodeURIComponent(dd.cam.id) + '/recordings?after=' + after + '&before=' + before)
+      .then(function(r) { return r.json(); })
+      .then(function(recs) {
+        dd.dayRecs = Array.isArray(recs) ? recs : [];
+        ddRenderTimeline();
+        var n = dd.dayRecs.length;
+        dd.recCount.textContent = n ? '(' + n + ' clip' + (n !== 1 ? 's' : '') + ')' : '(no recordings)';
+        dd.clipsMsg.textContent = n ? 'Select an hour above to view recordings' : 'No recordings for this day';
+      })
+      .catch(function() {
+        dd.clipsMsg.textContent = 'Could not load recordings';
+        dd.recCount.textContent = '';
+      });
+  }
+
+  function ddRenderTimeline() {
+    dd.timeline.innerHTML = '';
+    var byHour = {};
+    dd.dayRecs.forEach(function(r) {
+      var h = new Date(r.start_time * 1000).getHours();
+      if (!byHour[h]) byHour[h] = [];
+      byHour[h].push(r);
+    });
+
+    for (var h = 0; h < 24; h++) {
+      var block = document.createElement('div');
+      var hasRecs = !!byHour[h];
+      block.className = 'dd-hour ' + (hasRecs ? 'has-recs' : 'empty');
+      if (h === dd.selectedHour) block.classList.add('selected');
+
+      var tip = document.createElement('div');
+      tip.className = 'dd-hour-tip';
+      tip.textContent = String(h).padStart(2,'0') + ':00' +
+                        (hasRecs ? ' · ' + byHour[h].length : '');
+      block.appendChild(tip);
+
+      if (hasRecs) {
+        (function(hour, clips) {
+          block.addEventListener('click', function() {
+            dd.selectedHour = hour;
+            ddRenderTimeline();
+            ddRenderClips(clips);
+          });
+        })(h, byHour[h]);
+      }
+
+      dd.timeline.appendChild(block);
+    }
+  }
+
+  function ddRenderClips(clips) {
+    dd.clipsEl.innerHTML = '';
+    dd.clipsMsg.textContent = '';
+    if (!clips.length) {
+      dd.clipsMsg.textContent = 'No clips for this hour';
+      return;
+    }
+    clips.forEach(function(r) {
+      var item = document.createElement('div');
+      item.className = 'dd-clip';
+      item.innerHTML =
+        '<span class="dd-clip-time">' + ddFmtTime(r.start_time) +
+        ' &ndash; ' + ddFmtTime(r.end_time) + '</span>' +
+        '<span class="dd-clip-dur">' + ddFmtDur(r.end_time - r.start_time) + '</span>' +
+        '<span class="dd-clip-play">&#9654;</span>';
+      (function(rec, el) {
+        el.addEventListener('click', function() {
+          document.querySelectorAll('.dd-clip').forEach(function(c) { c.classList.remove('active'); });
+          el.classList.add('active');
+          ddPlayClip(rec);
+        });
+      })(r, item);
+      dd.clipsEl.appendChild(item);
+    });
+  }
+
+  function ddPlayClip(rec) {
+    if (dd.stream) { dd.stream._clear(); dd.stream = null; }
+    dd.video.srcObject = null;
+    dd.isLive = false;
+    dd.liveBtn.classList.remove('active');
+    dd.badge.className = 'playback';
+    dd.badge.innerHTML = '&#9654; REC';
+    dd.video.src = '/recordings/' + rec.path;
+    dd.video.play().catch(function(){});
+  }
+
+  dd.liveBtn.addEventListener('click', function() {
+    if (!dd.isLive) ddStartLive();
+  });
+
+  dd.closeBtn.addEventListener('click', closeDrilldown);
+
+  dd.prevDay.addEventListener('click', function() {
+    var d = new Date(dd.date);
+    d.setDate(d.getDate() - 1);
+    dd.date = d;
+    dd.selectedHour = -1;
+    ddLoadDay();
+  });
+
+  dd.nextDay.addEventListener('click', function() {
+    var d = new Date(dd.date);
+    d.setDate(d.getDate() + 1);
+    var today = new Date();
+    today = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (d <= today) { dd.date = d; dd.selectedHour = -1; ddLoadDay(); }
+  });
+
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && !dd.overlay.hidden) closeDrilldown();
+  });
+
+  // Auto-refresh recordings every 30s while overlay is open on today's date
+  var ddRefreshTimer = null;
+  function ddStartRefresh() {
+    ddStopRefresh();
+    ddRefreshTimer = setInterval(function() {
+      if (dd.overlay.hidden || !dd.date) return;
+      var t = new Date();
+      var today = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+      if (dd.date.getTime() === today.getTime()) ddLoadDay();
+    }, 30000);
+  }
+  function ddStopRefresh() {
+    if (ddRefreshTimer) { clearInterval(ddRefreshTimer); ddRefreshTimer = null; }
+  }
+
+  // Patch open/close to manage refresh timer
+  var _origOpen = openDrilldown;
+  openDrilldown = function(cam) { _origOpen(cam); ddStartRefresh(); };
+  var _origClose = closeDrilldown;
+  closeDrilldown = function() { ddStopRefresh(); _origClose(); };
+
+  // Stale-stream watchdog: reconnect grid tiles whose video has stopped advancing
+  var _prevTimes = {};
+  setInterval(function() {
+    Object.keys(streams).forEach(function(id) {
+      var s = streams[id];
+      if (!s.video || !s.video.srcObject || s._timer) return;
+      var t = s.video.currentTime;
+      if (t > 0 && _prevTimes[id] !== undefined && t === _prevTimes[id]) {
+        s.reconnect();
+      }
+      _prevTimes[id] = t;
+    });
+  }, 20000);
 </script>
 </body>
 </html>"""
