@@ -445,12 +445,54 @@ def api_stock_batch_edit(batch_id):
         retro_updated = len(consumptions)
         db.session.commit()
 
+    # Backfill missing COGS records for sales that were made when stock was zero
+    # and before the "last known cost" fallback existed. Those sales have no
+    # StockConsumption row at all, leaving COGS silently at R0.
+    backfilled = 0
+    if data.get('backfill_missing_cogs') and cost_was_updated:
+        pid = batch.product_id
+        consumed_by_sale = dict(
+            db.session.query(StockConsumption.sale_id,
+                             func.sum(StockConsumption.qty_consumed_base))
+            .filter_by(ingredient_id=pid)
+            .group_by(StockConsumption.sale_id)
+            .all()
+        )
+        _not_return = db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return')
+        all_sales = Sale.query.filter(
+            Sale.product_id == pid,
+            Sale.voided == False,
+            _not_return,
+        ).all()
+        new_records = []
+        for s in all_sales:
+            already = Decimal(str(consumed_by_sale.get(s.sale_id, 0)))
+            gap = Decimal(str(s.qty)) - already
+            if gap > Decimal('0.0001'):
+                new_records.append(StockConsumption(
+                    sale_id=s.sale_id,
+                    ingredient_id=pid,
+                    batch_id=batch.id,
+                    qty_consumed_base=gap,
+                    cost_per_base_unit=batch.cost_per_base_unit,
+                    consumed_at=s.date_time,
+                ))
+        if new_records:
+            db.session.add_all(new_records)
+            db.session.commit()
+        backfilled = len(new_records)
+
     if reprice_product:
         try:
             _auto_price_products([reprice_product])
         except Exception:
             pass
-    return jsonify({'ok': True, 'updated_at': batch.updated_at.isoformat(), 'retro_updated': retro_updated})
+    return jsonify({
+        'ok': True,
+        'updated_at': batch.updated_at.isoformat(),
+        'retro_updated': retro_updated,
+        'backfilled': backfilled,
+    })
 
 
 @bp.route('/api/stock/batches/apply-costs', methods=['POST'])

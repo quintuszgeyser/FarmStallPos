@@ -4553,8 +4553,17 @@
               Retroactively correct COGS for already-consumed stock
             </label>
           </div>
-          <div class="text-muted small mt-1">
+          <div class="text-muted small mt-1 mb-2">
             Updates the cost on all past consumption records for this batch so that profit reports and stats reflect the corrected price. Use this when the original cost was entered incorrectly.
+          </div>
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="edit-batch-backfill-cogs">
+            <label class="form-check-label small fw-semibold" for="edit-batch-backfill-cogs">
+              Also backfill COGS for sales that have no cost records at all
+            </label>
+          </div>
+          <div class="text-muted small mt-1">
+            Creates missing consumption records for sales where stock was zero at the time (sold into negative before the system tracked it). Assigns the corrected cost to those gaps. Only needed if the product was sold while out of stock on an older version.
           </div>
         </div>
         <div id="edit-batch-addl-costs-wrap" class="mt-2"></div>
