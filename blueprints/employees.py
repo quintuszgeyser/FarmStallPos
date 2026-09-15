@@ -751,8 +751,16 @@ def api_attendance_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
         return err
-    month_str = request.args.get('month')  # YYYY-MM
-    if month_str:
+    month_str     = request.args.get('month')       # YYYY-MM
+    date_from_str = request.args.get('date_from')   # YYYY-MM-DD
+    date_to_str   = request.args.get('date_to')     # YYYY-MM-DD
+    if date_from_str and date_to_str:
+        try:
+            d_from = date.fromisoformat(date_from_str)
+            d_to   = date.fromisoformat(date_to_str)
+        except Exception:
+            return jsonify({'error': 'date_from and date_to must be YYYY-MM-DD'}), 400
+    elif month_str:
         try:
             y, m = map(int, month_str.split('-'))
             d_from = date(y, m, 1)

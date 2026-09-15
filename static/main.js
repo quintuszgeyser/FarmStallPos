@@ -22519,10 +22519,14 @@ function empSwitchSub(sub) {
   if (sub === 'employees') _empLoadEmployees();
   if (sub === 'rules')     { _empLoadPayRules(); _empLoadLeavePolicies(); }
   if (sub === 'timesheets') {
-    const m = document.getElementById('emp-ts-month');
-    if (!m.value) {
+    const fromEl = document.getElementById('emp-ts-from');
+    const toEl   = document.getElementById('emp-ts-to');
+    if (!fromEl.value || !toEl.value) {
       const today = new Date();
-      m.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+      const fmt   = d => d.toISOString().split('T')[0];
+      const first = new Date(today.getFullYear(), today.getMonth(), 1);
+      fromEl.value = fmt(first);
+      toEl.value   = fmt(today);
     }
     if (!EMP.employees.length) {
       _empLoadEmployees().then(() => loadTimesheetCalendar());
@@ -22577,18 +22581,18 @@ async function _empLoadDashboard() {
 // ── Timesheet Calendar ────────────────────────────────────────────────────────
 
 async function loadTimesheetCalendar() {
-  const empId   = document.getElementById('emp-ts-employee').value;
-  const monthEl = document.getElementById('emp-ts-month');
-  if (!empId || !monthEl.value) return;
-
-  const [year, month] = monthEl.value.split('-').map(Number);
-  const monthStr      = monthEl.value;
+  const empId  = document.getElementById('emp-ts-employee').value;
+  const dateFrom = document.getElementById('emp-ts-from').value;
+  const dateTo   = document.getElementById('emp-ts-to').value;
+  if (!empId || !dateFrom || !dateTo) return;
 
   const calEl  = document.getElementById('emp-ts-calendar');
   const gridEl = document.getElementById('emp-ts-all-grid');
   const sumEl  = document.getElementById('emp-ts-summary');
 
   if (empId === 'all') {
+    // All-employees grid: derive month from date range start for the summary API
+    const monthStr = dateFrom.slice(0, 7);
     if (calEl)  calEl.style.display  = 'none';
     if (sumEl)  sumEl.style.display  = 'none';
     if (gridEl) gridEl.style.display = 'block';
@@ -22604,15 +22608,16 @@ async function loadTimesheetCalendar() {
   if (sumEl)  sumEl.style.display  = '';
 
   try {
-    // Load attendance + public holidays in parallel
-    const [attData, holidays] = await Promise.all([
-      api(`/api/employees/${empId}/attendance?month=${monthStr}`),
-      api(`/api/employees/public_holidays?year=${year}`),
+    const fromYear = parseInt(dateFrom.split('-')[0]);
+    const toYear   = parseInt(dateTo.split('-')[0]);
+    const [attData, holidays, holidaysTo] = await Promise.all([
+      api(`/api/employees/${empId}/attendance?date_from=${dateFrom}&date_to=${dateTo}`),
+      api(`/api/employees/public_holidays?year=${fromYear}`),
+      toYear !== fromYear ? api(`/api/employees/public_holidays?year=${toYear}`) : Promise.resolve({}),
     ]);
-    EMP.publicHolidays  = holidays;
+    EMP.publicHolidays  = { ...holidays, ...holidaysTo };
     EMP.tsCalendarData  = {};
     for (const a of attData.attendance) EMP.tsCalendarData[a.work_date] = a;
-    // Build a set of date strings that are locked by a paid payslip
     EMP.paidLockedDates = new Set();
     for (const pr of (attData.paid_periods || [])) {
       let d = new Date(pr.period_start + 'T00:00:00');
@@ -22623,7 +22628,7 @@ async function loadTimesheetCalendar() {
       }
     }
 
-    _renderCalendar(year, month, empId);
+    _renderRangeCalendar(dateFrom, dateTo, empId);
     _renderTimesheetSummary(attData.attendance);
   } catch(e) { toast(e.message, 'danger'); }
 }
@@ -22699,53 +22704,64 @@ function _renderAllEmployeesGrid(data) {
   gridEl.innerHTML = html;
 }
 
-function _renderCalendar(year, month, empId) {
-  const grid    = document.getElementById('emp-ts-calendar');
-  const days    = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
-  const today   = new Date().toISOString().split('T')[0];
+function _renderRangeCalendar(dateFrom, dateTo, empId) {
+  const grid  = document.getElementById('emp-ts-calendar');
+  const today = new Date().toISOString().split('T')[0];
+  const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const typeLabels = { normal:'Normal', overtime:'Overtime', sunday:'Sunday',
+                       public_holiday:'Public Holiday', vacation:'Leave', sick:'Sick',
+                       schedule_default:'Scheduled' };
 
-  // First Monday on or before 1st of month
-  const firstOfMonth = new Date(year, month - 1, 1);
-  let startDate = new Date(firstOfMonth);
-  const dow = (firstOfMonth.getDay() + 6) % 7; // 0=Mon
-  startDate.setDate(startDate.getDate() - dow);
+  let rows = '<table class="table table-sm table-hover mb-0" style="font-size:13px"><thead><tr>' +
+    '<th style="width:110px">Date</th><th style="width:40px">Day</th>' +
+    '<th>Type / Hours</th><th style="width:80px"></th></tr></thead><tbody>';
 
-  let html = days.map(d => `<div class="emp-cal-header">${d}</div>`).join('');
+  let cur = new Date(dateFrom + 'T00:00:00');
+  const end = new Date(dateTo + 'T00:00:00');
+  while (cur <= end) {
+    const ds       = cur.toISOString().split('T')[0];
+    const dayName  = dayNames[cur.getDay()];
+    const isToday  = ds === today;
+    const isLocked = EMP.paidLockedDates?.has(ds);
+    const isHol    = !!EMP.publicHolidays[ds];
+    const isSun    = cur.getDay() === 0;
+    const att      = EMP.tsCalendarData[ds];
 
-  for (let i = 0; i < 42; i++) {
-    const d       = new Date(startDate);
-    d.setDate(d.getDate() + i);
-    const ds      = d.toISOString().split('T')[0];
-    const dayNum  = d.getDate();
-    const isThisMonth = d.getMonth() + 1 === month && d.getFullYear() === year;
-    const isHol   = !!EMP.publicHolidays[ds];
-    const isSun   = d.getDay() === 0;
-    const att     = EMP.tsCalendarData[ds];
-    const isLocked = isThisMonth && EMP.paidLockedDates?.has(ds);
+    let rowCls = '';
+    if (isToday)  rowCls = 'table-warning';
+    else if (isHol) rowCls = 'table-light';
 
-    let cls = 'emp-cal-day';
-    if (!isThisMonth) cls += ' other-month';
-    if (ds === today) cls += ' today';
-    if (isHol)        cls += ' holiday';
-    else if (isSun)   cls += ' sunday-day';
+    const dateDisplay = cur.toLocaleDateString('en-ZA', { day:'2-digit', month:'short', year:'numeric' });
+    const lockIcon = isLocked ? ' <i class="bi bi-lock-fill text-secondary" title="Covered by paid payslip — revert payslip to draft to edit"></i>' : '';
+    const holName = isHol ? `<small class="text-muted ms-1">${EMP.publicHolidays[ds]}</small>` : '';
+    const sunNote = !isHol && isSun ? '<small class="text-muted ms-1">Sun</small>' : '';
 
-    let inner = `<div class="emp-cal-day-num">${dayNum}${isLocked ? ' <i class="bi bi-lock-fill text-secondary" style="font-size:9px" title="Covered by paid payslip"></i>' : ''}</div>`;
-    if (isHol && isThisMonth) inner += `<div style="font-size:9px;color:#6b21a8">${EMP.publicHolidays[ds]}</div>`;
+    let typeCell = '<span class="text-muted small">—</span>';
     if (att) {
-      const h   = att.hours_worked !== null ? att.hours_worked.toFixed(2) + 'h' : '';
-      const lbl = att.day_type.replace('_',' ');
-      inner += `<div class="emp-cal-logged">
-        <span class="emp-cal-badge ${att.day_type}">${lbl}</span>
-        ${h ? `<div style="font-size:10px;font-weight:600">${h}</div>` : ''}
-        ${att.clock_in ? `<div style="font-size:9px;color:#555">${att.clock_in}–${att.clock_out||'?'}</div>` : ''}
-      </div>`;
+      const h   = att.hours_worked !== null ? ` ${att.hours_worked.toFixed(2)}h` : '';
+      const lbl = typeLabels[att.day_type] || att.day_type.replace('_',' ');
+      const time = att.clock_in ? ` <span class="text-muted" style="font-size:11px">${att.clock_in}–${att.clock_out||'?'}</span>` : '';
+      typeCell = `<span class="emp-cal-badge ${att.day_type}">${lbl}</span><strong>${h}</strong>${time}`;
     }
 
-    const clickable = isThisMonth ? `onclick="empOpenAttendanceForDate('${ds}', ${empId})"` : '';
-    html += `<div class="${cls}" ${clickable}>${inner}</div>`;
+    let actionCell = '';
+    if (isLocked) {
+      actionCell = `<span class="text-muted small">Locked</span>`;
+    } else {
+      actionCell = `<button class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:11px" onclick="empOpenAttendanceForDate('${ds}',${empId})">${att ? '<i class="bi bi-pencil"></i>' : '<i class="bi bi-plus"></i>'}</button>`;
+    }
+
+    rows += `<tr class="${rowCls}">
+      <td>${dateDisplay}${lockIcon}${holName}${sunNote}</td>
+      <td class="text-muted">${dayName}</td>
+      <td>${typeCell}</td>
+      <td>${actionCell}</td>
+    </tr>`;
+    cur.setDate(cur.getDate() + 1);
   }
 
-  grid.innerHTML = html;
+  rows += '</tbody></table>';
+  grid.innerHTML = rows;
 }
 
 function _renderTimesheetSummary(attendance) {
@@ -22769,6 +22785,10 @@ function _renderTimesheetSummary(attendance) {
 // ── Attendance modal ──────────────────────────────────────────────────────────
 
 function empOpenAttendanceForDate(dateStr, empId) {
+  if (EMP.paidLockedDates?.has(dateStr)) {
+    toast('This date is covered by a paid payslip and cannot be edited. Revert the payslip to draft first.', 'warning', 5000);
+    return;
+  }
   const att = EMP.tsCalendarData[dateStr] || (EMP.allGridAttData && EMP.allGridAttData[`${empId}_${dateStr}`]);
   const emp = EMP.employees.find(e => e.id == empId);
   document.getElementById('emp-att-employee-id').value = empId;
@@ -22838,80 +22858,26 @@ function empOpenAttendanceForDate(dateStr, empId) {
   new bootstrap.Modal(document.getElementById('empAttendanceModal')).show();
 }
 
-function _weekInputToDates(weekVal) {
-  // weekVal is "YYYY-Www" — convert to Mon (date_from) and Sun (date_to)
-  const [yearStr, weekStr] = weekVal.split('-W');
-  const year = parseInt(yearStr), week = parseInt(weekStr);
-  // ISO week: Jan 4 is always in week 1
-  const jan4 = new Date(year, 0, 4);
-  const mon  = new Date(jan4);
-  mon.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (week - 1) * 7);
-  const sun  = new Date(mon); sun.setDate(mon.getDate() + 6);
-  const fmt  = d => d.toISOString().split('T')[0];
-  return { date_from: fmt(mon), date_to: fmt(sun) };
-}
-
-async function empGenerateRange(scope = 'month') {
-  let payload = {};
-  let label;
-  if (scope === 'week') {
-    const today = new Date();
-    const dow   = (today.getDay() + 6) % 7; // Mon=0
-    const mon   = new Date(today); mon.setDate(today.getDate() - dow);
-    const sun   = new Date(mon);  sun.setDate(mon.getDate() + 6);
-    const fmt   = d => d.toISOString().split('T')[0];
-    payload.date_from = fmt(mon);
-    payload.date_to   = fmt(sun);
-    label = `${fmt(mon)} → ${fmt(sun)}`;
-  } else {
-    const month = document.getElementById('emp-ts-month').value;
-    if (!month) { toast('Select a month first', 'warning'); return; }
-    payload.month = month;
-    label = month;
-  }
+async function empFillRange() {
+  const dateFrom = document.getElementById('emp-ts-from').value;
+  const dateTo   = document.getElementById('emp-ts-to').value;
+  if (!dateFrom || !dateTo) { toast('Select a date range first', 'warning'); return; }
+  if (dateFrom > dateTo) { toast('Start date must be before end date', 'warning'); return; }
   const empId   = document.getElementById('emp-ts-employee').value;
   const empName = empId && empId !== 'all'
     ? (EMP.employees.find(e => e.id == empId)?.name || `Employee ${empId}`)
     : null;
-  if (empId && empId !== 'all') payload.employee_id = parseInt(empId);
   const target = empName ? `for ${empName}` : 'for ALL employees';
-  if (!confirm(`Generate schedule ${target} for ${label}?\n\nDays already logged will not be overwritten. Manual entries will not be touched.`)) return;
+  if (!confirm(`Fill schedule ${target} from ${dateFrom} to ${dateTo}?\n\nDays already logged and days covered by paid payslips will be skipped.`)) return;
+  const payload = { date_from: dateFrom, date_to: dateTo };
+  if (empId && empId !== 'all') payload.employee_id = parseInt(empId);
   try {
     const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify(payload) });
     const delMsg = r.deleted > 0 ? `, cleared ${r.deleted} off-day entries` : '';
-    toast(`Generated ${r.created} entries for ${r.employees} employee(s) (${r.skipped} skipped${delMsg})`, 'success', 5000);
+    toast(`Filled ${r.created} entries for ${r.employees} employee(s) (${r.skipped} skipped${delMsg})`, 'success', 5000);
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
 }
-
-async function empClearSchedule(scope = 'month') {
-  let payload = {};
-  let label;
-  if (scope === 'week') {
-    const today = new Date();
-    const dow   = (today.getDay() + 6) % 7;
-    const mon   = new Date(today); mon.setDate(today.getDate() - dow);
-    const sun   = new Date(mon);  sun.setDate(mon.getDate() + 6);
-    const fmt   = d => d.toISOString().split('T')[0];
-    payload.date_from = fmt(mon);
-    payload.date_to   = fmt(sun);
-    label = `${fmt(mon)} → ${fmt(sun)}`;
-  } else {
-    const month = document.getElementById('emp-ts-month').value;
-    if (!month) { toast('Select a month first', 'warning'); return; }
-    payload.month = month;
-    label = month;
-  }
-  if (!confirm(`Clear all generated schedule entries for ${label}?\n\nOnly auto-generated entries will be removed. Manually captured shifts are NOT affected.`)) return;
-  try {
-    const r = await api('/api/employees/clear_schedule', { method:'POST', body: JSON.stringify(payload) });
-    toast(`Cleared ${r.deleted} schedule entries for ${label}`, r.deleted > 0 ? 'success' : 'info', 4000);
-    loadTimesheetCalendar();
-  } catch(e) { toast(e.message, 'danger'); }
-}
-
-// Keep old name as alias for any remaining references
-const empGenerateMonth = () => empGenerateRange('month');
 
 function empOpenShiftModal() {
   const empId = document.getElementById('emp-ts-employee').value;

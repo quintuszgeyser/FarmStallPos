@@ -2892,20 +2892,15 @@
         <div id="emp-sub-timesheets">
           <div class="d-flex gap-2 align-items-center mb-2 flex-wrap">
             <select id="emp-ts-employee" class="form-select form-select-sm" style="max-width:220px" onchange="loadTimesheetCalendar()"></select>
-            <input type="month" id="emp-ts-month" class="form-control form-control-sm" style="max-width:160px" onchange="loadTimesheetCalendar()">
-            <button class="btn btn-outline-secondary btn-sm" onclick="loadTimesheetCalendar()"><i class="bi bi-arrow-clockwise"></i></button>
+            <input type="date" id="emp-ts-from" class="form-control form-control-sm" style="max-width:150px" onchange="loadTimesheetCalendar()">
+            <span class="text-muted small">to</span>
+            <input type="date" id="emp-ts-to" class="form-control form-control-sm" style="max-width:150px" onchange="loadTimesheetCalendar()">
+            <button class="btn btn-outline-secondary btn-sm" onclick="loadTimesheetCalendar()" title="Refresh"><i class="bi bi-arrow-clockwise"></i></button>
+            <button class="btn btn-sm btn-success" onclick="empFillRange()" title="Generate schedule entries for all days in the selected range (skips paid/existing days)"><i class="bi bi-calendar-fill me-1"></i>Fill Range</button>
             <div class="ms-auto d-flex gap-2 flex-wrap">
-              <button class="btn btn-sm btn-outline-secondary" onclick="empOpenScheduleConfig()" title="Configure per-employee work days and rotation"><i class="bi bi-sliders me-1"></i>Schedule Config</button>
+              <button class="btn btn-sm btn-outline-secondary" onclick="empOpenScheduleConfig()" title="Configure per-employee work days"><i class="bi bi-sliders me-1"></i>Schedule Config</button>
               <button class="btn btn-sm btn-outline-primary" onclick="empOpenShiftModal()"><i class="bi bi-calendar-plus me-1"></i>Add Shift</button>
             </div>
-          </div>
-          <div class="d-flex gap-2 align-items-center mb-3 flex-wrap" style="border-top:1px solid #eee;padding-top:8px">
-            <span class="small text-muted fw-semibold">Generate:</span>
-            <button class="btn btn-sm btn-success" onclick="empGenerateRange('week')" title="Generate schedule for current week (for selected employee, or all if none selected)"><i class="bi bi-calendar-week me-1"></i>This Week</button>
-            <button class="btn btn-sm btn-success" onclick="empGenerateRange('month')" title="Generate schedule for selected month (for selected employee, or all if none selected)"><i class="bi bi-calendar-check me-1"></i>Month</button>
-            <span class="text-muted">|</span>
-            <button class="btn btn-sm btn-outline-danger" onclick="empClearSchedule('week')" title="Delete all generated entries for the current week"><i class="bi bi-trash me-1"></i>Clear This Week</button>
-            <button class="btn btn-sm btn-outline-danger" onclick="empClearSchedule('month')" title="Delete all generated entries for the selected month"><i class="bi bi-trash me-1"></i>Clear Month</button>
           </div>
           <!-- Calendar / all-employees grid -->
           <div id="emp-ts-calendar" class="emp-calendar"></div>
