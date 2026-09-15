@@ -189,6 +189,19 @@ _VIEW_HTML = """<!doctype html>
     }
     .sp-col-btn:hover { color: #ccc; background: #222; }
     .sp-col-btn.active { background: var(--amber); border-color: var(--amber); color: #111; font-weight: 600; }
+    .sp-q-btn {
+      flex: 1;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 6px;
+      color: #777;
+      font-size: 12px;
+      padding: 6px 2px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .sp-q-btn:hover { color: #ccc; background: #222; }
+    .sp-q-btn.active { background: var(--amber); border-color: var(--amber); color: #111; font-weight: 600; }
     .sp-action {
       display: block;
       width: 100%;
@@ -419,6 +432,12 @@ _VIEW_HTML = """<!doctype html>
       <button class="sp-col-btn" data-cols="6">6</button>
     </div>
     <div class="sp-divider"></div>
+    <div class="sp-head">Tile quality</div>
+    <div class="sp-cols">
+      <button class="sp-q-btn" data-hd="0">Smooth</button>
+      <button class="sp-q-btn" data-hd="1">HD</button>
+    </div>
+    <div class="sp-divider"></div>
     <div class="sp-head">Actions</div>
     <button class="sp-action" id="sp-reconnect">&#8635; Reconnect all</button>
     <div class="sp-divider"></div>
@@ -471,6 +490,13 @@ _VIEW_HTML = """<!doctype html>
   ];
 
   var streams = {};
+
+  // Grid tiles default to the camera substream (640x360, H264 level 2.2).
+  // TV-box class decoders cap around level 4.1 and choke on the 4K level-5.0
+  // mainstreams, so full res is reserved for the single-camera drill-down.
+  var LS_HD = 'cctv_hd_tiles';
+  var _hdTiles = localStorage.getItem(LS_HD) === '1';
+  function tileSrc(id) { return _hdTiles ? id : id + '_sub'; }
 
   // ── WebRTC CamStream ──
   function CamStream(id, video, dot) {
@@ -609,7 +635,7 @@ _VIEW_HTML = """<!doctype html>
 
     tile.addEventListener('click', function() { openDrilldown(cam); });
 
-    streams[cam.id] = new CamStream(cam.id, video, dot);
+    streams[cam.id] = new CamStream(tileSrc(cam.id), video, dot);
   });
 
   // ── Layout ──
@@ -685,6 +711,31 @@ _VIEW_HTML = """<!doctype html>
   document.getElementById('sp-reconnect').addEventListener('click', function() {
     Object.values(streams).forEach(function(s) { s.reconnect(); });
     panel.style.display = 'none';
+  });
+
+  function _markQBtns() {
+    document.querySelectorAll('.sp-q-btn').forEach(function(b) {
+      b.classList.toggle('active', (b.dataset.hd === '1') === _hdTiles);
+    });
+  }
+  _markQBtns();
+
+  document.querySelectorAll('.sp-q-btn').forEach(function(b) {
+    b.addEventListener('click', function() {
+      var want = b.dataset.hd === '1';
+      if (want === _hdTiles) { panel.style.display = 'none'; return; }
+      _hdTiles = want;
+      localStorage.setItem(LS_HD, want ? '1' : '0');
+      _markQBtns();
+      // Re-point every tile at the other stream variant
+      CAMERAS.forEach(function(cam) {
+        var s = streams[cam.id];
+        if (!s) return;
+        s.id = tileSrc(cam.id);
+        s.reconnect();
+      });
+      panel.style.display = 'none';
+    });
   });
 
   document.getElementById('sp-frigate').addEventListener('click', function() {
