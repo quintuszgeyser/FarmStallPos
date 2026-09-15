@@ -1722,12 +1722,14 @@ def api_stats_inventory():
         sales_q = sales_q.filter(Sale.product_id == product_id_filter)
     sales = sales_q.all()
 
-    sales_qty_by_pid  = defaultdict(Decimal)
-    sales_rev_by_pid  = defaultdict(Decimal)
-    sales_last_by_pid = {}
+    sales_qty_by_pid   = defaultdict(Decimal)
+    sales_rev_by_pid   = defaultdict(Decimal)
+    sales_last_by_pid  = {}
+    sales_count_by_pid = defaultdict(int)
     for s in sales:
-        sales_qty_by_pid[s.product_id]  += Decimal(str(s.qty))
-        sales_rev_by_pid[s.product_id]  += Decimal(str(s.qty)) * s.unit_price
+        sales_qty_by_pid[s.product_id]   += Decimal(str(s.qty))
+        sales_rev_by_pid[s.product_id]   += Decimal(str(s.qty)) * s.unit_price
+        sales_count_by_pid[s.product_id] += 1
         prev = sales_last_by_pid.get(s.product_id)
         if prev is None or s.date_time > prev:
             sales_last_by_pid[s.product_id] = s.date_time
@@ -1840,24 +1842,43 @@ def api_stats_inventory():
     stockout_rows.sort(key=lambda x: x['days_left'])
     stockout_rows = stockout_rows[:10]
 
-    # ── Fast movers (sorted by qty sold desc) ────────────────────────────────
+    # NOTE: All per-product rows must include unit_type, package_size, package_unit so the
+    # frontend can format quantities correctly via _invDisplayQty(). Never add a qty column
+    # without these three fields — weight/volume products must display in kg/L/packages,
+    # not raw grams/ml.
     pid_name = {p.id: p.name for p in all_products}
+    pid_to_info = {p.id: {'unit_type': p.unit_type or 'count',
+                           'package_size': float(p.package_size or 1),
+                           'package_unit': p.package_unit}
+                   for p in all_products}
+
+    # ── Fast movers (sorted by transaction count — unit-agnostic) ────────────
     fast_movers = sorted(
-        [{'product_id': pid, 'name': pid_name.get(pid, str(pid)),
-          'qty_sold': float(sales_qty_by_pid[pid]),
-          'revenue':  round(float(sales_rev_by_pid[pid]), 2)}
+        [{'product_id':   pid,
+          'name':         pid_name.get(pid, str(pid)),
+          'qty_sold_base': float(sales_qty_by_pid[pid]),
+          'sale_count':   sales_count_by_pid[pid],
+          'revenue':      round(float(sales_rev_by_pid[pid]), 2),
+          'unit_type':    pid_to_info.get(pid, {}).get('unit_type', 'count'),
+          'package_size': pid_to_info.get(pid, {}).get('package_size', 1),
+          'package_unit': pid_to_info.get(pid, {}).get('package_unit')}
          for pid in sales_qty_by_pid],
-        key=lambda x: x['qty_sold'], reverse=True
+        key=lambda x: x['sale_count'], reverse=True
     )[:10]
 
     # ── Slow movers (bottom 10 with at least 1 sale) ─────────────────────────
     for_sale_ids = {p.id for p in all_products if p.is_for_sale and p.product_type != 'recipe'}
     slow_movers = sorted(
-        [{'product_id': pid, 'name': pid_name.get(pid, str(pid)),
-          'qty_sold': float(sales_qty_by_pid[pid]),
-          'last_sold': sales_last_by_pid[pid].date().isoformat() if pid in sales_last_by_pid else None}
+        [{'product_id':   pid,
+          'name':         pid_name.get(pid, str(pid)),
+          'qty_sold_base': float(sales_qty_by_pid[pid]),
+          'sale_count':   sales_count_by_pid[pid],
+          'last_sold':    sales_last_by_pid[pid].date().isoformat() if pid in sales_last_by_pid else None,
+          'unit_type':    pid_to_info.get(pid, {}).get('unit_type', 'count'),
+          'package_size': pid_to_info.get(pid, {}).get('package_size', 1),
+          'package_unit': pid_to_info.get(pid, {}).get('package_unit')}
          for pid in sales_qty_by_pid if pid in for_sale_ids and float(sales_qty_by_pid[pid]) > 0],
-        key=lambda x: x['qty_sold']
+        key=lambda x: x['sale_count']
     )[:10]
 
     # ── Dead stock (no sale in last 90 days, has stock) ──────────────────────
@@ -1926,14 +1947,16 @@ def api_stats_inventory():
         if not p:
             p = db.session.get(Product, a.product_id)
         shrinkage_rows.append({
-            'product_id':     a.product_id,
-            'name':           p.name if p else str(a.product_id),
+            'product_id':      a.product_id,
+            'name':            p.name if p else str(a.product_id),
             'adjustment_type': a.adjustment_type,
             'qty_change_base': float(a.qty_change_base),
-            'unit_type':      (p.unit_type if p else None) or 'count',
+            'unit_type':       (p.unit_type if p else None) or 'count',
+            'package_size':    float(p.package_size or 1) if p else 1,
+            'package_unit':    p.package_unit if p else None,
             'cost_written_off': round(float(a.cost_written_off or 0), 2),
-            'reason':         a.reason,
-            'date':           a.adjusted_at.date().isoformat() if a.adjusted_at else None,
+            'reason':          a.reason,
+            'date':            a.adjusted_at.date().isoformat() if a.adjusted_at else None,
         })
 
     # ── Reorder recommendations (< 14 days left) ─────────────────────────────

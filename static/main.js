@@ -21713,6 +21713,10 @@ function _openInventoryDrilldown(title, html) {
   bootstrap.Modal.getOrCreateInstance(document.getElementById('statsDrilldownModal')).show();
 }
 
+// UNIT-AWARE DISPLAY RULE: All quantity columns on this page must go through
+// _invDisplayQty(base, unitType, packageSize, packageUnit) or _invDailyDisplay().
+// Never render raw base values (grams/ml/count) directly. When adding new rows,
+// always include unit_type, package_size, package_unit from the backend.
 async function loadInventoryStats(start, end, productId) {
   const wrap = document.getElementById('inventory-stats-body');
   if (!wrap) return;
@@ -21848,7 +21852,7 @@ async function loadInventoryStats(start, end, productId) {
       <tr>
         <td class="small text-muted">${i+1}</td>
         <td class="small">${escapeHtml(r.name)}</td>
-        <td class="small text-end fw-semibold">${r.qty_sold % 1 === 0 ? r.qty_sold : r.qty_sold.toFixed(2)}</td>
+        <td class="small text-end fw-semibold">${_invDisplayQty(r.qty_sold_base, r.unit_type, r.package_size, r.package_unit)}<br><span class="text-muted fw-normal" style="font-size:10px">${r.sale_count} txn${r.sale_count !== 1 ? 's' : ''}</span></td>
         <td class="small text-end text-success">R${fmt(r.revenue)}</td>
       </tr>`).join('');
   } else {
@@ -21861,7 +21865,7 @@ async function loadInventoryStats(start, end, productId) {
     slowHtml = slowRows.map(r => `
       <tr>
         <td class="small">${escapeHtml(r.name)}</td>
-        <td class="small text-end">${r.qty_sold % 1 === 0 ? r.qty_sold : r.qty_sold.toFixed(2)}</td>
+        <td class="small text-end">${_invDisplayQty(r.qty_sold_base, r.unit_type, r.package_size, r.package_unit)}</td>
         <td class="small text-end text-muted">${r.last_sold || '—'}</td>
       </tr>`).join('');
   } else {
@@ -21902,7 +21906,7 @@ async function loadInventoryStats(start, end, productId) {
                 <table class="table table-sm table-hover align-middle mb-0">
                   <thead class="table-light"><tr>
                     <th class="small">#</th><th class="small">Product</th>
-                    <th class="small text-end">Sold</th><th class="small text-end">Revenue</th>
+                    <th class="small text-end">Qty Sold</th><th class="small text-end">Revenue</th>
                   </tr></thead>
                   <tbody>${fastHtml}</tbody>
                 </table>
@@ -21913,7 +21917,7 @@ async function loadInventoryStats(start, end, productId) {
                 <table class="table table-sm table-hover align-middle mb-0">
                   <thead class="table-light"><tr>
                     <th class="small">Product</th>
-                    <th class="small text-end">Sold</th>
+                    <th class="small text-end">Qty Sold</th>
                     <th class="small text-end">Last Sale</th>
                   </tr></thead>
                   <tbody>${slowHtml}</tbody>
@@ -22025,7 +22029,7 @@ async function loadInventoryStats(start, end, productId) {
       <tr>
         <td class="small">${escapeHtml(r.name)}</td>
         <td class="small text-muted">${r.date || '—'}</td>
-        <td class="small text-end text-danger">${r.qty_change_base < 0 ? '' : '+'}${r.qty_change_base.toFixed(r.unit_type === 'weight' ? 0 : 2)}</td>
+        <td class="small text-end text-danger">${r.qty_change_base < 0 ? '-' : '+'}${_invDisplayQty(Math.abs(r.qty_change_base), r.unit_type, r.package_size, r.package_unit)}</td>
         <td class="small text-end fw-semibold text-danger">-R${fmt(r.cost_written_off)}</td>
       </tr>`).join('');
   } else {
@@ -22186,7 +22190,7 @@ function _invShowShrinkageDrilldown() {
       <td class="small">${escapeHtml(r.name)}</td>
       <td class="small text-muted">${r.date || '—'}</td>
       <td class="small"><span class="badge bg-secondary">${escapeHtml(r.adjustment_type || '')}</span></td>
-      <td class="small text-end text-danger">${r.qty_change_base < 0 ? '' : '+'}${r.qty_change_base.toFixed(2)}</td>
+      <td class="small text-end text-danger">${r.qty_change_base < 0 ? '-' : '+'}${_invDisplayQty(Math.abs(r.qty_change_base), r.unit_type, r.package_size, r.package_unit)}</td>
       <td class="small text-end fw-semibold text-danger">-R${fmt(r.cost_written_off)}</td>
       <td class="small text-muted">${escapeHtml(r.reason || '')}</td>
     </tr>`;
