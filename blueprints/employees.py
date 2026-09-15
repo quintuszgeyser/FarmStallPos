@@ -849,9 +849,10 @@ def api_generate_schedule():
         employees = Employee.query.filter_by(is_active=True).order_by(Employee.name).all()
     holidays  = sa_public_holidays(y)
     u         = current_user()
-    created   = 0
-    skipped   = 0
-    deleted   = 0
+    created      = 0
+    skipped      = 0
+    paid_skipped = 0
+    deleted      = 0
 
     # Load global schedule rules (used only when rotation=True)
     def _parse_days(key, default):
@@ -905,6 +906,22 @@ def api_generate_schedule():
         existing_schedule = {row.work_date: row for row in existing_rows if row.source == 'schedule_default'}
         existing_manual   = {row.work_date for row in existing_rows if row.source != 'schedule_default'}
 
+        # Fetch paid PayRun periods for this employee covering the range
+        paid_runs_emp = PayRun.query.filter(
+            PayRun.employee_id == emp.id,
+            PayRun.status      == 'paid',
+            PayRun.period_end  >= month_start,
+            PayRun.period_start <= month_end,
+        ).all()
+        paid_locked_days = set()
+        _one_day = timedelta(days=1)
+        for pr in paid_runs_emp:
+            cur = pr.period_start
+            while cur <= pr.period_end:
+                if month_start <= cur <= month_end:
+                    paid_locked_days.add(cur)
+                cur += _one_day
+
         if rotation:
             try:
                 emp_work_days = [int(x) for x in (emp.work_days_json or '0,1,2,3,4,5').split(',') if x.strip()]
@@ -956,6 +973,10 @@ def api_generate_schedule():
                 skipped += 1
                 continue
 
+            if day in paid_locked_days:
+                paid_skipped += 1
+                continue
+
             day_type = _auto_day_type(day, holidays)
             db.session.add(EmployeeAttendance(
                 employee_id   = emp.id,
@@ -971,7 +992,7 @@ def api_generate_schedule():
             created += 1
 
     db.session.commit()
-    return jsonify({'created': created, 'skipped': skipped, 'deleted': deleted, 'employees': len(employees)})
+    return jsonify({'created': created, 'skipped': skipped, 'paid_skipped': paid_skipped, 'deleted': deleted, 'employees': len(employees)})
 
 
 @bp.route('/api/employees/clear_schedule', methods=['POST'])

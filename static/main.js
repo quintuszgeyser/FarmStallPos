@@ -22873,8 +22873,10 @@ async function empFillRange() {
   if (empId && empId !== 'all') payload.employee_id = parseInt(empId);
   try {
     const r = await api('/api/employees/generate_schedule', { method:'POST', body: JSON.stringify(payload) });
-    const delMsg = r.deleted > 0 ? `, cleared ${r.deleted} off-day entries` : '';
-    toast(`Filled ${r.created} entries for ${r.employees} employee(s) (${r.skipped} skipped${delMsg})`, 'success', 5000);
+    const delMsg     = r.deleted     > 0 ? `, cleared ${r.deleted} off-day entries` : '';
+    const paidMsg    = r.paid_skipped > 0 ? `, ${r.paid_skipped} skipped (paid payslip)` : '';
+    const skipMsg    = r.skipped      > 0 ? `, ${r.skipped} skipped (already logged)` : '';
+    toast(`Filled ${r.created} entries for ${r.employees} employee(s)${skipMsg}${paidMsg}${delMsg}`, 'success', 6000);
     loadTimesheetCalendar();
   } catch(e) { toast(e.message, 'danger'); }
 }
