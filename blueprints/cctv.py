@@ -494,7 +494,7 @@ _VIEW_HTML = """<!doctype html>
     self.setDot('connecting');
 
     var proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    var ws = new WebSocket(proto + '://' + location.host + '/api/ws?src=' + encodeURIComponent(self.id));
+    var ws = new WebSocket(proto + '://' + location.host + '/live/webrtc/api/ws?src=' + encodeURIComponent(self.id));
     self.ws = ws;
 
     var pc = new RTCPeerConnection({iceServers: []});
