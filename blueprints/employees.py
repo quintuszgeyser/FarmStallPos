@@ -1081,9 +1081,25 @@ def api_attendance_summary():
             'id':        row.id,
         }
 
+    paid_runs = PayRun.query.filter(
+        PayRun.employee_id.in_([e.id for e in employees]),
+        PayRun.status == 'paid',
+        PayRun.period_end >= d_from,
+        PayRun.period_start <= d_to,
+    ).all()
+    paid_dates_map = {}
+    for pr in paid_runs:
+        cur_pd = max(pr.period_start, d_from)
+        end_pd = min(pr.period_end, d_to)
+        s = paid_dates_map.setdefault(pr.employee_id, set())
+        while cur_pd <= end_pd:
+            s.add(cur_pd.isoformat())
+            cur_pd += timedelta(days=1)
+
     return jsonify({
         'employees': [
-            {'id': e.id, 'name': e.name, 'days': att_map.get(e.id, {})}
+            {'id': e.id, 'name': e.name, 'days': att_map.get(e.id, {}),
+             'paid_dates': sorted(paid_dates_map.get(e.id, []))}
             for e in employees
         ],
         'dates':           [d.isoformat()       for d in all_dates],

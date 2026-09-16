@@ -22720,12 +22720,16 @@ function _renderAllEmployeesGrid(data) {
 
   // Cache per-employee attendance so clicking cells opens the correct record
   EMP.allGridAttData = {};
+  EMP.allGridPaidLocked = new Set();
   EMP.publicHolidays = public_holidays || {};
   for (const emp of employees) {
     for (const ds of dates) {
       if (emp.days && emp.days[ds]) {
         EMP.allGridAttData[`${emp.id}_${ds}`] = emp.days[ds];
       }
+    }
+    for (const ds of (emp.paid_dates || [])) {
+      EMP.allGridPaidLocked.add(`${emp.id}_${ds}`);
     }
   }
 
@@ -22756,20 +22760,22 @@ function _renderAllEmployeesGrid(data) {
       const rec = emp.days[ds];
       const dow = new Date(ds + 'T00:00:00').getDay();
       const isHol = !!public_holidays[ds];
+      const isLocked = EMP.allGridPaidLocked.has(`${emp.id}_${ds}`);
+      const lockIcon = isLocked ? ' <i class="bi bi-lock-fill" style="font-size:8px" title="Covered by paid payslip — revert payslip to draft to edit"></i>' : '';
+      const lockCls  = isLocked ? ' att-cell-locked' : '';
+      const onclickAttr = isLocked ? '' : `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
       if (rec) {
         const h = rec.hours != null ? parseFloat(rec.hours) : 0;
         totalH += h;
         const hStr = h > 0 ? h.toFixed(1) + 'h' : rec.day_type.replace('_',' ');
         const src  = rec.source === 'schedule' ? ' title="scheduled"' : '';
-        const onclick = `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
-        html += `<td class="att-cell-${rec.day_type}" style="cursor:pointer;text-align:center;padding:2px 3px" ${onclick}${src}>${hStr}</td>`;
+        html += `<td class="att-cell-${rec.day_type}${lockCls}" style="text-align:center;padding:2px 3px" ${onclickAttr}${src}>${hStr}${lockIcon}</td>`;
       } else if (isHol) {
-        html += `<td class="att-cell-public_holiday" style="cursor:pointer;text-align:center;font-size:9px" onclick="empOpenAttendanceForDate('${ds}', ${emp.id})" title="Public holiday — click to add hours">PH</td>`;
+        html += `<td class="att-cell-public_holiday${lockCls}" style="text-align:center;font-size:9px" ${onclickAttr} title="${isLocked ? 'Public holiday — covered by paid payslip' : 'Public holiday — click to add hours'}">PH${lockIcon}</td>`;
       } else if (dow === 0) {
-        html += `<td class="att-cell-sunday" style="cursor:pointer;text-align:center;font-size:9px" onclick="empOpenAttendanceForDate('${ds}', ${emp.id})" title="Sunday — click to add hours">Sun</td>`;
+        html += `<td class="att-cell-sunday${lockCls}" style="text-align:center;font-size:9px" ${onclickAttr} title="${isLocked ? 'Sunday — covered by paid payslip' : 'Sunday — click to add hours'}">Sun${lockIcon}</td>`;
       } else {
-        const onclick = `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
-        html += `<td class="att-cell-empty" style="cursor:pointer;text-align:center" ${onclick}>—</td>`;
+        html += `<td class="att-cell-empty${lockCls}" style="text-align:center" ${onclickAttr}>—${lockIcon}</td>`;
       }
     }
     html += `<td class="total-col">${totalH > 0 ? totalH.toFixed(1) + 'h' : '—'}</td>`;
@@ -22861,7 +22867,7 @@ function _renderTimesheetSummary(attendance) {
 // ── Attendance modal ──────────────────────────────────────────────────────────
 
 function empOpenAttendanceForDate(dateStr, empId) {
-  if (EMP.paidLockedDates?.has(dateStr)) {
+  if (EMP.paidLockedDates?.has(dateStr) || EMP.allGridPaidLocked?.has(`${empId}_${dateStr}`)) {
     toast('This date is covered by a paid payslip and cannot be edited. Revert the payslip to draft first.', 'warning', 5000);
     return;
   }
