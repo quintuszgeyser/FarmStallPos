@@ -862,8 +862,7 @@
     .att-cell-sick     { background: #fef9c3; color: #854d0e; }
     .att-cell-off      { background: #f3f4f6; color: #9ca3af; }
     .att-cell-empty    { background: #fff; color: #d1d5db; }
-    .att-grid td.att-cell-locked { cursor: default; opacity: .85; }
-    .att-grid td.att-cell-locked:hover { outline: none; }
+    .att-grid td.att-cell-locked { opacity: .85; }
     .att-cell-holiday-hdr { background: #ede9fe !important; }
     .att-cell-sun-hdr     { background: #fce7f3 !important; }
     .att-grid td.total-col { background: #f8fafc; font-weight: 600; position: sticky; right: 0; border-left: 2px solid #dee2e6; }
@@ -5235,6 +5234,7 @@
       <div class="modal-body">
         <input type="hidden" id="emp-att-employee-id">
         <input type="hidden" id="emp-att-row-id">
+        <div id="emp-att-locked-note" class="alert alert-secondary py-1 px-2 small mb-2" style="display:none"><i class="bi bi-lock-fill me-1"></i>Covered by a paid payslip — view only. Revert the payslip to draft to edit.</div>
         <div class="mb-2"><label class="form-label small mb-1">Date</label><input type="date" id="emp-att-date" class="form-control form-control-sm"></div>
         <div class="mb-2"><label class="form-label small mb-1">Day Type</label>
           <select id="emp-att-day-type" class="form-select form-select-sm">
@@ -5262,7 +5262,7 @@
       <div class="modal-footer py-2">
         <button id="emp-att-delete-btn" class="btn btn-sm btn-danger me-auto" onclick="empDeleteAttendance()" style="display:none"><i class="bi bi-trash me-1"></i>Delete Entry</button>
         <button class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-sm btn-primary" onclick="empSaveAttendance()">Save</button>
+        <button id="emp-att-save-btn" class="btn btn-sm btn-primary" onclick="empSaveAttendance()">Save</button>
       </div>
     </div>
   </div>

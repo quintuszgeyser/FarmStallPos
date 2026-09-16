@@ -22694,7 +22694,8 @@ async function loadTimesheetCalendar() {
     EMP.publicHolidays  = { ...holidays, ...holidaysTo };
     EMP.tsCalendarData  = {};
     for (const a of attData.attendance) EMP.tsCalendarData[a.work_date] = a;
-    EMP.paidLockedDates = new Set();
+    EMP.paidLockedDates  = new Set();
+    EMP.allGridPaidLocked = new Set(); // clear stale cross-employee lock state from the all-employees grid
     for (const pr of (attData.paid_periods || [])) {
       let d = new Date(pr.period_start + 'T00:00:00');
       const end = new Date(pr.period_end + 'T00:00:00');
@@ -22721,6 +22722,8 @@ function _renderAllEmployeesGrid(data) {
   // Cache per-employee attendance so clicking cells opens the correct record
   EMP.allGridAttData = {};
   EMP.allGridPaidLocked = new Set();
+  EMP.paidLockedDates = new Set(); // clear stale single-employee lock state — it would otherwise
+                                    // false-lock other employees' unrelated dates that share the same date string
   EMP.publicHolidays = public_holidays || {};
   for (const emp of employees) {
     for (const ds of dates) {
@@ -22763,7 +22766,7 @@ function _renderAllEmployeesGrid(data) {
       const isLocked = EMP.allGridPaidLocked.has(`${emp.id}_${ds}`);
       const lockIcon = isLocked ? ' <i class="bi bi-lock-fill" style="font-size:8px" title="Covered by paid payslip — revert payslip to draft to edit"></i>' : '';
       const lockCls  = isLocked ? ' att-cell-locked' : '';
-      const onclickAttr = isLocked ? '' : `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
+      const onclickAttr = `onclick="empOpenAttendanceForDate('${ds}', ${emp.id})"`;
       if (rec) {
         const h = rec.hours != null ? parseFloat(rec.hours) : 0;
         totalH += h;
@@ -22826,12 +22829,7 @@ function _renderRangeCalendar(dateFrom, dateTo, empId) {
       typeCell = `<span class="emp-cal-badge ${att.day_type}">${lbl}</span><strong>${h}</strong>${time}`;
     }
 
-    let actionCell = '';
-    if (isLocked) {
-      actionCell = `<span class="text-muted small">Locked</span>`;
-    } else {
-      actionCell = `<button class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:11px" onclick="empOpenAttendanceForDate('${ds}',${empId})">${att ? '<i class="bi bi-pencil"></i>' : '<i class="bi bi-plus"></i>'}</button>`;
-    }
+    const actionCell = `<button class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:11px" onclick="empOpenAttendanceForDate('${ds}',${empId})">${isLocked ? '<i class="bi bi-eye"></i>' : (att ? '<i class="bi bi-pencil"></i>' : '<i class="bi bi-plus"></i>')}</button>`;
 
     rows += `<tr class="${rowCls}">
       <td>${dateDisplay}${lockIcon}${holName}${sunNote}</td>
@@ -22867,10 +22865,7 @@ function _renderTimesheetSummary(attendance) {
 // ── Attendance modal ──────────────────────────────────────────────────────────
 
 function empOpenAttendanceForDate(dateStr, empId) {
-  if (EMP.paidLockedDates?.has(dateStr) || EMP.allGridPaidLocked?.has(`${empId}_${dateStr}`)) {
-    toast('This date is covered by a paid payslip and cannot be edited. Revert the payslip to draft first.', 'warning', 5000);
-    return;
-  }
+  const isLocked = !!(EMP.paidLockedDates?.has(dateStr) || EMP.allGridPaidLocked?.has(`${empId}_${dateStr}`));
   const att = EMP.tsCalendarData[dateStr] || (EMP.allGridAttData && EMP.allGridAttData[`${empId}_${dateStr}`]);
   const emp = EMP.employees.find(e => e.id == empId);
   document.getElementById('emp-att-employee-id').value = empId;
@@ -22911,7 +22906,23 @@ function empOpenAttendanceForDate(dateStr, empId) {
   dayTypeEl.value = dayType;
 
   const deleteBtn = document.getElementById('emp-att-delete-btn');
-  if (deleteBtn) deleteBtn.style.display = att ? '' : 'none';
+  if (deleteBtn) deleteBtn.style.display = (att && !isLocked) ? '' : 'none';
+
+  // Locked (paid-payslip) dates open in view-only mode instead of being blocked outright —
+  // admins still need to see what was recorded even though it can no longer be edited here.
+  const lockedNote = document.getElementById('emp-att-locked-note');
+  const saveBtn    = document.getElementById('emp-att-save-btn');
+  const formFields = ['emp-att-date', 'emp-att-day-type', 'emp-att-clock-in', 'emp-att-clock-out',
+                       'emp-att-break', 'emp-att-hours', 'emp-att-notes'];
+  for (const id of formFields) {
+    const el = document.getElementById(id);
+    if (el) el.disabled = isLocked;
+  }
+  if (lockedNote) lockedNote.style.display = isLocked ? '' : 'none';
+  if (saveBtn)    saveBtn.style.display    = isLocked ? 'none' : '';
+  if (isLocked && !att) {
+    toast('No attendance recorded for this date, but it falls inside a paid payslip period.', 'warning', 4000);
+  }
 
   // Wire up leave balance display on day_type change
   const leaveInfoEl = document.getElementById('emp-att-leave-info');
