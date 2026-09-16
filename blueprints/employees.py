@@ -211,6 +211,21 @@ def _serialize_employee(emp, include_sensitive=True):
         })
     return row
 
+def _payrun_snapshot_days(pr):
+    """Per-date attendance as it was when this pay run was calculated, keyed by ISO date.
+    Used to fill in a day's hours/clock times for the timesheet views when the live
+    EmployeeAttendance row for that date has since been edited or deleted — the payslip
+    is the durable record of what was actually paid for on a locked day."""
+    try:
+        snap = json.loads(pr.attendance_json or '[]')
+    except (TypeError, ValueError):
+        return {}
+    return {
+        entry['date']: entry
+        for entry in snap
+        if entry.get('date')
+    }
+
 def _serialize_attendance(a):
     return {
         'id':             a.id,
@@ -789,8 +804,25 @@ def api_attendance_list(eid):
         PayRun.period_start <= d_to,
     ).all()
 
+    attendance = [_serialize_attendance(a) for a in rows]
+    have_dates = {a['work_date'] for a in attendance}
+    for pr in paid_runs:
+        for ds, snap in _payrun_snapshot_days(pr).items():
+            if ds in have_dates or not (d_from.isoformat() <= ds <= d_to.isoformat()):
+                continue
+            attendance.append({
+                'id': None, 'employee_id': eid, 'work_date': ds,
+                'clock_in': snap.get('clock_in'), 'clock_out': snap.get('clock_out'),
+                'break_minutes': snap.get('break_min'), 'hours_worked': snap.get('hours'),
+                'day_type': snap.get('day_type'), 'source': 'payslip_snapshot',
+                'notes': f'From paid payslip {pr.reference} (original entry no longer on file)',
+                'approved_by': None, 'created_at': pr.created_at.isoformat(),
+            })
+            have_dates.add(ds)
+    attendance.sort(key=lambda a: a['work_date'])
+
     return jsonify({
-        'attendance': [_serialize_attendance(a) for a in rows],
+        'attendance': attendance,
         'public_holidays': {d.isoformat(): name for d, name in holidays.items()
                             if d_from <= d <= d_to},
         'paid_periods': [
@@ -1095,6 +1127,22 @@ def api_attendance_summary():
         while cur_pd <= end_pd:
             s.add(cur_pd.isoformat())
             cur_pd += timedelta(days=1)
+
+        # Fall back to the payslip's own snapshot for any locked day whose live
+        # EmployeeAttendance row is missing (edited/deleted after the payslip was paid) —
+        # the grid should still show what was actually paid for, not a blank cell.
+        emp_days = att_map.setdefault(pr.employee_id, {})
+        for ds, snap in _payrun_snapshot_days(pr).items():
+            if ds in emp_days or ds not in s:
+                continue
+            emp_days[ds] = {
+                'hours':     snap.get('hours') or 0,
+                'day_type':  snap.get('day_type'),
+                'source':    'payslip_snapshot',
+                'clock_in':  snap.get('clock_in'),
+                'clock_out': snap.get('clock_out'),
+                'id':        None,
+            }
 
     return jsonify({
         'employees': [
