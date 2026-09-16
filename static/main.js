@@ -22710,6 +22710,9 @@ async function loadTimesheetCalendar() {
   } catch(e) { toast(e.message, 'danger'); }
 }
 
+const GRID_DAY_TYPE_ABBR = { overtime:'OT', sunday:'Sun', public_holiday:'PH',
+                              vacation:'Leave', sick:'Sick', unpaid_leave:'Unpaid', absent:'Absent' };
+
 function _renderAllEmployeesGrid(data) {
   const gridEl = document.getElementById('emp-ts-all-grid');
   if (!gridEl) return;
@@ -22773,9 +22776,15 @@ function _renderAllEmployeesGrid(data) {
       if (rec) {
         const h = rec.hours != null ? parseFloat(rec.hours) : 0;
         totalH += h;
-        const hStr = h > 0 ? h.toFixed(1) + 'h' : rec.day_type.replace('_',' ');
-        const src  = rec.source === 'schedule' ? ' title="scheduled"' : '';
-        html += `<td class="att-cell-${rec.day_type}${lockCls}" style="text-align:center;padding:2px 3px" ${onclickAttr}${src}>${hStr}${lockIcon}</td>`;
+        // Short prefix so special day types (public holiday, leave, overtime, ...) are
+        // visible at a glance, matching the "Public Holiday" badge the single-employee
+        // view already shows — a bare hour count only told the two views apart by color.
+        const dayLabel = GRID_DAY_TYPE_ABBR[rec.day_type] || '';
+        const hStr = h > 0
+          ? (dayLabel ? `${dayLabel} ${h.toFixed(1)}h` : h.toFixed(1) + 'h')
+          : rec.day_type.replace('_',' ');
+        const title = ` title="${rec.day_type.replace('_',' ')}${rec.source === 'schedule_default' ? ' (scheduled)' : ''}"`;
+        html += `<td class="att-cell-${rec.day_type}${lockCls}" style="text-align:center;padding:2px 3px" ${onclickAttr}${title}>${hStr}${lockIcon}</td>`;
       } else if (isHol) {
         html += `<td class="att-cell-public_holiday${lockCls}" style="text-align:center;font-size:9px" ${onclickAttr} title="${isLocked ? 'Public holiday — covered by paid payslip' : 'Public holiday — click to add hours'}">PH${lockIcon}</td>`;
       } else if (dow === 0) {
