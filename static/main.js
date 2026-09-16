@@ -22728,7 +22728,10 @@ function _renderAllEmployeesGrid(data) {
   for (const emp of employees) {
     for (const ds of dates) {
       if (emp.days && emp.days[ds]) {
-        EMP.allGridAttData[`${emp.id}_${ds}`] = emp.days[ds];
+        // The summary endpoint uses `hours`; the attendance modal reads `hours_worked`
+        // (the shape returned by the single-employee endpoint) — normalize here so hours
+        // actually populate when a cell is opened from the all-employees grid.
+        EMP.allGridAttData[`${emp.id}_${ds}`] = { ...emp.days[ds], hours_worked: emp.days[ds].hours };
       }
     }
     for (const ds of (emp.paid_dates || [])) {
