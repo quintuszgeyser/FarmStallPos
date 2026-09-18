@@ -41,15 +41,30 @@ def _sum_split_card(start_dt, end_dt):
 
 
 def _sum_cash_refunds(start_dt, end_dt):
-    """Sum absolute value of return rows — cash actually paid out of the drawer."""
-    r = db.session.query(func.coalesce(func.sum(Sale.qty * Sale.unit_price), 0)).filter(
+    """Sum cash actually paid out of the drawer for returns.
+
+    Rev 5 P2-4: only the CASH portion of each refund counts — a card refund
+    doesn't move expected cash, unlike the old behavior which summed every
+    return row's full value as cash regardless of how the original sale was
+    paid. Post-fix return rows carry their own cash_tendered (the return
+    endpoint stamps it, prorated against the original tender). Pre-fix rows
+    have cash_tendered=NULL — for those, fall back to the full refund value
+    as cash, matching what this function always assumed before the fix. That
+    fallback only ever applies to historical data, never to a new return.
+    """
+    rows = db.session.query(Sale.qty, Sale.unit_price, Sale.cash_tendered).filter(
         Sale.date_time >= start_dt,
         Sale.date_time <= end_dt,
         Sale.voided == False,
         Sale.payment_method == 'return',
-    ).scalar()
-    # qty is negative on return rows, so qty*price is negative; abs() for display
-    return abs(Decimal(str(r)))
+    ).all()
+    total = Decimal('0')
+    for qty, unit_price, cash_tendered in rows:
+        if cash_tendered is not None:
+            total += Decimal(str(cash_tendered))
+        else:
+            total += abs(Decimal(str(qty)) * Decimal(str(unit_price)))
+    return total
 
 
 def _sum_sales(start_dt, end_dt, payment_method=None, voided=False):

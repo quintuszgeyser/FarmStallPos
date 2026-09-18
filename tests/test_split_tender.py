@@ -71,15 +71,12 @@ def test_till_summary_sums_split_cash_and_card_separately(db_session, client):
     assert D(str(summary['total_sales'])) == D('20.00')
 
 
-@pytest.mark.known_defect
-def test_cash_refunds_counts_a_card_paid_return_as_cash_out(db_session, client):
-    """KNOWN DEFECT — Rev 5 P2-4. A refund's payment_method is always stamped
-    'return' regardless of how the original sale was paid. TillSession's
-    cash_refunds sums every 'return' row indiscriminately, so refunding a
-    CARD sale still reduces expected cash-in-drawer exactly as if cash had
-    physically left the till. P2-4 is the commit that must fix this — it
-    should carry the original tender forward so a card refund stops moving
-    expected cash.
+def test_card_refund_no_longer_moves_expected_cash(db_session, client):
+    """Rev 5 P2-4. Refunding a CARD-paid sale must not reduce expected
+    cash-in-drawer as if physical notes had left the till. The return
+    endpoint now carries the original tender forward (prorated for split-
+    tender sales) onto the return row's own cash_tendered/card_amount, and
+    cash_refunds sums only the cash portion.
     """
     make_admin(username='refund_admin', password_hash=generate_password_hash('adminpass123'))
     login_as(client, 'refund_admin', 'adminpass123')
@@ -98,5 +95,26 @@ def test_cash_refunds_counts_a_card_paid_return_as_cash_out(db_session, client):
     assert ret.status_code == 200, ret.get_json()
 
     after = client.get('/api/till/sessions/summary').get_json()
-    # DEFECT: a card-paid sale's refund still shows up as cash_refunds.
+    # Fixed: a card-paid sale's refund does not show up as cash_refunds.
+    assert D(str(after['cash_refunds'])) == D('0')
+
+
+def test_cash_refund_still_moves_expected_cash(db_session, client):
+    """A CASH-paid sale's refund must still reduce expected cash — the fix
+    only stops a card refund from being miscounted as cash, not the reverse.
+    """
+    make_admin(username='refund_admin2', password_hash=generate_password_hash('adminpass123'))
+    login_as(client, 'refund_admin2', 'adminpass123')
+
+    product, batch = _stock_item(price='30.00')
+    resp = checkout(client, [{'product_id': product.id, 'qty': 1}], payment_method='cash', cash_tendered=30)
+    assert resp.status_code == 200, resp.get_json()
+    sale_id = resp.get_json()['transaction_id']
+
+    ret = client.post(f'/api/transactions/{sale_id}/return', json={
+        'lines': [{'product_id': product.id, 'qty': 1}], 'reason': 'testing cash refund',
+    })
+    assert ret.status_code == 200, ret.get_json()
+
+    after = client.get('/api/till/sessions/summary').get_json()
     assert D(str(after['cash_refunds'])) == D('30.00')

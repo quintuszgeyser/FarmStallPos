@@ -849,6 +849,29 @@ def api_transaction_return(sale_id):
         if orig_row and orig_row.cogs is not None and abs(Decimal(str(orig_row.qty))) > 0:
             return_cogs = Decimal(str(orig_row.cogs)) * (qty / abs(Decimal(str(orig_row.qty))))
 
+        # Rev 5 P2-4: carry the refund tender forward instead of assuming cash.
+        # TillSession.cash_refunds used to sum every return row as cash out of
+        # the drawer regardless of how the original sale was paid, so refunding
+        # a card sale still reduced expected cash as if physical notes had left
+        # the till. Split against the ORIGINAL sale's own cash/card tender
+        # (prorated for a split-tender original) so a partial return of one
+        # product from a mixed-tender basket still refunds accurately.
+        refund_amount = (qty * unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        _orig_pm = (orig_row.payment_method if orig_row else None) or 'cash'
+        if _orig_pm == 'split':
+            _orig_cash  = Decimal(str(orig_row.cash_tendered or 0)) if orig_row else Decimal('0')
+            _orig_card  = Decimal(str(orig_row.card_amount or 0)) if orig_row else Decimal('0')
+            _orig_total = _orig_cash + _orig_card
+            if _orig_total > 0:
+                refund_cash = (refund_amount * _orig_cash / _orig_total).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                refund_card = refund_amount - refund_cash
+            else:
+                refund_cash, refund_card = refund_amount, Decimal('0')
+        elif _orig_pm == 'card':
+            refund_cash, refund_card = Decimal('0'), refund_amount
+        else:  # cash, qr, or unset -> treated as cash out of the drawer
+            refund_cash, refund_card = refund_amount, Decimal('0')
+
         db.session.add(Sale(
             sale_id=return_uuid,
             date_time=now,
@@ -860,6 +883,8 @@ def api_transaction_return(sale_id):
             void_reason=f'return:{sale_id}:{reason}',
             payment_method='return',
             cogs=return_cogs,
+            cash_tendered=refund_cash,
+            card_amount=refund_card,
         ))
 
         p = db.session.get(Product, pid, with_for_update=True)
@@ -948,6 +973,11 @@ def api_transaction_void(sale_id):
         return jsonify({'error': 'Forbidden'}), 403
     data   = request.json or {}
     reason = data.get('reason', '').strip()
+    # Rev 5 P2-4: a blank void reason is the classic till-fraud signature —
+    # return already requires one (transactions.py's return endpoint), void
+    # didn't.
+    if not reason:
+        return jsonify({'error': 'reason required'}), 400
     rows   = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows: return jsonify({'error': 'Transaction not found or already voided'}), 404
     u = current_user(); now = datetime.utcnow()
@@ -964,11 +994,43 @@ def api_transaction_void(sale_id):
 def api_transaction_edit(sale_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
-    data  = request.json or {}
-    lines = data.get('lines', [])
+    data   = request.json or {}
+    lines  = data.get('lines', [])
+    reason = (data.get('reason') or '').strip()
+    force  = bool(data.get('force'))
     if not lines: return jsonify({'error': 'lines required'}), 400
+    # Rev 5 P2-4: edit rewrote a sale to arbitrary products with no reason
+    # required and no inventory-policy check, bypassing STRICT entirely —
+    # return already requires a reason; edit now does too.
+    if not reason: return jsonify({'error': 'reason required'}), 400
     rows = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows: return jsonify({'error': 'Transaction not found or voided'}), 404
+
+    # Pre-flight STRICT policy check (read-only, before any DB writes) — the
+    # same check checkout runs. "Available after this edit" = current stock +
+    # whatever THIS sale originally consumed, since editing reverses that
+    # consumption before re-consuming for the new line composition.
+    _orig_qty_by_pid = {}
+    for r in rows:
+        _orig_qty_by_pid[r.product_id] = _orig_qty_by_pid.get(r.product_id, Decimal('0')) + Decimal(str(r.qty))
+    _edit_required = {}
+    for item in lines:
+        _pid = int(item['product_id'])
+        _edit_required[_pid] = _edit_required.get(_pid, Decimal('0')) + Decimal(str(item.get('qty', 1)))
+    _edit_blocks = []
+    for _pid, _total_qty in _edit_required.items():
+        _pc = db.session.get(Product, _pid)
+        if not _pc: continue
+        _pol = getattr(_pc, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
+        if _pol != 'STRICT': continue
+        if not (_pc.product_type == 'stock_item' or (_pc.product_type == 'recipe' and _pc.is_produced)): continue
+        _available = Decimal(str(get_stock_level(_pid))) + _orig_qty_by_pid.get(_pid, Decimal('0'))
+        if _available < _total_qty:
+            _edit_blocks.append({'product_id': _pid, 'name': _pc.name,
+                                  'available': float(_available), 'needed': float(_total_qty)})
+    if _edit_blocks and not force:
+        return jsonify({'error': 'Edit blocked: insufficient stock.', 'blocked': _edit_blocks}), 409
+
     orig_date = rows[0].date_time
     # Preserve original payment_method and tender on replacement rows so Z-report stays correct
     orig_payment_method = rows[0].payment_method
@@ -976,10 +1038,10 @@ def api_transaction_edit(sale_id):
     orig_card_amount    = rows[0].card_amount
     u = current_user()
     now_wall = datetime.utcnow()  # use wall-clock for consume_fifo so batch eligibility isn't capped at the original sale date
-    _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note='superseded by edit')
+    _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note=f'superseded by edit: {reason}')
     for row in rows:
         row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = now_wall
-        row.void_reason = 'superseded by edit'
+        row.void_reason = f'superseded by edit: {reason}'
     reverse_fifo(sale_id)
     reverse_consignment_liabilities(sale_id)
     for idx, item in enumerate(lines):

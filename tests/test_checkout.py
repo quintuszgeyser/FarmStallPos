@@ -76,6 +76,83 @@ def test_void_restores_stock_and_writes_audit_log(db_session, client):
     assert audit_rows[0].actor_user_id == admin.id
 
 
+def test_void_without_reason_is_rejected(db_session, client):
+    """Rev 5 P2-4 proof criterion: void without reason returns 400. A blank
+    void reason is the classic till-fraud signature."""
+    from werkzeug.security import generate_password_hash
+    make_admin(username='admin_void_noreason', password_hash=generate_password_hash('adminpass123'))
+    product, batch = _make_stock_item(price='10.00', cost='5.000000', qty='10')
+
+    login_as(client, 'admin_void_noreason', 'adminpass123')
+    resp = checkout(client, [{'product_id': product.id, 'qty': 3}], cash_tendered=30)
+    sale_id = resp.get_json()['transaction_id']
+
+    void_resp = client.post(f'/api/transactions/{sale_id}/void', json={'reason': ''})
+    assert void_resp.status_code == 400, void_resp.get_json()
+
+    void_resp2 = client.post(f'/api/transactions/{sale_id}/void', json={})
+    assert void_resp2.status_code == 400, void_resp2.get_json()
+
+    # The sale is untouched — the blocked void must not have voided anything.
+    rows = Sale.query.filter_by(sale_id=sale_id).all()
+    assert all(r.voided is False for r in rows)
+
+
+def test_strict_breaching_edit_is_blocked_and_admin_force_overridable(db_session, client):
+    """Rev 5 P2-4 proof criterion: a STRICT-breaching edit is blocked, and an
+    admin can force past it explicitly with force=true — mirroring checkout's
+    own STRICT pre-flight check and force escape hatch.
+    """
+    from werkzeug.security import generate_password_hash
+    make_admin(username='admin_strict_edit', password_hash=generate_password_hash('adminpass123'))
+
+    product = make_product(product_type='stock_item', price=D('10.00'), inventory_policy='STRICT')
+    batch = StockBatch(
+        product_id=product.id, qty_purchased_base=D(3), qty_remaining_base=D(3),
+        cost_per_base_unit=D('5.000000'),
+    )
+    from models import db
+    db.session.add(batch)
+    db.session.flush()
+
+    login_as(client, 'admin_strict_edit', 'adminpass123')
+    resp = checkout(client, [{'product_id': product.id, 'qty': 3}], cash_tendered=30)
+    sale_id = resp.get_json()['transaction_id']
+
+    # Editing to a qty that exceeds available stock once the original 3 are
+    # reversed back (3 available, asking for 10) must be blocked.
+    edit = client.post(f'/api/transactions/{sale_id}/edit',
+                        json={'lines': [{'product_id': product.id, 'qty': 10}], 'reason': 'oops too many'})
+    assert edit.status_code == 409, edit.get_json()
+    assert edit.get_json()['blocked'][0]['product_id'] == product.id
+
+    # The sale must be untouched — a blocked edit must not have reversed or
+    # voided anything.
+    live = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
+    assert len(live) == 1
+    assert live[0].qty == D(3)
+
+    # An admin can force past it explicitly.
+    edit_forced = client.post(f'/api/transactions/{sale_id}/edit',
+                               json={'lines': [{'product_id': product.id, 'qty': 10}],
+                                     'reason': 'oops too many', 'force': True})
+    assert edit_forced.status_code == 200, edit_forced.get_json()
+
+
+def test_edit_without_reason_is_rejected(db_session, client):
+    from werkzeug.security import generate_password_hash
+    make_admin(username='admin_edit_noreason', password_hash=generate_password_hash('adminpass123'))
+    product, batch = _make_stock_item(price='10.00', cost='5.000000', qty='10')
+
+    login_as(client, 'admin_edit_noreason', 'adminpass123')
+    resp = checkout(client, [{'product_id': product.id, 'qty': 3}], cash_tendered=30)
+    sale_id = resp.get_json()['transaction_id']
+
+    edit = client.post(f'/api/transactions/{sale_id}/edit',
+                        json={'lines': [{'product_id': product.id, 'qty': 5}]})
+    assert edit.status_code == 400, edit.get_json()
+
+
 def test_mixed_vat_basket_taxes_only_the_standard_rated_line(db_session, client):
     """Rev 5 P1-1/P1-1b fix, proven. Before P1-1, Product.vat_type was stored and
     UI-editable but read by nothing: the receipt endpoint applied a single flat

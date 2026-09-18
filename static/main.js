@@ -9437,6 +9437,7 @@ function openTxModal(t) {
   const meta = document.getElementById('tx-modal-meta');
   if (meta) meta.textContent = `${new Date(t.date_time+'Z').toLocaleString('en-ZA')} - R${fmt(t.total)}${t.teller ? ' - ' + t.teller : ''}`;
   document.getElementById('tx-void-reason').value = '';
+  document.getElementById('tx-edit-reason').value = '';
   renderTxEditTable();
   bootstrap.Modal.getOrCreateInstance(document.getElementById('txModal')).show();
 }
@@ -9478,20 +9479,41 @@ function renderTxEditTable() {
 
 document.getElementById('btn-tx-save-edit')?.addEventListener('click', async () => {
   if (!STATE.currentTx) return;
+  const reason = document.getElementById('tx-edit-reason').value.trim();
+  if (!reason) return toast('Please enter an edit reason', 'warning');
   const lines = _txModalLines.filter(l => l.qty > 0).map(l => ({
     product_id: l.product_id, qty: l.qty, unit_price: l.unit_price
   }));
   if (lines.length === 0) return toast('Transaction must have at least one item', 'warning');
   try {
     await api(`/api/transactions/${STATE.currentTx.id}/edit`, {
-      method: 'POST', body: JSON.stringify({ lines })
+      method: 'POST', body: JSON.stringify({ lines, reason })
     });
     toast('Transaction updated');
     bootstrap.Modal.getOrCreateInstance(document.getElementById('txModal')).hide();
     loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
     await loadProducts();
     await loadIngredients();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    // STRICT-policy block (409, {blocked:[...]}) — offer to force past it.
+    if (e.status === 409 && Array.isArray(e.data?.blocked)) {
+      const items = e.data.blocked.map(b => `${b.name}: have ${b.available}, need ${b.needed}`).join('; ');
+      if (confirm(`Insufficient stock (${items}). Save anyway?`)) {
+        try {
+          await api(`/api/transactions/${STATE.currentTx.id}/edit`, {
+            method: 'POST', body: JSON.stringify({ lines, reason, force: true })
+          });
+          toast('Transaction updated');
+          bootstrap.Modal.getOrCreateInstance(document.getElementById('txModal')).hide();
+          loadTransactions(document.getElementById('tx-start')?.value, document.getElementById('tx-end')?.value);
+          await loadProducts();
+          await loadIngredients();
+        } catch (e2) { toast(e2.message, 'error'); }
+      }
+      return;
+    }
+    toast(e.message, 'error');
+  }
 });
 
 document.getElementById('btn-tx-void')?.addEventListener('click', async () => {
