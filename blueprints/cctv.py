@@ -607,11 +607,19 @@ _VIEW_HTML = """<!doctype html>
   };
 
   // ── Grid — must come after all CamStream.prototype assignments ──
-  // Stream connects are staggered (not fired all at once) so a bandwidth-
-  // constrained link (e.g. a relayed Tailscale path) isn't hit with every
-  // camera's ICE/DTLS negotiation simultaneously.
+  // A relayed remote link (e.g. Tailscale via DERP) can't carry all 9
+  // cameras' live video at once — only GROUP_SIZE tiles are actually
+  // connected at any moment, and groups rotate on a timer so every
+  // camera gets airtime instead of all of them fighting for bandwidth
+  // and none of them staying watchable.
+  var GROUP_SIZE = 3;
+  var ROTATE_MS = 20000;
+
   var grid = document.getElementById('grid');
-  CAMERAS.forEach(function(cam, camIndex) {
+  var tileVideos = {};
+  var tileDots = {};
+
+  CAMERAS.forEach(function(cam) {
     var tile = document.createElement('div');
     tile.className = 'tile';
 
@@ -638,10 +646,45 @@ _VIEW_HTML = """<!doctype html>
 
     tile.addEventListener('click', function() { openDrilldown(cam); });
 
-    setTimeout(function() {
-      streams[cam.id] = new CamStream(tileSrc(cam.id), video, dot);
-    }, camIndex * 600);
+    tileVideos[cam.id] = video;
+    tileDots[cam.id] = dot;
   });
+
+  var groups = [];
+  for (var _gi = 0; _gi < CAMERAS.length; _gi += GROUP_SIZE) {
+    groups.push(CAMERAS.slice(_gi, _gi + GROUP_SIZE));
+  }
+  var groupIdx = 0;
+
+  function connectGroup(camList) {
+    camList.forEach(function(cam, i) {
+      setTimeout(function() {
+        streams[cam.id] = new CamStream(tileSrc(cam.id), tileVideos[cam.id], tileDots[cam.id]);
+      }, i * 500);
+    });
+  }
+
+  function disconnectGroup(camList) {
+    camList.forEach(function(cam) {
+      var s = streams[cam.id];
+      if (s) {
+        clearTimeout(s._timer);
+        s._clear();
+        delete streams[cam.id];
+      }
+      var dot = tileDots[cam.id];
+      if (dot) dot.className = 'tile-dot connecting';
+    });
+  }
+
+  function rotateGroups() {
+    disconnectGroup(groups[groupIdx]);
+    groupIdx = (groupIdx + 1) % groups.length;
+    connectGroup(groups[groupIdx]);
+  }
+
+  connectGroup(groups[0]);
+  if (groups.length > 1) setInterval(rotateGroups, ROTATE_MS);
 
   // ── Layout ──
   var LS_COLS = 'cctv_cols';
