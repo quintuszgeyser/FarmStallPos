@@ -1,0 +1,27 @@
+# docker-compose.test.yml - disposable Postgres for the pytest suite (Rev 5 P0-1).
+# Ephemeral by design: no named volume, so `docker compose down` (or a container
+# recreate) wipes all data. Never point this at anything but the test suite.
+#
+# Port 5433 (not 5432) so it never collides with a developer's local Postgres or
+# the appliance's own farmpos-postgres container.
+#
+# Usage: docker compose -f docker-compose.test.yml up -d
+#        docker compose -f docker-compose.test.yml down -v
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: farmpos-postgres-test
+    environment:
+      POSTGRES_USER: farmpos_test
+      POSTGRES_PASSWORD: farmpos_test_pw
+      POSTGRES_DB: farmpos_test
+    ports:
+      - "127.0.0.1:5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data   # ephemeral - never persisted to disk
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farmpos_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
