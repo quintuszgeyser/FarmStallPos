@@ -194,11 +194,10 @@ def api_users_update():
                 ))
             u.role = new_role
     if isinstance(active, bool):
-        u.active = active
-        if not active:
-            now = datetime.utcnow()
-            for s in UserSession.query.filter_by(user_id=u.id, logged_out=None).all():
-                s.logged_out = now
+        if active:
+            u.active = True
+        else:
+            _deactivate_user(u)
     if password:
         pw_error = validate_password(password)
         if pw_error:
@@ -208,17 +207,31 @@ def api_users_update():
     return jsonify({'ok': True})
 
 
+def _deactivate_user(u):
+    u.active = False
+    now = datetime.utcnow()
+    for s in UserSession.query.filter_by(user_id=u.id, logged_out=None).all():
+        s.logged_out = now
+
+
 @bp.route('/api/users/<username>', methods=['DELETE'])
 def api_users_delete(username):
+    """Rev 5 P3-2: an alias for deactivation, not a hard delete. sales.user_id
+    has no ondelete clause, so a hard delete either 500s for any user who ever
+    rang a sale, or (if that FK were ever relaxed) silently orphans the
+    attribution on every sale and audit row that user touched. Deactivation
+    already existed (api_users_update's active=False path, now shared via
+    _deactivate_user) and does the right thing: the user can no longer log in,
+    every active session is killed immediately, they're already filtered out
+    of every picker the frontend builds from active users, and every
+    historical record stays correctly attributed.
+    """
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     u = User.query.filter_by(username=username).first()
     if not u:
         return jsonify({'error': 'User not found'}), 404
-    now = datetime.utcnow()
-    for s in UserSession.query.filter_by(user_id=u.id, logged_out=None).all():
-        s.logged_out = now
-    db.session.delete(u)
+    _deactivate_user(u)
     db.session.commit()
     return jsonify({'ok': True})
 

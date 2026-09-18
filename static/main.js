@@ -9922,11 +9922,14 @@ document.getElementById('btn-update-user')?.addEventListener('click', async () =
 document.getElementById('btn-delete-user')?.addEventListener('click', async () => {
   const username = document.getElementById('u-username').value.trim();
   if (!username) return toast('Select a user first', 'warning');
-  if (!confirm(`Delete user "${username}"?`)) return;
+  // Rev 5 P3-2: this deactivates, not deletes — the record and every sale/
+  // audit row it's attributed to stay intact; the user just can't log in
+  // and no longer appears in pickers.
+  if (!confirm(`Deactivate user "${username}"? They will no longer be able to log in, but their history is preserved.`)) return;
   try {
     await api(`/api/users/${encodeURIComponent(username)}`, { method: 'DELETE' });
     _clearUserForm();
-    await loadUsers(); toast('User deleted');
+    await loadUsers(); toast('User deactivated');
   } catch (e) { toast(e.message, 'error'); }
 });
 
