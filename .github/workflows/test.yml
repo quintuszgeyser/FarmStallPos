@@ -1,0 +1,58 @@
+name: Test suite
+
+# Rev 5 P0-1/P0-4: pytest characterization suite + reconcile.py invariant
+# checks, gated on every push/PR. Separate from release.yml (which only runs
+# on version tags and does the image build/migration-smoke-test/push) — this
+# is the fast feedback loop for ordinary commits.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: farmpos_test
+          POSTGRES_PASSWORD: farmpos_test_pw
+          POSTGRES_DB: farmpos_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U farmpos_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run pytest
+        env:
+          DATABASE_URL: postgresql://farmpos_test:farmpos_test_pw@localhost:5433/farmpos_test
+        run: pytest -v
+
+      - name: Run reconcile.py invariant suite
+        if: always()
+        env:
+          DATABASE_URL: postgresql://farmpos_test:farmpos_test_pw@localhost:5433/farmpos_test
+        run: python scripts/reconcile.py --json-out reconcile-report.json
+
+      - name: Upload reconcile report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconcile-report
+          path: reconcile-report.json
