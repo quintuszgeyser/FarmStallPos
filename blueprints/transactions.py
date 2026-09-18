@@ -533,6 +533,49 @@ def api_transactions_post():
     return jsonify({'ok': True, 'transaction_id': sale_uuid, 'kitchen_orders': len(all_kitchen)})
 
 
+def _vat_display(sale_id):
+    """Single source of truth for how a sale's VAT is shown — every receipt surface
+    (JSON receipt, thermal print, browser print) and the Z-report's per-sale detail
+    all call this instead of independently recomputing (Rev 5 P1-1).
+
+    Reads ONLY the checkout-time snapshot in sale_headers. Never recomputes from
+    current settings — that was the original defect: a later VAT-rate or
+    registration change would silently alter every past receipt's shown VAT.
+
+    A legacy_flat header (scripts/backfill_vat_headers.py) is presented as "VAT as
+    originally recorded", never as a recomputed or verified figure (Rev 5 P1-1b).
+    A sale_id with no header at all (a return — returns don't create their own
+    header — or pre-migration history the backfill hasn't reached yet) is reported
+    as 'unrecorded' rather than silently falling back to the old live-recompute
+    formula, which would reintroduce the exact bug this fixes.
+    """
+    header = SaleHeader.query.filter_by(sale_id=sale_id).first()
+    if header is None:
+        return {
+            'vat_registered': False, 'vat_rate': 0.0, 'vat_amount': 0.0,
+            'vat_method': 'unrecorded',
+            'vat_note': 'No VAT record for this transaction (return, or pre-migration sale not yet backfilled).',
+        }
+    note = None
+    if header.vat_method == 'legacy_flat':
+        note = 'VAT as originally recorded (pre-P1-1 flat-rate calculation, not a verified per-line breakdown).'
+    return {
+        'vat_registered': bool(header.vat_registered_snapshot),
+        'vat_rate':       float(header.vat_rate_snapshot or 0),
+        'vat_amount':     float(header.total_vat),
+        'vat_method':     header.vat_method,
+        'vat_note':       note,
+    }
+
+
+def _receipt_lines(rows, product_map):
+    return [{'name': product_map.get(r.product_id, f'Product {r.product_id}'),
+              'qty': float(r.qty), 'unit_price': float(r.unit_price),
+              'subtotal': float(Decimal(str(r.qty)) * r.unit_price),
+              'vat_classification': r.vat_classification,
+              'vat_amount': float(r.vat_amount) if r.vat_amount is not None else None} for r in rows]
+
+
 @bp.route('/api/transactions/<sale_id>/receipt', methods=['GET'])
 def api_transaction_receipt(sale_id):
     """Return receipt data for a sale. Used by the print receipt button."""
@@ -544,13 +587,9 @@ def api_transaction_receipt(sale_id):
         return jsonify({'error': 'Transaction not found'}), 404
     product_map = {p.id: p.name for p in Product.query.filter(
         Product.id.in_({r.product_id for r in rows})).all()}
-    lines = [{'name': product_map.get(r.product_id, f'Product {r.product_id}'),
-              'qty': float(r.qty), 'unit_price': float(r.unit_price),
-              'subtotal': float(Decimal(str(r.qty)) * r.unit_price)} for r in rows]
+    lines = _receipt_lines(rows, product_map)
     total = sum(ln['subtotal'] for ln in lines)
-    vat_registered = get_setting('vat_registered', 'false') == 'true'
-    vat_rate_pct   = float(get_setting('vat_rate', 15) or 15)
-    vat_amount     = round(total * (vat_rate_pct / 100) / (1 + vat_rate_pct / 100), 2) if vat_registered else 0
+    vat = _vat_display(sale_id)
     u = current_user()
     return jsonify({
         'sale_id':       sale_id,
@@ -560,9 +599,11 @@ def api_transaction_receipt(sale_id):
         'payment_method': rows[0].payment_method,
         'cash_tendered': float(rows[0].cash_tendered) if rows[0].cash_tendered else None,
         'change':        round(float(rows[0].cash_tendered or 0) - total, 2) if rows[0].cash_tendered else None,
-        'vat_registered': vat_registered,
-        'vat_rate':      vat_rate_pct,
-        'vat_amount':    vat_amount,
+        'vat_registered': vat['vat_registered'],
+        'vat_rate':      vat['vat_rate'],
+        'vat_amount':    vat['vat_amount'],
+        'vat_method':    vat['vat_method'],
+        'vat_note':      vat['vat_note'],
         'store_name':    get_setting('branding_store_name', ''),
         'store_legal':   get_setting('branding_invoice_legal', ''),
         'vat_number':    get_setting('vat_number', ''),
@@ -589,13 +630,9 @@ def api_transaction_print_receipt(sale_id):
 
     product_map = {p.id: p.name for p in Product.query.filter(
         Product.id.in_({r.product_id for r in rows})).all()}
-    lines = [{'name': product_map.get(r.product_id, f'Product {r.product_id}'),
-              'qty': float(r.qty), 'unit_price': float(r.unit_price),
-              'subtotal': float(Decimal(str(r.qty)) * r.unit_price)} for r in rows]
-    total          = sum(ln['subtotal'] for ln in lines)
-    vat_registered = get_setting('vat_registered', 'false') == 'true'
-    vat_rate_pct   = float(get_setting('vat_rate', 15) or 15)
-    vat_amount     = round(total * (vat_rate_pct / 100) / (1 + vat_rate_pct / 100), 2) if vat_registered else 0
+    lines = _receipt_lines(rows, product_map)
+    total = sum(ln['subtotal'] for ln in lines)
+    vat = _vat_display(sale_id)
 
     receipt_data = {
         'sale_id':        sale_id,
@@ -605,9 +642,11 @@ def api_transaction_print_receipt(sale_id):
         'payment_method': rows[0].payment_method,
         'cash_tendered':  float(rows[0].cash_tendered) if rows[0].cash_tendered else None,
         'change':         round(float(rows[0].cash_tendered or 0) - total, 2) if rows[0].cash_tendered else None,
-        'vat_registered': vat_registered,
-        'vat_rate':       vat_rate_pct,
-        'vat_amount':     vat_amount,
+        'vat_registered': vat['vat_registered'],
+        'vat_rate':       vat['vat_rate'],
+        'vat_amount':     vat['vat_amount'],
+        'vat_method':     vat['vat_method'],
+        'vat_note':       vat['vat_note'],
         'store_name':     get_setting('branding_store_name', ''),
         'store_legal':    get_setting('branding_invoice_legal', ''),
         'vat_number':     get_setting('vat_number', ''),
@@ -644,14 +683,15 @@ def api_transaction_browser_print_receipt(sale_id):
     product_map = {p.id: p.name for p in Product.query.filter(
         Product.id.in_({r.product_id for r in rows})).all()}
 
-    lines = [{'name': product_map.get(r.product_id, f'Product {r.product_id}'),
-              'qty': float(r.qty), 'unit_price': float(r.unit_price),
-              'subtotal': float(Decimal(str(r.qty)) * r.unit_price)} for r in rows]
+    lines = _receipt_lines(rows, product_map)
     total = sum(ln['subtotal'] for ln in lines)
 
-    vat_registered = get_setting('vat_registered', 'false') == 'true'
-    vat_rate_pct   = float(get_setting('vat_rate', 15) or 15)
-    vat_amount     = round(total * (vat_rate_pct / 100) / (1 + vat_rate_pct / 100), 2) if vat_registered else 0
+    vat = _vat_display(sale_id)
+    vat_registered = vat['vat_registered']
+    vat_rate_pct   = vat['vat_rate']
+    vat_amount     = vat['vat_amount']
+    vat_method     = vat['vat_method']
+    vat_note       = vat['vat_note']
 
     store_name  = get_setting('branding_store_name', '') or 'Farm Stall'
     store_legal = get_setting('branding_invoice_legal', '') or ''
@@ -683,7 +723,10 @@ def api_transaction_browser_print_receipt(sale_id):
 
     totals_html = f'<tr><td class="total-label"><b>TOTAL</b></td><td class="total-amount"><b>R{total:.2f}</b></td></tr>'
     if vat_registered:
-        totals_html += f'<tr><td>VAT ({vat_rate_pct:.0f}%)</td><td>R{vat_amount:.2f}</td></tr>'
+        vat_label = f'VAT ({vat_rate_pct:.0f}%)' if vat_method != 'legacy_flat' else 'VAT (as recorded)'
+        totals_html += f'<tr><td>{vat_label}</td><td>R{vat_amount:.2f}</td></tr>'
+        if vat_note:
+            totals_html += f'<tr><td class="detail" colspan="2">{esc(vat_note)}</td></tr>'
     if pm:
         totals_html += f'<tr><td>Payment</td><td>{esc(pm)}</td></tr>'
     if cash_tendered:

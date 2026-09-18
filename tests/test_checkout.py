@@ -5,8 +5,6 @@ internals directly. Every test asserts actual DB state after the call.
 """
 from decimal import Decimal
 
-import pytest
-
 from helpers import set_setting
 from models import AuditLog, Sale, StockBatch
 from tests.factories import make_admin, make_product, make_user
@@ -78,20 +76,24 @@ def test_void_restores_stock_and_writes_audit_log(db_session, client):
     assert audit_rows[0].actor_user_id == admin.id
 
 
-@pytest.mark.known_defect
-def test_mixed_vat_basket_applies_flat_rate_ignoring_product_vat_type(db_session, client):
-    """KNOWN DEFECT — Rev 5 P1-1/P1-1b fixes this. TODAY, Product.vat_type is
-    stored and UI-editable but read by nothing: the receipt endpoint applies a
-    single flat rate to the WHOLE basket total regardless of each line's
-    vat_type (transactions.py api_transaction_receipt). This test pins that
-    flat-rate behavior on a basket mixing a 'standard' and a 'zero' rated item
-    so P1-1's commit is the one that changes this assertion.
+def test_mixed_vat_basket_taxes_only_the_standard_rated_line(db_session, client):
+    """Rev 5 P1-1/P1-1b fix, proven. Before P1-1, Product.vat_type was stored and
+    UI-editable but read by nothing: the receipt endpoint applied a single flat
+    rate to the WHOLE basket total regardless of each line's vat_type. This test
+    used to pin that flat-rate defect, but its fixture data used the non-canonical
+    string 'zero' rather than the real value 'zero_rated' (see
+    blueprints/imports.py:228-230,905 for the validated set: standard/zero_rated/
+    exempt) — an unrecognized classification is normalized to 'standard' by the
+    Wave-A checkout stamping code, which meant this test kept "passing" after the
+    P1-1 rewire for the wrong reason (misclassification-as-standard, not the real
+    per-line VAT split). Fixed to use 'zero_rated' and to assert the actual
+    correct behavior: only the standard-rated line is taxed.
     """
     set_setting('vat_registered', 'true')
     set_setting('vat_rate', 15)
 
     standard = make_product(name='Standard Item', price=D('11.50'), vat_type='standard')
-    zero = make_product(name='Zero Rated Item', price=D('10.00'), vat_type='zero')
+    zero = make_product(name='Zero Rated Item', price=D('10.00'), vat_type='zero_rated')
 
     from werkzeug.security import generate_password_hash
     make_user(username='teller2', password_hash=generate_password_hash('testpass123'))
@@ -105,14 +107,22 @@ def test_mixed_vat_basket_applies_flat_rate_ignoring_product_vat_type(db_session
 
     receipt = client.get(f'/api/transactions/{sale_id}/receipt').get_json()
 
-    total = D('11.50') + D('10.00')  # 21.50 — both lines summed with no per-line VAT split
-    expected_flat_vat = round(float(total) * (15 / 100) / (1 + 15 / 100), 2)
+    total = D('11.50') + D('10.00')  # 21.50
+    # Only the standard-rated R11.50 line is VAT-inclusive-extracted; the
+    # zero-rated R10.00 line contributes nothing to vat_amount.
+    expected_vat = (D('11.50') / (D('1') + D('15') / D('100'))).quantize(D('0.01'))
+    expected_vat = D('11.50') - expected_vat  # amount_incl - amount_excl
 
     assert receipt['total'] == float(total)
-    # DEFECT: VAT is computed on the FULL basket total (both lines), even though
-    # the zero-rated line should contribute nothing to the VAT amount.
-    assert receipt['vat_amount'] == expected_flat_vat
-    assert receipt['vat_amount'] > 0  # the zero-rated line is still being taxed
+    assert receipt['vat_method'] == 'per_line'
+    assert D(str(receipt['vat_amount'])) == expected_vat
+    assert receipt['vat_amount'] > 0
+
+    from models import Sale
+    rows = {r.vat_classification: r for r in Sale.query.filter_by(sale_id=sale_id).all()}
+    assert rows['standard'].vat_amount > 0
+    assert rows['zero_rated'].vat_amount == D('0.00')
+    assert rows['zero_rated'].amount_excl == rows['zero_rated'].amount_incl == D('10.00')
 
 
 def test_receipt_and_till_summary_vat_agreement_for_a_single_sale(db_session, client):
