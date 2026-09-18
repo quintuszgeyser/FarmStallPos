@@ -2,7 +2,7 @@ import csv
 import io
 import json as _json
 import uuid
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request, Response
@@ -342,13 +342,41 @@ def api_stock_adjust():
         cost_written_off = consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now, is_writeoff=True,
                                          movement_source_type='stocktake')
     elif diff > 0:
-        # Always create a new zero-cost batch so free units don't inherit the existing batch's cost.
-        _new_batch = StockBatch(product_id=pid, qty_purchased_base=diff, qty_remaining_base=diff, cost_per_base_unit=Decimal('0'), purchased_at=now, user_id=u.id if u else None)
+        # Rev 5 P2-3: found stock books at the product's current weighted-average
+        # cost, falling back to the last purchase cost when there's no open stock
+        # to average (e.g. the product was fully sold out before the recount).
+        # Booking at zero understated inventory value and then overstated gross
+        # profit the moment that "free" stock sold at zero COGS. free_stock=true
+        # is the explicit, deliberate opt-out for genuinely free stock (a donation,
+        # a sample) — never the default.
+        if data.get('free_stock'):
+            found_cost = Decimal('0')
+        else:
+            open_batches = (StockBatch.query
+                             .filter_by(product_id=pid, batch_type='normal')
+                             .filter(StockBatch.qty_remaining_base > 0)
+                             .all())
+            total_open_qty = sum((Decimal(str(b.qty_remaining_base)) for b in open_batches), Decimal('0'))
+            if total_open_qty > 0:
+                total_open_value = sum(
+                    (Decimal(str(b.qty_remaining_base)) * Decimal(str(b.cost_per_base_unit)) for b in open_batches),
+                    Decimal('0'),
+                )
+                found_cost = (total_open_value / total_open_qty).quantize(Decimal('0.000001'), rounding=ROUND_HALF_UP)
+            else:
+                last_batch = (StockBatch.query
+                               .filter_by(product_id=pid)
+                               .filter(StockBatch.batch_type != 'negative_placeholder')
+                               .filter(StockBatch.cost_per_base_unit > 0)
+                               .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
+                               .first())
+                found_cost = Decimal(str(last_batch.cost_per_base_unit)) if last_batch else Decimal('0')
+        _new_batch = StockBatch(product_id=pid, qty_purchased_base=diff, qty_remaining_base=diff, cost_per_base_unit=found_cost, purchased_at=now, user_id=u.id if u else None)
         db.session.add(_new_batch)
         db.session.flush()
         write_stock_movement(
             _new_batch, movement_type='STOCKTAKE_INCREASE', qty_delta=diff,
-            unit_cost=Decimal('0'), source_type='stocktake', source_id=str(_new_batch.id), when=now,
+            unit_cost=found_cost, source_type='stocktake', source_id=str(_new_batch.id), when=now,
         )
     adj_type = 'writeoff' if diff < 0 else 'stocktake'
     db.session.add(StockAdjustment(product_id=pid, adjustment_type=adj_type, qty_change_base=diff, system_qty_before=system_base, cost_written_off=cost_written_off if diff < 0 else None, base_unit=p.base_unit, reason=reason, adjusted_at=now, user_id=u.id if u else None))

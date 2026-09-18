@@ -150,13 +150,16 @@ def test_positive_stocktake_writes_an_increase_movement(db_session, client):
     })
     assert resp.status_code == 200, resp.get_json()
 
-    new_batches = StockBatch.query.filter_by(product_id=product.id, cost_per_base_unit=D('0')).all()
+    # Rev 5 P2-3: books at weighted-average cost (3.00, the only open batch), not zero.
+    new_batches = StockBatch.query.filter_by(product_id=product.id, qty_purchased_base=D(3)).all()
     assert len(new_batches) == 1
+    assert new_batches[0].cost_per_base_unit == D('3.000000')
     movements = StockMovement.query.filter_by(batch_id=new_batches[0].id).all()
     assert len(movements) == 1
     assert movements[0].movement_type == 'STOCKTAKE_INCREASE'
     assert movements[0].source_type == 'stocktake'
     assert movements[0].qty_delta == D(3)
+    assert movements[0].unit_cost == D('3.000000')
 
 
 def test_return_writes_a_return_movement(db_session, client):
