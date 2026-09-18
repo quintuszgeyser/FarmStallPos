@@ -1505,13 +1505,12 @@ function _updateSelectionBar() {
   const anyProducedRecipes = selectedProds.some(p => p.product_type === 'recipe' && p.is_produced);
   const isArchivedTab      = STATE.productsSubTab === 'archived';
 
-  // On archived tab: show only restore/delete. On all others: show normal actions.
+  // On archived tab: show only restore. On all others: show normal actions.
   ['stocktake', 'writeoff', 'produce', 'labels', 'edit', 'archive'].forEach(a => {
     const btn = bar.querySelector(`[data-bulk-action="${a}"]`);
     if (btn) btn.style.display = isArchivedTab ? 'none' : '';
   });
   bar.querySelector('[data-bulk-action="restore"]').style.display        = isArchivedTab ? '' : 'none';
-  bar.querySelector('[data-bulk-action="permanent-delete"]').style.display = isArchivedTab ? '' : 'none';
 
   if (!isArchivedTab) {
     // Only show stock-specific actions when at least one stock_item is selected
@@ -1595,7 +1594,6 @@ function _openBulkAction(action) {
     writeoff:           _buildBulkWriteoff,
     archive:            _buildBulkArchive,
     restore:            _buildBulkRestore,
-    'permanent-delete': _buildBulkDelete,
   };
   if (builders[action]) {
     builders[action](products);
@@ -1955,34 +1953,6 @@ function _buildBulkRestore(products) {
       } catch (e) { errs.push(`${p.name}: ${e.data?.detail || e.message}`); }
     }
     if (ok.length) toast(`Restored: ${ok.join(', ')}`, 'success', 5000);
-    if (errs.length) toast(errs.join(' | '), 'error', 7000);
-    if (ok.length) {
-      bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
-      STATE._selectedProductIds.clear(); _updateSelectionBar();
-      await loadProducts();
-    }
-  };
-}
-
-function _buildBulkDelete(products) {
-  document.getElementById('bulk-action-title').textContent = `Permanently delete ${products.length} product${products.length > 1 ? 's' : ''}`;
-  const btn = document.getElementById('btn-bulk-confirm');
-  btn.textContent = 'Delete Permanently';
-  btn.className   = 'btn btn-danger';
-  document.getElementById('bulk-action-body').innerHTML = `
-    <p class="text-danger fw-semibold"><i class="bi bi-exclamation-triangle-fill me-1"></i>This cannot be undone.</p>
-    <p class="small">The product record will be permanently removed. Any sales history is preserved — transactions and stats remain intact with the product name.</p>
-    <ul class="small">${products.map(p => `<li>${escapeHtml(p.name)}</li>`).join('')}</ul>
-  `;
-  btn.onclick = async () => {
-    const errs = [], ok = [];
-    for (const p of products) {
-      try {
-        await api(`/api/products/${p.id}/delete`, { method: 'DELETE' });
-        ok.push(p.name);
-      } catch (e) { errs.push(`${p.name}: ${e.data?.detail || e.message}`); }
-    }
-    if (ok.length) toast(`Deleted: ${ok.join(', ')}`, 'success', 5000);
     if (errs.length) toast(errs.join(' | '), 'error', 7000);
     if (ok.length) {
       bootstrap.Modal.getOrCreateInstance(document.getElementById('bulkActionModal')).hide();
@@ -3253,15 +3223,6 @@ function openProductEditor(p) {
 
   // Purchase options
   renderPurchaseOptionsList(p?.purchase_options || []);
-
-  // Permanent delete button — only for existing products (admin)
-  const _permDelRow = document.getElementById('row-delete-perm');
-  if (_permDelRow) {
-    const isAdmin = STATE.currentUser?.role?.includes('admin');
-    _permDelRow.style.display = (p?.id && isAdmin) ? '' : 'none';
-    const _permDelBtn = document.getElementById('btn-delete-product-perm');
-    if (_permDelBtn) _permDelBtn.dataset.productId = p?.id || '';
-  }
 
   // Category (autocomplete text input - shows the current category name)
   const catEl = document.getElementById('p-category');
@@ -6990,27 +6951,6 @@ document.getElementById('btn-cancel-purchase-run')?.addEventListener('click', ()
 
 document.getElementById('btn-add-purchase-line')?.addEventListener('click', addPurchaseLine);
 document.getElementById('btn-add-purchase-option')?.addEventListener('click', () => addPurchaseOptionRow(null, null));
-
-document.getElementById('btn-delete-product-perm')?.addEventListener('click', async () => {
-  const id = parseInt(document.getElementById('btn-delete-product-perm')?.dataset?.productId || 0);
-  if (!id) return;
-  const pName  = document.getElementById('p-name')?.value || `Product #${id}`;
-  const prod   = (STATE.products || []).find(p => p.id === id);
-  const isArch = prod?.is_archived;
-
-  if (!confirm(`Permanently delete "${pName}"?\n\nThe product record will be removed. Sales history and stats are preserved with the product name.`)) return;
-
-  try {
-    await api(`/api/products/${id}/delete`, { method: 'DELETE' });
-    toast(`"${pName}" permanently deleted.`, 'success');
-    const modal = document.getElementById('productEditorModal');
-    if (modal) bootstrap.Modal.getOrCreateInstance(modal).hide();
-    STATE.products = (STATE.products || []).filter(p => p.id !== id);
-    renderProductsCards?.();
-  } catch (err) {
-    toast(err.message || 'Could not delete product.', 'danger', 6000);
-  }
-});
 
 // Track which purchase line is waiting for a new product to be created
 let _pendingPurchaseLine = null;
