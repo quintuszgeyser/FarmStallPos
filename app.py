@@ -2044,6 +2044,44 @@ def strong_migrate():
         # VAT type per product (standard / zero_rated / exempt)
         pg_try("ALTER TABLE products ADD COLUMN IF NOT EXISTS vat_type VARCHAR(20) NOT NULL DEFAULT 'standard'")
 
+        # Rev 5 P1-1 — VAT snapshot at checkout. Previously VAT was never persisted at
+        # all: it was recomputed from CURRENT settings every time a receipt was viewed,
+        # so a rate/registration change would silently rewrite historical receipts.
+        # sale_headers is the new transaction-level aggregate (also gives cash_tendered/
+        # card_amount/payment_method a proper per-transaction home instead of squatting
+        # on "the first line" — additive only, Sale's own tender columns are untouched).
+        pg_try("""CREATE TABLE IF NOT EXISTS sale_headers (
+            id                       SERIAL PRIMARY KEY,
+            sale_id                  VARCHAR(64) NOT NULL,
+            standard_rated_subtotal  NUMERIC(10,2) NOT NULL DEFAULT 0,
+            zero_rated_subtotal      NUMERIC(10,2) NOT NULL DEFAULT 0,
+            exempt_subtotal          NUMERIC(10,2) NOT NULL DEFAULT 0,
+            total_excl_vat           NUMERIC(10,2) NOT NULL DEFAULT 0,
+            total_vat                NUMERIC(10,2) NOT NULL DEFAULT 0,
+            total_incl_vat           NUMERIC(10,2) NOT NULL DEFAULT 0,
+            vat_rate_snapshot        NUMERIC(5,2),
+            vat_registered_snapshot  BOOLEAN,
+            vat_method               VARCHAR(20) NOT NULL DEFAULT 'per_line',
+            cash_tendered            NUMERIC(10,2),
+            card_amount              NUMERIC(10,2),
+            payment_method           VARCHAR(16),
+            created_at               TIMESTAMP NOT NULL DEFAULT NOW(),
+            CONSTRAINT uq_sale_headers_sale_id UNIQUE (sale_id)
+        )""")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_sale_headers_sale_id ON sale_headers (sale_id)")
+
+        # Per-line VAT snapshot on sales — nullable because rows that predate P1-1 have
+        # none until scripts/backfill_vat_headers.py runs (and even then stay NULL by
+        # design for legacy_flat sales; see that script's docstring).
+        for col, defn in [
+            ('vat_classification', 'VARCHAR(20)'),
+            ('vat_rate',           'NUMERIC(5,2)'),
+            ('amount_excl',        'NUMERIC(10,2)'),
+            ('vat_amount',         'NUMERIC(10,2)'),
+            ('amount_incl',        'NUMERIC(10,2)'),
+        ]:
+            pg_try(f"ALTER TABLE sales ADD COLUMN IF NOT EXISTS {col} {defn}")
+
         # Category-based flat-price rules for recipe customisations (swaps / extras)
         conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS customisation_rules (

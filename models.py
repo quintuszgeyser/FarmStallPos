@@ -576,6 +576,50 @@ class Sale(db.Model):
     card_amount       = db.Column(Numeric(10, 2), nullable=True)  # split payment card portion
     original_sale_id  = db.Column(db.String(36), nullable=True)   # set on return rows; points to the originating sale_id
     cogs              = db.Column(Numeric(10, 4), nullable=True)   # FIFO cost stamped at checkout — immutable
+    # VAT snapshot (Rev 5 P1-1) — captured once at checkout from the product's vat_type
+    # and the VAT settings in effect AT THAT MOMENT. Never re-derived later: viewing an
+    # old receipt must show what was actually charged, not what today's settings imply.
+    # NULL on rows that predate P1-1 and haven't been through scripts/backfill_vat_headers.py.
+    vat_classification = db.Column(db.String(20), nullable=True)   # 'standard' | 'zero_rated' | 'exempt', at time of sale
+    vat_rate           = db.Column(Numeric(5, 2), nullable=True)   # rate actually applied to this line (0 for zero_rated/exempt)
+    amount_excl        = db.Column(Numeric(10, 2), nullable=True)  # qty*unit_price, VAT excluded
+    vat_amount         = db.Column(Numeric(10, 2), nullable=True)  # amount_incl - amount_excl, by construction
+    amount_incl        = db.Column(Numeric(10, 2), nullable=True)  # qty*unit_price (VAT-inclusive, matches unit_price's existing meaning)
+
+
+class SaleHeader(db.Model):
+    """One row per sale_id (Rev 5 P1-1) — the VAT/tender snapshot for a whole basket.
+
+    Sale lines already exist per product; this is the transaction-level aggregate
+    that was previously missing, which is why cash_tendered/card_amount historically
+    had to squat on "the first line" (see Sale.cash_tendered) and why VAT had no
+    stable home and was recomputed from current settings on every receipt view.
+
+    vat_method distinguishes rows written by the new checkout path ('per_line') from
+    rows reconstructed for pre-P1-1 history by scripts/backfill_vat_headers.py
+    ('legacy_flat') — the latter used the old flat-rate-on-basket-total formula
+    because that is genuinely what was charged; it is a faithful record of a flawed
+    calculation, not a corrected one. Never recompute a legacy_flat row as if it were
+    per_line — present it as "VAT as originally recorded" only.
+    """
+    __tablename__ = 'sale_headers'
+    id                       = db.Column(db.Integer, primary_key=True)
+    sale_id                  = db.Column(db.String(64), unique=True, nullable=False, index=True)
+    standard_rated_subtotal  = db.Column(Numeric(10, 2), nullable=False, default=0)
+    zero_rated_subtotal      = db.Column(Numeric(10, 2), nullable=False, default=0)
+    exempt_subtotal          = db.Column(Numeric(10, 2), nullable=False, default=0)
+    total_excl_vat           = db.Column(Numeric(10, 2), nullable=False, default=0)
+    total_vat                = db.Column(Numeric(10, 2), nullable=False, default=0)
+    total_incl_vat           = db.Column(Numeric(10, 2), nullable=False, default=0)
+    vat_rate_snapshot        = db.Column(Numeric(5, 2), nullable=True)   # standard rate in effect at checkout
+    vat_registered_snapshot  = db.Column(db.Boolean, nullable=True)
+    vat_method               = db.Column(db.String(20), nullable=False, default='per_line')  # 'per_line' | 'legacy_flat'
+    # Mirrors Sale.cash_tendered/card_amount/payment_method (first-line-only today) —
+    # additive, not a replacement; existing readers of the Sale columns are untouched.
+    cash_tendered            = db.Column(Numeric(10, 2), nullable=True)
+    card_amount              = db.Column(Numeric(10, 2), nullable=True)
+    payment_method           = db.Column(db.String(16), nullable=True)
+    created_at               = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class AuditLog(db.Model):
