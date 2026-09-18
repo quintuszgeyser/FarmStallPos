@@ -2082,6 +2082,19 @@ def strong_migrate():
         ]:
             pg_try(f"ALTER TABLE sales ADD COLUMN IF NOT EXISTS {col} {defn}")
 
+        # Rev 5 P1-3 — forced password change flag + durable login-attempt log.
+        # See models.py User.must_change_password / LoginAttempt for the full
+        # design rationale (per-username lockout, IP recorded for forensics only).
+        pg_try("ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT false")
+        pg_try("""CREATE TABLE IF NOT EXISTS login_attempts (
+            id           SERIAL PRIMARY KEY,
+            username     VARCHAR(80) NOT NULL,
+            ip           VARCHAR(64),
+            success      BOOLEAN NOT NULL,
+            attempted_at TIMESTAMP NOT NULL DEFAULT NOW()
+        )""")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_login_attempts_username_at ON login_attempts (username, attempted_at)")
+
         # Category-based flat-price rules for recipe customisations (swaps / extras)
         conn.exec_driver_sql("""
             CREATE TABLE IF NOT EXISTS customisation_rules (

@@ -17,6 +17,10 @@ class User(db.Model):
     password_hash = db.Column(db.String(200), nullable=False)
     role          = db.Column(db.String(60), nullable=False, default='teller')
     active        = db.Column(db.Boolean, nullable=False, default=True)
+    # Rev 5 P1-3 — forces a password change before any other authenticated route
+    # works (see helpers.require_login). Set True by seed_first_admin(); cleared
+    # by api_users_change_password on a successful change.
+    must_change_password = db.Column(db.Boolean, nullable=False, default=False, server_default='false')
 
     @property
     def roles(self):
@@ -24,6 +28,24 @@ class User(db.Model):
 
     def has_role(self, *roles):
         return any(r in self.roles for r in roles)
+
+
+class LoginAttempt(db.Model):
+    """Rev 5 P1-3 — durable (Postgres-backed) login attempt log, replacing the
+    account-lockout purpose of auth.py's old in-memory `_login_attempts` dict
+    (which reset on every worker restart/deploy). The in-memory dict itself is
+    KEPT alongside this table as a separate, cheap IP-flood guard (10 attempts/
+    60s) — an orthogonal concern from durable per-username account lockout.
+    Lockout is evaluated per-username (5 failures / 15 min locks that username
+    regardless of source IP); `ip` is recorded on every row for forensics only,
+    not as a second independent lockout key.
+    """
+    __tablename__ = 'login_attempts'
+    id           = db.Column(db.Integer, primary_key=True)
+    username     = db.Column(db.String(80), nullable=False, index=True)
+    ip           = db.Column(db.String(64), nullable=True)
+    success      = db.Column(db.Boolean, nullable=False)
+    attempted_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
 
 
 class Product(db.Model):
