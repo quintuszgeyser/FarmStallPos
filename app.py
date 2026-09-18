@@ -2438,6 +2438,12 @@ def strong_migrate():
         pg_try("CREATE INDEX IF NOT EXISTS ix_stock_movements_source ON stock_movements (source_type, source_id)")
         pg_try("CREATE INDEX IF NOT EXISTS ix_stock_movements_order ON stock_movements (created_at, id)")
 
+        # Rev 5 P2-1 — negative-placeholder cost tracking. See StockBatch's docstring
+        # comment in models.py for why these are separate from cost_per_base_unit.
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS estimated_unit_cost NUMERIC(10,6)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS cost_estimation_method VARCHAR(20)")
+        pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS cost_reconciled BOOLEAN NOT NULL DEFAULT true")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 

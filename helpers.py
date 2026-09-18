@@ -427,12 +427,15 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
 
         qty_to_consume -= take
 
-    # Stock exhausted before qty satisfied — use last known cost so COGS isn't silently zeroed.
-    # No stock_movement is written here (Rev 5 P2-0): this branch records a StockConsumption
-    # against last_batch WITHOUT decrementing its qty_remaining_base — that mismatch is the P2-1
-    # bug (shortfall should post to the negative placeholder instead). Writing a movement here
-    # would either misrepresent a batch change that never happened, or need a zero-delta row;
-    # neither is more honest than recording nothing until P2-1 fixes the underlying behavior.
+    # Stock exhausted before qty satisfied (Rev 5 P2-1). The shortfall posts to a
+    # negative-placeholder batch — one aggregate per product, matching how every other
+    # oversell path in the app already represents "we owe stock" — never to a historical
+    # batch. Previously this wrote a StockConsumption against the last historical batch
+    # WITHOUT decrementing its qty_remaining_base, corrupting that batch's own position;
+    # this is the fix. Centralizing it here (rather than in each of consume_fifo's
+    # callers, as before) means every caller gets correct oversell handling, including
+    # the made-to-order and nested-recipe paths that previously had no placeholder logic
+    # at all and silently hit the same historical-batch bug.
     if qty_to_consume > 0:
         last_batch = (StockBatch.query
                       .filter_by(product_id=ingredient_id)
@@ -441,16 +444,53 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
                       .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
                       .first())
         if last_batch:
-            last_cost = Decimal(str(last_batch.cost_per_base_unit))
-            total_cost += qty_to_consume * last_cost
-            db.session.add(StockConsumption(
-                sale_id=sale_id,
-                ingredient_id=ingredient_id,
-                batch_id=last_batch.id,
-                qty_consumed_base=qty_to_consume,
-                cost_per_base_unit=last_cost,
-                consumed_at=now,
-            ))
+            est_cost   = Decimal(str(last_batch.cost_per_base_unit))
+            est_method = 'last_known_batch'
+        else:
+            est_cost   = Decimal('0')
+            est_method = 'none'
+        total_cost += qty_to_consume * est_cost
+
+        neg_batch = (StockBatch.query
+                     .filter_by(product_id=ingredient_id, batch_type='negative_placeholder')
+                     .filter(StockBatch.qty_remaining_base < 0)
+                     .with_for_update()
+                     .first())
+        if neg_batch:
+            neg_batch.qty_remaining_base = Decimal(str(neg_batch.qty_remaining_base)) - qty_to_consume
+            neg_batch.qty_purchased_base = Decimal(str(neg_batch.qty_purchased_base)) - qty_to_consume
+            # Last-estimate-wins, not a running weighted average — simple and matches how
+            # a normal batch already carries exactly one cost_per_base_unit, not a blend.
+            neg_batch.estimated_unit_cost    = est_cost
+            neg_batch.cost_estimation_method = est_method
+            neg_batch.cost_reconciled        = False
+        else:
+            neg_batch = StockBatch(
+                product_id=ingredient_id,
+                qty_purchased_base=-qty_to_consume,
+                qty_remaining_base=-qty_to_consume,
+                cost_per_base_unit=Decimal('0'),
+                estimated_unit_cost=est_cost,
+                cost_estimation_method=est_method,
+                cost_reconciled=False,
+                purchased_at=now,
+                batch_type='negative_placeholder',
+            )
+            db.session.add(neg_batch)
+            db.session.flush()
+
+        db.session.add(StockConsumption(
+            sale_id=sale_id,
+            ingredient_id=ingredient_id,
+            batch_id=neg_batch.id,
+            qty_consumed_base=qty_to_consume,
+            cost_per_base_unit=est_cost,
+            consumed_at=now,
+        ))
+        write_stock_movement(
+            neg_batch, movement_type=movement_source_type.upper(), qty_delta=-qty_to_consume,
+            unit_cost=est_cost, source_type=movement_source_type, source_id=sale_id, when=now,
+        )
 
     return total_cost
 
@@ -587,10 +627,17 @@ def backfill_consignment_liabilities(product_id, qty_absorbed, supplier_id_overr
         ))
 
 
-def absorb_neg_placeholder(product_id, incoming_qty_dec):
+def absorb_neg_placeholder(product_id, incoming_qty_dec, incoming_unit_cost=None):
     """When receiving stock, absorb any existing negative-placeholder batch first.
     Returns the amount absorbed (Decimal). The new batch's qty_remaining_base
-    should be reduced by this amount so the visible available qty is correct."""
+    should be reduced by this amount so the visible available qty is correct.
+
+    Rev 5 P2-1: incoming_unit_cost, when given, is compared against the placeholder's
+    own estimated_unit_cost (stamped by consume_fifo when the shortfall was posted).
+    The estimate is never silently overwritten or discarded — if it disagrees with what
+    stock actually cost on arrival, the difference is written as an explicit COST_VARIANCE
+    movement so it is visible in the P&L rather than absorbed invisibly into inventory.
+    """
     _neg = (StockBatch.query
             .filter_by(product_id=product_id, batch_type='negative_placeholder')
             .filter(StockBatch.qty_remaining_base < 0)
@@ -610,6 +657,17 @@ def absorb_neg_placeholder(product_id, incoming_qty_dec):
             unit_cost=Decimal('0'), source_type='receipt', source_id=None,
             note=f'absorbed by a receipt of product_id={product_id}',
         )
+        if incoming_unit_cost is not None and _neg.estimated_unit_cost is not None:
+            _variance_per_unit = Decimal(str(incoming_unit_cost)) - Decimal(str(_neg.estimated_unit_cost))
+            if _variance_per_unit != 0:
+                _variance_amount = (_variance_per_unit * _absorbed).quantize(Decimal('0.0001'))
+                write_stock_movement(
+                    _neg, movement_type='COST_VARIANCE', qty_delta=Decimal('0'),
+                    unit_cost=_variance_per_unit, source_type='receipt', source_id=None,
+                    note=(f'estimated {_neg.estimated_unit_cost} vs actual {incoming_unit_cost} '
+                          f'per unit, {_absorbed} units absorbed, variance {_variance_amount}'),
+                )
+        _neg.cost_reconciled = True
     return _absorbed
 
 
@@ -659,38 +717,11 @@ def auto_produce_on_negative(product_id, shortfall, now, u):
     available_before = Decimal(str(get_stock_level(product_id)))
 
     for rl in RecipeLine.query.filter_by(product_id=product_id).all():
-        _ing_needed    = Decimal(str(rl.qty_base)) * batches_needed
-        _ing_available = Decimal(str(get_stock_level(rl.ingredient_id)))
+        _ing_needed = Decimal(str(rl.qty_base)) * batches_needed
+        # Rev 5 P2-1: consume_fifo posts any shortfall to the negative placeholder
+        # itself now — no separate caller-side shortfall/placeholder logic needed
+        # (and keeping it would double-count the debt against consume_fifo's own).
         total_cost += consume_fifo(rl.ingredient_id, _ing_needed, produce_uuid, now, movement_source_type='production')
-        # Mirror manual produce: create a negative placeholder for any ingredient shortfall
-        # so stock levels visibly go negative instead of silently staying at 0.
-        _ing_obj = db.session.get(Product, rl.ingredient_id)
-        if _ing_obj and _ing_available < _ing_needed:
-            _ing_policy = getattr(_ing_obj, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
-            if _ing_policy in ('ALLOW_NEGATIVE', 'WARN'):
-                _ing_shortfall = _ing_needed - max(Decimal('0'), _ing_available)
-                _ing_neg = (StockBatch.query
-                            .filter_by(product_id=rl.ingredient_id, batch_type='negative_placeholder')
-                            .filter(StockBatch.qty_remaining_base < 0)
-                            .with_for_update()
-                            .first())
-                if _ing_neg:
-                    _ing_neg.qty_remaining_base = (
-                        Decimal(str(_ing_neg.qty_remaining_base)) - _ing_shortfall
-                    )
-                    _ing_neg.qty_purchased_base = (
-                        Decimal(str(_ing_neg.qty_purchased_base)) - _ing_shortfall
-                    )
-                else:
-                    db.session.add(StockBatch(
-                        product_id=rl.ingredient_id,
-                        qty_purchased_base=-_ing_shortfall,
-                        qty_remaining_base=-_ing_shortfall,
-                        cost_per_base_unit=Decimal('0'),
-                        purchased_at=now,
-                        user_id=u.id if u else None,
-                        batch_type='negative_placeholder',
-                    ))
 
     units_added = int((batch_sz * batches_needed).to_integral_value())
     cost_per    = total_cost / units_added if units_added > 0 else Decimal('0')

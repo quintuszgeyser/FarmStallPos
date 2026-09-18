@@ -221,3 +221,44 @@ def test_produce_writes_a_production_output_movement(db_session, client):
     assert len(flour_movements) == 1
     assert flour_movements[0].movement_type == 'PRODUCTION'
     assert flour_movements[0].qty_delta == D(-1)
+
+
+def test_receiving_at_a_different_cost_than_estimated_writes_a_cost_variance(db_session, client):
+    """Rev 5 P2-1. Oversell a stock item (posts to the placeholder at the last-
+    known cost), then receive real stock at a DIFFERENT cost. The estimate is
+    never silently overwritten — the difference is an explicit COST_VARIANCE
+    movement, and the placeholder is marked reconciled.
+    """
+    from werkzeug.security import generate_password_hash
+    make_admin(username='varianceadmin', password_hash=generate_password_hash('adminpass123'))
+    login_as(client, 'varianceadmin', 'adminpass123')
+
+    product = make_product(product_type='stock_item', name='Variance Canary', price=D('10.00'))
+    make_stock_batch(product, qty_remaining_base=D(2), qty_purchased_base=D(2),
+                      cost_per_base_unit=D('4.000000'))
+    db_session.commit()
+
+    # Oversell by 3 units -> placeholder posted at the estimate (4.00/unit).
+    resp = checkout(client, [{'product_id': product.id, 'qty': 5, 'unit_price': 10}])
+    assert resp.status_code == 200, resp.get_json()
+
+    placeholder = StockBatch.query.filter_by(
+        product_id=product.id, batch_type='negative_placeholder').one()
+    assert placeholder.estimated_unit_cost == D('4.000000')
+    assert placeholder.cost_reconciled is False
+
+    # Real stock arrives at 6.00/unit — actual cost differs from the estimate.
+    receive_resp = client.post('/api/stock/receive', json={
+        'product_id': product.id, 'qty': 3, 'unit': 'unit', 'total_price': 18,  # 6.00/unit
+    })
+    assert receive_resp.status_code == 200, receive_resp.get_json()
+
+    db.session.refresh(placeholder)
+    assert placeholder.qty_remaining_base == D(0)
+    assert placeholder.cost_reconciled is True
+
+    variance_movements = StockMovement.query.filter_by(
+        batch_id=placeholder.id, movement_type='COST_VARIANCE').all()
+    assert len(variance_movements) == 1
+    assert variance_movements[0].unit_cost == D('2.000000')  # 6.00 actual - 4.00 estimated
+    assert variance_movements[0].qty_delta == D('0')

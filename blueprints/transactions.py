@@ -418,34 +418,10 @@ def api_transactions_post():
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
+            # Rev 5 P2-1: consume_fifo posts any shortfall to the negative placeholder
+            # itself now — no separate caller-side shortfall/placeholder logic needed
+            # (and keeping it would double-count the debt against consume_fifo's own).
             sale_row.cogs = consume_fifo(pid, qty, sale_uuid, now, sale_unit_price=unit_price)
-            _pol_main = getattr(p, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
-            if _pol_main in ('ALLOW_NEGATIVE', 'WARN'):
-                _pre = _pre_stock.get(pid, Decimal('0'))
-                _shortfall = qty - max(Decimal('0'), _pre)
-                if _shortfall > 0:
-                    _neg_batch = (StockBatch.query
-                                  .filter_by(product_id=pid, batch_type='negative_placeholder')
-                                  .filter(StockBatch.qty_remaining_base < 0)
-                                  .with_for_update()
-                                  .first())
-                    if _neg_batch:
-                        _neg_batch.qty_remaining_base = (
-                            Decimal(str(_neg_batch.qty_remaining_base)) - _shortfall
-                        )
-                        _neg_batch.qty_purchased_base = (
-                            Decimal(str(_neg_batch.qty_purchased_base)) - _shortfall
-                        )
-                    else:
-                        db.session.add(StockBatch(
-                            product_id=pid,
-                            qty_purchased_base=-_shortfall,
-                            qty_remaining_base=-_shortfall,
-                            cost_per_base_unit=Decimal('0'),
-                            purchased_at=now,
-                            user_id=u.id if u else None,
-                            batch_type='negative_placeholder',
-                        ))
         elif p.product_type == 'recipe':
             # Made-to-order: consume ingredients at point of sale
             line_cogs = Decimal('0')

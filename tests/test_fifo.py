@@ -85,13 +85,10 @@ def test_multiple_fifo_batches_consumed_in_purchase_order(db_session):
     assert consumptions[newer.id] == D(2)
 
 
-@pytest.mark.known_defect
-def test_direct_item_oversell_posts_shortfall_to_last_historical_batch(db_session):
-    """KNOWN DEFECT — Rev 5 P2-1 fixes this. TODAY, when FIFO runs out, the
-    shortfall is posted against the LAST historical positive-cost batch
-    (helpers.py ~305-322), silently over-consuming it below zero, instead of a
-    dedicated negative placeholder. This test pins that behavior so P2-1's
-    commit is the one that changes this assertion, not a surprise regression.
+def test_direct_item_oversell_posts_shortfall_to_negative_placeholder(db_session):
+    """Rev 5 P2-1. When FIFO runs out, the shortfall posts to a dedicated
+    negative-placeholder batch (carrying the cost estimate), never to a
+    historical batch — replaces the old known_defect pinning the opposite.
     """
     product = make_product(product_type='stock_item')
     batch = StockBatch(
@@ -103,26 +100,35 @@ def test_direct_item_oversell_posts_shortfall_to_last_historical_batch(db_sessio
 
     cost = consume_fifo(product.id, D(5), 'sale-4', _now())  # need 5, only 2 available
 
-    # 2 covered normally + 3 shortfall costed at the same batch's cost (only batch that qualifies)
+    # 2 covered normally + 3 shortfall costed at the last known batch's cost (the estimate)
     assert cost == D('20.00')  # (2*4) + (3*4)
     db_session.flush()
     db_session.refresh(batch)
-    # The primary FIFO loop drains the batch to 0 covering the first 2 units normally;
-    # the shortfall fallback then reuses the SAME batch for costing (it's the only
-    # positive-cost batch) but never decrements it further — so it lands at exactly
-    # 0, not negative, DESPITE 5 units of COGS having been recognized against it.
-    # That gap (5 consumed vs 2 ever actually decremented) is the defect P2-1 fixes.
+    # The original historical batch is untouched by the shortfall — it only ever
+    # reflects the 2 units genuinely taken from it.
     assert batch.qty_remaining_base == D(0)
+
+    placeholder = StockBatch.query.filter_by(
+        product_id=product.id, batch_type='negative_placeholder').first()
+    assert placeholder is not None
+    assert placeholder.qty_remaining_base == D(-3)
+    assert placeholder.qty_purchased_base == D(-3)
+    assert placeholder.cost_per_base_unit == D('0')
+    assert placeholder.estimated_unit_cost == D('4.000000')
+    assert placeholder.cost_estimation_method == 'last_known_batch'
+    assert placeholder.cost_reconciled is False
+
     consumptions = StockConsumption.query.filter_by(sale_id='sale-4').all()
     assert len(consumptions) == 2
     shortfall_row = [c for c in consumptions if c.qty_consumed_base == D(3)][0]
-    assert shortfall_row.batch_id == batch.id  # shortfall attached to the SAME historical batch
+    assert shortfall_row.batch_id == placeholder.id  # not the historical batch
 
 
-@pytest.mark.known_defect
-def test_recipe_oversell_surfaces_same_shortfall_defect(db_session):
-    """KNOWN DEFECT — Rev 5 P2-1. A made-to-order recipe oversells its ingredient
-    through the same consume_fifo() shortfall path."""
+def test_recipe_oversell_posts_to_negative_placeholder_too(db_session):
+    """Rev 5 P2-1. A made-to-order recipe oversells its ingredient through the
+    same consume_fifo() shortfall path — same fix applies without any
+    recipe-specific code, since the fix lives inside consume_fifo itself.
+    """
     ingredient = make_product(product_type='stock_item', name='Flour')
     recipe = make_product(product_type='recipe', name='Bread', is_produced=False)
     from tests.factories import make_recipe_line
@@ -138,12 +144,53 @@ def test_recipe_oversell_surfaces_same_shortfall_defect(db_session):
     # Sell 4 loaves needing 4 units of flour, only 1 in stock.
     cost = consume_fifo(recipe.id, D(4), 'sale-5', _now())
 
-    assert cost == D('12.00')  # 4 * 3.00, all costed at the same batch's cost
+    assert cost == D('12.00')  # 4 * 3.00, all costed at the estimate
     db_session.flush()
     db_session.refresh(batch)
-    # Same mechanism as the direct-item case: the primary loop drains the 1 available
-    # unit to 0, and the 3-unit shortfall is costed against it without further decrement.
     assert batch.qty_remaining_base == D(0)
+
+    placeholder = StockBatch.query.filter_by(
+        product_id=ingredient.id, batch_type='negative_placeholder').first()
+    assert placeholder is not None
+    assert placeholder.qty_remaining_base == D(-3)
+    assert placeholder.estimated_unit_cost == D('3.000000')
+
+
+def test_nested_recipe_oversell_posts_to_the_ingredients_own_placeholder(db_session):
+    """Rev 5 P2-1. A recipe-within-a-recipe (compound ingredient) oversells its
+    own raw ingredient — consume_fifo recurses into the sub-recipe, and the
+    shortfall still lands on the raw ingredient's placeholder, not a historical
+    batch of either the sub-recipe or the raw ingredient.
+    """
+    from tests.factories import make_recipe_line
+
+    flour = make_product(product_type='stock_item', name='Flour')
+    dough = make_product(product_type='recipe', name='Dough', is_produced=False)
+    bread = make_product(product_type='recipe', name='Bread', is_produced=False)
+    make_recipe_line(dough, flour, qty_base=D(2))
+    make_recipe_line(bread, dough, qty_base=D(1))
+
+    flour_batch = StockBatch(
+        product_id=flour.id, qty_purchased_base=D(3), qty_remaining_base=D(3),
+        cost_per_base_unit=D('1.500000'), purchased_at=_now(),
+    )
+    db_session.add(flour_batch)
+    db_session.flush()
+
+    # 1 loaf of bread needs 1 dough needs 2 flour; only 3 flour in stock, needs 2 — no
+    # shortfall on flour yet. Bump to 3 loaves so flour needed (6) exceeds the 3 on hand.
+    cost = consume_fifo(bread.id, D(3), 'sale-6', _now())
+
+    assert cost == D('9.00')  # 6 units flour * 1.50, all costed at the estimate
+    db_session.flush()
+    db_session.refresh(flour_batch)
+    assert flour_batch.qty_remaining_base == D(0)
+
+    placeholder = StockBatch.query.filter_by(
+        product_id=flour.id, batch_type='negative_placeholder').first()
+    assert placeholder is not None
+    assert placeholder.qty_remaining_base == D(-3)
+    assert placeholder.estimated_unit_cost == D('1.500000')
 
 
 def test_reverse_fifo_restores_quantity_and_deletes_consumption_rows(db_session):

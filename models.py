@@ -494,6 +494,14 @@ class StockBatch(db.Model):
     ownership_type        = db.Column(db.String(20), nullable=False, default='NORMAL', server_default="'NORMAL'")
     consignment_unit_cost = db.Column(Numeric(10, 4), nullable=True)  # settlement contract cost, separate from FIFO cost
     batch_type            = db.Column(db.String(30), nullable=False, default='normal', server_default="'normal'")
+    # Rev 5 P2-1 — meaningful only on batch_type='negative_placeholder' rows. cost_per_base_unit
+    # stays 0 for a placeholder (readers that already filter batch_type != 'negative_placeholder'
+    # out of valuation/FIFO-cost queries are unaffected); the ESTIMATE used for COGS at oversell
+    # time lives here instead, so it can be compared against the real cost once stock arrives
+    # (see absorb_neg_placeholder) without silently overwriting or losing the original estimate.
+    estimated_unit_cost    = db.Column(Numeric(10, 6), nullable=True)
+    cost_estimation_method = db.Column(db.String(20), nullable=True)   # 'last_known_batch' | 'none'
+    cost_reconciled        = db.Column(db.Boolean, nullable=False, default=True, server_default='true')
 
 
 class StockConsumption(db.Model):

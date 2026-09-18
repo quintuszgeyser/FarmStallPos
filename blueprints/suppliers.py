@@ -1693,7 +1693,7 @@ def api_suppliers_purchase_run(sid):
         if _ownership == 'CONSIGNMENT' and _cuc is None and pl['qty_base']:
             _cuc = float((pl['base_cost_total'] / Decimal(str(pl['qty_base']))).quantize(Decimal('0.0001')))
         _pr_qty_dec    = Decimal(str(pl['qty_base']))
-        _pr_absorbed   = absorb_neg_placeholder(pl['pid'], _pr_qty_dec)
+        _pr_absorbed   = absorb_neg_placeholder(pl['pid'], _pr_qty_dec, incoming_unit_cost=cost_per_base)
         _pr_remaining  = float(_pr_qty_dec - _pr_absorbed)
         _pr_batch = StockBatch(
             product_id=pl['pid'],
@@ -2253,7 +2253,7 @@ def api_supplier_invoice_update(sid, inv_id):
         if _upd_ownership == 'CONSIGNMENT' and _upd_cuc is None and pl['qty_base']:
             _upd_cuc = float((pl['base_cost_total'] / Decimal(str(pl['qty_base']))).quantize(Decimal('0.0001')))
         _upd_qty_dec    = Decimal(str(pl['qty_base']))
-        _upd_absorbed   = absorb_neg_placeholder(pl['pid'], _upd_qty_dec)
+        _upd_absorbed   = absorb_neg_placeholder(pl['pid'], _upd_qty_dec, incoming_unit_cost=cost_per_base)
         _upd_remaining  = float(_upd_qty_dec - _upd_absorbed)
         _upd_batch = StockBatch(
             product_id=pl['pid'],

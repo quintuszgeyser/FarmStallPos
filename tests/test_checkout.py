@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from helpers import set_setting
 from models import AuditLog, Sale, StockBatch
-from tests.factories import make_admin, make_product, make_user
+from tests.factories import make_admin, make_product, make_stock_batch, make_user
 from tests.helpers import D, checkout, login_as, refresh
 
 
@@ -158,3 +158,28 @@ def test_receipt_and_till_summary_vat_agreement_for_a_single_sale(db_session, cl
     # amounts — P1-1 replaces both call sites with one shared Decimal rounding
     # policy (INV-7), which is exactly what removes this fragility.
     assert receipt['vat_amount'] == summary['vat_amount']
+
+
+def test_oversell_via_checkout_creates_exactly_one_placeholder_not_double_counted(db_session, client):
+    """Rev 5 P2-1 regression guard. Before this fix, checkout had its OWN
+    shortfall/placeholder-creation block running alongside consume_fifo's
+    internal one — removing the caller-side duplicate must not leave the
+    oversold debt uncounted, and must not leave it double-counted either.
+    """
+    product = make_product(product_type='stock_item', name='Oversell Checkout', price=D('10.00'))
+    make_stock_batch(product, qty_remaining_base=D(2), qty_purchased_base=D(2),
+                      cost_per_base_unit=D('4.000000'))
+
+    from werkzeug.security import generate_password_hash
+    make_admin(username='oversellteller', password_hash=generate_password_hash('adminpass123'))
+    login_as(client, 'oversellteller', 'adminpass123')
+
+    resp = checkout(client, [{'product_id': product.id, 'qty': 5, 'unit_price': 10}])
+    assert resp.status_code == 200, resp.get_json()
+
+    placeholders = StockBatch.query.filter_by(
+        product_id=product.id, batch_type='negative_placeholder').all()
+    assert len(placeholders) == 1
+    # 5 needed, 2 covered by the real batch -> exactly 3 units of debt, not 6.
+    assert placeholders[0].qty_remaining_base == D(-3)
+    assert placeholders[0].estimated_unit_cost == D('4.000000')

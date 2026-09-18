@@ -1085,32 +1085,11 @@ def _auto_produce_tree(product_id, batches_needed, now, u, parent_name, auto_pro
     produce_uuid     = str(uuid.uuid4())
     total_cost       = Decimal('0')
     for rl in RecipeLine.query.filter_by(product_id=product_id).all():
-        _sub_ing       = db.session.get(Product, rl.ingredient_id)
-        _sub_needed    = Decimal(str(rl.qty_base)) * batches_needed
-        _sub_available = Decimal(str(get_stock_level(rl.ingredient_id)))
+        _sub_needed = Decimal(str(rl.qty_base)) * batches_needed
+        # Rev 5 P2-1: consume_fifo posts any shortfall to the negative placeholder
+        # itself now — no separate caller-side shortfall/placeholder logic needed
+        # (and keeping it would double-count the debt against consume_fifo's own).
         total_cost += consume_fifo(rl.ingredient_id, _sub_needed, produce_uuid, now, movement_source_type='production')
-        if _sub_ing and _sub_available < _sub_needed:
-            _sub_policy = getattr(_sub_ing, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
-            if _sub_policy in ('ALLOW_NEGATIVE', 'WARN'):
-                _sub_shortfall = _sub_needed - max(Decimal('0'), _sub_available)
-                _sub_neg = (StockBatch.query
-                            .filter_by(product_id=rl.ingredient_id, batch_type='negative_placeholder')
-                            .filter(StockBatch.qty_remaining_base < 0)
-                            .with_for_update()
-                            .first())
-                if _sub_neg:
-                    _sub_neg.qty_remaining_base = Decimal(str(_sub_neg.qty_remaining_base)) - _sub_shortfall
-                    _sub_neg.qty_purchased_base = Decimal(str(_sub_neg.qty_purchased_base)) - _sub_shortfall
-                else:
-                    db.session.add(StockBatch(
-                        product_id=rl.ingredient_id,
-                        qty_purchased_base=-_sub_shortfall,
-                        qty_remaining_base=-_sub_shortfall,
-                        cost_per_base_unit=Decimal('0'),
-                        purchased_at=now,
-                        user_id=u.id if u else None,
-                        batch_type='negative_placeholder',
-                    ))
     batch_sz    = Decimal(str(ing.batch_size or 1))
     units_added = int((batch_sz * batches_needed).to_integral_value())
     cost_per    = total_cost / units_added if units_added > 0 else Decimal('0')
@@ -1222,30 +1201,16 @@ def api_product_produce(pid):
         _ing_obj       = db.session.get(Product, rl.ingredient_id)
         _ing_needed    = Decimal(str(rl.qty_base)) * batches
         _ing_available = Decimal(str(get_stock_level(rl.ingredient_id)))
+        # Rev 5 P2-1: consume_fifo posts any shortfall to the negative placeholder
+        # itself now — no separate caller-side shortfall/placeholder logic needed
+        # (and keeping it would double-count the debt against consume_fifo's own).
+        # The UI warning below is still collected here — it's user-facing feedback,
+        # independent of the ledger/placeholder bookkeeping.
         total_ingredient_cost += consume_fifo(rl.ingredient_id, _ing_needed, produce_uuid, now, movement_source_type='production')
-        # If ingredient went short and policy allows negative stock, record a placeholder
         if _ing_obj and _ing_available < _ing_needed:
             _ing_policy = getattr(_ing_obj, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
             if _ing_policy in ('ALLOW_NEGATIVE', 'WARN'):
                 _ing_shortfall = _ing_needed - max(Decimal('0'), _ing_available)
-                _ing_neg = (StockBatch.query
-                            .filter_by(product_id=rl.ingredient_id, batch_type='negative_placeholder')
-                            .filter(StockBatch.qty_remaining_base < 0)
-                            .with_for_update()
-                            .first())
-                if _ing_neg:
-                    _ing_neg.qty_remaining_base = Decimal(str(_ing_neg.qty_remaining_base)) - _ing_shortfall
-                    _ing_neg.qty_purchased_base = Decimal(str(_ing_neg.qty_purchased_base)) - _ing_shortfall
-                else:
-                    db.session.add(StockBatch(
-                        product_id=rl.ingredient_id,
-                        qty_purchased_base=-_ing_shortfall,
-                        qty_remaining_base=-_ing_shortfall,
-                        cost_per_base_unit=Decimal('0'),
-                        purchased_at=now,
-                        user_id=u.id if u else None,
-                        batch_type='negative_placeholder',
-                    ))
                 actual_warnings.append({
                     'ingredient_id': rl.ingredient_id,
                     'name':          _ing_obj.name,
