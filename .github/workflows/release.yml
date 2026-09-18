@@ -239,6 +239,40 @@ jobs:
           done
           echo "Upgrade smoke test passed: ${PREV} → ${NEW} migrates cleanly."
 
+          # Rev 5 P3-3 — rollback safety. strong_migrate() is forward-only additive
+          # DDL; appliance/update.sh takes a pre-update backup and health-gates the
+          # NEW container, but rolling back an appliance means running the OLD code
+          # against a schema strong_migrate() has already moved forward — untested
+          # until now (ISSUE-46 only covered the forward direction above). Stop the
+          # new image and boot the PREVIOUS one again on the SAME (now N-migrated)
+          # database. This does not fail the release on its own: not every migration
+          # can or should be backward-compatible. It records the result so an
+          # operator knows, before they ever need it during an incident, whether
+          # "downgrade the image" is a safe rollback path for this release or
+          # whether a backup restore is the only option.
+          docker stop upg-new && docker rm upg-new
+          docker run -d --name upg-rollback --network farmpos-upgrade-ci -p 5002:5000 \
+            -e APP_ENV=prod \
+            -e SECRET_KEY=ci-upgrade-key \
+            -e DATABASE_URL="postgresql://farmstall:ci-test-pw@upg-pg:5432/farmpos" \
+            "${REGISTRY}/${IMAGE}:${PREV}"
+          echo "Waiting for previous image /health after rollback onto the ${NEW} schema..."
+          rollback_ok=0
+          for i in $(seq 1 45); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5002/health || true)
+            if [ "$code" = "200" ]; then rollback_ok=1; break; fi
+            sleep 2
+          done
+          if [ "$rollback_ok" = "1" ]; then
+            echo "Rollback check passed: ${PREV} boots cleanly against the ${NEW}-migrated schema."
+            echo "rollback_safe=true" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+            echo "### Rollback: SAFE — ${PREV} boots against the ${NEW} schema" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::warning::Rollback check FAILED — ${PREV} does not boot cleanly against the ${NEW}-migrated schema. This release is NO-ROLLBACK: an incident during ${NEW} must be resolved by restoring from backup, not by downgrading the image."
+            docker logs upg-rollback || true
+            echo "### Rollback: NOT SAFE — ${PREV} does NOT boot against the ${NEW} schema. This release is **no-rollback** — restore from backup if ${NEW} needs to be undone." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   create-github-release:
     runs-on: ubuntu-latest
     needs: [build-test-push, upgrade-smoke]
