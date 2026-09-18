@@ -2418,6 +2418,26 @@ def strong_migrate():
             "CREATE INDEX IF NOT EXISTS ix_cost_adj_lines_adj ON cost_adjustment_lines (adjustment_id)"
         )
 
+        # Rev 5 P2-0 — unified stock movement ledger. Additive only: nothing writes
+        # here yet (see StockMovement's docstring in models.py for why, and for the
+        # dual-write/cutover gate this table is waiting on before it goes live).
+        pg_try("""CREATE TABLE IF NOT EXISTS stock_movements (
+            id              SERIAL PRIMARY KEY,
+            movement_type   VARCHAR(30) NOT NULL,
+            batch_id        INTEGER NOT NULL REFERENCES stock_batches(id),
+            qty_delta       NUMERIC(10,4) NOT NULL,
+            unit_cost       NUMERIC(10,6) NOT NULL,
+            source_type     VARCHAR(20) NOT NULL,
+            source_id       VARCHAR(64),
+            source_line_id  VARCHAR(64),
+            note            TEXT,
+            user_id         INTEGER REFERENCES users(id),
+            created_at      TIMESTAMP NOT NULL DEFAULT NOW()
+        )""")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_stock_movements_batch ON stock_movements (batch_id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_stock_movements_source ON stock_movements (source_type, source_id)")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_stock_movements_order ON stock_movements (created_at, id)")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 

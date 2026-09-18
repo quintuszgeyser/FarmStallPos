@@ -19,7 +19,7 @@ from werkzeug.security import generate_password_hash
 from models import (
     db,
     User, Product, Supplier, RecipeLine,
-    StockBatch, StockConsumption, TillSession,
+    StockBatch, StockConsumption, StockMovement, TillSession,
 )
 
 _seq = {'n': 0}
@@ -123,6 +123,25 @@ def make_stock_consumption(sale_id, ingredient, batch, **overrides):
     db.session.add(consumption)
     db.session.flush()
     return consumption
+
+
+def make_stock_movement(batch, **overrides):
+    now = datetime.now(UTC).replace(tzinfo=None)
+    defaults = dict(
+        movement_type='RECEIPT',
+        batch_id=batch.id if hasattr(batch, 'id') else batch,
+        qty_delta=Decimal('10'),
+        unit_cost=Decimal('5.000000'),
+        source_type='receipt',
+        source_id=None,
+        source_line_id=None,
+        created_at=now,
+    )
+    defaults.update(overrides)
+    movement = StockMovement(**defaults)
+    db.session.add(movement)
+    db.session.flush()
+    return movement
 
 
 def make_recipe_line(recipe_product, ingredient_product, **overrides):

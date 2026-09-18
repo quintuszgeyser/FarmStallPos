@@ -521,6 +521,62 @@ class StockAdjustment(db.Model):
     user_id           = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 
+class StockMovement(db.Model):
+    """Rev 5 P2-0 — the unified, append-only stock ledger.
+
+    Today, a quantity change is recorded across three tables whose meaning is
+    ambiguous without cross-referencing a string prefix or a batch_type flag:
+    a StockBatch row can be a receipt, a stocktake increase, a customer
+    return, or a production output; a StockConsumption row can be a sale, a
+    write-off, or a production input. That ambiguity is exactly why INV-1
+    (quantity closure) and INV-3 (typed source resolution) cannot be computed
+    against the current schema — see scripts/reconcile.py.
+
+    This table is additive only: nothing writes to it yet. StockBatch.qty_
+    remaining_base remains the live source of truth for every read and write
+    path in the app until the dual-write period (writing here alongside the
+    existing tables, reconciled nightly) has run long enough to cover every
+    movement_type at least once, and the projection-rebuild gate (P2-0a) has
+    been proven — see the Rev 5 plan. Only then does this table become
+    authoritative.
+
+    movement_type is the ledger's own physical classification of what
+    happened to the batch (e.g. RECEIPT, SALE, RETURN_SALEABLE,
+    RETURN_DAMAGED, RETURN_WRITEOFF, STOCKTAKE_INCREASE, STOCKTAKE_DECREASE,
+    WRITEOFF, PRODUCTION_INPUT, PRODUCTION_OUTPUT, RECONCILIATION,
+    MIGRATION) — deliberately a plain string, not a DB enum, because P2-2
+    (typed returns) and later phases are expected to refine this set, and a
+    DB enum makes that an ALTER TYPE migration instead of a no-op deploy.
+
+    source_type/source_id/source_line_id are the "typed source" INV-3 checks:
+    which business record caused this movement. source_type is the coarser
+    business-domain classification (sale, return, receipt, stocktake,
+    writeoff, production, reconciliation, migration) that source_id resolves
+    against; source_line_id disambiguates a specific line within that source
+    (e.g. one line of a multi-line sale, or one ingredient of a production
+    run) and is NULL when the source has no sub-line structure. source_id is
+    a string because sale_id is a UUID (see Sale.sale_id) while other sources
+    use integer primary keys — never assume it parses as an int.
+
+    Migration backfill rows that cannot be classified against the current
+    three-table data get source_type='migration' with `note` explaining why,
+    per Rev 5's "visible, not hidden" rule — never silently dropped or
+    guessed at.
+    """
+    __tablename__ = 'stock_movements'
+    id              = db.Column(db.Integer, primary_key=True)
+    movement_type   = db.Column(db.String(30), nullable=False)
+    batch_id        = db.Column(db.Integer, db.ForeignKey('stock_batches.id'), nullable=False)
+    qty_delta       = db.Column(Numeric(10, 4), nullable=False)   # signed: + increases qty_remaining_base, - decreases
+    unit_cost       = db.Column(Numeric(10, 6), nullable=False)   # cost per base unit at the time of this movement
+    source_type     = db.Column(db.String(20), nullable=False)    # sale | return | receipt | stocktake | writeoff | production | reconciliation | migration
+    source_id       = db.Column(db.String(64), nullable=True)     # NULL only for unclassifiable migration rows (see `note`)
+    source_line_id  = db.Column(db.String(64), nullable=True)
+    note            = db.Column(db.Text, nullable=True)
+    user_id         = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    created_at      = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+
 class Purchase(db.Model):
     __tablename__ = 'purchases'
     id             = db.Column(db.Integer, primary_key=True)
