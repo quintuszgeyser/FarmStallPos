@@ -154,6 +154,53 @@ def test_vat_rounding_boundary_receipt_and_till_summary_agree_on_odd_amounts(db_
     assert summary['vat_unrecorded_count'] == 0
 
 
+def test_mixed_basket_rounding_boundary_receipt_equals_z_report_to_the_cent(db_session, client):
+    """Rev 5 Section 7's core P1-1 proof requirement, in its full documented shape:
+    a single basket mixing standard/zero_rated/exempt lines, including the exact
+    rounding-boundary pair from Wave A's worked example (R1.00 + R1.11 -> R0.27
+    summed-per-line vs R0.28 if wrongly recomputed from the basket total), checked
+    out through the real /api/transactions route, then verified that what the
+    receipt shows and what the Z-report shows for the same window agree exactly —
+    not approximately, not by coincidence, but because both read the identical
+    stored sale_headers.total_vat.
+    """
+    set_setting('vat_registered', 'true')
+    set_setting('vat_rate', 15)
+
+    boundary_a = make_product(name='Boundary A', price=D('1.00'), vat_type='standard')
+    boundary_b = make_product(name='Boundary B', price=D('1.11'), vat_type='standard')
+    zero_item  = make_product(name='Zero Item', price=D('25.00'), vat_type='zero_rated')
+    exempt_item = make_product(name='Exempt Item', price=D('12.34'), vat_type='exempt')
+
+    from werkzeug.security import generate_password_hash
+    make_user(username='mixedteller', password_hash=generate_password_hash('testpass123'))
+    make_admin(username='mixedadmin', password_hash=generate_password_hash('adminpass123'))
+
+    login_as(client, 'mixedteller', 'testpass123')
+    resp = checkout(client, [
+        {'product_id': boundary_a.id, 'qty': 1},
+        {'product_id': boundary_b.id, 'qty': 1},
+        {'product_id': zero_item.id, 'qty': 1},
+        {'product_id': exempt_item.id, 'qty': 1},
+    ], cash_tendered=100)
+    assert resp.status_code == 200, resp.get_json()
+    sale_id = resp.get_json()['transaction_id']
+
+    receipt = client.get(f'/api/transactions/{sale_id}/receipt').get_json()
+    # R1.00 and R1.11 independently rounded per line = R0.27 (Wave A's worked
+    # example); R0.28 would be the wrong, naively-recomputed-from-total answer.
+    assert D(str(receipt['vat_amount'])) == D('0.27')
+    assert receipt['vat_method'] == 'per_line'
+
+    client.post('/api/logout')
+    login_as(client, 'mixedadmin', 'adminpass123')
+    summary = client.get('/api/till/sessions/summary').get_json()
+
+    assert D(str(summary['vat_amount'])) == D(str(receipt['vat_amount'])) == D('0.27')
+    assert summary['vat_spans_cutover'] is False
+    assert summary['vat_amount_legacy_flat'] == 0
+
+
 def test_receipt_after_oversell_still_renders_full_requested_quantity(db_session, client):
     """Receipt generation must not error, and must reflect the FULL Sale.qty
     requested — the oversell shortfall (P2-1's target) affects COGS/costing
