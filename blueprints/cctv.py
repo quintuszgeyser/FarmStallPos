@@ -607,8 +607,11 @@ _VIEW_HTML = """<!doctype html>
   };
 
   // ── Grid — must come after all CamStream.prototype assignments ──
+  // Stream connects are staggered (not fired all at once) so a bandwidth-
+  // constrained link (e.g. a relayed Tailscale path) isn't hit with every
+  // camera's ICE/DTLS negotiation simultaneously.
   var grid = document.getElementById('grid');
-  CAMERAS.forEach(function(cam) {
+  CAMERAS.forEach(function(cam, camIndex) {
     var tile = document.createElement('div');
     tile.className = 'tile';
 
@@ -635,7 +638,9 @@ _VIEW_HTML = """<!doctype html>
 
     tile.addEventListener('click', function() { openDrilldown(cam); });
 
-    streams[cam.id] = new CamStream(tileSrc(cam.id), video, dot);
+    setTimeout(function() {
+      streams[cam.id] = new CamStream(tileSrc(cam.id), video, dot);
+    }, camIndex * 600);
   });
 
   // ── Layout ──
