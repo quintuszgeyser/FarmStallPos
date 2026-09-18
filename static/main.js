@@ -9720,6 +9720,17 @@ async function openCloseTillModal() {
       document.getElementById('ct-vat-amount').textContent = `R${fmt(_tillSummary.vat_amount)}`;
       vatRow.style.removeProperty('display');
     }
+    // Rev 5 P1-1b: a window spanning the VAT-snapshot cutover has a separate,
+    // never-commingled legacy figure — surface it rather than silently dropping it.
+    const vatLegacyRow = document.getElementById('ct-vat-legacy-row');
+    if (vatLegacyRow) {
+      if (_tillSummary.vat_amount_legacy_flat > 0) {
+        document.getElementById('ct-vat-legacy-amount').textContent = `R${fmt(_tillSummary.vat_amount_legacy_flat)}`;
+        vatLegacyRow.style.removeProperty('display');
+      } else {
+        vatLegacyRow.style.display = 'none';
+      }
+    }
     document.getElementById('ct-opening-float').value     = fmt(_tillSummary.suggested_opening_float);
     document.getElementById('ct-counted-cash').value      = '';
     document.getElementById('ct-over-under').classList.add('hidden');

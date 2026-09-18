@@ -142,10 +142,16 @@ def test_vat_rounding_boundary_receipt_and_till_summary_agree_on_odd_amounts(db_
     summary = client.get('/api/till/sessions/summary').get_json()
 
     assert D(summary['total_sales']) == receipt_total
-    # Sum-of-per-receipt-VAT vs VAT-of-the-summed-total is NOT expected to match
-    # exactly in general (that's exactly what P1-1's per-line rounding fixes) —
-    # so compare the till summary's own single-shot VAT-of-total instead.
-    assert D(summary['vat_amount']) == round(receipt_total * D('0.15') / D('1.15'), 2)
+    # Rev 5 P1-1 Wave B: till_sessions.py no longer independently recomputes VAT
+    # from the summed basket total (which is what made this test's old assertion
+    # — comparing against round(receipt_total * 0.15/1.15, 2) — a plausible-but-
+    # different formula). It now sums the SAME already-rounded per-transaction
+    # sale_headers.total_vat values the receipt endpoint reads, so the two are
+    # equal by construction, not by coincidence of magnitude. This is P1-1's core
+    # acceptance proof: receipt VAT equals Z-report VAT to the cent.
+    assert D(summary['vat_amount']) == receipt_vat
+    assert summary['vat_spans_cutover'] is False
+    assert summary['vat_unrecorded_count'] == 0
 
 
 def test_receipt_after_oversell_still_renders_full_requested_quantity(db_session, client):

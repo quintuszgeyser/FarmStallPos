@@ -5,7 +5,7 @@ POST /api/till/sessions     — close the till (admin)
 GET  /api/till/sessions     — list sessions with summary (admin)
 GET  /api/till/sessions/summary — current-day summary for Close Till modal
 """
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
 
 from flask import Blueprint, jsonify, request
@@ -13,7 +13,7 @@ from sqlalchemy import func
 
 from sqlalchemy import case
 from helpers import require_role, current_user, _parse_dt, get_setting
-from models import db, Sale, TillSession, User
+from models import db, Sale, SaleHeader, TillSession, User
 
 bp = Blueprint('till_sessions', __name__)
 
@@ -64,6 +64,61 @@ def _sum_sales(start_dt, end_dt, payment_method=None, voided=False):
     return Decimal(str(q.scalar()))
 
 
+def _vat_summary(start_dt, end_dt):
+    """VAT for the report window, read ONLY from the Rev 5 P1-1 sale_headers
+    snapshot — never recomputed from current settings (that was the original
+    defect: a later rate/registration change would retroactively alter a past
+    Z-report). Voiding always voids every line sharing a sale_id (see
+    api_transaction_void), so "any non-voided row in range" identifies the
+    in-scope sale_ids; returns are excluded, matching _sum_sales's basis for
+    total_sales (a return is its own transaction with no header of its own).
+
+    A window can straddle the P1-1 cutover: some in-range sale_ids have a
+    'per_line' header (real per-line VAT), others a 'legacy_flat' header (a
+    frozen flat-rate approximation from scripts/backfill_vat_headers.py, using
+    whatever rate was current when that script ran — not necessarily the rate
+    actually in effect at sale time, since the old system never recorded it).
+    These are methodologically different numbers. Per Rev 5 P1-1b, summing them
+    into one commingled total would misrepresent both, so they are kept and
+    reported separately; the caller decides how to present that split.
+    """
+    sale_id_rows = db.session.query(Sale.sale_id).filter(
+        Sale.date_time >= start_dt, Sale.date_time <= end_dt,
+        Sale.voided == False,
+        db.or_(Sale.payment_method.is_(None), Sale.payment_method != 'return'),
+    ).distinct().all()
+    sale_ids = {r[0] for r in sale_id_rows}
+    if not sale_ids:
+        return {
+            'vat_per_line': Decimal('0.00'), 'vat_legacy_flat': Decimal('0.00'),
+            'per_line_count': 0, 'legacy_flat_count': 0, 'unrecorded_count': 0,
+        }
+    headers = SaleHeader.query.filter(SaleHeader.sale_id.in_(sale_ids)).all()
+    by_id = {h.sale_id: h for h in headers}
+    vat_per_line = Decimal('0.00')
+    vat_legacy_flat = Decimal('0.00')
+    per_line_count = 0
+    legacy_flat_count = 0
+    for sid in sale_ids:
+        h = by_id.get(sid)
+        if h is None:
+            continue  # counted via unrecorded_count below
+        if h.vat_method == 'per_line':
+            vat_per_line += Decimal(str(h.total_vat))
+            per_line_count += 1
+        elif h.vat_method == 'legacy_flat':
+            vat_legacy_flat += Decimal(str(h.total_vat))
+            legacy_flat_count += 1
+    unrecorded_count = len(sale_ids) - per_line_count - legacy_flat_count
+    return {
+        'vat_per_line': vat_per_line.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP),
+        'vat_legacy_flat': vat_legacy_flat.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP),
+        'per_line_count': per_line_count,
+        'legacy_flat_count': legacy_flat_count,
+        'unrecorded_count': unrecorded_count,
+    }
+
+
 @bp.route('/api/till/sessions/summary', methods=['GET'])
 def api_till_summary():
     """Return today's sales totals for the Close Till modal. Admin only."""
@@ -91,9 +146,24 @@ def api_till_summary():
         if (now - last.closed_at).total_seconds() < 86400:
             opening_float = Decimal(str(last.counted_cash))
 
+    # VAT (Rev 5 P1-1) — read from the checkout-time sale_headers snapshot only,
+    # never recomputed from current settings. vat_registered here is a display
+    # toggle only (whether to show the VAT row at all before any sales exist in
+    # the window) — it does not gate or alter any financial figure below it.
     vat_registered = get_setting('vat_registered', 'false') == 'true'
-    vat_rate       = Decimal(str(get_setting('vat_rate', 15) or 15)) / 100
-    vat_amount     = (total_sales * vat_rate / (1 + vat_rate)).quantize(Decimal('0.01')) if vat_registered else Decimal('0')
+    vat = _vat_summary(period_start, now)
+    vat_spans_cutover = vat['per_line_count'] > 0 and vat['legacy_flat_count'] > 0
+    vat_note = None
+    if vat_spans_cutover:
+        vat_note = (
+            f"Window includes {vat['legacy_flat_count']} pre-P1-1 sale(s) shown separately "
+            "as 'VAT as originally recorded' — not summed with the per-line total."
+        )
+    elif vat['unrecorded_count']:
+        vat_note = (
+            f"{vat['unrecorded_count']} sale(s) in this window have no VAT record "
+            "(not yet backfilled) and are excluded from both VAT totals."
+        )
 
     return jsonify({
         'period_start': period_start.isoformat(),
@@ -104,7 +174,13 @@ def api_till_summary():
         'total_sales':  float(total_sales),
         'void_total':   float(void_total),
         'cash_refunds': float(cash_refunds),
-        'vat_amount':   float(vat_amount),
+        # Authoritative, real per-line VAT for this window — never includes a
+        # legacy_flat contribution (see vat_amount_legacy_flat / vat_note below).
+        'vat_amount':   float(vat['vat_per_line']),
+        'vat_amount_legacy_flat': float(vat['vat_legacy_flat']),
+        'vat_spans_cutover': vat_spans_cutover,
+        'vat_unrecorded_count': vat['unrecorded_count'],
+        'vat_note': vat_note,
         'vat_registered': vat_registered,
         'suggested_opening_float': float(opening_float),
         'last_close': last.closed_at.isoformat() if last else None,
