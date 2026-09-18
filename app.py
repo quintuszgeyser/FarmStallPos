@@ -2444,6 +2444,13 @@ def strong_migrate():
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS cost_estimation_method VARCHAR(20)")
         pg_try("ALTER TABLE stock_batches ADD COLUMN IF NOT EXISTS cost_reconciled BOOLEAN NOT NULL DEFAULT true")
 
+        # Rev 5 P3-1 — audit service additions. See AuditLog's docstring in models.py.
+        pg_try("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS after_json TEXT")
+        pg_try("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS correlation_id VARCHAR(36)")
+        pg_try("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS store_id VARCHAR(64)")
+        pg_try("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'ui'")
+        pg_try("CREATE INDEX IF NOT EXISTS ix_audit_log_correlation ON audit_log (correlation_id)")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 
@@ -2635,12 +2642,45 @@ def create_app():
             elif _age_h > 48:               backup_warn = f"No backup in {int(_age_h)}h"
         except Exception:
             backup_warn = None  # no status file / unreadable -> stay silent
+        # Rev 5 P3-4: same pattern as backup_warn above — scripts/ledger_health_check.py
+        # (a cron job, same cadence as backup.sh) writes ledger_health_status.json;
+        # absent/stale/unreadable -> stay silent rather than alarm on a missing cron.
+        ledger_warn = None
+        try:
+            import json as _json, datetime as _dt
+            with open('/app/config/ledger_health_status.json') as _lf:
+                _ls = _json.load(_lf)
+            _last = _dt.datetime.fromisoformat(_ls.get('generated_at'))
+            _age_h = (_dt.datetime.now(_last.tzinfo) - _last).total_seconds() / 3600
+            if _age_h > 48:
+                ledger_warn = f"Ledger health check hasn't run in {int(_age_h)}h"
+            elif _ls.get('overall_status') == 'FAIL':
+                _n = _ls.get('unresolved_violation_count', 0)
+                ledger_warn = f"{_n} unresolved ledger invariant violation{'s' if _n != 1 else ''}"
+        except Exception:
+            ledger_warn = None  # no status file / unreadable -> stay silent
         return jsonify({
             'env': APP_ENV, 'db': DB_NAME, 'is_qa': IS_QA,
             'scale_reachable': _health_cache['scale'] if not IS_QA else False,
             'import_in_progress': (imp or 'false').lower() == 'true',
             'backup_warning': backup_warn,
+            'ledger_warning': ledger_warn,
         })
+
+    # /admin/ledger-health - full detail behind the summary banner above (Rev 5 P3-4)
+    @app.route('/admin/ledger-health')
+    def _admin_ledger_health():
+        if not require_role('admin'):
+            return jsonify({'error': 'Forbidden'}), 403
+        import json as _json
+        try:
+            with open('/app/config/ledger_health_status.json') as _lf:
+                return jsonify(_json.load(_lf))
+        except FileNotFoundError:
+            return jsonify({'error': 'No ledger health check has run yet',
+                             'hint': 'python scripts/ledger_health_check.py'}), 404
+        except Exception as e:
+            return jsonify({'error': f'ledger_health_status.json unreadable: {e}'}), 500
 
     # Request / response logging
     @app.before_request

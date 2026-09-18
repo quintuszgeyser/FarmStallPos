@@ -8,7 +8,7 @@ from sqlalchemy import text
 
 from helpers import (
     require_login, require_role, current_user, get_online_user_id, consume_fifo,
-    get_setting, set_setting, reverse_fifo, reverse_consignment_liabilities,
+    get_setting, set_setting, reverse_fifo, reverse_consignment_liabilities, audit_event,
 )
 from models import db, Invoice, Customer, Product, RecipeLine, Sale
 
@@ -235,7 +235,10 @@ def api_invoices_undo(inv_id):
     if not inv.sale_id: return jsonify({'ok': True})
     sale_uuid = inv.sale_id; u = current_user(); now = datetime.utcnow()
     stamp = f"[UNDO] Sale {sale_uuid[:8]} reversed by {u.username if u else '?'} @ {now.strftime('%Y-%m-%d %H:%M')} UTC"
-    for s in Sale.query.filter_by(sale_id=sale_uuid, voided=False).all():
+    _undo_rows = Sale.query.filter_by(sale_id=sale_uuid, voided=False).all()
+    _before_snapshot = [{'id': s.id, 'sale_id': s.sale_id, 'product_id': s.product_id, 'qty': str(s.qty),
+                          'unit_price': str(s.unit_price), 'voided': s.voided} for s in _undo_rows]
+    for s in _undo_rows:
         s.voided = True; s.voided_by = u.id if u else None; s.voided_at = now; s.void_reason = f'Invoice {inv.invoice_number} undone'
         p = db.session.get(Product, s.product_id) if s.product_id else None
         if p and p.product_type == 'simple': p.stock_qty = (p.stock_qty or 0) + int(s.qty)
@@ -250,6 +253,9 @@ def api_invoices_undo(inv_id):
     reverse_fifo(sale_uuid)
     reverse_consignment_liabilities(sale_uuid)
     inv.notes = ((inv.notes or '') + ' ' + stamp).strip(); inv.sale_id = None; inv.status = 'draft'
+    audit_event('invoice_undo', 'sales', sale_uuid, before=_before_snapshot,
+                after=[{**row, 'voided': True} for row in _before_snapshot],
+                reason=f'Invoice {inv.invoice_number} undone')
     db.session.commit(); return jsonify({'ok': True})
 
 

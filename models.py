@@ -711,16 +711,32 @@ class SaleHeader(db.Model):
 class AuditLog(db.Model):
     """Append-only forensic trail for destructive actions (voids, edits) - ISSUE-31.
     Never UPDATE/DELETE these rows. before_json captures the pre-mutation state so a
-    voided/edited sale can always be reconstructed (SARS s29 unalterable records)."""
+    voided/edited sale can always be reconstructed (SARS s29 unalterable records).
+
+    Rev 5 P3-1: written by helpers.audit_event() inside the SAME db.session as the
+    business mutation it's recording — no separate commit — so a failed audit write
+    rolls the mutation back with it, and a failed mutation never leaves an orphaned
+    audit row. event_type stays a composite string ('sale_void', 'sale_edit', ...)
+    rather than being split into separate entity_type/action columns, to avoid
+    reinterpreting every existing historical row under a new schema; target_table/
+    target_id already carry the "entity type and id" P3-1 asks for, and `note`
+    already carries the human-entered reason (every caller already passes one).
+    after_json/correlation_id/store_id/source are additive - NULL/default on every
+    pre-P3-1 row, populated on every new one.
+    """
     __tablename__ = 'audit_log'
-    id            = db.Column(db.Integer, primary_key=True)
-    created_at    = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
-    event_type    = db.Column(db.String(40), nullable=False)   # 'sale_void' | 'sale_edit'
-    actor_user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
-    target_table  = db.Column(db.String(40), nullable=True)
-    target_id     = db.Column(db.String(64), nullable=True)    # sale_id or row id
-    before_json   = db.Column(db.Text, nullable=True)
-    note          = db.Column(db.String(500), nullable=True)
+    id             = db.Column(db.Integer, primary_key=True)
+    created_at     = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    event_type     = db.Column(db.String(40), nullable=False)   # 'sale_void' | 'sale_edit'
+    actor_user_id  = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    target_table   = db.Column(db.String(40), nullable=True)
+    target_id      = db.Column(db.String(64), nullable=True)    # sale_id or row id
+    before_json    = db.Column(db.Text, nullable=True)
+    after_json     = db.Column(db.Text, nullable=True)
+    note           = db.Column(db.String(500), nullable=True)
+    correlation_id = db.Column(db.String(36), nullable=True, index=True)  # shared across every audit event in one request
+    store_id       = db.Column(db.String(64), nullable=True)              # from STORE_ID env — NULL on non-appliance/dev boxes
+    source         = db.Column(db.String(20), nullable=False, default='ui', server_default="'ui'")  # ui | api | cli | migration | repair
 
 
 class Special(db.Model):

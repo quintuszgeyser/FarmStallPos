@@ -13,13 +13,13 @@ from helpers import (
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
     qty_bucket, get_stock_level, collect_kitchen_items, auto_produce_on_negative,
     get_setting, write_stock_movement, reverse_consignment_liabilities_partial,
-    get_fifo_cost_per_unit,
+    get_fifo_cost_per_unit, audit_event,
 )
 from decimal import ROUND_HALF_UP
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, KitchenOrder,
-    Sale, SaleHeader, Purchase, User, AuditLog, Category, PackagingUsage,
+    Sale, SaleHeader, Purchase, User, Category, PackagingUsage,
     ConsignmentLiability,
 )
 
@@ -80,7 +80,12 @@ def _record_packaging_usage(sale_uuid):
 
 
 def _serialize_sale_rows(rows):
-    """Snapshot Sale rows to JSON for the append-only audit trail (ISSUE-31)."""
+    """Snapshot Sale rows to JSON for the append-only audit trail (ISSUE-31).
+
+    Rev 5 P3-1: includes voided/void_reason so a before/after pair actually
+    differs for a void — omitting them made every void's after-snapshot
+    identical to its before-snapshot, defeating the point of capturing both.
+    """
     out = []
     for r in rows:
         out.append({
@@ -90,18 +95,17 @@ def _serialize_sale_rows(rows):
             'user_id': r.user_id, 'customer_id': r.customer_id,
             'payment_method': r.payment_method, 'cash_tendered': (str(r.cash_tendered) if r.cash_tendered is not None else None),
             'discount_json': r.discount_json, 'sub_log': r.sub_log,
+            'voided': r.voided, 'void_reason': r.void_reason,
         })
     return out
 
 
-def _audit(event_type, target_id, before_rows, note=None):
-    u = current_user()
-    db.session.add(AuditLog(
-        event_type=event_type,
-        actor_user_id=(u.id if u else None),
-        target_table='sales', target_id=str(target_id),
-        before_json=_json.dumps(before_rows), note=note,
-    ))
+def _audit(event_type, target_id, before_rows, note=None, after_rows=None):
+    # Rev 5 P3-1: delegates to the shared audit service (helpers.audit_event)
+    # instead of writing AuditLog directly — same call in the same
+    # transaction as before, now also stamped with correlation_id/store_id/
+    # source, and able to carry an after-snapshot when the caller has one.
+    audit_event(event_type, 'sales', target_id, before=before_rows, after=after_rows, reason=note)
 
 
 @bp.route('/api/transactions', methods=['GET'])
@@ -832,6 +836,7 @@ def api_transaction_return(sale_id):
     return_uuid = str(uuid.uuid4())
 
     returned_lines = []
+    _return_rows = []
     for item in lines:
         pid = int(item['product_id'])
         qty = Decimal(str(item['qty']))
@@ -872,7 +877,7 @@ def api_transaction_return(sale_id):
         else:  # cash, qr, or unset -> treated as cash out of the drawer
             refund_cash, refund_card = refund_amount, Decimal('0')
 
-        db.session.add(Sale(
+        _return_row = Sale(
             sale_id=return_uuid,
             date_time=now,
             product_id=pid,
@@ -885,7 +890,9 @@ def api_transaction_return(sale_id):
             cogs=return_cogs,
             cash_tendered=refund_cash,
             card_amount=refund_card,
-        ))
+        )
+        db.session.add(_return_row)
+        _return_rows.append(_return_row)
 
         p = db.session.get(Product, pid, with_for_update=True)
         if not p:
@@ -961,8 +968,9 @@ def api_transaction_return(sale_id):
 
         returned_lines.append({'product_id': pid, 'qty': float(qty)})
 
+    db.session.flush()
     _audit('sale_return', sale_id, _serialize_sale_rows(orig_rows),
-           note=f'return_id={return_uuid} reason={reason}')
+           note=f'return_id={return_uuid} reason={reason}', after_rows=_serialize_sale_rows(_return_rows))
     db.session.commit()
     return jsonify({'ok': True, 'return_id': return_uuid, 'lines': returned_lines})
 
@@ -981,11 +989,12 @@ def api_transaction_void(sale_id):
     rows   = Sale.query.filter_by(sale_id=sale_id, voided=False).with_for_update().all()
     if not rows: return jsonify({'error': 'Transaction not found or already voided'}), 404
     u = current_user(); now = datetime.utcnow()
-    _audit('sale_void', sale_id, _serialize_sale_rows(rows), note=reason)  # snapshot before mutation
+    before_snapshot = _serialize_sale_rows(rows)
     for row in rows:
         row.voided = True; row.voided_by = u.id if u else None; row.voided_at = now; row.void_reason = reason
     reverse_fifo(sale_id)
     reverse_consignment_liabilities(sale_id)
+    _audit('sale_void', sale_id, before_snapshot, note=reason, after_rows=_serialize_sale_rows(rows))
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -1038,12 +1047,13 @@ def api_transaction_edit(sale_id):
     orig_card_amount    = rows[0].card_amount
     u = current_user()
     now_wall = datetime.utcnow()  # use wall-clock for consume_fifo so batch eligibility isn't capped at the original sale date
-    _audit('sale_edit', sale_id, _serialize_sale_rows(rows), note=f'superseded by edit: {reason}')
+    before_snapshot = _serialize_sale_rows(rows)
     for row in rows:
         row.voided = True; row.voided_by = (u.id if u else None); row.voided_at = now_wall
         row.void_reason = f'superseded by edit: {reason}'
     reverse_fifo(sale_id)
     reverse_consignment_liabilities(sale_id)
+    _new_sale_rows = []
     for idx, item in enumerate(lines):
         pid       = int(item['product_id'])
         qty       = Decimal(str(item.get('qty', 1)))
@@ -1066,6 +1076,7 @@ def api_transaction_edit(sale_id):
                         cash_tendered=(orig_cash_tendered if _first else None),
                         card_amount=(orig_card_amount if _first else None))
         db.session.add(sale_row)
+        _new_sale_rows.append(sale_row)
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
         if p.product_type == 'stock_item' or (p.product_type == 'recipe' and p.is_produced):
@@ -1101,5 +1112,7 @@ def api_transaction_edit(sale_id):
                         unit_cost=float(_unit_cost), amount_owed=float(_amount),
                         sale_price_at_time=_sale_snap, settlement_percent_at_time=_pct_snap,
                     ))
+    db.session.flush()
+    _audit('sale_edit', sale_id, before_snapshot, note=reason, after_rows=_serialize_sale_rows(_new_sale_rows))
     db.session.commit()
     return jsonify({'ok': True})

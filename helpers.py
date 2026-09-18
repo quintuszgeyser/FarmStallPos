@@ -3,6 +3,7 @@ Shared utilities - imported by app.py and (eventually) blueprints.
 Import order: helpers → models → db. Never import from app.py here.
 """
 
+import json
 import logging
 import os
 import re
@@ -13,7 +14,7 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger('helpers')
 
-from flask import session, abort, request, jsonify, make_response
+from flask import session, abort, request, jsonify, make_response, g
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
@@ -29,8 +30,14 @@ from models import (
     ConsignmentLiability,
     ProductPurchaseOption,
     Supplier,
+    AuditLog,
     SESSION_TIMEOUT_MINUTES, SESSION_LOGOUT_HOURS,
 )
+
+# STORE_ID mirrors app.py's own module-level read of the same env var (never
+# imported from app.py — see the import-order rule above). Used only to stamp
+# AuditLog.store_id.
+STORE_ID = os.environ.get('STORE_ID', '').strip()
 
 
 def qty_bucket(qty):
@@ -100,6 +107,67 @@ def current_user():
     if 'user_id' not in session:
         return None
     return db.session.get(User, session.get('user_id'))
+
+
+# ---------------------------------------------------------------------------
+# Audit service (Rev 5 P3-1)
+# ---------------------------------------------------------------------------
+
+def _audit_correlation_id():
+    """One id per request, shared across every audit_event() call within it —
+    so a single edit that touches several entities can be traced as one
+    operation. Falls back to a fresh id per call outside a request context
+    (CLI/repair scripts), where there is no Flask `g` to hold it."""
+    try:
+        if not hasattr(g, '_audit_cid'):
+            g._audit_cid = str(uuid.uuid4())
+        return g._audit_cid
+    except RuntimeError:  # outside an application/request context
+        return str(uuid.uuid4())
+
+
+def audit_event(event_type, entity_table, entity_id, before=None, after=None,
+                 reason=None, source='ui', actor_user_id=None, correlation_id=None):
+    """Rev 5 P3-1 — the shared audit service. Writes ONE AuditLog row via
+    db.session.add(), in the SAME transaction as the caller's business
+    mutation (no separate commit here) — a failed audit write rolls the
+    mutation back with it, and a failed mutation never leaves an orphaned
+    audit row. This replaces route-decorator audit logging, which cannot see
+    mutations made inside helpers/background jobs/CLI scripts, cannot capture
+    an after-snapshot before the caller's own commit fires, and (because it
+    wraps the response) can't roll anything back when the audit write itself
+    fails.
+
+    before/after: any JSON-serializable structure (dict, list of dicts, ...) —
+    typically the caller's own row-serialization helper's output. Decimals/
+    dates are stringified via default=str rather than requiring the caller to
+    pre-serialize them.
+
+    source: 'ui' (default — a human acting through the app), 'api' (a direct
+    API call, e.g. the Lady Coleen web shop), 'cli' (an operator running a
+    management script), 'migration' (a schema/data migration), or 'repair'
+    (a P4-style reconciliation run). CLI/repair/migration callers should pass
+    their own correlation_id (e.g. a run id) so every row from one script
+    invocation is traceable as a single operation.
+    """
+    if actor_user_id is None:
+        try:
+            u = current_user()
+            actor_user_id = u.id if u else None
+        except RuntimeError:  # outside a request context (CLI/repair/migration)
+            actor_user_id = None
+    db.session.add(AuditLog(
+        event_type=event_type,
+        actor_user_id=actor_user_id,
+        target_table=entity_table,
+        target_id=str(entity_id) if entity_id is not None else None,
+        before_json=json.dumps(before, default=str) if before is not None else None,
+        after_json=json.dumps(after, default=str) if after is not None else None,
+        note=reason,
+        correlation_id=correlation_id or _audit_correlation_id(),
+        store_id=STORE_ID or None,
+        source=source,
+    ))
 
 
 # Rev 5 P1-3 — routes a user with must_change_password=True may still reach.

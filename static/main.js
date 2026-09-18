@@ -799,18 +799,31 @@ async function refreshMe() {
 // Backup-health banner (ISSUE gap): /api/health surfaces a backup_warning string when
 // off-box backups are stale/failing or disk is filling. Show it to admins only; the
 // owner reporting "there's a yellow warning" is a zero-infra alert channel.
+// Rev 5 P3-4: same endpoint also surfaces ledger_warning (from scripts/
+// ledger_health_check.py's nightly cron output) — same banner pattern, own element.
 async function _checkBackupHealth() {
   try {
     const isAdmin = STATE.user && (STATE.user.roles || []).includes('admin');
     const b = document.getElementById('backup-warning-banner');
-    if (!b) return;
-    if (!isAdmin) { hide(b); return; }
+    const l = document.getElementById('ledger-warning-banner');
+    if (!b && !l) return;
+    if (!isAdmin) { if (b) hide(b); if (l) hide(l); return; }
     const h = await api('/api/health');
-    if (h && h.backup_warning) {
-      b.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Backup warning: ${h.backup_warning} - tell your support contact.`;
-      show(b);
-    } else {
-      hide(b);
+    if (b) {
+      if (h && h.backup_warning) {
+        b.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Backup warning: ${h.backup_warning} - tell your support contact.`;
+        show(b);
+      } else {
+        hide(b);
+      }
+    }
+    if (l) {
+      if (h && h.ledger_warning) {
+        l.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Ledger health: ${h.ledger_warning} - tell your support contact.`;
+        show(l);
+      } else {
+        hide(l);
+      }
     }
   } catch (e) { /* health check is best-effort; never block the UI */ }
 }
