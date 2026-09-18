@@ -6,8 +6,11 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request, render_template
 from sqlalchemy import text
 
-from helpers import require_login, require_role, current_user, get_online_user_id, consume_fifo, get_setting, set_setting
-from models import db, Invoice, Customer, Product, RecipeLine, Sale, StockBatch, StockConsumption
+from helpers import (
+    require_login, require_role, current_user, get_online_user_id, consume_fifo,
+    get_setting, set_setting, reverse_fifo, reverse_consignment_liabilities,
+)
+from models import db, Invoice, Customer, Product, RecipeLine, Sale
 
 bp = Blueprint('invoices', __name__)
 
@@ -236,11 +239,16 @@ def api_invoices_undo(inv_id):
         s.voided = True; s.voided_by = u.id if u else None; s.voided_at = now; s.void_reason = f'Invoice {inv.invoice_number} undone'
         p = db.session.get(Product, s.product_id) if s.product_id else None
         if p and p.product_type == 'simple': p.stock_qty = (p.stock_qty or 0) + int(s.qty)
-    consumed = StockConsumption.query.filter_by(sale_id=sale_uuid).all()
-    for c in consumed:
-        batch = db.session.get(StockBatch, c.batch_id)
-        if batch: batch.qty_remaining_base = (batch.qty_remaining_base or 0) + c.qty_consumed_base
-    StockConsumption.query.filter_by(sale_id=sale_uuid).delete()
+    # Rev 5 P2-2b: this used to hand-roll its own FIFO reversal (restore
+    # qty_remaining_base from StockConsumption, then delete the rows) - a
+    # fourth copy of what reverse_fifo already does, minus the with_for_update
+    # lock reverse_fifo takes and the stock_movements dual-write it now writes.
+    # It also skipped consignment liability reversal entirely, leaving the
+    # supplier shown as owed for a sale that no longer exists. Routing through
+    # the shared functions fixes both - there is exactly one reversal
+    # implementation now, not four.
+    reverse_fifo(sale_uuid)
+    reverse_consignment_liabilities(sale_uuid)
     inv.notes = ((inv.notes or '') + ' ' + stamp).strip(); inv.sale_id = None; inv.status = 'draft'
     db.session.commit(); return jsonify({'ok': True})
 

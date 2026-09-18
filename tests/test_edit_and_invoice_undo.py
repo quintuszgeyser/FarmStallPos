@@ -29,7 +29,7 @@ def test_sale_edit_voids_original_and_creates_replacement_lines(db_session, clie
     assert batch.qty_remaining_base == D(7)
 
     edit = client.post(f'/api/transactions/{sale_id}/edit',
-                        json={'lines': [{'product_id': product.id, 'qty': 5}]})
+                        json={'lines': [{'product_id': product.id, 'qty': 5}], 'reason': 'wrong qty'})
     assert edit.status_code == 200, edit.get_json()
 
     all_rows = Sale.query.filter_by(sale_id=sale_id).order_by(Sale.id).all()
@@ -37,7 +37,7 @@ def test_sale_edit_voids_original_and_creates_replacement_lines(db_session, clie
     voided = [r for r in all_rows if r.voided]
     live = [r for r in all_rows if not r.voided]
     assert len(voided) == 1
-    assert voided[0].void_reason == 'superseded by edit'
+    assert voided[0].void_reason == 'superseded by edit: wrong qty'
     assert len(live) == 1
     assert live[0].qty == D(5)
 
@@ -66,7 +66,7 @@ def test_sale_edit_uses_current_server_price_not_original(db_session, client):
     db.session.flush()
 
     edit = client.post(f'/api/transactions/{sale_id}/edit',
-                        json={'lines': [{'product_id': product.id, 'qty': 1}]})
+                        json={'lines': [{'product_id': product.id, 'qty': 1}], 'reason': 'price correction'})
     assert edit.status_code == 200, edit.get_json()
 
     live = Sale.query.filter_by(sale_id=sale_id, voided=False).all()
@@ -108,17 +108,14 @@ def test_invoice_finalise_creates_sale_and_consumes_fifo(db_session, client):
     assert inv_row.sale_id == sale_id
 
 
-def test_invoice_undo_restores_stock_but_misses_lock_and_liability_reversal(db_session, client):
-    """Confirms the two REAL defects in invoices.py:239-243 this session's census
-    corrected against Rev 5's original text: Rev 5 said undo "never deletes"
-    StockConsumption rows — it does (line 243, `.delete()`). What it actually
-    does NOT do: (a) take a `with_for_update` lock on the batches it restores,
-    and (b) call reverse_consignment_liabilities for a consignment product's
-    sale. This test pins (b) concretely — a consignment sale, invoiced then
-    undone, leaves its liability 'outstanding' forever. (a) is a race-condition
-    property that can't be meaningfully asserted from a single-threaded test;
-    see tests/test_locking.py's docstring for why concurrency defects need a
-    genuinely concurrent test, not an inline assertion here.
+def test_invoice_undo_routes_through_the_shared_reversal_and_reverses_liability(db_session, client):
+    """Rev 5 P2-2b. invoice undo used to hand-roll its own FIFO reversal (no
+    with_for_update lock, no consignment liability reversal) instead of reusing
+    reverse_fifo/reverse_consignment_liabilities. Now it does — this test pins
+    the liability reversal concretely; the with_for_update lock is a race-
+    condition property that can't be meaningfully asserted from a single-
+    threaded test (see tests/test_locking.py's docstring for why concurrency
+    defects need a genuinely concurrent test instead).
     """
     from models import db, ConsignmentLiability
     from tests.factories import make_supplier
@@ -144,16 +141,16 @@ def test_invoice_undo_restores_stock_but_misses_lock_and_liability_reversal(db_s
     undo = client.post(f'/api/invoices/{inv_id}/undo')
     assert undo.status_code == 200, undo.get_json()
 
-    # Stock IS correctly restored...
+    # Stock is correctly restored...
     refresh(db_session, batch)
     assert batch.qty_remaining_base == D(10)
-    # ...and consumption rows ARE deleted (correcting Rev 5's "never deletes" claim).
+    # ...consumption rows are deleted...
     assert StockConsumption.query.filter_by(sale_id=sale_id).count() == 0
-
-    # ...but the consignment liability is left outstanding despite the sale
-    # that created it having been fully reversed. Supplier still shown as owed.
+    # ...and now the consignment liability is voided too — the sale that
+    # created it has been fully reversed, so the supplier is no longer shown
+    # as owed for it.
     refresh(db_session, liabilities[0])
-    assert liabilities[0].status == 'outstanding'
+    assert liabilities[0].status == 'voided'
 
     inv_row = db.session.get(Invoice, inv_id)
     assert inv_row.status == 'draft'
