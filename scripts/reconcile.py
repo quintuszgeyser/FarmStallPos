@@ -17,8 +17,10 @@ Pre-P2-0 (movement ledger) scope, per Rev 5 P0-2's note:
     INV-1, INV-3, INV-11 require the movement ledger (P2-0) and are reported
     as NOT_YET_COMPUTABLE — present in the registry so it is already complete,
     not silently omitted.
-    INV-7 (VAT closure) requires the sale_headers table (P1-1) and is also
-    NOT_YET_COMPUTABLE.
+    INV-7 (VAT closure) is now implemented (Rev 5 P1-1 Wave B), against the
+    sale_headers table — see check_inv7_vat_closure for scope (per_line
+    headers only; legacy_flat headers are reported via skipped_count, not
+    checked, since they have no per-line data to close against by design).
     INV-10 (transaction immutability) is a DB-trigger + CI concern per Rev 5
     Section 6, not a reconcile.py check — reported as NOT_APPLICABLE_HERE.
 
@@ -80,7 +82,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models import (
     Product, StockBatch, StockConsumption, StockAdjustment,
-    ConsignmentLiability, Sale,
+    ConsignmentLiability, Sale, SaleHeader,
 )
 
 Q2 = Decimal('0.01')
@@ -343,6 +345,57 @@ def check_inv9_allocation_closure(session):
     return r
 
 
+def check_inv7_vat_closure(session):
+    r = Result('INV-7', 'VAT closure', 'high', ['pilot_readiness'], 'zero')
+    r.note = ('Only checks vat_method=per_line headers (P1-1 checkout-forward sales) — '
+              'formula: sum of per-line rounded vat_amount == header.total_vat, and '
+              'header subtotals (standard+zero_rated+exempt) sum to total_excl_vat, and '
+              'total_excl_vat + total_vat == total_incl_vat. legacy_flat headers '
+              '(scripts/backfill_vat_headers.py) have no per-line data to check against '
+              'by design — reported via skipped_count with the reason, not silently '
+              'ignored and not treated as a violation.')
+    headers = session.query(SaleHeader).all()
+    per_line = [h for h in headers if h.vat_method == 'per_line']
+    r.skipped_count = len(headers) - len(per_line)
+    r.checked_count = len(per_line)
+    for h in per_line:
+        lines = session.query(Sale).filter(
+            Sale.sale_id == h.sale_id, Sale.voided == False
+        ).all()
+        line_vat_sum = _q2(sum((_d(l.vat_amount) or Decimal('0') for l in lines), Decimal('0')))
+        header_total_vat = _q2(h.total_vat)
+        if line_vat_sum != header_total_vat:
+            r.violations.append({
+                'sale_id': h.sale_id, 'check': 'sum(line.vat_amount) == header.total_vat',
+                'stored': str(header_total_vat), 'expected': str(line_vat_sum),
+            })
+            continue
+
+        subtotal_sum = _q2(
+            (_d(h.standard_rated_subtotal) or Decimal('0'))
+            + (_d(h.zero_rated_subtotal) or Decimal('0'))
+            + (_d(h.exempt_subtotal) or Decimal('0'))
+        )
+        total_excl = _q2(h.total_excl_vat)
+        if subtotal_sum != total_excl:
+            r.violations.append({
+                'sale_id': h.sale_id,
+                'check': 'standard+zero_rated+exempt subtotals == total_excl_vat',
+                'stored': str(total_excl), 'expected': str(subtotal_sum),
+            })
+            continue
+
+        expected_incl = _q2((_d(h.total_excl_vat) or Decimal('0')) + (_d(h.total_vat) or Decimal('0')))
+        total_incl = _q2(h.total_incl_vat)
+        if total_incl != expected_incl:
+            r.violations.append({
+                'sale_id': h.sale_id, 'check': 'total_excl_vat + total_vat == total_incl_vat',
+                'stored': str(total_incl), 'expected': str(expected_incl),
+            })
+    r.status = 'FAIL' if r.violations else 'PASS'
+    return r
+
+
 def not_yet_computable(inv_id, name, reason):
     r = Result(inv_id, name, 'n/a', ['cutover'], 'n/a')
     r.status = 'NOT_YET_COMPUTABLE'
@@ -365,7 +418,7 @@ def run_all(session):
         check_inv4_no_free_stock(session),
         check_inv5_consignment_closure(session),
         check_inv6_cogs_agrees(session),
-        not_yet_computable('INV-7', 'VAT closure', 'Requires the P1-1 sale_headers table.'),
+        check_inv7_vat_closure(session),
         check_inv8_value_baseline(session),
         check_inv9_allocation_closure(session),
         not_applicable_here('INV-10', 'Transaction immutability',
