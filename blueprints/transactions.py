@@ -399,6 +399,8 @@ def api_transactions_post():
         # + vat_amount == amount_incl always holds by construction, not by two separate
         # formulas that could disagree by a cent.
         _vat_classification = (_prod_price.vat_type or 'standard')
+        if _vat_classification not in _vat_bucket_totals:  # unrecognized -> Product's own column default
+            _vat_classification = 'standard'
         _line_incl = (qty * unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         if _vat_registered and _vat_classification == 'standard':
             _line_excl = (_line_incl / (Decimal('1') + _vat_rate / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
@@ -408,8 +410,7 @@ def api_transactions_post():
             _line_excl = _line_incl
             _line_vat = Decimal('0.00')
             _line_rate = Decimal('0')
-        _bucket = _vat_classification if _vat_classification in _vat_bucket_totals else 'standard'
-        _vat_bucket_totals[_bucket] += _line_excl
+        _vat_bucket_totals[_vat_classification] += _line_excl
         _header_total_vat += _line_vat
 
         sale_row = Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None), card_amount=(card_amount if _first_line else None), vat_classification=_vat_classification, vat_rate=_line_rate, amount_excl=_line_excl, vat_amount=_line_vat, amount_incl=_line_incl)
