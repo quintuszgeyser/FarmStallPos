@@ -12,7 +12,8 @@ from helpers import (
     require_login, require_role, current_user,
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
     qty_bucket, get_stock_level, collect_kitchen_items, auto_produce_on_negative,
-    get_setting, write_stock_movement,
+    get_setting, write_stock_movement, reverse_consignment_liabilities_partial,
+    get_fifo_cost_per_unit,
 )
 from decimal import ROUND_HALF_UP
 from models import (
@@ -893,24 +894,45 @@ def api_transaction_return(sale_id):
                 unit_cost=orig_batch_cost, source_type='return',
                 source_id=return_uuid, when=now,
             )
+            # Rev 5 P2-2: reverse only the liability the returned qty is worth,
+            # pro-rata — a no-op when this product carries no outstanding
+            # consignment liability for this sale.
+            reverse_consignment_liabilities_partial(sale_id, pid, qty)
         elif p.product_type == 'recipe':
-            # Made-to-order recipe: restore each ingredient's FIFO consumption proportionally.
-            return_ratio = qty / orig_qty if orig_qty > 0 else Decimal('1')
+            # Made-to-order recipe (Rev 5 P2-2): restore each ingredient by the
+            # RECIPE'S OWN formula (qty_base * qty returned), not by trying to
+            # locate and prorate the original StockConsumption rows. The old
+            # approach queried consumption by (sale_id, ingredient_id) alone,
+            # which is ambiguous the moment two recipes in the same sale share
+            # an ingredient — restoring one over-restores the other. It also
+            # computed its ratio against orig_by_pid, which is the REMAINING
+            # returnable qty (already reduced by prior partial returns on this
+            # sale), not the true original qty — over-restoring on any partial
+            # return after the first. Creating a fresh batch per ingredient (at
+            # its current FIFO cost, like the stock_item branch's own new-batch
+            # pattern above) sidesteps both: no shared history to disambiguate,
+            # no ratio/denominator to get wrong.
             for rl in RecipeLine.query.filter_by(product_id=pid).all():
-                ing_consumptions = StockConsumption.query.filter_by(
-                    sale_id=sale_id, ingredient_id=rl.ingredient_id).all()
-                for c in ing_consumptions:
-                    restore_qty = Decimal(str(c.qty_consumed_base)) * return_ratio
-                    batch = db.session.get(StockBatch, c.batch_id, with_for_update=True)
-                    if batch:
-                        batch.qty_remaining_base = (
-                            Decimal(str(batch.qty_remaining_base)) + restore_qty
-                        )
-                        write_stock_movement(
-                            batch, movement_type='RETURN_SALEABLE', qty_delta=restore_qty,
-                            unit_cost=c.cost_per_base_unit, source_type='return',
-                            source_id=return_uuid, when=now,
-                        )
+                restore_qty = Decimal(str(rl.qty_base)) * qty
+                if restore_qty <= 0:
+                    continue
+                restore_cost = Decimal(str(get_fifo_cost_per_unit(rl.ingredient_id)))
+                _ing_batch = StockBatch(
+                    product_id=rl.ingredient_id,
+                    qty_purchased_base=restore_qty,
+                    qty_remaining_base=restore_qty,
+                    cost_per_base_unit=restore_cost,
+                    purchased_at=now,
+                    user_id=u.id if u else None,
+                )
+                db.session.add(_ing_batch)
+                db.session.flush()
+                write_stock_movement(
+                    _ing_batch, movement_type='RETURN_SALEABLE', qty_delta=restore_qty,
+                    unit_cost=restore_cost, source_type='return',
+                    source_id=return_uuid, source_line_id=str(rl.ingredient_id), when=now,
+                )
+                reverse_consignment_liabilities_partial(sale_id, rl.ingredient_id, restore_qty)
 
         returned_lines.append({'product_id': pid, 'qty': float(qty)})
 

@@ -84,17 +84,12 @@ def test_partial_return_stock_item_caps_at_remaining_returnable_qty(db_session, 
     assert 'exceeds original' in ret3.get_json()['error']
 
 
-@pytest.mark.known_defect
-def test_partial_return_recipe_over_restores_shared_ingredient_across_products(db_session, client):
-    """KNOWN DEFECT — Rev 5 P2-2 fixes this ("two recipes sharing flour restore
-    each other's quantity"). The made-to-order recipe return branch
-    (transactions.py ~822-834) restores StockConsumption rows filtered only by
-    (sale_id, ingredient_id) — NOT by which recipe/line actually consumed them.
-    Selling Bread (needs 1 flour) and Cake (needs 2 flour) in the SAME sale, then
-    returning only the Bread, restores flour from BOTH products' consumption
-    (1 + 2 = 3 units), not just Bread's own 1 unit. Pins today's over-restore so
-    P2-2's commit (referencing the original movement instead of a bare
-    sale_id+ingredient_id filter) is the one that changes this assertion.
+def test_partial_return_recipe_restores_only_its_own_share_of_shared_ingredient(db_session, client):
+    """Rev 5 P2-2. Selling Bread (needs 1 flour) and Cake (needs 2 flour) in the
+    SAME sale, then returning only the Bread, restores exactly Bread's own 1
+    unit of flour — not Cake's too. Fixed by computing the restore quantity
+    directly from the recipe formula (qty_base * qty returned) into a NEW
+    batch, rather than trying to disambiguate shared StockConsumption history.
     """
     flour = make_product(product_type='stock_item', name='Flour', price=D('1.00'))
     make_stock_batch(flour, qty_remaining_base=D(100), qty_purchased_base=D(100), cost_per_base_unit=D('1.000000'))
@@ -126,27 +121,27 @@ def test_partial_return_recipe_over_restores_shared_ingredient_across_products(d
                        json={'lines': [{'product_id': bread.id, 'qty': 1}], 'reason': 'wrong item'})
     assert ret.status_code == 200, ret.get_json()
 
+    # The ORIGINAL flour batch is untouched — restoration goes to a new batch.
     refresh(db_session, flour_batch)
-    # DEFECT: expected 97 + 1 = 98 (only Bread's own flour restored). Actual: 100 —
-    # BOTH Bread's (1) and Cake's (2) flour consumption got restored by returning
-    # Bread alone, because the restore query only filters on (sale_id, ingredient_id).
-    assert flour_batch.qty_remaining_base == D(100)
+    assert flour_batch.qty_remaining_base == D(97)
+
+    new_batches = StockBatch.query.filter_by(product_id=flour.id).filter(
+        StockBatch.id != flour_batch.id).all()
+    assert len(new_batches) == 1
+    assert new_batches[0].qty_remaining_base == D(1)  # only Bread's own share
 
 
-def test_return_of_consignment_item_does_not_reverse_liability(db_session, client):
-    """FINDING — needs Operating Rule 17 classification, not yet a Rev 5 ID.
-    Rev 5's P2-2 section describes the liability-reversal defect as
-    "reverse_consignment_liabilities voids EVERY outstanding liability for the
-    sale — correct for a void, wrong for a partial return", which implies the
-    return path calls it (just too broadly). It does not: grepping
-    blueprints/transactions.py shows reverse_consignment_liabilities is called
-    from void (line 857) and edit (line 883) only — api_transaction_return
-    never calls it at all. So today's actual defect on return is stronger than
-    Rev 5 describes: the consignment liability is left 'outstanding' regardless
-    of how much (or how little) of the item is returned — not over-reversed,
-    under-reversed to the point of no reversal whatsoever. This test pins that
-    observed behavior; classification (remediation blocker vs. related defect)
-    is for the principal engineer to make against Rev 5, not this test.
+def test_return_of_consignment_item_reverses_liability_via_compensating_credit(db_session, client):
+    """Rev 5 P2-2.
+    Was previously a FINDING (see git history) that the return path never
+    reversed consignment liability at all, worse than Rev 5's original
+    description ("voids EVERY outstanding liability" implied over-reversal;
+    actual behavior was zero reversal). Rev 5 P2-2 fixes it: the ORIGINAL
+    liability row is left untouched (still 'outstanding' — a preserved audit
+    record of what was actually charged), and a compensating credit row (same
+    sale_id/product_id, negative qty_consumed/amount_owed) is added alongside
+    it, so aggregates that sum amount_owed for status='outstanding' net to
+    zero without needing to know anything changed.
     """
     supplier = make_supplier(name='Consignment Farm')
     product = make_product(product_type='stock_item', price=D('10.00'), is_consignment=True,
@@ -163,12 +158,63 @@ def test_return_of_consignment_item_does_not_reverse_liability(db_session, clien
     assert len(liabilities) == 1
     assert liabilities[0].status == 'outstanding'
     assert liabilities[0].amount_owed == pytest.approx(15.0)  # 5 * 3.00
+    original_id = liabilities[0].id
 
     ret = client.post(f'/api/transactions/{sale_id}/return',
                        json={'lines': [{'product_id': product.id, 'qty': 5}], 'reason': 'full return'})
     assert ret.status_code == 200, ret.get_json()
 
     refresh(db_session, liabilities[0])
-    # Not voided, not adjusted — the supplier is still shown as owed for stock
-    # that has, in reality, been fully returned and no longer sold.
+    # The original charge is untouched — preserved as an audit record.
     assert liabilities[0].status == 'outstanding'
+    assert liabilities[0].amount_owed == pytest.approx(15.0)
+
+    all_for_sale = ConsignmentLiability.query.filter_by(
+        sale_id=sale_id, status='outstanding').all()
+    assert len(all_for_sale) == 2  # the original charge + one compensating credit
+    credit = [l for l in all_for_sale if l.id != original_id][0]
+    assert credit.qty_consumed == pytest.approx(-5.0)
+    assert credit.amount_owed == pytest.approx(-15.0)
+
+    # Net outstanding for this sale is now zero — a full return fully offsets it.
+    net = sum(Decimal(str(l.amount_owed)) for l in all_for_sale)
+    assert net == D('0.00')
+
+
+def test_partial_return_of_consignment_item_reverses_only_the_returned_portion(db_session, client):
+    """Rev 5 P2-2 proof criterion: a partial return reverses exactly the
+    returned portion, pro-rata — not the whole sale's liability."""
+    supplier = make_supplier(name='Consignment Farm 2')
+    product = make_product(product_type='stock_item', price=D('10.00'), is_consignment=True,
+                            consignment_supplier_id=supplier.id, settlement_basis='FIXED_COST',
+                            consignment_cost_per_unit=D('3.000000'))
+    make_stock_batch(product, qty_remaining_base=D(10), qty_purchased_base=D(10),
+                      cost_per_base_unit=D('4.000000'), ownership_type='CONSIGNMENT', supplier_id=supplier.id)
+    _login_admin(client)
+
+    resp = checkout(client, [{'product_id': product.id, 'qty': 5}], cash_tendered=50)
+    sale_id = resp.get_json()['transaction_id']
+    original = ConsignmentLiability.query.filter_by(sale_id=sale_id).one()
+    assert original.amount_owed == pytest.approx(15.0)  # 5 * 3.00
+
+    # Return only 2 of the 5 units.
+    ret = client.post(f'/api/transactions/{sale_id}/return',
+                       json={'lines': [{'product_id': product.id, 'qty': 2}], 'reason': 'partial return'})
+    assert ret.status_code == 200, ret.get_json()
+
+    all_for_sale = ConsignmentLiability.query.filter_by(
+        sale_id=sale_id, status='outstanding').all()
+    net = sum(Decimal(str(l.amount_owed)) for l in all_for_sale)
+    # 2/5 of the original 15.00 is credited back -> net owed is 9.00 (3 units still sold).
+    assert net == D('9.00')
+
+    # Returning the remaining 3 units in a SEPARATE call must bring net to exactly
+    # zero, not go negative — proves the ratio is against the true original qty
+    # (5), not a shrinking remainder, across repeated partial returns.
+    ret2 = client.post(f'/api/transactions/{sale_id}/return',
+                        json={'lines': [{'product_id': product.id, 'qty': 3}], 'reason': 'rest of it'})
+    assert ret2.status_code == 200, ret2.get_json()
+    all_for_sale2 = ConsignmentLiability.query.filter_by(
+        sale_id=sale_id, status='outstanding').all()
+    net2 = sum(Decimal(str(l.amount_owed)) for l in all_for_sale2)
+    assert net2 == D('0.00')

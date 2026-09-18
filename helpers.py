@@ -533,6 +533,49 @@ def reverse_consignment_liabilities(sale_id):
         lib.settled_at = now
 
 
+def reverse_consignment_liabilities_partial(sale_id, product_id, returned_qty):
+    """Rev 5 P2-2 — reverses ONLY the liability attributable to a partial return,
+    pro-rata against the original per-batch consumption, instead of voiding every
+    outstanding liability for the whole sale (that stays correct for a full
+    void/edit — see reverse_consignment_liabilities above, still used there).
+
+    Writes a compensating credit row per original liability row rather than
+    mutating the originals — same "append, never rewrite" principle as the rest
+    of this ledger. A credit row carries the SAME sale_id/product_id/batch_id as
+    the liability it offsets, but negative qty_consumed/amount_owed. Every
+    existing caller that sums amount_owed for status='outstanding' rows (supplier
+    balance, settlement runs, write-off reports — see blueprints/consignment.py)
+    nets out correctly with no changes needed there.
+
+    original_total is derived from the POSITIVE-qty_consumed outstanding rows
+    only, so repeated partial returns of the same sale+product stay correct:
+    each call's ratio is against the true original quantity, not a shrinking
+    remainder, and earlier credit rows (negative qty_consumed) are excluded
+    from the denominator by construction.
+    """
+    originals = (ConsignmentLiability.query
+                 .filter_by(sale_id=sale_id, product_id=product_id, status='outstanding')
+                 .filter(ConsignmentLiability.qty_consumed > 0)
+                 .all())
+    if not originals:
+        return
+    original_total = sum(Decimal(str(l.qty_consumed)) for l in originals)
+    if original_total <= 0:
+        return
+    ratio = Decimal(str(returned_qty)) / original_total
+    now = datetime.utcnow()
+    for l in originals:
+        credit_qty = (Decimal(str(l.qty_consumed)) * ratio).quantize(Decimal('0.0001'))
+        if credit_qty == 0:
+            continue
+        credit_amount = (Decimal(str(l.amount_owed)) * ratio).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        db.session.add(ConsignmentLiability(
+            supplier_id=l.supplier_id, product_id=l.product_id, batch_id=l.batch_id,
+            sale_id=sale_id, qty_consumed=-credit_qty, unit_cost=l.unit_cost,
+            amount_owed=-credit_amount, status='outstanding', created_at=now,
+        ))
+
+
 def get_stock_level(product_id):
     from sqlalchemy import func
     result = db.session.query(
