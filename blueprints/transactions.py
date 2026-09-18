@@ -12,7 +12,7 @@ from helpers import (
     require_login, require_role, current_user,
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
     qty_bucket, get_stock_level, collect_kitchen_items, auto_produce_on_negative,
-    get_setting,
+    get_setting, write_stock_movement,
 )
 from decimal import ROUND_HALF_UP
 from models import (
@@ -902,14 +902,21 @@ def api_transaction_return(sale_id):
                     ) / total_consumed
             if orig_batch_cost <= 0:
                 orig_batch_cost = unit_price
-            db.session.add(StockBatch(
+            _ret_batch = StockBatch(
                 product_id=pid,
                 qty_purchased_base=qty,
                 qty_remaining_base=qty,
                 cost_per_base_unit=orig_batch_cost,
                 purchased_at=now,
                 user_id=u.id if u else None,
-            ))
+            )
+            db.session.add(_ret_batch)
+            db.session.flush()
+            write_stock_movement(
+                _ret_batch, movement_type='RETURN_SALEABLE', qty_delta=qty,
+                unit_cost=orig_batch_cost, source_type='return',
+                source_id=return_uuid, when=now,
+            )
         elif p.product_type == 'recipe':
             # Made-to-order recipe: restore each ingredient's FIFO consumption proportionally.
             return_ratio = qty / orig_qty if orig_qty > 0 else Decimal('1')
@@ -922,6 +929,11 @@ def api_transaction_return(sale_id):
                     if batch:
                         batch.qty_remaining_base = (
                             Decimal(str(batch.qty_remaining_base)) + restore_qty
+                        )
+                        write_stock_movement(
+                            batch, movement_type='RETURN_SALEABLE', qty_delta=restore_qty,
+                            unit_cost=c.cost_per_base_unit, source_type='return',
+                            source_id=return_uuid, when=now,
                         )
 
         returned_lines.append({'product_id': pid, 'qty': float(qty)})

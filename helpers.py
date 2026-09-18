@@ -24,7 +24,7 @@ from models import (
     db,
     User, UserSession, Setting,
     Product, ProductImage, RecipeLine, Category,
-    StockBatch, StockConsumption, StockAdjustment,
+    StockBatch, StockConsumption, StockAdjustment, StockMovement,
     Sale, Purchase,
     ConsignmentLiability,
     ProductPurchaseOption,
@@ -268,7 +268,46 @@ def get_online_user_id():
 # FIFO inventory helpers
 # ---------------------------------------------------------------------------
 
-def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_unit_price=None, is_writeoff=False):
+# ---------------------------------------------------------------------------
+# Rev 5 P2-0 — stock movement ledger (dual-write, additive)
+# ---------------------------------------------------------------------------
+# write_stock_movement() is called ALONGSIDE the existing StockBatch/
+# StockConsumption mutations below, never instead of them — StockBatch.qty_
+# remaining_base stays the live source of truth until the P2-0a rebuild gate
+# passes and the ledger is promoted to authoritative. A failure here must
+# never be allowed to break the real write path, so callers add the movement
+# in the same flush/commit as the business mutation and let any constraint
+# violation surface normally (same transaction, same all-or-nothing commit)
+# rather than swallowing it — a silently-missing movement row would defeat
+# the whole point of building this ledger to check against.
+#
+# Coverage as of this commit: consume_fifo (sale/write-off/production input
+# consumption) and reverse_fifo (void/edit/production-undo reversal) write
+# movements. Receive, stocktake, return, and manual-produce paths are wired
+# per call site below. NOT yet wired: absorb_neg_placeholder,
+# auto_produce_on_negative's own placeholder bookkeeping, and invoices.py's
+# undo path (blocked on the P2-2b fix — that path is a known-broken FIFO
+# reversal that doesn't delete its StockConsumption rows, and dual-writing
+# against it would just encode the same bug twice).
+def write_stock_movement(batch, movement_type, qty_delta, unit_cost, source_type,
+                          source_id=None, source_line_id=None, note=None,
+                          user_id=None, when=None):
+    db.session.add(StockMovement(
+        movement_type=movement_type,
+        batch_id=batch.id if hasattr(batch, 'id') else batch,
+        qty_delta=qty_delta,
+        unit_cost=unit_cost,
+        source_type=source_type,
+        source_id=str(source_id) if source_id is not None else None,
+        source_line_id=str(source_line_id) if source_line_id is not None else None,
+        note=note,
+        user_id=user_id,
+        created_at=when or datetime.utcnow(),
+    ))
+
+
+def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_unit_price=None, is_writeoff=False,
+                  movement_source_type=None):
     """
     Consume qty_needed_base units of ingredient_id from FIFO batches.
     Recursive for compound ingredients (recipe within recipe).
@@ -276,7 +315,13 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
 
     sale_unit_price: selling price per base unit — required for PCT_OF_SALE consignment products.
     is_writeoff: when True, no ConsignmentLiability is created (write-offs are absorbed loss, not owed to supplier).
+    movement_source_type: Rev 5 P2-0 dual-write classification — 'sale' | 'writeoff' | 'production'.
+    Defaults to 'writeoff' when is_writeoff else 'sale' when not given explicitly; production callers
+    must pass 'production' since is_writeoff alone can't distinguish a sale from a production input.
     """
+    if movement_source_type is None:
+        movement_source_type = 'writeoff' if is_writeoff else 'sale'
+
     if _depth > 10:
         return Decimal('0')
 
@@ -296,7 +341,8 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
             total_cost = Decimal('0')
             for sub in sub_lines:
                 sub_qty = sub.qty_base * qty_needed / batch_sz
-                total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1, is_writeoff=is_writeoff)
+                total_cost += consume_fifo(sub.ingredient_id, sub_qty, sale_id, now, _depth + 1,
+                                            is_writeoff=is_writeoff, movement_source_type=movement_source_type)
             return total_cost
         # Batch-produced recipe: fall through to consume from its own finished-goods batch.
 
@@ -329,6 +375,11 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
             cost_per_base_unit=batch.cost_per_base_unit,
             consumed_at=now
         ))
+        write_stock_movement(
+            batch, movement_type=movement_source_type.upper(), qty_delta=-take,
+            unit_cost=batch.cost_per_base_unit, source_type=movement_source_type,
+            source_id=sale_id, when=now,
+        )
 
         # Consignment liability: generate on every FIFO sale of a consignment batch.
         # Write-offs are absorbed as your own loss — supplier is not owed for spoilage/damage.
@@ -376,7 +427,12 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
 
         qty_to_consume -= take
 
-    # Stock exhausted before qty satisfied — use last known cost so COGS isn't silently zeroed
+    # Stock exhausted before qty satisfied — use last known cost so COGS isn't silently zeroed.
+    # No stock_movement is written here (Rev 5 P2-0): this branch records a StockConsumption
+    # against last_batch WITHOUT decrementing its qty_remaining_base — that mismatch is the P2-1
+    # bug (shortfall should post to the negative placeholder instead). Writing a movement here
+    # would either misrepresent a batch change that never happened, or need a zero-delta row;
+    # neither is more honest than recording nothing until P2-1 fixes the underlying behavior.
     if qty_to_consume > 0:
         last_batch = (StockBatch.query
                       .filter_by(product_id=ingredient_id)
@@ -399,16 +455,27 @@ def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_un
     return total_cost
 
 
-def reverse_fifo(sale_id):
+def reverse_fifo(sale_id, movement_source_type='sale'):
     """Restore all batch quantities consumed by this sale_id. Delete consumption records.
     IMPORTANT: For consignment products, also call reverse_consignment_liabilities(sale_id)
-    to void the corresponding liabilities. reverse_fifo alone leaves a ghost liability."""
+    to void the corresponding liabilities. reverse_fifo alone leaves a ghost liability.
+
+    movement_source_type: Rev 5 P2-0 dual-write classification for the restoring movement.
+    Defaults to 'sale' (covers void and edit, both of which reverse a real sale_id); callers
+    reversing a produce run (undoing a StockBatch.produce_ref) pass 'production'.
+    """
     records = StockConsumption.query.filter_by(sale_id=sale_id).all()
     for r in records:
         batch = db.session.get(StockBatch, r.batch_id, with_for_update=True)
         if batch:
             batch.qty_remaining_base = (
                 Decimal(str(batch.qty_remaining_base)) + Decimal(str(r.qty_consumed_base))
+            )
+            write_stock_movement(
+                batch,
+                movement_type=('PRODUCTION_REVERSAL' if movement_source_type == 'production' else 'SALE_REVERSAL'),
+                qty_delta=Decimal(str(r.qty_consumed_base)), unit_cost=r.cost_per_base_unit,
+                source_type=movement_source_type, source_id=sale_id,
             )
         db.session.delete(r)
 
@@ -534,6 +601,15 @@ def absorb_neg_placeholder(product_id, incoming_qty_dec):
     _neg_qty  = abs(Decimal(str(_neg.qty_remaining_base)))
     _absorbed = min(_neg_qty, incoming_qty_dec)
     _neg.qty_remaining_base = Decimal(str(_neg.qty_remaining_base)) + _absorbed
+    if _absorbed > 0:
+        # Rev 5 P2-0: the receiving batch doesn't exist yet at this point in every
+        # caller (it's created after this returns), so there's no batch_id to link
+        # as source_id — recorded via `note` instead of guessing at a reference.
+        write_stock_movement(
+            _neg, movement_type='RECEIPT_ABSORB_SHORTFALL', qty_delta=_absorbed,
+            unit_cost=Decimal('0'), source_type='receipt', source_id=None,
+            note=f'absorbed by a receipt of product_id={product_id}',
+        )
     return _absorbed
 
 
@@ -561,6 +637,11 @@ def auto_produce_on_negative(product_id, shortfall, now, u):
     Consumes ingredients, creates a finished-goods StockBatch, and reconciles any
     existing negative placeholder. Runs within the caller's DB transaction (no commit).
     Returns (batches_produced: int, units_added: int).
+
+    Rev 5 P2-0: the ingredient consumption below goes through consume_fifo, which is
+    dual-written. The finished-goods StockBatch this function creates, and the negative-
+    placeholder bookkeeping around it, are NOT yet dual-written — deferred alongside
+    absorb_neg_placeholder pending a wider pass over the negative-placeholder mechanism.
     """
     from decimal import ROUND_CEILING
     p = db.session.get(Product, product_id)
@@ -580,7 +661,7 @@ def auto_produce_on_negative(product_id, shortfall, now, u):
     for rl in RecipeLine.query.filter_by(product_id=product_id).all():
         _ing_needed    = Decimal(str(rl.qty_base)) * batches_needed
         _ing_available = Decimal(str(get_stock_level(rl.ingredient_id)))
-        total_cost += consume_fifo(rl.ingredient_id, _ing_needed, produce_uuid, now)
+        total_cost += consume_fifo(rl.ingredient_id, _ing_needed, produce_uuid, now, movement_source_type='production')
         # Mirror manual produce: create a negative placeholder for any ingredient shortfall
         # so stock levels visibly go negative instead of silently staying at 0.
         _ing_obj = db.session.get(Product, rl.ingredient_id)

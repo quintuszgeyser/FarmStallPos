@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities, get_stock_level
+from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities, get_stock_level, write_stock_movement
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
                     SupplierInvoiceTemplate, SupplierProductMapping,
@@ -1695,7 +1695,7 @@ def api_suppliers_purchase_run(sid):
         _pr_qty_dec    = Decimal(str(pl['qty_base']))
         _pr_absorbed   = absorb_neg_placeholder(pl['pid'], _pr_qty_dec)
         _pr_remaining  = float(_pr_qty_dec - _pr_absorbed)
-        db.session.add(StockBatch(
+        _pr_batch = StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
             qty_remaining_base=_pr_remaining,
@@ -1713,7 +1713,14 @@ def api_suppliers_purchase_run(sid):
             user_id=u.id if u else None,
             purchased_at=purchase_date,
             invoice_id=run_id,
-        ))
+        )
+        db.session.add(_pr_batch)
+        db.session.flush()
+        write_stock_movement(
+            _pr_batch, movement_type='RECEIPT', qty_delta=Decimal(str(_pr_remaining)),
+            unit_cost=cost_per_base, source_type='receipt', source_id=str(_pr_batch.id),
+            when=purchase_date,
+        )
         if _ownership == 'CONSIGNMENT' and _pr_absorbed > 0:
             backfill_consignment_liabilities(pl['pid'], _pr_absorbed, sid, _cuc)
         batches_created += 1
@@ -2248,7 +2255,7 @@ def api_supplier_invoice_update(sid, inv_id):
         _upd_qty_dec    = Decimal(str(pl['qty_base']))
         _upd_absorbed   = absorb_neg_placeholder(pl['pid'], _upd_qty_dec)
         _upd_remaining  = float(_upd_qty_dec - _upd_absorbed)
-        db.session.add(StockBatch(
+        _upd_batch = StockBatch(
             product_id=pl['pid'],
             qty_purchased_base=pl['qty_base'],
             qty_remaining_base=_upd_remaining,
@@ -2266,7 +2273,14 @@ def api_supplier_invoice_update(sid, inv_id):
             user_id=u.id if u else None,
             purchased_at=purchase_date,
             invoice_id=inv_id,
-        ))
+        )
+        db.session.add(_upd_batch)
+        db.session.flush()
+        write_stock_movement(
+            _upd_batch, movement_type='RECEIPT', qty_delta=Decimal(str(_upd_remaining)),
+            unit_cost=cost_per_base, source_type='receipt', source_id=str(_upd_batch.id),
+            when=purchase_date,
+        )
         if _upd_ownership == 'CONSIGNMENT' and _upd_absorbed > 0:
             backfill_consignment_liabilities(pl['pid'], _upd_absorbed, sid, _upd_cuc)
         batches_created += 1

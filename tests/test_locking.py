@@ -25,7 +25,7 @@ from decimal import Decimal
 import pytest
 
 from helpers import consume_fifo
-from models import Product, StockBatch, StockConsumption, db
+from models import Product, StockBatch, StockConsumption, StockMovement, db
 from tests.helpers import D
 
 
@@ -128,6 +128,10 @@ def test_with_for_update_serializes_concurrent_fifo_consumption(app):
             assert all(D(c.qty_consumed_base) == D(1) for c in consumptions)
     finally:
         with app.app_context():
+            # Rev 5 P2-0: consume_fifo now also writes stock_movements rows FK'd to
+            # batch_id — must be purged before the batch itself, or the delete below
+            # fails on the FK and leaves this test's rows orphaned for the next run.
+            StockMovement.query.filter_by(batch_id=batch_id).delete()
             StockConsumption.query.filter_by(batch_id=batch_id).delete()
             db.session.query(StockBatch).filter_by(id=batch_id).delete()
             db.session.query(Product).filter_by(id=product_id).delete()

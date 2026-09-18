@@ -13,7 +13,7 @@ from helpers import (
     get_setting, get_stock_level, get_fifo_cost_per_unit,
     sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code,
     _serialize_product, validate_product_code, current_user,
-    consume_fifo, get_or_create_category, _run_markup_drift_check,
+    consume_fifo, get_or_create_category, _run_markup_drift_check, write_stock_movement,
 )
 from models import (
     db,
@@ -1088,7 +1088,7 @@ def _auto_produce_tree(product_id, batches_needed, now, u, parent_name, auto_pro
         _sub_ing       = db.session.get(Product, rl.ingredient_id)
         _sub_needed    = Decimal(str(rl.qty_base)) * batches_needed
         _sub_available = Decimal(str(get_stock_level(rl.ingredient_id)))
-        total_cost += consume_fifo(rl.ingredient_id, _sub_needed, produce_uuid, now)
+        total_cost += consume_fifo(rl.ingredient_id, _sub_needed, produce_uuid, now, movement_source_type='production')
         if _sub_ing and _sub_available < _sub_needed:
             _sub_policy = getattr(_sub_ing, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
             if _sub_policy in ('ALLOW_NEGATIVE', 'WARN'):
@@ -1114,7 +1114,7 @@ def _auto_produce_tree(product_id, batches_needed, now, u, parent_name, auto_pro
     batch_sz    = Decimal(str(ing.batch_size or 1))
     units_added = int((batch_sz * batches_needed).to_integral_value())
     cost_per    = total_cost / units_added if units_added > 0 else Decimal('0')
-    db.session.add(StockBatch(
+    _out_batch = StockBatch(
         product_id=product_id,
         qty_purchased_base=units_added,
         qty_remaining_base=units_added,
@@ -1124,7 +1124,13 @@ def _auto_produce_tree(product_id, batches_needed, now, u, parent_name, auto_pro
         user_id=u.id if u else None,
         produce_ref=produce_uuid,
         produce_cost=total_cost,
-    ))
+    )
+    db.session.add(_out_batch)
+    db.session.flush()
+    write_stock_movement(
+        _out_batch, movement_type='PRODUCTION_OUTPUT', qty_delta=Decimal(str(units_added)),
+        unit_cost=cost_per, source_type='production', source_id=produce_uuid, when=now,
+    )
     db.session.add(StockAdjustment(
         product_id=product_id,
         adjustment_type='produce',
@@ -1216,7 +1222,7 @@ def api_product_produce(pid):
         _ing_obj       = db.session.get(Product, rl.ingredient_id)
         _ing_needed    = Decimal(str(rl.qty_base)) * batches
         _ing_available = Decimal(str(get_stock_level(rl.ingredient_id)))
-        total_ingredient_cost += consume_fifo(rl.ingredient_id, _ing_needed, produce_uuid, now)
+        total_ingredient_cost += consume_fifo(rl.ingredient_id, _ing_needed, produce_uuid, now, movement_source_type='production')
         # If ingredient went short and policy allows negative stock, record a placeholder
         if _ing_obj and _ing_available < _ing_needed:
             _ing_policy = getattr(_ing_obj, 'inventory_policy', None) or 'ALLOW_NEGATIVE'
@@ -1270,8 +1276,13 @@ def api_product_produce(pid):
         _cancel  = min(_neg_qty, Decimal(str(units_added)))
         _neg_ph.qty_remaining_base = Decimal(str(_neg_ph.qty_remaining_base)) + _cancel
         _reconciled_units = int(_cancel.to_integral_value())
+        if _cancel > 0:
+            write_stock_movement(
+                _neg_ph, movement_type='PRODUCTION_ABSORB_SHORTFALL', qty_delta=_cancel,
+                unit_cost=Decimal('0'), source_type='production', source_id=produce_uuid, when=now,
+            )
 
-    db.session.add(StockBatch(
+    _prod_batch = StockBatch(
         product_id=pid,
         qty_purchased_base=units_added,
         qty_remaining_base=units_added - _reconciled_units,  # net after cancelling negative placeholder
@@ -1282,7 +1293,13 @@ def api_product_produce(pid):
         user_id=u.id if u else None,
         produce_ref=produce_uuid,
         produce_cost=total_ingredient_cost,
-    ))
+    )
+    db.session.add(_prod_batch)
+    db.session.flush()
+    write_stock_movement(
+        _prod_batch, movement_type='PRODUCTION_OUTPUT', qty_delta=Decimal(str(units_added - _reconciled_units)),
+        unit_cost=cost_per_unit, source_type='production', source_id=produce_uuid, when=now,
+    )
     db.session.add(StockAdjustment(
         product_id=pid,
         adjustment_type='produce',

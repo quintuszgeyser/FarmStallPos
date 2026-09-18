@@ -11,12 +11,12 @@ from sqlalchemy import func
 from helpers import (
     require_login, require_role, current_user,
     get_stock_level, consume_fifo, reverse_fifo, _parse_dt, _auto_price_products,
-    absorb_neg_placeholder, backfill_consignment_liabilities,
+    absorb_neg_placeholder, backfill_consignment_liabilities, write_stock_movement,
 )
 from models import (
     db,
-    Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, Purchase, Supplier, User,
-    SupplierInvoice, Sale,
+    Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, StockMovement, Purchase,
+    Supplier, User, SupplierInvoice, Sale,
 )
 
 bp = Blueprint('stock', __name__)
@@ -288,6 +288,11 @@ def api_stock_receive():
         # use New Delivery (purchase run) when receiving against a supplier invoice
     )
     db.session.add(batch)
+    db.session.flush()
+    write_stock_movement(
+        batch, movement_type='RECEIPT', qty_delta=Decimal(str(_qty_remaining)),
+        unit_cost=cost_per_base, source_type='receipt', source_id=str(batch.id), when=now,
+    )
     if _is_consign and _neg_absorbed > 0:
         backfill_consignment_liabilities(pid, _neg_absorbed, supplier_id, _cuc)
     db.session.commit()
@@ -334,10 +339,17 @@ def api_stock_adjust():
     cost_written_off = Decimal('0')
     if diff < 0:
         loss_qty = abs(diff)
-        cost_written_off = consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now, is_writeoff=True)
+        cost_written_off = consume_fifo(pid, loss_qty, f'adj-{uuid.uuid4()}', now, is_writeoff=True,
+                                         movement_source_type='stocktake')
     elif diff > 0:
         # Always create a new zero-cost batch so free units don't inherit the existing batch's cost.
-        db.session.add(StockBatch(product_id=pid, qty_purchased_base=diff, qty_remaining_base=diff, cost_per_base_unit=Decimal('0'), purchased_at=now, user_id=u.id if u else None))
+        _new_batch = StockBatch(product_id=pid, qty_purchased_base=diff, qty_remaining_base=diff, cost_per_base_unit=Decimal('0'), purchased_at=now, user_id=u.id if u else None)
+        db.session.add(_new_batch)
+        db.session.flush()
+        write_stock_movement(
+            _new_batch, movement_type='STOCKTAKE_INCREASE', qty_delta=diff,
+            unit_cost=Decimal('0'), source_type='stocktake', source_id=str(_new_batch.id), when=now,
+        )
     adj_type = 'writeoff' if diff < 0 else 'stocktake'
     db.session.add(StockAdjustment(product_id=pid, adjustment_type=adj_type, qty_change_base=diff, system_qty_before=system_base, cost_written_off=cost_written_off if diff < 0 else None, base_unit=p.base_unit, reason=reason, adjusted_at=now, user_id=u.id if u else None))
     db.session.commit()
@@ -357,7 +369,12 @@ def api_stock_batch_delete(batch_id):
     if Decimal(str(batch.qty_remaining_base)) != Decimal(str(batch.qty_purchased_base)):
         return jsonify({'error': 'Cannot delete — some stock from this batch has already been consumed'}), 400
     if batch.produce_ref:
-        reverse_fifo(batch.produce_ref)
+        reverse_fifo(batch.produce_ref, movement_source_type='production')
+    # Rev 5 P2-0: a never-consumed batch can still carry its own RECEIPT/
+    # STOCKTAKE_INCREASE movement — purge before delete or the FK on
+    # stock_movements.batch_id blocks it (see tests/test_locking.py's cleanup
+    # fix for the same trap).
+    StockMovement.query.filter_by(batch_id=batch_id).delete()
     db.session.delete(batch)
     db.session.commit()
     return jsonify({'ok': True, 'ingredients_restored': bool(batch.produce_ref)})
@@ -675,7 +692,13 @@ def api_stock_adjustment_edit(adj_id):
         if not batch:
             # All batches exhausted — fall back to most-recent to avoid losing the qty
             batch = StockBatch.query.filter_by(product_id=p.id).order_by(StockBatch.purchased_at.desc()).first()
-        if batch: batch.qty_remaining_base = Decimal(str(batch.qty_remaining_base)) + restore_qty
+        if batch:
+            batch.qty_remaining_base = Decimal(str(batch.qty_remaining_base)) + restore_qty
+            write_stock_movement(
+                batch, movement_type='WRITEOFF_REVERSAL', qty_delta=restore_qty,
+                unit_cost=batch.cost_per_base_unit, source_type='writeoff',
+                source_id=f'adj-edit-{adj_id}', when=now,
+            )
         if old_qty_base > 0: adj.cost_written_off = Decimal(str(adj.cost_written_off or 0)) * (new_qty_base / old_qty_base)
     adj.qty_change_base = -new_qty_base
     adj.reason = new_reason
@@ -707,16 +730,28 @@ def api_stock_adjustment_delete(adj_id):
             batch = StockBatch.query.filter_by(product_id=p.id).order_by(StockBatch.purchased_at.desc()).first()
         if batch:
             batch.qty_remaining_base = Decimal(str(batch.qty_remaining_base)) + restore_qty
+            write_stock_movement(
+                batch, movement_type='WRITEOFF_REVERSAL', qty_delta=restore_qty,
+                unit_cost=batch.cost_per_base_unit, source_type='writeoff',
+                source_id=f'adj-del-{adj_id}', when=now,
+            )
         else:
-            db.session.add(StockBatch(product_id=p.id, qty_purchased_base=restore_qty,
+            _fallback_batch = StockBatch(product_id=p.id, qty_purchased_base=restore_qty,
                                       qty_remaining_base=restore_qty, cost_per_base_unit=Decimal('0'),
-                                      purchased_at=now))
+                                      purchased_at=now)
+            db.session.add(_fallback_batch)
+            db.session.flush()
+            write_stock_movement(
+                _fallback_batch, movement_type='WRITEOFF_REVERSAL', qty_delta=restore_qty,
+                unit_cost=Decimal('0'), source_type='writeoff',
+                source_id=f'adj-del-{adj_id}', when=now,
+            )
     elif diff > 0:
         # Stock was added — consume it back via FIFO
         current_stock = Decimal(str(get_stock_level(p.id)))
         if diff > current_stock:
             return jsonify({'error': f'Cannot reverse — only {float(current_stock)}{p.base_unit} in stock but adjustment added {float(diff)}{p.base_unit}. Some has already been sold.'}), 400
-        consume_fifo(p.id, diff, f'adj-del-{uuid.uuid4()}', now, is_writeoff=True)
+        consume_fifo(p.id, diff, f'adj-del-{uuid.uuid4()}', now, is_writeoff=True, movement_source_type='stocktake')
     db.session.delete(adj)
     db.session.commit()
     return jsonify({'ok': True})
@@ -937,7 +972,7 @@ def api_opening_stock_import():
 
     run_id = str(uuid.uuid4())
     for b in batches_to_add:
-        db.session.add(StockBatch(
+        _imp_batch = StockBatch(
             product_id=b['product_id'],
             qty_purchased_base=Decimal(str(b['qty_base'])),
             qty_remaining_base=Decimal(str(b['qty_base'])),
@@ -945,7 +980,14 @@ def api_opening_stock_import():
             purchased_at=b['received_at'],
             user_id=b['user_id'],
             import_run_id=run_id,
-        ))
+        )
+        db.session.add(_imp_batch)
+        db.session.flush()
+        write_stock_movement(
+            _imp_batch, movement_type='RECEIPT', qty_delta=Decimal(str(b['qty_base'])),
+            unit_cost=Decimal(str(b['cost_per_base_unit'])), source_type='receipt',
+            source_id=run_id, when=b['received_at'],
+        )
     db.session.commit()
 
     return jsonify({
@@ -972,6 +1014,9 @@ def api_opening_stock_undo(run_id):
         if consumed or Decimal(str(b.qty_remaining_base)) != Decimal(str(b.qty_purchased_base)):
             skipped += 1
         else:
+            # Rev 5 P2-0: purge this batch's own RECEIPT movement first — see
+            # api_stock_batch_delete's comment for why (same FK, same trap).
+            StockMovement.query.filter_by(batch_id=b.id).delete()
             db.session.delete(b)
             deleted += 1
     db.session.commit()
