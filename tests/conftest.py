@@ -41,11 +41,24 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _pg_ready():
-    result = subprocess.run(
-        ['docker', 'exec', 'farmpos-postgres-test', 'pg_isready', '-U', TEST_DB_USER],
-        capture_output=True,
-    )
-    return result.returncode == 0
+    # Must not assume the container is named farmpos-postgres-test / reachable
+    # via `docker exec` from this process — true for local docker-compose, but
+    # not for CI, where the CI job's `services:` block runs Postgres under a
+    # GitHub-Actions-managed container with no fixed, discoverable name. A
+    # direct connection attempt to the published port works identically in
+    # both environments.
+    # psycopg2 isn't a project dependency (app.py rewrites postgresql:// to the
+    # psycopg3 dialect at connect time) - match that here or create_engine
+    # falls back to the psycopg2 driver and raises ModuleNotFoundError.
+    url = TEST_DATABASE_URL.replace('postgresql://', 'postgresql+psycopg://', 1)
+    try:
+        engine = sa.create_engine(url)
+        with engine.connect() as conn:
+            conn.execute(sa.text('SELECT 1'))
+        engine.dispose()
+        return True
+    except Exception:
+        return False
 
 
 def _port_open(host, port, timeout=0.5):
