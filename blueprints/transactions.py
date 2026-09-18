@@ -12,12 +12,13 @@ from helpers import (
     require_login, require_role, current_user,
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
     qty_bucket, get_stock_level, collect_kitchen_items, auto_produce_on_negative,
+    get_setting,
 )
 from decimal import ROUND_HALF_UP
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, KitchenOrder,
-    Sale, Purchase, User, AuditLog, Category, PackagingUsage,
+    Sale, SaleHeader, Purchase, User, AuditLog, Category, PackagingUsage,
     ConsignmentLiability,
 )
 
@@ -344,13 +345,21 @@ def api_transactions_post():
             # Refresh pre_stock so the negative-placeholder logic below sees the new level
             _pre_stock[_pid] = Decimal(str(get_stock_level(_pid)))
 
+    # VAT snapshot (Rev 5 P1-1) — read ONCE per transaction, not per line, then stamped
+    # onto every line as it's created. Captures what was actually in effect at checkout
+    # so a later settings change can never retroactively alter a past sale's VAT.
+    _vat_registered = get_setting('vat_registered', 'false') == 'true'
+    _vat_rate = Decimal(str(get_setting('vat_rate', 15) or 15))
+    _vat_bucket_totals = {'standard': Decimal('0.00'), 'zero_rated': Decimal('0.00'), 'exempt': Decimal('0.00')}
+    _header_total_vat = Decimal('0.00')
+
     for item in cart:
         pid        = int(item['product_id'])
         qty        = Decimal(str(item.get('qty', 1)))
         subs_raw   = item.get('subs', {})
         # Use the server-side price as the source of truth.
         _prod_price = Product.query.with_entities(
-            Product.price, Product.price_per_unit, Product.sold_by_weight
+            Product.price, Product.price_per_unit, Product.sold_by_weight, Product.vat_type
         ).filter_by(id=pid).first()
         if _prod_price is None:
             return jsonify({'error': f'Product {pid} not found'}), 404
@@ -384,7 +393,26 @@ def api_transactions_post():
         # payment_method on every line (they share sale_id); cash_tendered only on the
         # first line so it's recorded once per transaction, not double-counted per line.
         _first_line = (item is cart[0])
-        sale_row = Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None), card_amount=(card_amount if _first_line else None))
+
+        # Per-line VAT (Rev 5 P1-1) — rounded to the cent HERE, independently per line,
+        # never as a share of a basket-level total (that's what INV-7 checks). amount_excl
+        # + vat_amount == amount_incl always holds by construction, not by two separate
+        # formulas that could disagree by a cent.
+        _vat_classification = (_prod_price.vat_type or 'standard')
+        _line_incl = (qty * unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        if _vat_registered and _vat_classification == 'standard':
+            _line_excl = (_line_incl / (Decimal('1') + _vat_rate / Decimal('100'))).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            _line_vat = _line_incl - _line_excl
+            _line_rate = _vat_rate
+        else:
+            _line_excl = _line_incl
+            _line_vat = Decimal('0.00')
+            _line_rate = Decimal('0')
+        _bucket = _vat_classification if _vat_classification in _vat_bucket_totals else 'standard'
+        _vat_bucket_totals[_bucket] += _line_excl
+        _header_total_vat += _line_vat
+
+        sale_row = Sale(sale_id=sale_uuid, date_time=now, product_id=pid, qty=qty, unit_price=unit_price, user_id=u.id if u else None, customer_id=customer_id, sub_log=sub_log_val, discount_json=discount_val, discount_by=discount_by_id, payment_method=payment_method, cash_tendered=(cash_tendered if _first_line else None), card_amount=(card_amount if _first_line else None), vat_classification=_vat_classification, vat_rate=_line_rate, amount_excl=_line_excl, vat_amount=_line_vat, amount_incl=_line_incl)
         db.session.add(sale_row)
         p = db.session.get(Product, pid, with_for_update=True)
         if not p: continue
@@ -459,6 +487,25 @@ def api_transactions_post():
                         sale_price_at_time=_sale_snap,
                         settlement_percent_at_time=_pct_snap,
                     ))
+
+    # One sale_headers row per transaction (Rev 5 P1-1) — sums of the already-rounded
+    # per-line amounts above, never a separate recomputation from a basket total.
+    _header_total_excl = sum(_vat_bucket_totals.values(), Decimal('0.00'))
+    db.session.add(SaleHeader(
+        sale_id=sale_uuid,
+        standard_rated_subtotal=_vat_bucket_totals['standard'],
+        zero_rated_subtotal=_vat_bucket_totals['zero_rated'],
+        exempt_subtotal=_vat_bucket_totals['exempt'],
+        total_excl_vat=_header_total_excl,
+        total_vat=_header_total_vat,
+        total_incl_vat=_header_total_excl + _header_total_vat,
+        vat_rate_snapshot=_vat_rate,
+        vat_registered_snapshot=_vat_registered,
+        vat_method='per_line',
+        cash_tendered=cash_tendered,
+        card_amount=card_amount,
+        payment_method=payment_method,
+    ))
 
     max_sort = db.session.query(func.max(KitchenOrder.sort_order)).filter_by(status='pending').scalar() or 0
 
