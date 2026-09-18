@@ -14,9 +14,14 @@ Pre-P2-0 (movement ledger) scope, per Rev 5 P0-2's note:
     CURRENT schema (stock_batches / stock_consumption / stock_adjustments /
     consignment_liabilities), because they don't require the unified movement
     ledger to compute.
-    INV-1, INV-3, INV-11 require the movement ledger (P2-0) and are reported
-    as NOT_YET_COMPUTABLE — present in the registry so it is already complete,
-    not silently omitted.
+    INV-1, INV-3 still require full movement-ledger cutover (source_type/
+    source_id resolution and full quantity-closure accounting need dual-write
+    coverage complete, not just started) and remain NOT_YET_COMPUTABLE.
+    INV-11 (projection rebuild) is now implemented — see
+    check_inv11_projection_rebuild. It is the P2-0a cutover gate: it runs
+    throughout the dual-write ramp-up (expect it to FAIL, entirely accounted
+    for by skipped_count, until coverage is complete — see that function's
+    docstring) and keeps running after cutover as a standing canary.
     INV-7 (VAT closure) is now implemented (Rev 5 P1-1 Wave B), against the
     sale_headers table — see check_inv7_vat_closure for scope (per_line
     headers only; legacy_flat headers are reported via skipped_count, not
@@ -77,15 +82,16 @@ from decimal import Decimal, ROUND_HALF_UP
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func
 from sqlalchemy.orm import sessionmaker
 
 from models import (
     Product, StockBatch, StockConsumption, StockAdjustment,
-    ConsignmentLiability, Sale, SaleHeader,
+    ConsignmentLiability, Sale, SaleHeader, StockMovement,
 )
 
 Q2 = Decimal('0.01')
+Q4 = Decimal('0.0001')
 
 
 def _d(x):
@@ -94,6 +100,10 @@ def _d(x):
 
 def _q2(x):
     return _d(x).quantize(Q2, rounding=ROUND_HALF_UP) if x is not None else None
+
+
+def _q4(x):
+    return _d(x).quantize(Q4, rounding=ROUND_HALF_UP) if x is not None else None
 
 
 def _make_session():
@@ -396,6 +406,47 @@ def check_inv7_vat_closure(session):
     return r
 
 
+def check_inv11_projection_rebuild(session):
+    """Rev 5 P2-0a — the cutover gate. Independent SQL aggregate: SUM(qty_delta) per
+    batch from stock_movements, compared against the live StockBatch.qty_remaining_base.
+    Deliberately does NOT reuse consume_fifo/reverse_fifo/write_stock_movement or any
+    other part of the write path — a rebuild that reused the writer would agree with
+    itself while both are wrong, which is the failure this check exists to catch.
+
+    This does not mean the ledger is authoritative yet, and a FAIL here during the
+    dual-write ramp-up is expected, not alarming, PROVIDED it is entirely accounted for
+    by skipped_count (batches with zero movements — no write path has touched them
+    since dual-write started: pre-existing batches, or paths not yet wired, see
+    write_stock_movement's docstring in helpers.py for the coverage map). A violation
+    is a batch that DOES have movements whose sum disagrees with the live quantity —
+    that is a real bug in the dual-write, the exact thing this gate is for.
+    """
+    r = Result('INV-11', 'Projection rebuild', 'critical', ['cutover'], 'zero, excluding not-yet-covered batches')
+    ledger_sums = dict(
+        session.query(StockMovement.batch_id, func.sum(StockMovement.qty_delta))
+        .group_by(StockMovement.batch_id)
+        .all()
+    )
+    batches = session.query(StockBatch).all()
+    for b in batches:
+        ledger_sum = ledger_sums.get(b.id)
+        if ledger_sum is None:
+            r.skipped_count += 1
+            continue
+        r.checked_count += 1
+        live_qty = _d(b.qty_remaining_base)
+        if _q4(ledger_sum) != _q4(live_qty):
+            r.violations.append({
+                'batch_id': b.id, 'product_id': b.product_id,
+                'ledger_sum': str(_q4(ledger_sum)), 'live_qty_remaining_base': str(_q4(live_qty)),
+            })
+    r.note = (f'{r.skipped_count} of {len(batches)} batches have zero movements (not yet '
+              f'covered by dual-write — see docstring). {r.checked_count} batches checked '
+              f'against the ledger sum.')
+    r.status = 'FAIL' if r.violations else 'PASS'
+    return r
+
+
 def not_yet_computable(inv_id, name, reason):
     r = Result(inv_id, name, 'n/a', ['cutover'], 'n/a')
     r.status = 'NOT_YET_COMPUTABLE'
@@ -423,7 +474,7 @@ def run_all(session):
         check_inv9_allocation_closure(session),
         not_applicable_here('INV-10', 'Transaction immutability',
                              'Enforced via DB trigger + CI per Rev 5 Section 6, not a reconcile.py check.'),
-        not_yet_computable('INV-11', 'Projection rebuild', 'Requires the P2-0 movement ledger.'),
+        check_inv11_projection_rebuild(session),
     ]
     return results
 
