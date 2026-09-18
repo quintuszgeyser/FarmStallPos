@@ -612,7 +612,7 @@ _VIEW_HTML = """<!doctype html>
   // connected at any moment, and groups rotate on a timer so every
   // camera gets airtime instead of all of them fighting for bandwidth
   // and none of them staying watchable.
-  var GROUP_SIZE = 3;
+  var GROUP_SIZE = 1;
   var ROTATE_MS = 20000;
 
   var grid = document.getElementById('grid');
