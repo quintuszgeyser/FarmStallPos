@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 logger = logging.getLogger('helpers')
 
-from flask import session, abort
+from flask import session, abort, request, jsonify, make_response
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash
@@ -102,6 +102,28 @@ def current_user():
     return db.session.get(User, session.get('user_id'))
 
 
+# Rev 5 P1-3 — routes a user with must_change_password=True may still reach.
+# Everything else is blocked until they change it. Both require_login() and
+# require_role() enforce this (they are independent implementations, not one
+# calling the other, so the check has to live in both call sites to close the
+# gap for admin-only routes that use require_role() directly).
+_PASSWORD_CHANGE_EXEMPT_PATHS = {'/api/me', '/api/logout', '/api/users/change_password'}
+
+
+def _enforce_password_change(user):
+    """Aborts with a distinct 403 body (code=PASSWORD_CHANGE_REQUIRED) — not a
+    generic 401 — so a caller can tell "must change password" apart from
+    "not logged in" if it ever wants to react to it."""
+    if not user or not user.must_change_password:
+        return
+    if request.path in _PASSWORD_CHANGE_EXEMPT_PATHS:
+        return
+    abort(make_response(jsonify({
+        'error': 'Password change required before continuing.',
+        'code': 'PASSWORD_CHANGE_REQUIRED',
+    }), 403))
+
+
 def require_login():
     if 'user_id' not in session:
         return False
@@ -127,6 +149,7 @@ def require_login():
                 db.session.commit()
                 session.clear()
                 return False
+    _enforce_password_change(user)
     return True
 
 
@@ -135,7 +158,53 @@ def require_role(*roles):
     if not u or not u.active:
         session.clear()
         abort(401)   # unauthenticated — JS api() handles 401 with re-login reload
+    _enforce_password_change(u)
     return bool(u.has_role(*roles))
+
+
+# ---------------------------------------------------------------------------
+# Password policy (Rev 5 P1-3)
+# ---------------------------------------------------------------------------
+
+PASSWORD_MIN_LENGTH = 12
+
+# Common/breached passwords, deliberately embedded (no network/file dependency —
+# must work fully offline on an appliance box with no internet access). Not
+# exhaustive; a floor, not a complete deny-list.
+_COMMON_PASSWORDS = {
+    '123456', '123456789', '12345678', '1234567890', 'qwerty', 'password',
+    'password1', 'password123', 'passw0rd', '111111', '000000', '123123',
+    'abc123', 'admin', 'admin123', 'letmein', 'welcome', 'welcome1',
+    'monkey', 'dragon', 'master', 'iloveyou', 'sunshine', 'princess',
+    'football', 'baseball', 'shadow', 'superman', 'trustno1', 'starwars',
+    'qwertyuiop', 'qwerty123', '1q2w3e4r', '1qaz2wsx', 'zaq12wsx',
+    'letmein123', 'changeme', 'changeit', 'temppass', 'temp1234',
+    'password!', 'Password1', 'Password123', 'P@ssw0rd', 'P@ssword1',
+    'admin1234', 'administrator', 'root', 'toor', 'guest', 'guest123',
+    'default', 'default123', 'secret', 'secret123', 'test1234', 'testtest',
+    'aaaaaaaa', 'aaaaaaaaaa', '11111111', '22222222', '99999999',
+    'asdfasdf', 'asdfghjk', 'zxcvbnm1', 'football1', 'baseball1',
+    'nicole1234', 'chelsea12', 'summer2024', 'summer2025', 'winter2024',
+    'winter2025', 'january2025', 'freedom123', 'whatever1', 'trustno1234',
+    'access123', 'login1234', 'passw0rd1', 'p@ssw0rd1', 'iloveyou1',
+    'newpassword', 'changepassword', 'oldpassword', 'business1',
+    'companypass', 'store12345', 'shop123456', 'cashier123', 'teller1234',
+    'employee12', 'pointofsale', 'register12', 'farmstall1', 'farmpos123',
+    'welcometothejungle', 'letmeinplease', 'opensesame', 'thisisapassword',
+    '12341234', '1234512345', 'qazwsxedc', 'mynewpassword', 'reallylongpassword',
+}
+
+
+def validate_password(pw):
+    """Rev 5 P1-3 shared password policy — returns None if `pw` is acceptable,
+    or a short human-readable reason string naming exactly which rule failed
+    (used by every password-setting call site so the error the caller sees is
+    consistent: api_users_post, api_users_update, api_users_change_password)."""
+    if pw is None or len(pw) < PASSWORD_MIN_LENGTH:
+        return f'Password must be at least {PASSWORD_MIN_LENGTH} characters.'
+    if pw.lower() in _COMMON_PASSWORDS:
+        return 'That password is too common — choose something less guessable.'
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -160,7 +229,12 @@ def seed_first_admin():
                 "register-store.sh must generate a unique admin password per store."
             )
         hashed = generate_password_hash(admin_pass)
-        db.session.add(User(username=admin_user, password_hash=hashed, role='admin', active=True))
+        # Rev 5 P1-3 — force a change on first login. Defense-in-depth for every
+        # seeded account, not just the literal admin123 case: even a provisioned
+        # box's unique generated ADMIN_PASS was never chosen by the person who
+        # will actually use it.
+        db.session.add(User(username=admin_user, password_hash=hashed, role='admin',
+                             active=True, must_change_password=True))
         try:
             db.session.commit()
         except IntegrityError:
