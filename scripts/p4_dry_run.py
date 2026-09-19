@@ -118,12 +118,49 @@ def _weighted_avg_cost(session, product_id, before_dt, exclude_batch_id):
     return (weighted / total_qty).quantize(Q6, rounding=ROUND_HALF_UP), fallback_used
 
 
+def _estimate_cost_from_price_margin(product):
+    """Second-tier fallback for a zero-cost batch with no comparable batch to average
+    against: back the cost out of the product's own selling price and margin_pct, using
+    the exact formula the app itself uses in reverse (blueprints/products.py's own
+    accept-current-price flow: margin_pct = (price/wac - 1) * 100), so:
+        wac = price / (1 + margin_pct/100)
+    This is an ESTIMATE, not a fact recovered from any invoice or receipt — there is no
+    such record for these batches. It is clearly weaker evidence than a weighted average
+    of the product's own other batches, and is only used when that isn't available.
+    Returns None if the product has no price or no margin_pct (a weight-based item uses
+    price_per_unit in place of price, since price itself is None for scale-priced items).
+    """
+    price = _d(product.price) if product.price is not None else _d(product.price_per_unit)
+    margin_pct = _d(product.margin_pct)
+    if price is None or margin_pct is None or price <= 0:
+        return None
+    divisor = Decimal('1') + margin_pct / Decimal('100')
+    if divisor <= 0:
+        return None
+    return (price / divisor).quantize(Q6, rounding=ROUND_HALF_UP)
+
+
+def _vat_chain_is_entirely_zero(batch):
+    """True only when base_cost_total, base_cost_incl_vat, and final_cost_incl_vat are
+    every one of them None or exactly 0 — i.e. the batch went through the VAT-aware
+    receive path but nothing was ever entered, as opposed to a batch where SOME of the
+    chain holds a real number and something else disagrees with it (the invoice-58
+    shape apply_inv9_correction already handles). Only in this all-zero case is it safe
+    to fill in an estimate across the whole chain at once — there's no existing number
+    on the row anywhere that a joint update would silently overwrite or lose.
+    """
+    return all(_d(x) in (None, Decimal('0')) for x in
+               (batch.base_cost_total, batch.base_cost_incl_vat, batch.final_cost_incl_vat))
+
+
 def propose_inv4(session, run_id):
     result = check_inv4_no_free_stock(session)
     proposals = []
     for v in result.violations:
         batch = session.get(StockBatch, v['batch_id'])
         avg_cost, fallback_used = _weighted_avg_cost(session, batch.product_id, batch.purchased_at, batch.id)
+        product = session.get(Product, batch.product_id)
+        estimated = _estimate_cost_from_price_margin(product) if product else None
         proposal = {
             'batch_id': batch.id,
             'product_id': batch.product_id,
@@ -131,18 +168,14 @@ def propose_inv4(session, run_id):
             'purchased_at': batch.purchased_at.isoformat() if batch.purchased_at else None,
             'still_live_stock': _d(batch.qty_remaining_base) > 0,
         }
-        if batch.base_cost_incl_vat is not None:
+        vat_chain_populated = batch.base_cost_incl_vat is not None and not _vat_chain_is_entirely_zero(batch)
+        if vat_chain_populated:
             proposal['status'] = 'NEEDS_MANUAL_REVIEW'
-            proposal['reason'] = (f'base_cost_incl_vat is populated ({batch.base_cost_incl_vat}, not NULL) — '
-                                   f'this batch is also in INV-9\'s checked set, so a plain cost_per_base_unit '
-                                   f'fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a '
-                                   f'combined correction, reviewed by a human — see apply_inv4\'s matching guard.')
-        elif avg_cost is None:
-            proposal['status'] = 'NEEDS_MANUAL_REVIEW'
-            proposal['reason'] = ('no other normal batch with a positive cost exists for this product — '
-                                   'no weighted average can be computed; owner must supply a cost or '
-                                   'confirm this is genuinely free stock.')
-        else:
+            proposal['reason'] = (f'base_cost_incl_vat ({batch.base_cost_incl_vat}) or a sibling VAT-chain field '
+                                   f'holds a real, non-zero value that disagrees with cost_per_base_unit=0 — '
+                                   f'this is data that needs a human to read the original invoice, not a joint '
+                                   f'update from an estimate that would overwrite a number already on the row.')
+        elif avg_cost is not None:
             proposal['status'] = 'PROPOSED'
             proposal['proposed_cost_per_base_unit'] = str(avg_cost)
             proposal['cost_basis'] = ('weighted average of this product\'s other normal batches purchased '
@@ -150,6 +183,27 @@ def propose_inv4(session, run_id):
                                        'weighted average of this product\'s other normal batches — none '
                                        'existed before this one\'s purchased_at, so this is a fallback, '
                                        'not a point-in-time figure')
+        elif estimated is not None:
+            proposal['status'] = 'PROPOSED'
+            proposal['proposed_cost_per_base_unit'] = str(estimated)
+            proposal['also_sets_vat_chain'] = batch.base_cost_incl_vat is not None
+            proposal['cost_basis'] = (
+                f'ESTIMATE, not an invoice fact: backed out of selling price '
+                f'({product.price if product.price is not None else product.price_per_unit}) and '
+                f'margin_pct ({product.margin_pct}) via cost = price / (1 + margin_pct/100) — no '
+                f'comparable batch of this product exists to average against instead.'
+                + (' The batch\'s base_cost_total/base_cost_incl_vat/final_cost_incl_vat were all '
+                   'already exactly zero, so they are set consistently with this estimate too '
+                   '(qty_purchased_base x estimate), rather than left at a zero that would now '
+                   'disagree with cost_per_base_unit.' if batch.base_cost_incl_vat is not None else '')
+            )
+            proposal['is_estimate'] = True
+        else:
+            proposal['status'] = 'NEEDS_MANUAL_REVIEW'
+            proposal['reason'] = ('no other normal batch with a positive cost exists for this product, and '
+                                   'no price+margin_pct combination exists to estimate from either — owner '
+                                   'must supply a cost or confirm this is genuinely free stock.')
+        if proposal['status'] == 'PROPOSED':
             proposal['run_id'] = run_id
         proposals.append(proposal)
     return result, proposals

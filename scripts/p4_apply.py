@@ -53,16 +53,29 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 Q6 = Decimal('0.000001')  # matches StockBatch.cost_per_base_unit's Numeric(10, 6)
 
-from models import AuditLog, StockBatch, StockMovement  # noqa: E402
+from models import AuditLog, Product, StockBatch, StockMovement  # noqa: E402
 from reconcile import (  # noqa: E402
     _make_session, _d, _q4,
     check_inv4_no_free_stock, check_inv9_allocation_closure,
     check_inv3_typed_source_resolves, check_inv11_projection_rebuild,
 )
-from p4_dry_run import _weighted_avg_cost  # noqa: E402
+from p4_dry_run import (  # noqa: E402
+    _weighted_avg_cost, _estimate_cost_from_price_margin, _vat_chain_is_entirely_zero,
+)
 
 PROPOSAL_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
                               'reports', 'p4-1-dry-run-prod-20260919.json')
+
+
+def _audit_note(full_reason, limit=500):
+    """AuditLog.note is String(500); StockBatch.cost_adjustment_reason (where the full
+    text is separately stored, unlimited) is not. Found by a test: the joint VAT-chain
+    reason text runs past 500 characters and raised StringDataRightTruncation, which
+    would have aborted the whole transaction rather than cleanly applying the fix.
+    """
+    if len(full_reason) <= limit:
+        return full_reason
+    return full_reason[:limit - 15].rstrip() + '... (truncated)'
 
 
 def _target_batch_ids(proposal):
@@ -120,52 +133,80 @@ def apply_inv4(session, batch_id, run_id, log):
                      'reason': f'state drifted since dry-run: batch_type={batch.batch_type!r}, '
                                f'cost_per_base_unit={batch.cost_per_base_unit}'})
         return False
-    if batch.base_cost_incl_vat is not None:
-        # Found during rehearsal: two of the 19 proposed batches (1335, 1394) have
-        # base_cost_incl_vat/final_cost_incl_vat stored as literal 0.0000 (not NULL),
-        # meaning they're also in INV-9's checked set. Setting cost_per_base_unit alone
-        # would desync it from base_cost_incl_vat/final_cost_incl_vat — both still 0 —
-        # turning a resolved INV-4 violation into a fresh INV-9 one. Recomputing all
-        # three fields together is a bigger, more consequential change than "set one
-        # cost field," so this is a manual-review case, not an automatic one.
+    vat_chain_populated = batch.base_cost_incl_vat is not None and not _vat_chain_is_entirely_zero(batch)
+    if vat_chain_populated:
+        # base_cost_incl_vat (or a sibling field) holds a real, non-zero value that
+        # disagrees with cost_per_base_unit=0 — this batch has SOME real invoice data on
+        # it that a joint estimate-based update would silently overwrite. Needs a human
+        # to read the original invoice, not an automatic fix — unlike the all-zero case
+        # below, where there's nothing on the row to lose.
         log.append({'batch_id': batch_id, 'action': 'SKIPPED',
-                     'reason': f'base_cost_incl_vat is populated ({batch.base_cost_incl_vat}, not NULL) — '
-                               f'this batch is also in INV-9\'s checked set, so a plain cost_per_base_unit '
-                               f'fix would desync it from base_cost_incl_vat/final_cost_incl_vat and create '
-                               f'a new INV-9 violation. Needs a combined correction, reviewed by a human, '
-                               f'not this script\'s single-field fix.'})
+                     'reason': f'base_cost_incl_vat ({batch.base_cost_incl_vat}) or a sibling VAT-chain field '
+                               f'holds a real non-zero value — needs a human, not this script.'})
         return False
 
     avg_cost, fallback_used = _weighted_avg_cost(session, batch.product_id, batch.purchased_at, batch.id)
-    if avg_cost is None:
-        log.append({'batch_id': batch_id, 'action': 'SKIPPED',
-                     'reason': 'no positive-cost batch available to average against (drifted since dry-run)'})
-        return False
+    cost_basis_label = None
+    if avg_cost is not None:
+        cost_basis_label = ('the qty-weighted average of this product\'s other normal batches'
+                             + (' purchased at or before this one' if not fallback_used else
+                                ' (fallback: none existed before this one)'))
+        chosen_cost = avg_cost
+    else:
+        product = session.get(Product, batch.product_id)
+        estimated = _estimate_cost_from_price_margin(product) if product else None
+        if estimated is None:
+            log.append({'batch_id': batch_id, 'action': 'SKIPPED',
+                         'reason': 'no positive-cost batch to average against, and no price+margin_pct '
+                                   'to estimate from either (drifted since dry-run)'})
+            return False
+        chosen_cost = estimated
+        cost_basis_label = (f'an ESTIMATE backed out of selling price '
+                             f'({product.price if product.price is not None else product.price_per_unit}) and '
+                             f'margin_pct ({product.margin_pct}) — not an invoice fact, used only because no '
+                             f'comparable batch exists')
 
     before = {'cost_per_base_unit': '0.000000'}
-    batch.cost_per_base_unit = avg_cost
+    batch.cost_per_base_unit = chosen_cost
+    also_set_vat_chain = batch.base_cost_incl_vat is not None  # implies _vat_chain_is_entirely_zero was True
+    if also_set_vat_chain:
+        qty_purchased = _d(batch.qty_purchased_base) or Decimal('0')
+        before['base_cost_total'] = str(batch.base_cost_total)
+        before['base_cost_incl_vat'] = str(batch.base_cost_incl_vat)
+        before['final_cost_incl_vat'] = str(batch.final_cost_incl_vat)
+        new_base_total = _q4(chosen_cost * qty_purchased) if qty_purchased else Decimal('0')
+        batch.base_cost_total = new_base_total
+        batch.base_cost_incl_vat = new_base_total
+        batch.final_cost_incl_vat = new_base_total
     batch.cost_adjustment_reason = (
-        f'P4-1 reconciliation repair, run {run_id}. Re-costed from 0 to the qty-weighted '
-        f'average cost ({avg_cost}) of this product\'s other normal batches'
-        f'{" purchased at or before this one" if not fallback_used else " (fallback: none existed before this one)"}'
-        f', per Rev 5 P4-2. This restates historical margin for any sale drawing from this '
-        f'batch — it does not change Sale.cogs retroactively, only the batch\'s recorded cost.'
+        f'P4-1 reconciliation repair, run {run_id}. Re-costed from 0 to {chosen_cost}, '
+        f'{cost_basis_label}, per Rev 5 P4-2. This restates historical margin for any sale '
+        f'drawing from this batch — it does not change Sale.cogs retroactively, only the '
+        f'batch\'s recorded cost.'
+        + (f' base_cost_total/base_cost_incl_vat/final_cost_incl_vat were all already exactly '
+           f'zero, so they were set to qty_purchased_base x {chosen_cost} = {batch.base_cost_total} '
+           f'to stay consistent, rather than left disagreeing with the new cost.' if also_set_vat_chain else '')
     )
     batch.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-    after = {'cost_per_base_unit': str(avg_cost)}
+    after = {'cost_per_base_unit': str(chosen_cost)}
+    if also_set_vat_chain:
+        after.update({'base_cost_total': str(batch.base_cost_total),
+                      'base_cost_incl_vat': str(batch.base_cost_incl_vat),
+                      'final_cost_incl_vat': str(batch.final_cost_incl_vat)})
 
     was_first_movement = _batch_has_no_prior_movements(session, batch.id)
     session.add(StockMovement(
         movement_type='COST_CORRECTION', batch_id=batch.id, qty_delta=Decimal('0.0000'),
-        unit_cost=avg_cost, source_type='reconciliation', source_id=str(batch.id),
-        note=f'P4-1 INV-4 re-cost, run {run_id}: 0 -> {avg_cost}',
+        unit_cost=chosen_cost, source_type='reconciliation', source_id=str(batch.id),
+        note=f'P4-1 INV-4 re-cost, run {run_id}: 0 -> {chosen_cost}',
     ))
     session.add(AuditLog(
         event_type='p4_recost_zero_cost_batch', target_table='stock_batches', target_id=str(batch.id),
         before_json=json.dumps(before), after_json=json.dumps(after),
-        note=batch.cost_adjustment_reason, correlation_id=run_id, source='repair',
+        note=_audit_note(batch.cost_adjustment_reason), correlation_id=run_id, source='repair',
     ))
-    log.append({'batch_id': batch_id, 'action': 'APPLIED', 'old_cost': '0.000000', 'new_cost': str(avg_cost)})
+    log.append({'batch_id': batch_id, 'action': 'APPLIED', 'old_cost': '0.000000', 'new_cost': str(chosen_cost),
+                 'is_estimate': avg_cost is None})
     _maybe_backfill_opening_balance(session, batch, was_first_movement, run_id, log)
     return True
 
@@ -270,7 +311,7 @@ def apply_inv9_correction(session, batch_id, run_id, log):
     session.add(AuditLog(
         event_type='p4_fix_allocation_closure', target_table='stock_batches', target_id=str(batch.id),
         before_json=json.dumps(before), after_json=json.dumps(after),
-        note=batch.cost_adjustment_reason, correlation_id=run_id, source='repair',
+        note=_audit_note(batch.cost_adjustment_reason), correlation_id=run_id, source='repair',
     ))
     log.append({'batch_id': batch_id, 'action': 'APPLIED', 'before': before, 'after': after,
                  'cost_per_unit_changed': cost_per_unit_changing})
