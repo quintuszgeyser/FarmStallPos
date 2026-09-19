@@ -10,7 +10,7 @@ from decimal import Decimal
 
 from models import db, StockBatch, StockMovement
 from tests.factories import make_admin, make_product, make_stock_batch, make_stock_movement
-from tests.helpers import D, checkout, login_as
+from tests.helpers import D, checkout, login_as, refresh
 
 
 def test_stock_movement_round_trips_all_columns(db_session):
@@ -328,3 +328,75 @@ def test_void_unconsumed_batch_on_an_already_empty_batch_writes_no_movement(db_s
     db_session.commit()
 
     assert StockMovement.query.filter_by(batch_id=batch.id, movement_type='RECEIPT_VOID').count() == 0
+
+
+def test_auto_produce_on_negative_writes_a_production_output_movement(db_session, client):
+    """helpers.auto_produce_on_negative (the sold-at-zero-stock checkout path,
+    triggered from transactions.py — distinct from the manual /produce endpoint
+    covered by test_produce_writes_a_production_output_movement above) now
+    dual-writes its finished-goods output batch, same as the manual path.
+    """
+    from werkzeug.security import generate_password_hash
+    from tests.factories import make_recipe_line
+
+    make_admin(username='autoproduceadmin', password_hash=generate_password_hash('adminpass123'))
+    login_as(client, 'autoproduceadmin', 'adminpass123')
+
+    flour = make_product(product_type='stock_item', name='Auto Flour Canary', price=D('1.00'))
+    make_stock_batch(flour, qty_remaining_base=D(50), qty_purchased_base=D(50), cost_per_base_unit=D('2.000000'))
+    bread = make_product(product_type='recipe', name='Auto Produce Canary', is_produced=True,
+                          batch_size=D('4'), price=D('15.00'))
+    make_recipe_line(bread, flour, qty_base=D(1))
+    db_session.commit()
+
+    # Zero stock on bread -> checkout must go through auto_produce_on_negative
+    # (ALLOW_NEGATIVE is the factory/model default) rather than the negative
+    # placeholder, since bread.is_produced is True.
+    resp = checkout(client, [{'product_id': bread.id, 'qty': 2, 'unit_price': 15}])
+    assert resp.status_code == 200, resp.get_json()
+
+    output_batch = StockBatch.query.filter_by(product_id=bread.id, batch_type='normal').first()
+    assert output_batch is not None
+    output_movements = StockMovement.query.filter_by(
+        batch_id=output_batch.id, movement_type='PRODUCTION_OUTPUT').all()
+    assert len(output_movements) == 1
+    assert output_movements[0].source_type == 'production'
+    assert output_movements[0].qty_delta == D(4)  # one batch_size=4 run to cover a shortfall of 2
+
+
+def test_auto_produce_on_negative_absorbs_existing_placeholder_with_a_movement(db_session, client):
+    """A produced recipe already carrying a negative placeholder (from an
+    earlier oversold sale) gets that placeholder absorbed by the next
+    auto-produce run, with an explicit PRODUCTION_ABSORB_SHORTFALL movement —
+    not just a silent qty_remaining_base mutation on the placeholder.
+    """
+    from werkzeug.security import generate_password_hash
+    from tests.factories import make_recipe_line
+
+    make_admin(username='autoproduceadmin2', password_hash=generate_password_hash('adminpass123'))
+    login_as(client, 'autoproduceadmin2', 'adminpass123')
+
+    flour = make_product(product_type='stock_item', name='Auto Flour Canary 2', price=D('1.00'))
+    make_stock_batch(flour, qty_remaining_base=D(50), qty_purchased_base=D(50), cost_per_base_unit=D('2.000000'))
+    bread = make_product(product_type='recipe', name='Auto Produce Canary 2', is_produced=True,
+                          batch_size=D('4'), price=D('15.00'))
+    make_recipe_line(bread, flour, qty_base=D(1))
+
+    placeholder = StockBatch(
+        product_id=bread.id, qty_purchased_base=D(-2), qty_remaining_base=D(-2),
+        cost_per_base_unit=D('0'), batch_type='negative_placeholder',
+    )
+    db_session.add(placeholder)
+    db_session.commit()
+
+    resp = checkout(client, [{'product_id': bread.id, 'qty': 1, 'unit_price': 15}])
+    assert resp.status_code == 200, resp.get_json()
+
+    refresh(db_session, placeholder)
+    assert placeholder.qty_remaining_base == D(0)  # 4 produced, 2 absorbed here, 1 sold from the rest
+
+    absorb_movements = StockMovement.query.filter_by(
+        batch_id=placeholder.id, movement_type='PRODUCTION_ABSORB_SHORTFALL').all()
+    assert len(absorb_movements) == 1
+    assert absorb_movements[0].qty_delta == D(2)
+    assert absorb_movements[0].source_type == 'production'

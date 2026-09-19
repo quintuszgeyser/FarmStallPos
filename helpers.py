@@ -416,14 +416,15 @@ def get_online_user_id():
 # rather than swallowing it — a silently-missing movement row would defeat
 # the whole point of building this ledger to check against.
 #
-# Coverage as of this commit: consume_fifo (sale/write-off/production input
-# consumption) and reverse_fifo (void/edit/production-undo reversal) write
-# movements. Receive, stocktake, return, and manual-produce paths are wired
-# per call site below. NOT yet wired: absorb_neg_placeholder,
-# auto_produce_on_negative's own placeholder bookkeeping, and invoices.py's
-# undo path (blocked on the P2-2b fix — that path is a known-broken FIFO
-# reversal that doesn't delete its StockConsumption rows, and dual-writing
-# against it would just encode the same bug twice).
+# Coverage: consume_fifo (sale/write-off/production input consumption) and
+# reverse_fifo (void/edit/production-undo reversal, and — since P2-2b routed
+# invoices.py's undo through this same function — invoice-undo reversal too)
+# write movements. Receive, stocktake, return, manual-produce, and
+# absorb_neg_placeholder are wired per call site below.
+# auto_produce_on_negative (the sold-at-zero-stock auto-produce path) writes
+# its own PRODUCTION_OUTPUT / PRODUCTION_ABSORB_SHORTFALL movements alongside
+# its StockBatch mutations, mirroring the manual produce endpoint in
+# blueprints/products.py.
 def write_stock_movement(batch, movement_type, qty_delta, unit_cost, source_type,
                           source_id=None, source_line_id=None, note=None,
                           user_id=None, when=None):
@@ -919,8 +920,9 @@ def auto_produce_on_negative(product_id, shortfall, now, u):
 
     Rev 5 P2-0: the ingredient consumption below goes through consume_fifo, which is
     dual-written. The finished-goods StockBatch this function creates, and the negative-
-    placeholder bookkeeping around it, are NOT yet dual-written — deferred alongside
-    absorb_neg_placeholder pending a wider pass over the negative-placeholder mechanism.
+    placeholder bookkeeping around it, are now dual-written too — same PRODUCTION_OUTPUT /
+    PRODUCTION_ABSORB_SHORTFALL movement types as the manual produce endpoint in
+    blueprints/products.py, so the two paths reconcile identically under INV-11.
     """
     from decimal import ROUND_CEILING
     p = db.session.get(Product, product_id)
@@ -959,8 +961,13 @@ def auto_produce_on_negative(product_id, shortfall, now, u):
         _cancel   = min(_neg_qty, Decimal(str(units_added)))
         _neg_ph.qty_remaining_base = Decimal(str(_neg_ph.qty_remaining_base)) + _cancel
         reconciled = int(_cancel.to_integral_value())
+        if _cancel > 0:
+            write_stock_movement(
+                _neg_ph, movement_type='PRODUCTION_ABSORB_SHORTFALL', qty_delta=_cancel,
+                unit_cost=Decimal('0'), source_type='production', source_id=produce_uuid, when=now,
+            )
 
-    db.session.add(StockBatch(
+    _out_batch = StockBatch(
         product_id=product_id,
         qty_purchased_base=units_added,
         qty_remaining_base=units_added - reconciled,
@@ -970,7 +977,13 @@ def auto_produce_on_negative(product_id, shortfall, now, u):
         user_id=u.id if u else None,
         produce_ref=produce_uuid,
         produce_cost=total_cost,
-    ))
+    )
+    db.session.add(_out_batch)
+    db.session.flush()
+    write_stock_movement(
+        _out_batch, movement_type='PRODUCTION_OUTPUT', qty_delta=Decimal(str(units_added - reconciled)),
+        unit_cost=cost_per, source_type='production', source_id=produce_uuid, when=now,
+    )
     db.session.add(StockAdjustment(
         product_id=product_id,
         adjustment_type='produce',

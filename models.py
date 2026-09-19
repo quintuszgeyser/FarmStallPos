@@ -540,13 +540,15 @@ class StockMovement(db.Model):
     (quantity closure) and INV-3 (typed source resolution) cannot be computed
     against the current schema — see scripts/reconcile.py.
 
-    This table is additive only: nothing writes to it yet. StockBatch.qty_
+    This table is additive: every write path dual-writes here alongside the
+    existing StockBatch/StockConsumption tables (see write_stock_movement's
+    docstring in helpers.py for the coverage map). StockBatch.qty_
     remaining_base remains the live source of truth for every read and write
-    path in the app until the dual-write period (writing here alongside the
-    existing tables, reconciled nightly) has run long enough to cover every
-    movement_type at least once, and the projection-rebuild gate (P2-0a) has
-    been proven — see the Rev 5 plan. Only then does this table become
-    authoritative.
+    path in the app until the dual-write period has run long enough to cover
+    every movement_type at least once in production, and the
+    projection-rebuild gate (P2-0a, see check_inv11_projection_rebuild in
+    scripts/reconcile.py) has been proven — see the Rev 5 plan. Only then
+    does this table become authoritative.
 
     movement_type is the ledger's own physical classification of what
     happened to the batch (e.g. RECEIPT, SALE, RETURN_SALEABLE,
