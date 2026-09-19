@@ -73,12 +73,20 @@ is the record). 'specials' (promo pricing CRUD, AUDITED — changes what
 customers pay). 'settings' and 'recognition' (settings save AUDITED;
 recognition's control/<action> proxy AUDITED too — includes purge_customer).
 'kiosk' (tablet fleet config and remote control actions AUDITED — includes
-reboot; status/query/screenshot reads NO_STATE_CHANGE).
+reboot; status/query/screenshot reads NO_STATE_CHANGE). 'core' (db-migrate is
+AUDITED — a manual schema-migration trigger; everything else here is a
+read/health-check, NO_STATE_CHANGE). 'consignment' (liability recalculation,
+write-off voiding, settlement-rate changes, and settling a supplier are all
+AUDITED — they directly change what's owed; reads NO_STATE_CHANGE).
+'deploy_schedule' (scheduling/cancelling/triggering a deploy or rollback are
+AUDITED — this is the prod deploy pipeline; the host-cron-only poll/complete
+callbacks are EXPLICITLY_EXEMPT, same high-frequency-telemetry reasoning as
+customers.py's recognition routes).
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
                       'categories', 'cost_categories', 'families', 'kitchen', 'specials',
-                      'settings', 'recognition', 'kiosk'}
+                      'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule'}
 
 
 def _adopted_rules(app):

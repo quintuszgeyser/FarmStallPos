@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from flask import Blueprint, jsonify, request, make_response
 
-from helpers import require_role, current_user, get_setting
+from helpers import require_role, current_user, get_setting, audit_event, audit_policy
 from models import (
     db,
     Product, StockBatch, Supplier,
@@ -15,6 +15,7 @@ bp = Blueprint('consignment', __name__)
 
 
 @bp.route('/api/consignment/summary', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_consignment_summary():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -75,6 +76,7 @@ def api_consignment_summary():
 
 
 @bp.route('/api/consignment/supplier/<int:sid>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_consignment_supplier(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -210,6 +212,7 @@ def api_consignment_supplier(sid):
 
 
 @bp.route('/api/consignment/recalculate-costs/<int:sid>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_consignment_recalculate_costs(sid):
     """Retroactively update all outstanding liability amounts to use the current batch cost."""
     if not require_role('admin'):
@@ -252,6 +255,10 @@ def api_consignment_recalculate_costs(sid):
             lib.amount_owed = float(new_amount.quantize(Decimal('0.01')))
             updated += 1
 
+    if updated:
+        audit_event('consignment_liabilities_recalculated', 'consignment_liabilities', sid, after={
+            'liabilities_updated': updated, 'amount_delta': float(total_delta.quantize(Decimal('0.01'))),
+        })
     db.session.commit()
     return jsonify({
         'ok': True,
@@ -265,6 +272,7 @@ _WRITEOFF_PREFIXES = ('wo-', 'adj-', 'archive-wo-', 'wo-edit-', 'adj-del-')
 
 
 @bp.route('/api/consignment/void-writeoffs/<int:sid>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_void_writeoff_liabilities(sid):
     """Void outstanding consignment liabilities that were created by write-offs (not real sales)."""
     if not require_role('admin'):
@@ -282,6 +290,10 @@ def api_void_writeoff_liabilities(sid):
             total_voided += Decimal(str(lib.amount_owed))
             voided += 1
 
+    if voided:
+        audit_event('consignment_writeoff_liabilities_voided', 'consignment_liabilities', sid, after={
+            'voided': voided, 'amount_removed': float(total_voided.quantize(Decimal('0.01'))),
+        })
     db.session.commit()
     return jsonify({
         'ok': True,
@@ -291,6 +303,7 @@ def api_void_writeoff_liabilities(sid):
 
 
 @bp.route('/api/consignment/batches/<int:batch_id>/settlement-rate', methods=['PATCH'])
+@audit_policy('AUDITED')
 def api_update_settlement_rate(batch_id):
     """Update only the consignment_unit_cost on a batch (settlement rate owed per base unit sold)."""
     if not require_role('admin'):
@@ -308,12 +321,16 @@ def api_update_settlement_rate(batch_id):
     batch = StockBatch.query.get_or_404(batch_id)
     if batch.ownership_type != 'CONSIGNMENT':
         return jsonify({'error': 'Not a consignment batch'}), 400
+    _before_rate = float(batch.consignment_unit_cost) if batch.consignment_unit_cost is not None else None
     batch.consignment_unit_cost = rate
+    audit_event('consignment_settlement_rate_updated', 'stock_batches', batch_id,
+                before={'consignment_unit_cost': _before_rate}, after={'consignment_unit_cost': rate})
     db.session.commit()
     return jsonify({'ok': True, 'batch_id': batch_id, 'consignment_unit_cost': rate})
 
 
 @bp.route('/api/consignment/settle', methods=['POST'])
+@audit_policy('AUDITED')
 def api_consignment_settle():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -394,6 +411,11 @@ def api_consignment_settle():
         remaining -= lib_amount
         lines_settled += 1
 
+    audit_event('consignment_settled', 'consignment_settlements', settlement.id, after={
+        'supplier_id': sid, 'settlement_amount': float(settlement_amount.quantize(Decimal('0.01'))),
+        'total_owed': float(total_owed.quantize(Decimal('0.01'))), 'lines_settled': lines_settled,
+        'partial': partial, 'note': note,
+    })
     db.session.commit()
     return jsonify({
         'ok': True,
@@ -407,6 +429,7 @@ def api_consignment_settle():
 
 
 @bp.route('/api/consignment/settlements/<int:settlement_id>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_consignment_settlement_detail(settlement_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -443,6 +466,7 @@ def api_consignment_settlement_detail(settlement_id):
 
 
 @bp.route('/api/consignment/statement/<int:sid>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_consignment_statement(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403

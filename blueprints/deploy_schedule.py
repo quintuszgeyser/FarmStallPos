@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 from flask import Blueprint, jsonify, request
 from sqlalchemy import or_
 
-from helpers import require_role, current_user, get_setting
+from helpers import require_role, current_user, get_setting, audit_event, audit_policy
 from models import db, DeploySchedule
 
 bp = Blueprint('deploy_schedule', __name__)
@@ -92,6 +92,7 @@ def _serialize(s):
 
 
 @bp.route('/api/deploy-schedule', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_schedule_list():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -100,6 +101,7 @@ def api_schedule_list():
 
 
 @bp.route('/api/deploy-schedule', methods=['POST'])
+@audit_policy('AUDITED')
 def api_schedule_create():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -133,11 +135,16 @@ def api_schedule_create():
         created_by=user.id if user else None,
     )
     db.session.add(s)
+    db.session.flush()
+    audit_event('deploy_scheduled', 'deploy_schedules', s.id, after={
+        'scheduled_at': scheduled_at.isoformat(), 'description': description,
+    })
     db.session.commit()
     return jsonify(_serialize(s)), 201
 
 
 @bp.route('/api/deploy-schedule/<int:sid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_schedule_cancel(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -147,11 +154,13 @@ def api_schedule_cancel(sid):
     if s.status != 'pending':
         return jsonify({'error': f'Cannot cancel - status is {s.status}'}), 400
     s.status = 'cancelled'
+    audit_event('deploy_schedule_cancelled', 'deploy_schedules', sid, before={'status': 'pending'}, after={'status': 'cancelled'})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/deploy-schedule/execute', methods=['POST'])
+@audit_policy('AUDITED')
 def api_schedule_execute_now():
     """Schedule an immediate deploy - host cron picks it up on next /poll call."""
     if not require_role('admin'):
@@ -170,12 +179,15 @@ def api_schedule_execute_now():
         created_by=user.id if user else None,
     )
     db.session.add(s)
+    db.session.flush()
+    audit_event('deploy_triggered_now', 'deploy_schedules', s.id, after={'action': 'deploy'})
     db.session.commit()
     return jsonify({'ok': True, 'schedule_id': s.id,
                     'message': 'Deploy queued - will execute within 60 seconds via host cron'})
 
 
 @bp.route('/api/deploy-schedule/rollback', methods=['POST'])
+@audit_policy('AUDITED')
 def api_schedule_rollback_now():
     """Queue an immediate PROD rollback to the previous image - host cron runs rollback.sh."""
     if not require_role('admin'):
@@ -193,12 +205,15 @@ def api_schedule_rollback_now():
         created_by=user.id if user else None,
     )
     db.session.add(s)
+    db.session.flush()
+    audit_event('deploy_rollback_triggered_now', 'deploy_schedules', s.id, after={'action': 'rollback'})
     db.session.commit()
     return jsonify({'ok': True, 'schedule_id': s.id,
                     'message': 'Rollback queued - will execute within 60 seconds via host cron'})
 
 
 @bp.route('/api/deploy-schedule/poll', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='host-cron-only internal poll (every 60s, no auth) — the DeploySchedule row is the record; an AuditLog row every minute forever would be pure noise')
 def api_schedule_poll():
     """Called by host cron every minute. Returns next pending schedule if due.
     Cron script: curl -s -X POST http://localhost:5100/api/deploy-schedule/poll
@@ -232,6 +247,7 @@ def api_schedule_poll():
 
 
 @bp.route('/api/deploy-schedule/complete', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='host-cron-only internal callback reporting deploy.sh result — the DeploySchedule row (status/result_log) is the record')
 def api_schedule_complete():
     """Called by host cron after deploy.sh finishes."""
     data = request.json or {}
@@ -257,6 +273,7 @@ def api_schedule_complete():
 
 
 @bp.route('/api/deploy-schedule/status')
+@audit_policy('NO_STATE_CHANGE')
 def api_deploy_status():
     """Current deploy status + which env is running where."""
     import os

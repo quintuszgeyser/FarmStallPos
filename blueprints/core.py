@@ -4,7 +4,7 @@ import subprocess
 from flask import Blueprint, jsonify, request, render_template
 from sqlalchemy import text
 
-from helpers import require_login, require_role
+from helpers import require_login, require_role, audit_event, audit_policy
 from models import db
 
 bp = Blueprint('core', __name__)
@@ -55,6 +55,7 @@ def _git_commit():
 
 
 @bp.route('/')
+@audit_policy('NO_STATE_CHANGE')
 def index():
     app_env = os.getenv('APP_ENV', 'qa')
     return render_template('index.html',
@@ -64,6 +65,7 @@ def index():
 
 
 @bp.route('/health')
+@audit_policy('NO_STATE_CHANGE')
 def health_check():
     # Public endpoint — returns minimal info only (no DB name, no env details).
     # Used by Docker HEALTHCHECK and appliance bootstrap. No auth required by design.
@@ -71,6 +73,7 @@ def health_check():
 
 
 @bp.route('/api/health')
+@audit_policy('NO_STATE_CHANGE')
 def api_health():
     """Extended health for authenticated admin clients (dashboard banner, JS _checkBackupHealth)."""
     from helpers import get_setting
@@ -106,11 +109,13 @@ def api_health():
 
 
 @bp.route('/guide')
+@audit_policy('NO_STATE_CHANGE')
 def user_guide():
     return render_template('user_guide.html')
 
 
 @bp.route('/__version')
+@audit_policy('NO_STATE_CHANGE')
 def version():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -118,6 +123,7 @@ def version():
 
 
 @bp.route('/api/ping')
+@audit_policy('NO_STATE_CHANGE')
 def api_ping():
     """Keep-alive endpoint — updates last_active via before_request hook."""
     if not require_login():
@@ -126,6 +132,7 @@ def api_ping():
 
 
 @bp.route('/api/logs')
+@audit_policy('NO_STATE_CHANGE')
 def api_logs():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     n = min(int(request.args.get('n', 200)), 2000)
@@ -138,6 +145,7 @@ def api_logs():
 
 
 @bp.route('/api/db-health')
+@audit_policy('NO_STATE_CHANGE')
 def api_db_health():
     try:
         db.session.execute(text('SELECT 1'))
@@ -147,8 +155,10 @@ def api_db_health():
 
 
 @bp.route('/api/db-migrate', methods=['POST'])
+@audit_policy('AUDITED')
 def api_db_migrate():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     import app as _app_module
     _app_module.strong_migrate()
+    audit_event('db_migrate_run', 'system', None, after=None)
     return jsonify({'ok': True})
