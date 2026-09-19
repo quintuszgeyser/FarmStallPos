@@ -9,13 +9,16 @@ AUDITED route that completes 2xx without writing an AuditLog row raises via
 helpers._install_audit_completeness_check, which fires on every request in
 TESTING config).
 
-Scope: this is a gradual-adoption registry, not full coverage of the app's
-~370 routes. ADOPTED_BLUEPRINTS lists the ones that have been fully
-classified so far; adding a new route to an adopted blueprint without a
-policy fails test_every_route_in_an_adopted_blueprint_declares_a_policy.
-Extending ADOPTED_BLUEPRINTS to another blueprint is the natural way to grow
-coverage — do that once that blueprint's routes have actually been
-classified, not by adding its name here first.
+Scope: ADOPTED_BLUEPRINTS started as a gradual-adoption list and, as of the
+'employees' commit below, now names all 31 blueprints in the app — every
+route in the codebase declares an explicit policy. It's kept as an explicit
+set rather than "all blueprints, always" so that a genuinely new blueprint
+added later must be deliberately classified and added here (failing
+test_every_route_in_an_adopted_blueprint_declares_a_policy otherwise) instead
+of silently inheriting a policy by default. test_every_route_in_the_app_
+declares_a_policy below is the real full-app guarantee now that adoption is
+complete; the ADOPTED_BLUEPRINTS-scoped test is kept for the same reason
+(catches a new blueprint that was wired up without extending this set).
 
 'stock' was adopted third (after transactions, auth): it's the direct
 inventory/costing mutation surface the P2 ledger-integrity work (movement
@@ -137,6 +140,22 @@ def test_every_route_in_an_adopted_blueprint_declares_a_policy(app):
         f"routes in adopted blueprints ({sorted(ADOPTED_BLUEPRINTS)}) with no "
         f"@audit_policy declared: {missing}"
     )
+
+
+def test_every_route_in_the_app_declares_a_policy(app):
+    """The full-app guarantee: as of the 'employees' adoption, ADOPTED_BLUEPRINTS
+    covers every blueprint in the app, so this should find the same (empty) result
+    as the ADOPTED_BLUEPRINTS-scoped test above — checked independently, without
+    going through ADOPTED_BLUEPRINTS at all, so a blueprint that's registered on
+    the app but never added to that set still gets caught here."""
+    missing = []
+    for rule in app.url_map.iter_rules():
+        if rule.endpoint == 'static' or '.' not in rule.endpoint:
+            continue
+        fn = app.view_functions[rule.endpoint]
+        if not hasattr(fn, '_audit_policy'):
+            missing.append(rule.endpoint)
+    assert not missing, f"routes anywhere in the app with no @audit_policy declared: {missing}"
 
 
 def test_every_explicitly_exempt_route_has_a_reason(app):
