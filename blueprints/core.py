@@ -160,5 +160,8 @@ def api_db_migrate():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     import app as _app_module
     _app_module.strong_migrate()
+    # strong_migrate() runs on its own engine-level transaction, separate from
+    # db.session — audit_event() still needs its own explicit commit here.
     audit_event('db_migrate_run', 'system', None, after=None)
+    db.session.commit()
     return jsonify({'ok': True})

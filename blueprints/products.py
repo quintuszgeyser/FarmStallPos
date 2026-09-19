@@ -833,7 +833,10 @@ def api_check_markup_drift():
                 Product.pending_price_per_unit.isnot(None),
             )
         ).count()
+        # _run_markup_drift_check() -> _auto_price_products() may already have committed
+        # its own pending_price writes — audit_event() needs its own commit regardless.
         audit_event('markup_drift_scan_run', 'products', None, after={'pending_count': count})
+        db.session.commit()
         return jsonify({'ok': True, 'pending_count': count})
     except Exception as e:
         current_app.logger.error(f'[check_markup_drift] {e}')

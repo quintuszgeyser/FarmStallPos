@@ -158,7 +158,9 @@ def api_settings():
         saved[key] = v
 
     if saved:
+        # set_setting() already committed itself — audit_event() needs its own commit.
         audit_event('settings_updated', 'settings', None, after=saved)
+        db.session.commit()
     return jsonify({'ok': True, 'saved': saved})
 
 

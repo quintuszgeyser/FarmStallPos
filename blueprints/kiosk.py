@@ -121,6 +121,7 @@ def api_kiosk_control(tablet_ip):
             r = _req.post(url, json=payload, headers=headers, timeout=5)
         if 200 <= r.status_code < 300:
             audit_event('kiosk_control_action', 'kiosk_tablets', tablet_ip, after={'action': action})
+            db.session.commit()
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({'error': str(e), 'available': False}), 503

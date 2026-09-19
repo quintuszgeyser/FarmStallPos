@@ -58,7 +58,9 @@ def api_shipping_fees_update():
             set_setting(f'shipping_fee_{m}', val)
             saved[m] = val
     if saved:
+        # set_setting() already committed itself — audit_event() needs its own commit.
         audit_event('shipping_fees_updated', 'settings', None, before=before, after=saved)
+        db.session.commit()
     return jsonify({'ok': True, 'saved': saved})
 
 

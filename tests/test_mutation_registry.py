@@ -86,12 +86,16 @@ retroactive batch cost correction are AUDITED — rewrites historical COGS;
 preview/list NO_STATE_CHANGE). 'bulk' (apply/rollback a bulk product edit are
 AUDITED — can touch price/margin across many products at once; the
 filter/preview/fields/history routes are read-only queries, NO_STATE_CHANGE).
+'backup' (connect/disconnect, manual backup, verify, restore, file delete,
+settings, and database switch/delete are all AUDITED — this is the disaster-
+recovery surface; restore and database delete are the most consequential
+routes adopted so far. reads are NO_STATE_CHANGE).
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
                       'categories', 'cost_categories', 'families', 'kitchen', 'specials',
                       'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule',
-                      'cost_corrections', 'bulk'}
+                      'cost_corrections', 'bulk', 'backup'}
 
 
 def _adopted_rules(app):

@@ -17,6 +17,7 @@ import uuid
 from flask import Blueprint, jsonify, request, current_app
 
 from helpers import require_role, set_setting, audit_event, audit_policy
+from models import db
 
 bp = Blueprint('branding', __name__)
 
@@ -145,7 +146,11 @@ def upload_logo():
         return jsonify({'error': 'Failed to store logo'}), 500
 
     set_setting('branding_logo_file', fname)
+    # set_setting() already committed itself — audit_event() needs its own commit,
+    # since nothing later in this route commits again (Flask-SQLAlchemy's teardown
+    # discards a pending add rather than committing it).
     audit_event('branding_logo_uploaded', 'settings', None, after={'logo_file': fname, 'ext': ext})
+    db.session.commit()
     # bust the cross-worker branding cache so all workers pick up the new logo
     try:
         from app import bust_branding_cache

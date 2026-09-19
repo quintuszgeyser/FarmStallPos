@@ -3,6 +3,7 @@ import os
 from flask import Blueprint, jsonify, request
 
 from helpers import require_role, get_setting, set_setting, audit_event, audit_policy
+from models import db
 
 bp = Blueprint('recognition', __name__)
 
@@ -41,7 +42,9 @@ def api_recognition_settings():
             try: set_setting(key, cast(data[key])); saved[key] = cast(data[key])
             except Exception: return jsonify({'error': f'Invalid {key}'}), 400
     if saved:
+        # set_setting() already committed itself — audit_event() needs its own commit.
         audit_event('recognition_settings_updated', 'settings', None, after=saved)
+        db.session.commit()
     return jsonify({'ok': True, 'saved': saved})
 
 
@@ -93,6 +96,7 @@ def api_recognition_control(action):
         if 200 <= r.status_code < 300:
             audit_event('recognition_control_action', 'recognition_service', action,
                         after={'action': action, 'payload': request.json or {}})
+            db.session.commit()
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({'error': str(e), 'available': False}), 503

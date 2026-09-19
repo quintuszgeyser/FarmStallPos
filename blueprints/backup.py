@@ -14,7 +14,7 @@ from urllib.parse import urlparse, unquote
 import requests as _req
 from flask import Blueprint, current_app, jsonify, request
 
-from helpers import get_setting, require_role, set_setting
+from helpers import get_setting, require_role, set_setting, audit_event, audit_policy
 from models import BackupLog, db
 
 bp = Blueprint('backup', __name__)
@@ -635,6 +635,7 @@ def _do_verify(file_id: str, log_id: int) -> dict:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @bp.route('/api/backup/status', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_backup_status():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -691,6 +692,7 @@ def api_backup_status():
 
 
 @bp.route('/api/backup/connect/start', methods=['POST'])
+@audit_policy('AUDITED')
 def api_backup_connect_start():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -711,6 +713,9 @@ def api_backup_connect_start():
             'interval':         j.get('interval', 5),
             'expires_at':       time.time() + j.get('expires_in', 300),
         })
+        # _set_pending_auth()'s set_setting() calls already committed — audit_event() needs its own commit.
+        audit_event('backup_connect_started', 'settings', None, after={'provider': 'google_drive'})
+        db.session.commit()
         return jsonify({
             'nonce':            nonce,
             'user_code':        j['user_code'],
@@ -722,6 +727,7 @@ def api_backup_connect_start():
 
 
 @bp.route('/api/backup/connect/poll', methods=['GET'])
+@audit_policy('AUDITED')
 def api_backup_connect_poll():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -750,6 +756,10 @@ def api_backup_connect_poll():
             except Exception:
                 pass
             _clear_pending_auth()
+            # The set_setting() calls above already committed — audit_event() needs its own commit.
+            audit_event('backup_gdrive_connected', 'settings', None,
+                        after={'email': get_setting('backup_gdrive_user_email', '')})
+            db.session.commit()
             return jsonify({'status': 'authorized', 'email': get_setting('backup_gdrive_user_email', '')})
         err = j.get('error', '')
         if err == 'access_denied':
@@ -761,6 +771,7 @@ def api_backup_connect_poll():
 
 
 @bp.route('/api/backup/disconnect', methods=['POST'])
+@audit_policy('AUDITED')
 def api_backup_disconnect():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -769,10 +780,14 @@ def api_backup_disconnect():
     set_setting('backup_gdrive_folder_id',     '')
     _token_cache['access_token'] = None
     _token_cache['expires_at']   = 0.0
+    # The set_setting() calls above already committed — audit_event() needs its own commit.
+    audit_event('backup_gdrive_disconnected', 'settings', None, after=None)
+    db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/backup/now', methods=['POST'])
+@audit_policy('AUDITED')
 def api_backup_now():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -780,10 +795,15 @@ def api_backup_now():
     if provider == 'google_drive' and not get_setting('backup_gdrive_refresh_token', ''):
         return jsonify({'error': 'Google Drive not connected'}), 400
     log_id = _enqueue_backup(triggered_by='manual')
+    # _enqueue_backup already committed the BackupLog row itself, so this audit_event
+    # needs its own explicit commit — it isn't covered by a later commit in this route.
+    audit_event('backup_triggered_manually', 'backup_log', log_id, after={'triggered_by': 'manual'})
+    db.session.commit()
     return jsonify({'ok': True, 'log_id': log_id})
 
 
 @bp.route('/api/backup/job/<int:log_id>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_backup_job(log_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -804,6 +824,7 @@ def api_backup_job(log_id):
 
 
 @bp.route('/api/backup/list', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_backup_list():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -853,6 +874,7 @@ def api_backup_list():
 
 
 @bp.route('/api/backup/verify', methods=['POST'])
+@audit_policy('AUDITED')
 def api_backup_verify():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -862,11 +884,14 @@ def api_backup_verify():
     log = BackupLog(started_at=datetime.utcnow(), status='running',
                     triggered_by='verify', drive_file_id=file_id)
     db.session.add(log)
+    db.session.flush()
+    audit_event('backup_verify_started', 'backup_log', log.id, after={'file_id': file_id})
     db.session.commit()
     return jsonify(_do_verify(file_id, log.id))
 
 
 @bp.route('/api/backup/restore', methods=['POST'])
+@audit_policy('AUDITED')
 def api_backup_restore():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -895,6 +920,10 @@ def api_backup_restore():
 
     log = BackupLog(started_at=datetime.utcnow(), status='running', triggered_by='restore')
     db.session.add(log)
+    db.session.flush()
+    audit_event('backup_restore_started', 'backup_log', log.id, after={
+        'file_id': file_id, 'restore_target': restore_target,
+    })
     db.session.commit()
     log_id = log.id
 
@@ -907,17 +936,21 @@ def api_backup_restore():
 
 
 @bp.route('/api/backup/<file_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_backup_delete(file_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     try:
         _gdrive_delete(file_id)
+        audit_event('backup_file_deleted', 'backup_files', file_id, before={'file_id': file_id}, after=None)
+        db.session.commit()
         return jsonify({'ok': True})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 @bp.route('/api/backup/settings', methods=['POST'])
+@audit_policy('AUDITED')
 def api_backup_settings():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -936,10 +969,16 @@ def api_backup_settings():
     set_setting('backup_encryption_enabled', 'true' if d.get('encryption_enabled') else 'false')
     if d.get('encryption_passphrase'):
         set_setting('backup_encryption_passphrase', d['encryption_passphrase'])
+    audit_event('backup_settings_updated', 'settings', None, after={
+        'enabled': bool(d.get('enabled')), 'provider': d.get('provider', 'google_drive'),
+        'frequency': d.get('frequency', 'daily'), 'encryption_enabled': bool(d.get('encryption_enabled')),
+    })
+    db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/backup/databases', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_backup_list_databases():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -964,6 +1003,7 @@ def api_backup_list_databases():
 
 
 @bp.route('/api/backup/switch-database', methods=['POST'])
+@audit_policy('AUDITED')
 def api_switch_database():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -998,6 +1038,7 @@ def api_switch_database():
 
 
 @bp.route('/api/backup/database/<dbname>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_delete_database(dbname):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
