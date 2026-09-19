@@ -13,7 +13,6 @@ checks.
 import io
 from datetime import datetime, UTC
 
-import pytest
 from werkzeug.security import generate_password_hash
 
 from models import AuditLog, Supplier, SupplierDocument, SupplierInvoice, SupplierProductMapping, db
@@ -144,21 +143,6 @@ def test_document_upload_and_delete_write_audit_events(db_session, client):
     assert delete_row.target_id == str(doc_id)
 
 
-@pytest.mark.xfail(
-    reason=(
-        "Pre-existing bug uncovered by this test, NOT caused by the P3-1b audit-policy "
-        "adoption: api_supplier_invoice_update / api_supplier_invoice_delete hard-delete "
-        "StockBatch rows via db.session.delete(b), but every batch purchase_run creates "
-        "now also gets a stock_movements row via write_stock_movement() (Rev 5 P2-0, "
-        "dual-write). stock_movements.batch_id has no ON DELETE CASCADE, so the delete "
-        "raises psycopg.errors.ForeignKeyViolation and both routes 500 for ANY invoice "
-        "whose batches were created after P2-0 shipped — i.e. effectively every new "
-        "supplier invoice today. Needs a P2-0-consistent fix (e.g. a compensating "
-        "REVERSAL movement + soft-void the batch row instead of hard-deleting it) rather "
-        "than a mechanical audit-policy change — flagged to the user, not fixed here."
-    ),
-    strict=True,
-)
 def test_supplier_invoice_update_and_delete_write_audit_events(db_session, client):
     supplier = make_supplier(name='Invoice Edit Supplier')
     product = make_product(product_type='stock_item', price=D('10.00'))

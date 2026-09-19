@@ -265,3 +265,66 @@ def test_receiving_at_a_different_cost_than_estimated_writes_a_cost_variance(db_
     assert len(variance_movements) == 1
     assert variance_movements[0].unit_cost == D('2.000000')  # 6.00 actual - 4.00 estimated
     assert variance_movements[0].qty_delta == D('0')
+
+
+def test_void_unconsumed_batch_writes_a_compensating_movement_instead_of_deleting(db_session):
+    """Rev 5 P2-0 fix (found writing suppliers.py's P3-1b audit-policy tests).
+
+    api_supplier_invoice_update/_delete used to db.session.delete() a never-
+    consumed StockBatch outright. Since this module's RECEIPT dual-write
+    shipped, that now raises a ForeignKeyViolation for any batch that's ever
+    been receipted (which is every batch — receipt is itself a movement).
+    void_unconsumed_batch replaces the delete: write a compensating
+    RECEIPT_VOID movement, zero both quantity columns, detach invoice_id, and
+    leave the row in place so the FK holds and the ledger stays append-only.
+    """
+    from datetime import date as _date
+    from helpers import void_unconsumed_batch
+    from models import Supplier, SupplierInvoice
+    from tests.factories import make_supplier
+
+    supplier = make_supplier(name='Void Test Supplier')
+    inv = SupplierInvoice(supplier_id=supplier.id, date=_date.today(), status='posted', source='purchase_run')
+    db.session.add(inv)
+    db_session.flush()
+
+    product = make_product(product_type='stock_item', name='Void Canary')
+    batch = make_stock_batch(product, qty_remaining_base=D(10), qty_purchased_base=D(10),
+                              cost_per_base_unit=D('4.000000'), invoice_id=inv.id)
+    db_session.flush()
+
+    void_unconsumed_batch(batch, source_type='reconciliation', source_id=inv.id,
+                           note='Voided by test', user_id=None)
+    db_session.commit()  # would raise IntegrityError if this still tried a hard delete
+
+    db.session.refresh(batch)
+    assert batch.qty_remaining_base == D(0)
+    assert batch.qty_purchased_base == D(0)
+    assert batch.invoice_id is None
+    assert batch.cost_adjustment_reason == 'Voided by test'
+
+    movement = StockMovement.query.filter_by(batch_id=batch.id, movement_type='RECEIPT_VOID').one()
+    assert movement.qty_delta == D(-10)
+    assert movement.source_type == 'reconciliation'
+    assert movement.source_id == str(inv.id)
+
+    # The invoice itself can still be deleted now that no batch references it.
+    db.session.delete(inv)
+    db_session.commit()
+
+
+def test_void_unconsumed_batch_on_an_already_empty_batch_writes_no_movement(db_session):
+    """A batch already at qty_remaining_base=0 (e.g. re-voiding, or a batch
+    that was legitimately fully consumed then somehow still reachable) gets no
+    zero-delta movement — nothing to compensate for."""
+    from helpers import void_unconsumed_batch
+
+    product = make_product(product_type='stock_item', name='Empty Void Canary')
+    batch = make_stock_batch(product, qty_remaining_base=D(0), qty_purchased_base=D(0),
+                              cost_per_base_unit=D('4.000000'))
+    db_session.flush()
+
+    void_unconsumed_batch(batch, source_type='reconciliation', source_id=1, note='noop')
+    db_session.commit()
+
+    assert StockMovement.query.filter_by(batch_id=batch.id, movement_type='RECEIPT_VOID').count() == 0

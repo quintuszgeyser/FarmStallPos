@@ -441,6 +441,49 @@ def write_stock_movement(batch, movement_type, qty_delta, unit_cost, source_type
     ))
 
 
+def void_unconsumed_batch(batch, source_type, source_id, note=None, user_id=None, when=None):
+    """Rev 5 P2-0 fix (found while adopting P3-1b's mutation registry for
+    suppliers.py): void a StockBatch that has never been consumed — e.g. a
+    supplier invoice edited or deleted before any of its receipted stock was
+    touched — WITHOUT hard-deleting the row.
+
+    Before P2-0, api_supplier_invoice_update/_delete freely did
+    db.session.delete(batch) here, which was safe because nothing referenced
+    a StockBatch row. Since P2-0's dual-write, every batch purchase_run/
+    api_stock_receive creates also gets a stock_movements row, and
+    stock_movements.batch_id deliberately has no ON DELETE CASCADE (the
+    ledger is append-only — see StockMovement's docstring) — so that same
+    delete now raises psycopg.errors.ForeignKeyViolation for any batch
+    created after P2-0 shipped, i.e. effectively every new supplier invoice.
+
+    Fix: write a compensating RECEIPT_VOID movement bringing the batch's net
+    ledger position to zero, zero both quantity columns so every reader that
+    already filters/sums on qty_remaining_base > 0 (consume_fifo,
+    get_stock_level, valuation) or qty_purchased_base > 0 (consumed_pct,
+    supplier invoice/batch listings) treats it as gone, and detach it from
+    its invoice (so the invoice itself can still be deleted/replaced without
+    an invoice_id FK pointing at a voided batch). The row survives for FK
+    integrity and audit trail — same principle P2-2/P2-2b used for returns
+    and invoice-undo: reverse with a movement, never delete history.
+
+    Caller must have already verified no StockConsumption references this
+    batch (both call sites do, as a precondition for allowing the edit).
+    """
+    remaining = Decimal(str(batch.qty_remaining_base))
+    if remaining != Decimal('0'):
+        write_stock_movement(
+            batch, movement_type='RECEIPT_VOID', qty_delta=-remaining,
+            unit_cost=batch.cost_per_base_unit, source_type=source_type,
+            source_id=source_id, note=note, user_id=user_id, when=when,
+        )
+    batch.qty_remaining_base = Decimal('0')
+    batch.qty_purchased_base = Decimal('0')
+    batch.invoice_id = None
+    batch.cost_adjustment_reason = note or batch.cost_adjustment_reason
+    batch.updated_at = when or datetime.utcnow()
+    batch.updated_by = user_id
+
+
 def consume_fifo(ingredient_id, qty_needed_base, sale_id, now, _depth=0, sale_unit_price=None, is_writeoff=False,
                   movement_source_type=None):
     """

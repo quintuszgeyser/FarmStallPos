@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities, get_stock_level, write_stock_movement, audit_event, audit_policy
+from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities, get_stock_level, write_stock_movement, void_unconsumed_batch, audit_event, audit_policy
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
                     SupplierInvoiceTemplate, SupplierProductMapping,
@@ -2030,9 +2030,13 @@ def api_supplier_invoices(sid):
                 .all())
     inv_ids = {inv.id for inv in invoices}
 
-    # Fetch all batches linked to these invoices (+ unlinked batches for this supplier)
+    # Fetch all batches linked to these invoices (+ unlinked batches for this supplier).
+    # Excludes qty_purchased_base==0 rows: those are batches void_unconsumed_batch
+    # voided (an edited/deleted invoice's receipt, reversed before any stock moved) —
+    # zero quantity, zero valuation, nothing for the owner to act on.
     all_batches = (StockBatch.query
                    .filter_by(supplier_id=sid)
+                   .filter(StockBatch.qty_purchased_base > 0)
                    .order_by(StockBatch.purchased_at.desc())
                    .all())
 
@@ -2202,9 +2206,15 @@ def api_supplier_invoice_update(sid, inv_id):
 
     u = current_user()
 
-    # Delete existing batches
+    # Void existing batches — NOT db.session.delete(b): see void_unconsumed_batch's
+    # docstring for why a hard delete now raises a ForeignKeyViolation against the
+    # P2-0 stock_movements ledger for any batch that's ever been receipted.
     for b in batches:
-        db.session.delete(b)
+        void_unconsumed_batch(
+            b, source_type='reconciliation', source_id=inv_id,
+            note=f'Voided by edit of supplier invoice {inv.invoice_number or inv_id}',
+            user_id=u.id if u else None,
+        )
 
     # Update invoice metadata
     inv.invoice_number = invoice_ref
@@ -2391,8 +2401,18 @@ def api_supplier_invoice_delete(sid, inv_id):
         'supplier_id': sid, 'invoice_number': inv.invoice_number,
         'total': float(inv.total) if inv.total is not None else None, 'batch_count': len(batches),
     }, after=None)
+    # Void, don't delete — see void_unconsumed_batch's docstring for why a hard
+    # db.session.delete(b) now raises a ForeignKeyViolation against the P2-0
+    # stock_movements ledger for any batch that's ever been receipted. Voiding
+    # also detaches invoice_id, so the invoice row below can still be deleted
+    # without a dangling FK from a voided batch pointing at it.
+    u = current_user()
     for b in batches:
-        db.session.delete(b)
+        void_unconsumed_batch(
+            b, source_type='reconciliation', source_id=inv_id,
+            note=f'Voided by deletion of supplier invoice {inv.invoice_number or inv_id}',
+            user_id=u.id if u else None,
+        )
     db.session.delete(inv)
     db.session.commit()
     return jsonify({'ok': True})
@@ -2406,6 +2426,7 @@ def api_supplier_batches(sid):
         return jsonify({'error': 'Forbidden'}), 403
     batches = (StockBatch.query
                .filter_by(supplier_id=sid)
+               .filter(StockBatch.qty_purchased_base > 0)  # exclude void_unconsumed_batch voids
                .order_by(StockBatch.purchased_at.desc(), StockBatch.id.desc())
                .limit(100).all())
     pids = {b.product_id for b in batches}
