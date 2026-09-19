@@ -1,0 +1,1329 @@
+{
+  "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5",
+  "generated_at": "2026-09-19T14:43:30.314950+00:00",
+  "mode": "DRY_RUN \u2014 no writes performed",
+  "phase": "P4-1",
+  "source_baseline": "reports/p0-3-baseline-prod-20260919.json",
+  "summary": {
+    "INV-4": {
+      "total": 32,
+      "proposed": 19,
+      "needs_manual_review": 13
+    },
+    "INV-5": {
+      "total": 6,
+      "proposed": 0,
+      "needs_manual_review": 6
+    },
+    "INV-6": {
+      "total": 47,
+      "proposed": 0,
+      "needs_manual_review": 47
+    },
+    "INV-8": {
+      "total": 19,
+      "proposed": 19,
+      "needs_manual_review": 0
+    },
+    "INV-9": {
+      "total": 8,
+      "proposed": 1,
+      "needs_manual_review": 7
+    }
+  },
+  "proposals": {
+    "INV-4": [
+      {
+        "batch_id": 1617,
+        "product_id": 574,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-27T13:28:52.132197",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "6.940715",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1568,
+        "product_id": 594,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-24T14:33:33.968599",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "26.217091",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 866,
+        "product_id": 315,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-04T14:55:11.638593",
+        "still_live_stock": false,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1449,
+        "product_id": 60,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-17T13:42:38.733480",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "60.030000",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1443,
+        "product_id": 330,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-16T13:16:35.340526",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "35.487838",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1332,
+        "product_id": 534,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-13T00:00:00",
+        "still_live_stock": false,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1515,
+        "product_id": 451,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-22T00:00:00",
+        "still_live_stock": false,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1605,
+        "product_id": 595,
+        "qty_remaining_base": "7.0000",
+        "purchased_at": "2026-08-25T00:00:00",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1335,
+        "product_id": 447,
+        "qty_remaining_base": "6648.0000",
+        "purchased_at": "2026-08-13T00:00:00",
+        "still_live_stock": true,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "0.231064",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1522,
+        "product_id": 291,
+        "qty_remaining_base": "993515.0000",
+        "purchased_at": "2026-08-22T00:00:00",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1453,
+        "product_id": 157,
+        "qty_remaining_base": "1.0000",
+        "purchased_at": "2026-08-18T13:41:16.512510",
+        "still_live_stock": true,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "51.750000",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1253,
+        "product_id": 276,
+        "qty_remaining_base": "2.0000",
+        "purchased_at": "2026-05-27T00:00:00",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1468,
+        "product_id": 315,
+        "qty_remaining_base": "1.0000",
+        "purchased_at": "2026-08-19T09:11:37.090747",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1628,
+        "product_id": 574,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-27T14:21:52.451902",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "6.940715",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1576,
+        "product_id": 602,
+        "qty_remaining_base": "5.0000",
+        "purchased_at": "2026-08-25T06:21:39.138173",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1394,
+        "product_id": 558,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-15T00:00:00",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "0.009995",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1663,
+        "product_id": 441,
+        "qty_remaining_base": "150.0000",
+        "purchased_at": "2026-08-28T07:10:18.293585",
+        "still_live_stock": true,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "0.308220",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1577,
+        "product_id": 330,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-25T06:22:11.483574",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "46.103031",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1651,
+        "product_id": 35,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-28T07:01:26.922166",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "33.487008",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1615,
+        "product_id": 594,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-27T06:54:16.828848",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "26.217091",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1526,
+        "product_id": 594,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-22T06:29:22.513430",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "26.217091",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1578,
+        "product_id": 608,
+        "qty_remaining_base": "2.0000",
+        "purchased_at": "2026-08-25T06:22:25.528944",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1712,
+        "product_id": 35,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-31T07:06:19.203240",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "32.910527",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1927,
+        "product_id": 534,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-09-12T00:00:00",
+        "still_live_stock": false,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1478,
+        "product_id": 412,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-19T09:37:14.096911",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "10.598333",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 865,
+        "product_id": 314,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-04T14:52:53.454330",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "40.361940",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1575,
+        "product_id": 504,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-25T06:20:52.725316",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "19.010753",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1649,
+        "product_id": 330,
+        "qty_remaining_base": "0.0000",
+        "purchased_at": "2026-08-28T07:01:04.874974",
+        "still_live_stock": false,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "38.972073",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      },
+      {
+        "batch_id": 1962,
+        "product_id": 541,
+        "qty_remaining_base": "2.0000",
+        "purchased_at": "2026-09-14T10:13:36.489848",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1529,
+        "product_id": 451,
+        "qty_remaining_base": "29843.0000",
+        "purchased_at": "2026-08-22T00:00:00",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1918,
+        "product_id": 508,
+        "qty_remaining_base": "18050.0000",
+        "purchased_at": "2026-09-12T00:00:00",
+        "still_live_stock": true,
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+      },
+      {
+        "batch_id": 1479,
+        "product_id": 419,
+        "qty_remaining_base": "11.0000",
+        "purchased_at": "2026-08-19T09:37:57.538370",
+        "still_live_stock": true,
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "10.598333",
+        "cost_basis": "weighted average of this product's other normal batches purchased at or before this one",
+        "run_id": "61a51ac5-c931-4723-8863-9bbfe8468fe5"
+      }
+    ],
+    "INV-5": [
+      {
+        "batch_id": 1850,
+        "liability_qty_outstanding_plus_settled": "542.0000",
+        "consumed_qty": "3140.0000",
+        "difference": "-2598.0000",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "direction": "consumption EXCEEDS liability recorded \u2014 consumption exists with no liability ever written, a possible real underpayment to the supplier",
+        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
+      },
+      {
+        "batch_id": 1383,
+        "liability_qty_outstanding_plus_settled": "3491.0000",
+        "consumed_qty": "2662.0000",
+        "difference": "829.0000",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "direction": "liability recorded EXCEEDS consumption \u2014 possible unreturned-quantity artifact (this check does not net returns pre-P2-2) or an overstated liability",
+        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
+      },
+      {
+        "batch_id": 1382,
+        "liability_qty_outstanding_plus_settled": "1435.5200",
+        "consumed_qty": "5000.0000",
+        "difference": "-3564.4800",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "direction": "consumption EXCEEDS liability recorded \u2014 consumption exists with no liability ever written, a possible real underpayment to the supplier",
+        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
+      },
+      {
+        "batch_id": 1388,
+        "liability_qty_outstanding_plus_settled": "24.0000",
+        "consumed_qty": "20.0000",
+        "difference": "4.0000",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "direction": "liability recorded EXCEEDS consumption \u2014 possible unreturned-quantity artifact (this check does not net returns pre-P2-2) or an overstated liability",
+        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
+      },
+      {
+        "batch_id": 1574,
+        "liability_qty_outstanding_plus_settled": "2.0000",
+        "consumed_qty": "10.0000",
+        "difference": "-8.0000",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "direction": "consumption EXCEEDS liability recorded \u2014 consumption exists with no liability ever written, a possible real underpayment to the supplier",
+        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
+      },
+      {
+        "batch_id": 1384,
+        "liability_qty_outstanding_plus_settled": "4584.0000",
+        "consumed_qty": "4136.0000",
+        "difference": "448.0000",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "direction": "liability recorded EXCEEDS consumption \u2014 possible unreturned-quantity artifact (this check does not net returns pre-P2-2) or an overstated liability",
+        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
+      }
+    ],
+    "INV-6": [
+      {
+        "sale_id": "8f3a374d-76f2-4382-9ace-1740f3eab39c",
+        "product_id": 478,
+        "sale_row_id": 22,
+        "sale_cogs": "22.11",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.11",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "bf8e7ce7-10ae-4e15-8a41-aa6c9825301b",
+        "product_id": 478,
+        "sale_row_id": 27,
+        "sale_cogs": "22.11",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.11",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "e0f5d80a-c4de-4d23-87a1-cef30ff985f2",
+        "product_id": 504,
+        "sale_row_id": 156,
+        "sale_cogs": "9.61",
+        "consumption_derived_cogs": "0.00",
+        "difference": "9.61",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "88232252-88ac-4791-933b-e96849550706",
+        "product_id": 504,
+        "sale_row_id": 166,
+        "sale_cogs": "9.61",
+        "consumption_derived_cogs": "0.00",
+        "difference": "9.61",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "adc87ca7-2d04-46ee-88c0-348a5f1ddf29",
+        "product_id": 477,
+        "sale_row_id": 521,
+        "sale_cogs": "28.90",
+        "consumption_derived_cogs": "0.00",
+        "difference": "28.90",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "223b2246-5ff6-44b8-bd7a-ad56bbe5a2a0",
+        "product_id": 477,
+        "sale_row_id": 589,
+        "sale_cogs": "81.37",
+        "consumption_derived_cogs": "0.00",
+        "difference": "81.37",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "6f4515a7-3060-41ed-b09c-aaf0755163a0",
+        "product_id": 504,
+        "sale_row_id": 216,
+        "sale_cogs": "28.82",
+        "consumption_derived_cogs": "0.00",
+        "difference": "28.82",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "a9651045-157a-4e0c-81c1-534c1b96e656",
+        "product_id": 477,
+        "sale_row_id": 150,
+        "sale_cogs": "30.09",
+        "consumption_derived_cogs": "0.00",
+        "difference": "30.09",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "a0f6bf1e-3500-40b9-b282-630bcc5806cc",
+        "product_id": 477,
+        "sale_row_id": 560,
+        "sale_cogs": "57.81",
+        "consumption_derived_cogs": "0.00",
+        "difference": "57.81",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "25063465-ef89-436e-9676-3c0672ebefac",
+        "product_id": 477,
+        "sale_row_id": 805,
+        "sale_cogs": "94.56",
+        "consumption_derived_cogs": "0.00",
+        "difference": "94.56",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "aca6473e-4019-4edd-a209-8f49f61dc542",
+        "product_id": 504,
+        "sale_row_id": 67,
+        "sale_cogs": "22.24",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.24",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "5bf676df-a1ed-4275-ab31-752597e9f040",
+        "product_id": 504,
+        "sale_row_id": 82,
+        "sale_cogs": "22.24",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.24",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "8179c37d-2a4c-4d55-b4ae-73cf3846d62e",
+        "product_id": 504,
+        "sale_row_id": 104,
+        "sale_cogs": "22.24",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.24",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "e9725a5a-ed15-4a0b-bd35-8b19a6ee30e1",
+        "product_id": 504,
+        "sale_row_id": 108,
+        "sale_cogs": "16.83",
+        "consumption_derived_cogs": "0.00",
+        "difference": "16.83",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "2e5fccfa-59cc-486e-a02d-1baa1cc810d6",
+        "product_id": 478,
+        "sale_row_id": 117,
+        "sale_cogs": "22.11",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.11",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "0552bfa4-6ce4-4620-a58f-a7bfb4ebd87e",
+        "product_id": 478,
+        "sale_row_id": 140,
+        "sale_cogs": "22.11",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.11",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "94dd7fca-5c5b-4e4f-8e64-e2a9aa24db24",
+        "product_id": 477,
+        "sale_row_id": 153,
+        "sale_cogs": "30.09",
+        "consumption_derived_cogs": "0.00",
+        "difference": "30.09",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "2ccd01e3-69ed-40d0-81e0-158cd06f2ac5",
+        "product_id": 477,
+        "sale_row_id": 868,
+        "sale_cogs": "51.59",
+        "consumption_derived_cogs": "0.00",
+        "difference": "51.59",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "1807ccbc-8895-48b6-bdae-7e2680206f44",
+        "product_id": 477,
+        "sale_row_id": 528,
+        "sale_cogs": "28.90",
+        "consumption_derived_cogs": "0.00",
+        "difference": "28.90",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "df5ed417-f743-4e17-840f-c2b01e303f0a",
+        "product_id": 478,
+        "sale_row_id": 764,
+        "sale_cogs": "42.99",
+        "consumption_derived_cogs": "0.00",
+        "difference": "42.99",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "a6c623a5-7112-412c-b58c-cf5b93cf5f11",
+        "product_id": 477,
+        "sale_row_id": 482,
+        "sale_cogs": "28.90",
+        "consumption_derived_cogs": "0.00",
+        "difference": "28.90",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "0c4ffc63-dfd8-4df2-bae3-67913814e1c9",
+        "product_id": 477,
+        "sale_row_id": 769,
+        "sale_cogs": "37.06",
+        "consumption_derived_cogs": "0.00",
+        "difference": "37.06",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "c3230a40-e187-4a0d-93b0-2ab46d649d2b",
+        "product_id": 477,
+        "sale_row_id": 822,
+        "sale_cogs": "10.40",
+        "consumption_derived_cogs": "0.00",
+        "difference": "10.40",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "20484e1b-1a1f-4ee8-819e-2fce98bc9933",
+        "product_id": 477,
+        "sale_row_id": 474,
+        "sale_cogs": "28.90",
+        "consumption_derived_cogs": "0.00",
+        "difference": "28.90",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "c0370527-4220-4992-b187-55ad7ec02755",
+        "product_id": 504,
+        "sale_row_id": 228,
+        "sale_cogs": "19.21",
+        "consumption_derived_cogs": "0.00",
+        "difference": "19.21",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "15c6fc48-d1c2-48ed-90d7-1583f5247ac0",
+        "product_id": 478,
+        "sale_row_id": 245,
+        "sale_cogs": "22.11",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.11",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "61c877b8-8b80-49e6-8642-178768aecbd4",
+        "product_id": 504,
+        "sale_row_id": 436,
+        "sale_cogs": "11.94",
+        "consumption_derived_cogs": "0.00",
+        "difference": "11.94",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "6dbc89a1-18b9-444c-a73c-89f4f005ec41",
+        "product_id": 504,
+        "sale_row_id": 438,
+        "sale_cogs": "11.16",
+        "consumption_derived_cogs": "0.00",
+        "difference": "11.16",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "d22bd5c1-619b-416f-ac9b-a7e3e46ab9c7",
+        "product_id": 504,
+        "sale_row_id": 191,
+        "sale_cogs": "9.61",
+        "consumption_derived_cogs": "0.00",
+        "difference": "9.61",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "551c7145-2c49-44f7-8dfe-1cdd0450c975",
+        "product_id": 477,
+        "sale_row_id": 187,
+        "sale_cogs": "30.09",
+        "consumption_derived_cogs": "0.00",
+        "difference": "30.09",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "dacbdff2-c125-4eb6-bede-09d16e70254d",
+        "product_id": 477,
+        "sale_row_id": 224,
+        "sale_cogs": "30.09",
+        "consumption_derived_cogs": "0.00",
+        "difference": "30.09",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "eb37905e-93fa-4866-96af-8a2556e34e06",
+        "product_id": 477,
+        "sale_row_id": 184,
+        "sale_cogs": "30.09",
+        "consumption_derived_cogs": "0.00",
+        "difference": "30.09",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "dacbdff2-c125-4eb6-bede-09d16e70254d",
+        "product_id": 504,
+        "sale_row_id": 225,
+        "sale_cogs": "9.61",
+        "consumption_derived_cogs": "0.00",
+        "difference": "9.61",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "8e4f4550-5d42-4087-a522-fdca46d5a911",
+        "product_id": 477,
+        "sale_row_id": 283,
+        "sale_cogs": "30.09",
+        "consumption_derived_cogs": "0.00",
+        "difference": "30.09",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "b50550e3-87d1-4de8-b62c-21583dac5a91",
+        "product_id": 504,
+        "sale_row_id": 305,
+        "sale_cogs": "9.61",
+        "consumption_derived_cogs": "0.00",
+        "difference": "9.61",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "f88eadf6-e014-42c6-af32-aee7891c00b3",
+        "product_id": 478,
+        "sale_row_id": 316,
+        "sale_cogs": "22.11",
+        "consumption_derived_cogs": "0.00",
+        "difference": "22.11",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "af1af31c-1cc4-4180-b7ab-3aa3f493e561",
+        "product_id": 477,
+        "sale_row_id": 366,
+        "sale_cogs": "30.09",
+        "consumption_derived_cogs": "0.00",
+        "difference": "30.09",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "c3dcc89b-525c-458a-bba5-79db775b4440",
+        "product_id": 504,
+        "sale_row_id": 384,
+        "sale_cogs": "9.61",
+        "consumption_derived_cogs": "0.00",
+        "difference": "9.61",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "cc82147b-e7cd-431e-bdc9-dda4b7b56706",
+        "product_id": 504,
+        "sale_row_id": 424,
+        "sale_cogs": "20.38",
+        "consumption_derived_cogs": "0.00",
+        "difference": "20.38",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "f9e38163-8d51-4afe-950e-a1e7ea5a26dd",
+        "product_id": 477,
+        "sale_row_id": 449,
+        "sale_cogs": "33.59",
+        "consumption_derived_cogs": "0.00",
+        "difference": "33.59",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "c3230a40-e187-4a0d-93b0-2ab46d649d2b",
+        "product_id": 594,
+        "sale_row_id": 828,
+        "sale_cogs": "26.86",
+        "consumption_derived_cogs": "0.00",
+        "difference": "26.86",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "66c32fc5-278d-4390-820f-255d1a878441",
+        "product_id": 477,
+        "sale_row_id": 202,
+        "sale_cogs": "62.58",
+        "consumption_derived_cogs": "0.00",
+        "difference": "62.58",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "aca4c0b2-825a-43e5-a494-67afe11e4db4",
+        "product_id": 477,
+        "sale_row_id": 624,
+        "sale_cogs": "31.34",
+        "consumption_derived_cogs": "0.00",
+        "difference": "31.34",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "0b8822d0-fcbc-4f07-924b-fbc28d58d475",
+        "product_id": 477,
+        "sale_row_id": 704,
+        "sale_cogs": "31.34",
+        "consumption_derived_cogs": "0.00",
+        "difference": "31.34",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "c3b46b1d-8b69-434f-9667-14038d6da673",
+        "product_id": 477,
+        "sale_row_id": 780,
+        "sale_cogs": "37.06",
+        "consumption_derived_cogs": "0.00",
+        "difference": "37.06",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "37e0eb78-65c2-4dc7-9fde-7f777e3d72fa",
+        "product_id": 477,
+        "sale_row_id": 852,
+        "sale_cogs": "43.90",
+        "consumption_derived_cogs": "0.00",
+        "difference": "43.90",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      },
+      {
+        "sale_id": "5e30724f-3be2-4141-b3f0-c7fc672d1be6",
+        "product_id": 419,
+        "sale_row_id": 1032,
+        "sale_cogs": "31.80",
+        "consumption_derived_cogs": "31.79",
+        "difference": "0.01",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "reason": "consumption_derived_cogs is 0.00 \u2014 no StockConsumption rows exist at all for this (sale_id, product_id), not that the wrong batch was charged. There is nothing left to reconstruct which batch(es) were actually consumed; Sale.cogs should stand as recorded (it is what appeared on that day's reports) and this gap should be documented as an unrecoverable pre-ledger audit-trail gap, not silently \"fixed\" with an invented number."
+      }
+    ],
+    "INV-8": [
+      {
+        "batch_id": 2085,
+        "product_id": 292,
+        "current_qty_remaining_base": "-18.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2085,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 292,
+            "qty_remaining_base": "-18.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 18.0000 moved off batch 2085 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 292 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2140,
+        "product_id": 481,
+        "current_qty_remaining_base": "-40.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2140,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 481,
+            "qty_remaining_base": "-40.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 40.0000 moved off batch 2140 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 481 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2119,
+        "product_id": 282,
+        "current_qty_remaining_base": "-9.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2119,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 282,
+            "qty_remaining_base": "-9.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 9.0000 moved off batch 2119 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 282 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2142,
+        "product_id": 289,
+        "current_qty_remaining_base": "-250.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2142,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 289,
+            "qty_remaining_base": "-250.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 250.0000 moved off batch 2142 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 289 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 1444,
+        "product_id": 315,
+        "current_qty_remaining_base": "-1.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 1444,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 315,
+            "qty_remaining_base": "-1.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 1.0000 moved off batch 1444 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 315 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2090,
+        "product_id": 442,
+        "current_qty_remaining_base": "-2056.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2090,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 442,
+            "qty_remaining_base": "-2056.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 2056.0000 moved off batch 2090 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 442 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2066,
+        "product_id": 440,
+        "current_qty_remaining_base": "-400.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2066,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 440,
+            "qty_remaining_base": "-400.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 400.0000 moved off batch 2066 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 440 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 1685,
+        "product_id": 310,
+        "current_qty_remaining_base": "-6.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 1685,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 310,
+            "qty_remaining_base": "-6.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 6.0000 moved off batch 1685 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 310 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 1623,
+        "product_id": 441,
+        "current_qty_remaining_base": "-150.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 1623,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 441,
+            "qty_remaining_base": "-150.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 150.0000 moved off batch 1623 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 441 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2068,
+        "product_id": 296,
+        "current_qty_remaining_base": "-404.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2068,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 296,
+            "qty_remaining_base": "-404.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 404.0000 moved off batch 2068 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 296 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2135,
+        "product_id": 331,
+        "current_qty_remaining_base": "-215.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2135,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 331,
+            "qty_remaining_base": "-215.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 215.0000 moved off batch 2135 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 331 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2145,
+        "product_id": 477,
+        "current_qty_remaining_base": "-1.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2145,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 477,
+            "qty_remaining_base": "-1.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 1.0000 moved off batch 2145 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 477 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 1925,
+        "product_id": 541,
+        "current_qty_remaining_base": "-1.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 1925,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 541,
+            "qty_remaining_base": "-1.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 1.0000 moved off batch 1925 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 541 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 1563,
+        "product_id": 602,
+        "current_qty_remaining_base": "-5.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 1563,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 602,
+            "qty_remaining_base": "-5.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 5.0000 moved off batch 1563 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 602 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2133,
+        "product_id": 613,
+        "current_qty_remaining_base": "-16.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2133,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 613,
+            "qty_remaining_base": "-16.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 16.0000 moved off batch 2133 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 613 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2116,
+        "product_id": 449,
+        "current_qty_remaining_base": "-362.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2116,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 449,
+            "qty_remaining_base": "-362.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 362.0000 moved off batch 2116 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 449 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2128,
+        "product_id": 614,
+        "current_qty_remaining_base": "-40.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2128,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 614,
+            "qty_remaining_base": "-40.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 40.0000 moved off batch 2128 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 614 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2060,
+        "product_id": 618,
+        "current_qty_remaining_base": "-16.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2060,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 618,
+            "qty_remaining_base": "-16.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 16.0000 moved off batch 2060 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 618 is received."
+          }
+        }
+      },
+      {
+        "batch_id": 2125,
+        "product_id": 14,
+        "current_qty_remaining_base": "-16.0000",
+        "status": "PROPOSED",
+        "correction": {
+          "zero_out_batch_id": 2125,
+          "zeroed_qty_remaining_base": "0.0000",
+          "new_negative_placeholder": {
+            "product_id": 14,
+            "qty_remaining_base": "-16.000000",
+            "estimated_unit_cost": "0.000000",
+            "cost_estimation_method": "historical_repair",
+            "batch_type": "negative_placeholder",
+            "cost_reconciled": false,
+            "note": "P4-1 reconciliation, run 61a51ac5-c931-4723-8863-9bbfe8468fe5. Historical oversell shortfall of 16.0000 moved off batch 2125 (pre-P2-1 defect posted it directly against a live batch instead of a placeholder). Will be absorbed by absorb_neg_placeholder the next time product 14 is received."
+          }
+        }
+      }
+    ],
+    "INV-9": [
+      {
+        "batch_id": 588,
+        "check": "cost_per_base_unit == final_cost_incl_vat / qty_purchased_base",
+        "stored": "223.03",
+        "expected": "250.33",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "deviation": "27.30",
+        "reason": "deviation of 27.30 is far outside the 0.01 rounding tolerance this invariant documents \u2014 more likely a real data-entry error at receive time than the independent-rounding bug the other violations show."
+      },
+      {
+        "batch_id": 1331,
+        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+        "stored": "1600.00",
+        "expected": "1100.00",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "deviation": "500.00",
+        "reason": "deviation of 500.00 is far outside the 0.01 rounding tolerance this invariant documents \u2014 more likely a real data-entry error at receive time than the independent-rounding bug the other violations show."
+      },
+      {
+        "batch_id": 1682,
+        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+        "stored": "550.00",
+        "expected": "549.90",
+        "status": "PROPOSED",
+        "deviation": "0.10",
+        "correction": "set base_cost_incl_vat to 549.90"
+      },
+      {
+        "batch_id": 1330,
+        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+        "stored": "1600.00",
+        "expected": "1100.00",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "deviation": "500.00",
+        "reason": "deviation of 500.00 is far outside the 0.01 rounding tolerance this invariant documents \u2014 more likely a real data-entry error at receive time than the independent-rounding bug the other violations show."
+      },
+      {
+        "batch_id": 1329,
+        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+        "stored": "1700.00",
+        "expected": "1200.00",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "deviation": "500.00",
+        "reason": "deviation of 500.00 is far outside the 0.01 rounding tolerance this invariant documents \u2014 more likely a real data-entry error at receive time than the independent-rounding bug the other violations show."
+      },
+      {
+        "batch_id": 1327,
+        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+        "stored": "0.00",
+        "expected": "800.00",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "deviation": "800.00",
+        "reason": "deviation of 800.00 is far outside the 0.01 rounding tolerance this invariant documents \u2014 more likely a real data-entry error at receive time than the independent-rounding bug the other violations show."
+      },
+      {
+        "batch_id": 1328,
+        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+        "stored": "1200.00",
+        "expected": "1000.00",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "deviation": "200.00",
+        "reason": "deviation of 200.00 is far outside the 0.01 rounding tolerance this invariant documents \u2014 more likely a real data-entry error at receive time than the independent-rounding bug the other violations show."
+      },
+      {
+        "batch_id": 2057,
+        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+        "stored": "60.97",
+        "expected": "3350.00",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "deviation": "3289.03",
+        "reason": "deviation of 3289.03 is far outside the 0.01 rounding tolerance this invariant documents \u2014 more likely a real data-entry error at receive time than the independent-rounding bug the other violations show."
+      }
+    ]
+  }
+}
