@@ -2,12 +2,17 @@
 """
 Rev 5 P4-1 — stamp owner-confirmed-free stock.
 
-The owner confirmed directly (2026-09-19) that four specific historical
-batches were genuinely given away, not mispriced:
+The owner confirmed directly (2026-09-19) that these historical batches were
+genuinely given away, not mispriced. Round 1:
   1522  Water              — internal use, not sold directly (is_for_sale=False)
   1918  Springbok Droewors — confirmed free
   1515  Biltong - Kudu     — a small (qty 5) first/taster batch, confirmed free
   1529  Biltong - Kudu     — the larger batch from the same day, also confirmed free
+Round 2 (CONFIRMATIONS below reflects only the still-outstanding batches —
+round 1's four are already stamped and committed, so re-listing them here
+would just create a redundant second AuditLog entry for no reason):
+  1332  Preserved Guavas   — confirmed free
+  1927  Preserved Guavas   — confirmed free (a separate receive, same product)
 
 This stamps CONFIRMED_FREE_MARKER (see reconcile.py's check_inv4_no_free_stock)
 onto each one's cost_adjustment_reason, so INV-4 stops flagging them — not as
@@ -34,11 +39,10 @@ from models import AuditLog, StockBatch  # noqa: E402
 from reconcile import _make_session, _d, CONFIRMED_FREE_MARKER, check_inv4_no_free_stock  # noqa: E402
 from decimal import Decimal  # noqa: E402
 
+# Round 1 (1522, 1918, 1515, 1529) already committed — see git history for that run.
 CONFIRMATIONS = {
-    1522: 'Water — internal use, not sold directly (is_for_sale=False on the product).',
-    1918: 'Springbok Droewors — owner confirmed this batch was genuinely given away.',
-    1515: 'Biltong - Kudu — small (qty 5) first/taster batch, owner confirmed genuinely free.',
-    1529: 'Biltong - Kudu — larger batch from the same day (2026-08-22), owner confirmed genuinely free too.',
+    1332: 'Preserved Guavas — owner confirmed this batch was genuinely given away.',
+    1927: 'Preserved Guavas — separate receive of the same product, owner confirmed genuinely free too.',
 }
 
 
