@@ -1,14 +1,14 @@
 {
-  "run_id": "510cebe1-80b3-42fd-b36b-d928b51a3591",
-  "generated_at": "2026-09-19T15:20:04.171647+00:00",
+  "run_id": "2e202402-ddbc-4096-b710-e5224bade707",
+  "generated_at": "2026-09-19T15:52:34.928247+00:00",
   "mode": "DRY_RUN \u2014 no writes performed",
   "phase": "P4-1",
   "source_baseline": "reports/p0-3-baseline-prod-20260919.json",
   "summary": {
     "INV-4": {
       "total": 15,
-      "proposed": 0,
-      "needs_manual_review": 15
+      "proposed": 7,
+      "needs_manual_review": 8
     },
     "INV-5": {
       "total": 6,
@@ -26,8 +26,8 @@
       "needs_manual_review": 0
     },
     "INV-9": {
-      "total": 7,
-      "proposed": 7,
+      "total": 0,
+      "proposed": 0,
       "needs_manual_review": 0
     }
   },
@@ -39,8 +39,12 @@
         "qty_remaining_base": "0.0000",
         "purchased_at": "2026-08-04T14:55:11.638593",
         "still_live_stock": false,
-        "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "84.837545",
+        "also_sets_vat_chain": false,
+        "cost_basis": "ESTIMATE, not an invoice fact: backed out of selling price (94.00) and margin_pct (10.80) via cost = price / (1 + margin_pct/100) \u2014 no comparable batch of this product exists to average against instead.",
+        "is_estimate": true,
+        "run_id": "2e202402-ddbc-4096-b710-e5224bade707"
       },
       {
         "batch_id": 1332,
@@ -49,7 +53,7 @@
         "purchased_at": "2026-08-13T00:00:00",
         "still_live_stock": false,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       },
       {
         "batch_id": 1515,
@@ -58,7 +62,7 @@
         "purchased_at": "2026-08-22T00:00:00",
         "still_live_stock": false,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       },
       {
         "batch_id": 1605,
@@ -66,8 +70,12 @@
         "qty_remaining_base": "7.0000",
         "purchased_at": "2026-08-25T00:00:00",
         "still_live_stock": true,
-        "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "4.000000",
+        "also_sets_vat_chain": true,
+        "cost_basis": "ESTIMATE, not an invoice fact: backed out of selling price (6.00) and margin_pct (50.00) via cost = price / (1 + margin_pct/100) \u2014 no comparable batch of this product exists to average against instead. The batch's base_cost_total/base_cost_incl_vat/final_cost_incl_vat were all already exactly zero, so they are set consistently with this estimate too (qty_purchased_base x estimate), rather than left at a zero that would now disagree with cost_per_base_unit.",
+        "is_estimate": true,
+        "run_id": "2e202402-ddbc-4096-b710-e5224bade707"
       },
       {
         "batch_id": 1335,
@@ -75,8 +83,10 @@
         "qty_remaining_base": "6648.0000",
         "purchased_at": "2026-08-13T00:00:00",
         "still_live_stock": true,
-        "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "0.231064",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "2e202402-ddbc-4096-b710-e5224bade707"
       },
       {
         "batch_id": 1522,
@@ -85,7 +95,7 @@
         "purchased_at": "2026-08-22T00:00:00",
         "still_live_stock": true,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       },
       {
         "batch_id": 1253,
@@ -93,8 +103,12 @@
         "qty_remaining_base": "2.0000",
         "purchased_at": "2026-05-27T00:00:00",
         "still_live_stock": true,
-        "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "118.782480",
+        "also_sets_vat_chain": true,
+        "cost_basis": "ESTIMATE, not an invoice fact: backed out of selling price (160.00) and margin_pct (34.70) via cost = price / (1 + margin_pct/100) \u2014 no comparable batch of this product exists to average against instead. The batch's base_cost_total/base_cost_incl_vat/final_cost_incl_vat were all already exactly zero, so they are set consistently with this estimate too (qty_purchased_base x estimate), rather than left at a zero that would now disagree with cost_per_base_unit.",
+        "is_estimate": true,
+        "run_id": "2e202402-ddbc-4096-b710-e5224bade707"
       },
       {
         "batch_id": 1468,
@@ -102,8 +116,12 @@
         "qty_remaining_base": "1.0000",
         "purchased_at": "2026-08-19T09:11:37.090747",
         "still_live_stock": true,
-        "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "84.837545",
+        "also_sets_vat_chain": false,
+        "cost_basis": "ESTIMATE, not an invoice fact: backed out of selling price (94.00) and margin_pct (10.80) via cost = price / (1 + margin_pct/100) \u2014 no comparable batch of this product exists to average against instead.",
+        "is_estimate": true,
+        "run_id": "2e202402-ddbc-4096-b710-e5224bade707"
       },
       {
         "batch_id": 1576,
@@ -111,8 +129,12 @@
         "qty_remaining_base": "5.0000",
         "purchased_at": "2026-08-25T06:21:39.138173",
         "still_live_stock": true,
-        "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "34.264628",
+        "also_sets_vat_chain": false,
+        "cost_basis": "ESTIMATE, not an invoice fact: backed out of selling price (65.00) and margin_pct (89.70) via cost = price / (1 + margin_pct/100) \u2014 no comparable batch of this product exists to average against instead.",
+        "is_estimate": true,
+        "run_id": "2e202402-ddbc-4096-b710-e5224bade707"
       },
       {
         "batch_id": 1394,
@@ -120,8 +142,10 @@
         "qty_remaining_base": "0.0000",
         "purchased_at": "2026-08-15T00:00:00",
         "still_live_stock": false,
-        "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "status": "PROPOSED",
+        "proposed_cost_per_base_unit": "0.009995",
+        "cost_basis": "weighted average of this product's other normal batches \u2014 none existed before this one's purchased_at, so this is a fallback, not a point-in-time figure",
+        "run_id": "2e202402-ddbc-4096-b710-e5224bade707"
       },
       {
         "batch_id": 1578,
@@ -130,7 +154,7 @@
         "purchased_at": "2026-08-25T06:22:25.528944",
         "still_live_stock": true,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       },
       {
         "batch_id": 1927,
@@ -139,7 +163,7 @@
         "purchased_at": "2026-09-12T00:00:00",
         "still_live_stock": false,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       },
       {
         "batch_id": 1962,
@@ -148,7 +172,7 @@
         "purchased_at": "2026-09-14T10:13:36.489848",
         "still_live_stock": true,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "no other normal batch with a positive cost exists for this product \u2014 no weighted average can be computed; owner must supply a cost or confirm this is genuinely free stock."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       },
       {
         "batch_id": 1529,
@@ -157,7 +181,7 @@
         "purchased_at": "2026-08-22T00:00:00",
         "still_live_stock": true,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       },
       {
         "batch_id": 1918,
@@ -166,19 +190,10 @@
         "purchased_at": "2026-09-12T00:00:00",
         "still_live_stock": true,
         "status": "NEEDS_MANUAL_REVIEW",
-        "reason": "base_cost_incl_vat is populated (0.0000, not NULL) \u2014 this batch is also in INV-9's checked set, so a plain cost_per_base_unit fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a combined correction, reviewed by a human \u2014 see apply_inv4's matching guard."
+        "reason": "no other normal batch with a positive cost exists for this product, and no price+margin_pct combination exists to estimate from either \u2014 owner must supply a cost or confirm this is genuinely free stock."
       }
     ],
     "INV-5": [
-      {
-        "batch_id": 1382,
-        "liability_qty_outstanding_plus_settled": "1435.5200",
-        "consumed_qty": "5000.0000",
-        "difference": "-3564.4800",
-        "status": "NEEDS_MANUAL_REVIEW",
-        "direction": "consumption EXCEEDS liability recorded \u2014 consumption exists with no liability ever written, a possible real underpayment to the supplier",
-        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
-      },
       {
         "batch_id": 1388,
         "liability_qty_outstanding_plus_settled": "24.0000",
@@ -222,6 +237,15 @@
         "difference": "829.0000",
         "status": "NEEDS_MANUAL_REVIEW",
         "direction": "liability recorded EXCEEDS consumption \u2014 possible unreturned-quantity artifact (this check does not net returns pre-P2-2) or an overstated liability",
+        "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
+      },
+      {
+        "batch_id": 1382,
+        "liability_qty_outstanding_plus_settled": "1435.5200",
+        "consumed_qty": "5000.0000",
+        "difference": "-3564.4800",
+        "status": "NEEDS_MANUAL_REVIEW",
+        "direction": "consumption EXCEEDS liability recorded \u2014 consumption exists with no liability ever written, a possible real underpayment to the supplier",
         "reason": "supplier liability figure \u2014 reconcile.py's own docstring documents this check does not net returned quantity, so part of this gap may be a real return rather than corruption. Needs a human decision against the actual supplier relationship, not an automatic correction."
       }
     ],
@@ -698,105 +722,6 @@
       }
     ],
     "INV-8": [],
-    "INV-9": [
-      {
-        "batch_id": 588,
-        "check": "cost_per_base_unit == final_cost_incl_vat / qty_purchased_base",
-        "stored": "223.03",
-        "expected": "250.33",
-        "recomputed": {
-          "base_cost_incl_vat": "500.66",
-          "final_cost_incl_vat": "500.66",
-          "cost_per_base_unit": "250.33"
-        },
-        "status": "PROPOSED",
-        "cost_per_unit_changing": true,
-        "correction": "recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit changes to 250.33"
-      },
-      {
-        "batch_id": 1331,
-        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
-        "stored": "1600.00",
-        "expected": "1100.00",
-        "recomputed": {
-          "base_cost_incl_vat": "1100.00",
-          "final_cost_incl_vat": "1100.00",
-          "cost_per_base_unit": "0.06"
-        },
-        "status": "PROPOSED",
-        "cost_per_unit_changing": false,
-        "correction": "recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit unchanged"
-      },
-      {
-        "batch_id": 1330,
-        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
-        "stored": "1600.00",
-        "expected": "1100.00",
-        "recomputed": {
-          "base_cost_incl_vat": "1100.00",
-          "final_cost_incl_vat": "1100.00",
-          "cost_per_base_unit": "0.06"
-        },
-        "status": "PROPOSED",
-        "cost_per_unit_changing": false,
-        "correction": "recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit unchanged"
-      },
-      {
-        "batch_id": 1329,
-        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
-        "stored": "1700.00",
-        "expected": "1200.00",
-        "recomputed": {
-          "base_cost_incl_vat": "1200.00",
-          "final_cost_incl_vat": "1200.00",
-          "cost_per_base_unit": "0.06"
-        },
-        "status": "PROPOSED",
-        "cost_per_unit_changing": false,
-        "correction": "recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit unchanged"
-      },
-      {
-        "batch_id": 1327,
-        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
-        "stored": "0.00",
-        "expected": "800.00",
-        "recomputed": {
-          "base_cost_incl_vat": "800.00",
-          "final_cost_incl_vat": "800.00",
-          "cost_per_base_unit": "40.00"
-        },
-        "status": "PROPOSED",
-        "cost_per_unit_changing": false,
-        "correction": "recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit unchanged"
-      },
-      {
-        "batch_id": 1328,
-        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
-        "stored": "1200.00",
-        "expected": "1000.00",
-        "recomputed": {
-          "base_cost_incl_vat": "1000.00",
-          "final_cost_incl_vat": "1000.00",
-          "cost_per_base_unit": "0.05"
-        },
-        "status": "PROPOSED",
-        "cost_per_unit_changing": false,
-        "correction": "recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit unchanged"
-      },
-      {
-        "batch_id": 2057,
-        "check": "base_cost_incl_vat == base_cost_total + vat_amount",
-        "stored": "60.97",
-        "expected": "3350.00",
-        "recomputed": {
-          "base_cost_incl_vat": "3350.00",
-          "final_cost_incl_vat": "3350.00",
-          "cost_per_base_unit": "0.34"
-        },
-        "status": "PROPOSED",
-        "cost_per_unit_changing": false,
-        "correction": "recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit unchanged"
-      }
-    ]
+    "INV-9": []
   }
 }

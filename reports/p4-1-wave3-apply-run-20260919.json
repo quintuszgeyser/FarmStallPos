@@ -1,0 +1,105 @@
+{
+  "run_id": "08e7cf87-8052-4087-8400-169c6d05ce9d",
+  "generated_at": "2026-09-19T15:53:41.704414+00:00",
+  "mode": "COMMITTED",
+  "phase": "P4-1",
+  "source_proposal": "/app/reports/p4-1-dry-run-prod-20260919.json",
+  "targets": {
+    "INV-4": [
+      866,
+      1605,
+      1335,
+      1253,
+      1468,
+      1576,
+      1394
+    ],
+    "INV-9": []
+  },
+  "log": [
+    {
+      "batch_id": 866,
+      "action": "APPLIED",
+      "old_cost": "0.000000",
+      "new_cost": "84.837545",
+      "is_estimate": true
+    },
+    {
+      "batch_id": 1605,
+      "action": "APPLIED",
+      "old_cost": "0.000000",
+      "new_cost": "4.000000",
+      "is_estimate": true
+    },
+    {
+      "batch_id": 1605,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "7.0000"
+    },
+    {
+      "batch_id": 1335,
+      "action": "APPLIED",
+      "old_cost": "0.000000",
+      "new_cost": "0.231064",
+      "is_estimate": false
+    },
+    {
+      "batch_id": 1335,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "6648.0000"
+    },
+    {
+      "batch_id": 1253,
+      "action": "APPLIED",
+      "old_cost": "0.000000",
+      "new_cost": "118.782480",
+      "is_estimate": true
+    },
+    {
+      "batch_id": 1253,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "2.0000"
+    },
+    {
+      "batch_id": 1468,
+      "action": "APPLIED",
+      "old_cost": "0.000000",
+      "new_cost": "84.837545",
+      "is_estimate": false
+    },
+    {
+      "batch_id": 1468,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "1.0000"
+    },
+    {
+      "batch_id": 1576,
+      "action": "APPLIED",
+      "old_cost": "0.000000",
+      "new_cost": "34.264628",
+      "is_estimate": true
+    },
+    {
+      "batch_id": 1576,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "5.0000"
+    },
+    {
+      "batch_id": 1394,
+      "action": "APPLIED",
+      "old_cost": "0.000000",
+      "new_cost": "0.009995",
+      "is_estimate": false
+    }
+  ],
+  "verification": {
+    "inv4_total_violations_after": 8,
+    "inv9_total_violations_after": 0,
+    "inv3_total_violations_after": 0,
+    "inv11_total_violations_after": 0,
+    "targeted_batches_still_violating": [],
+    "newly_broken_untargeted_batches": [],
+    "applied_count": 7,
+    "skipped_count": 0
+  }
+}
