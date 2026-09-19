@@ -102,13 +102,19 @@ both success and failure since there's no other row recording who watched
 the cameras; logout is EXPLICITLY_EXEMPT like auth.py's). 'stats' — all 28
 routes are reporting/export reads with zero ORM writes anywhere in the file
 (verified by grepping for db.session.add/commit/delete/update before
-adopting), so every one is NO_STATE_CHANGE.
+adopting), so every one is NO_STATE_CHANGE. 'employees' — the payroll/HR
+blueprint, the last one adopted, closing out P3-1b's full-app rollout.
+Employee records, attendance, shift schedule, leave (request/approve/reject/
+cancel), advances, loans, documents, pay-run lifecycle (create/approve/paid/
+revert/delete/bulk), schedule rules, leave policies, leave adjustments, and
+pay rule multipliers are all AUDITED — this is money paid to people and
+legally significant labour records. Reads are NO_STATE_CHANGE.
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
                       'categories', 'cost_categories', 'families', 'kitchen', 'specials',
                       'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule',
-                      'stats',
+                      'stats', 'employees',
                       'cost_corrections', 'bulk', 'backup', 'labels', 'scale', 'imports', 'cctv'}
 
 

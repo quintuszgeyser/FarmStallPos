@@ -20,6 +20,7 @@ from models import (
     db,
     User, Product, Supplier, RecipeLine,
     StockBatch, StockConsumption, StockMovement, TillSession, Customer,
+    Employee,
 )
 
 _seq = {'n': 0}
@@ -164,6 +165,15 @@ def make_customer(**overrides):
     db.session.add(customer)
     db.session.flush()
     return customer
+
+
+def make_employee(**overrides):
+    defaults = dict(name=_next('Employee '), hourly_rate=Decimal('50.00'))
+    defaults.update(overrides)
+    employee = Employee(**defaults)
+    db.session.add(employee)
+    db.session.flush()
+    return employee
 
 
 def make_till_session(user=None, **overrides):

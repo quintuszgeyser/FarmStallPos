@@ -65,7 +65,7 @@ from decimal import Decimal
 from flask import Blueprint, jsonify, request, render_template, session
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, get_setting
+from helpers import require_login, require_role, current_user, get_setting, audit_event, audit_policy
 from models import (
     db, User, Setting,
     Employee, EmployeeDeduction, PayRule, EmployeeAttendance,
@@ -594,6 +594,7 @@ def _next_reference():
 # ── Employee CRUD ─────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_employees_list():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -602,6 +603,7 @@ def api_employees_list():
 
 
 @bp.route('/api/employees', methods=['POST'])
+@audit_policy('AUDITED')
 def api_employees_create():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -641,11 +643,13 @@ def api_employees_create():
     # Auto-generate employee number if not supplied
     if not emp.employee_number:
         emp.employee_number = f"EMP-{emp.id:04d}"
+    audit_event('employee_created', 'employees', emp.id, after={'name': emp.name, 'employee_number': emp.employee_number})
     db.session.commit()
     return jsonify(_serialize_employee(emp)), 201
 
 
 @bp.route('/api/employees/<int:eid>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_employees_get(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -654,10 +658,13 @@ def api_employees_get(eid):
 
 
 @bp.route('/api/employees/<int:eid>', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_employees_update(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     emp = Employee.query.get_or_404(eid)
+    _before = {'name': emp.name, 'hourly_rate': float(emp.hourly_rate) if emp.hourly_rate is not None else None,
+               'bank_account': emp.bank_account, 'is_active': emp.is_active}
     d = request.json or {}
     for field in ('name', 'employee_number', 'id_number', 'tax_number', 'uif_number',
                   'bank_name', 'bank_account', 'bank_branch_code', 'phone',
@@ -687,16 +694,22 @@ def api_employees_update(eid):
         emp.rotation_slot = int(d['rotation_slot']) if d['rotation_slot'] is not None and str(d['rotation_slot']).strip() != '' else None
     if 'is_active' in d:
         emp.is_active = bool(d['is_active'])
+    audit_event('employee_updated', 'employees', eid, before=_before, after={
+        'name': emp.name, 'hourly_rate': float(emp.hourly_rate) if emp.hourly_rate is not None else None,
+        'bank_account': emp.bank_account, 'is_active': emp.is_active,
+    })
     db.session.commit()
     return jsonify(_serialize_employee(emp))
 
 
 @bp.route('/api/employees/<int:eid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_employees_delete(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     emp = Employee.query.get_or_404(eid)
     emp.is_active = False
+    audit_event('employee_deactivated', 'employees', eid, before={'is_active': True}, after={'is_active': False})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -704,6 +717,7 @@ def api_employees_delete(eid):
 # ── Deductions ────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/deductions', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_deductions_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -716,6 +730,7 @@ def api_deductions_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/deductions', methods=['POST'])
+@audit_policy('AUDITED')
 def api_deductions_create(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -730,30 +745,40 @@ def api_deductions_create(eid):
         sort_order     = d.get('sort_order', 0),
     )
     db.session.add(ded)
+    db.session.flush()
+    audit_event('employee_deduction_created', 'employee_deductions', ded.id,
+                after={'employee_id': eid, 'label': ded.label, 'amount': float(ded.amount)})
     db.session.commit()
     return jsonify({'id': ded.id, 'label': ded.label}), 201
 
 
 @bp.route('/api/employees/<int:eid>/deductions/<int:did>', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_deductions_update(eid, did):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     ded = EmployeeDeduction.query.filter_by(id=did, employee_id=eid).first_or_404()
     d = request.json or {}
+    _before = {'label': ded.label, 'amount': float(ded.amount), 'is_active': ded.is_active}
     if 'label' in d:          ded.label          = d['label'].strip()
     if 'deduction_type' in d: ded.deduction_type = d['deduction_type']
     if 'amount' in d:         ded.amount         = Decimal(str(d['amount']))
     if 'is_active' in d:      ded.is_active       = bool(d['is_active'])
     if 'sort_order' in d:     ded.sort_order      = int(d['sort_order'])
+    audit_event('employee_deduction_updated', 'employee_deductions', did, before=_before,
+                after={'label': ded.label, 'amount': float(ded.amount), 'is_active': ded.is_active})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/employees/<int:eid>/deductions/<int:did>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_deductions_delete(eid, did):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     ded = EmployeeDeduction.query.filter_by(id=did, employee_id=eid).first_or_404()
+    audit_event('employee_deduction_deleted', 'employee_deductions', did,
+                before={'employee_id': eid, 'label': ded.label}, after=None)
     db.session.delete(ded)
     db.session.commit()
     return jsonify({'ok': True})
@@ -762,6 +787,7 @@ def api_deductions_delete(eid, did):
 # ── Attendance ────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/attendance', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_attendance_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -837,6 +863,7 @@ def api_attendance_list(eid):
 
 
 @bp.route('/api/employees/generate_schedule', methods=['POST'])
+@audit_policy('AUDITED')
 def api_generate_schedule():
     """Bulk-create default attendance for all active employees for a given month.
 
@@ -1023,11 +1050,16 @@ def api_generate_schedule():
             ))
             created += 1
 
+    audit_event('employee_schedule_generated', 'employee_attendance', None, after={
+        'created': created, 'skipped': skipped, 'paid_skipped': paid_skipped,
+        'deleted': deleted, 'employees': len(employees),
+    })
     db.session.commit()
     return jsonify({'created': created, 'skipped': skipped, 'paid_skipped': paid_skipped, 'deleted': deleted, 'employees': len(employees)})
 
 
 @bp.route('/api/employees/clear_schedule', methods=['POST'])
+@audit_policy('AUDITED')
 def api_clear_schedule():
     """Delete all schedule_default attendance entries for a given date range or month.
     Only removes entries with source='schedule_default' — manual/admin entries are untouched.
@@ -1056,11 +1088,14 @@ def api_clear_schedule():
                        EmployeeAttendance.work_date <= d_to,
                        EmployeeAttendance.source    == 'schedule_default')
                .delete(synchronize_session=False))
+    audit_event('employee_schedule_cleared', 'employee_attendance', None,
+                after={'deleted': deleted, 'from': d_from.isoformat(), 'to': d_to.isoformat()})
     db.session.commit()
     return jsonify({'deleted': deleted, 'from': d_from.isoformat(), 'to': d_to.isoformat()})
 
 
 @bp.route('/api/employees/attendance/summary', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_attendance_summary():
     """Returns attendance for ALL active employees for a date range — used by the
     all-employees calendar grid view. Accepts ?date_from=YYYY-MM-DD&date_to=YYYY-MM-DD
@@ -1160,6 +1195,7 @@ def api_attendance_summary():
 
 
 @bp.route('/api/employees/<int:eid>/attendance', methods=['POST'])
+@audit_policy('AUDITED')
 def api_attendance_upsert(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1195,6 +1231,8 @@ def api_attendance_upsert(eid):
     u = current_user()
 
     if existing:
+        _before = {'clock_in': str(existing.clock_in), 'clock_out': str(existing.clock_out),
+                   'hours_worked': float(existing.hours_worked) if existing.hours_worked else None}
         existing.clock_in      = d.get('clock_in') or existing.clock_in
         existing.clock_out     = d.get('clock_out') or existing.clock_out
         existing.break_minutes = int(d.get('break_minutes', existing.break_minutes or 0))
@@ -1205,6 +1243,10 @@ def api_attendance_upsert(eid):
         existing.source    = d.get('source', 'admin_entry')
         existing.updated_by = u.id if u else None
         existing.updated_at = datetime.utcnow()
+        audit_event('employee_attendance_updated', 'employee_attendance', existing.id, before=_before, after={
+            'clock_in': str(existing.clock_in), 'clock_out': str(existing.clock_out),
+            'hours_worked': float(existing.hours_worked) if existing.hours_worked else None,
+        })
         db.session.commit()
         return jsonify(_serialize_attendance(existing))
 
@@ -1221,11 +1263,17 @@ def api_attendance_upsert(eid):
         created_by    = u.id if u else None,
     )
     db.session.add(row)
+    db.session.flush()
+    audit_event('employee_attendance_created', 'employee_attendance', row.id, after={
+        'employee_id': eid, 'work_date': work_date.isoformat(),
+        'hours_worked': float(row.hours_worked) if row.hours_worked else None,
+    })
     db.session.commit()
     return jsonify(_serialize_attendance(row)), 201
 
 
 @bp.route('/api/employees/<int:eid>/attendance/<int:aid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_attendance_delete(eid, aid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1238,6 +1286,8 @@ def api_attendance_delete(eid, aid):
     ).first()
     if paid_lock:
         return jsonify({'skipped': True, 'reason': f'Skipped — date is covered by paid payslip {paid_lock.reference}. Revert to draft to edit.'})
+    audit_event('employee_attendance_deleted', 'employee_attendance', aid,
+                before={'employee_id': eid, 'work_date': row.work_date.isoformat()}, after=None)
     db.session.delete(row)
     db.session.commit()
     return jsonify({'ok': True})
@@ -1257,6 +1307,7 @@ def _parse_time(s):
 # ── Shift Schedule ────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/schedule', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_schedule_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -1291,6 +1342,7 @@ def api_schedule_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/schedule', methods=['POST'])
+@audit_policy('AUDITED')
 def api_schedule_upsert(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1312,6 +1364,8 @@ def api_schedule_upsert(eid):
         existing.expected_end   = _parse_time(d.get('expected_end'))
         existing.expected_hours = exp_hrs
         existing.notes          = d.get('notes', existing.notes)
+        audit_event('employee_shift_schedule_updated', 'shift_schedules', existing.id,
+                    after={'employee_id': eid, 'scheduled_date': sched_date.isoformat()})
         db.session.commit()
         return jsonify({'id': existing.id})
 
@@ -1325,15 +1379,21 @@ def api_schedule_upsert(eid):
         created_by     = u.id if u else None,
     )
     db.session.add(row)
+    db.session.flush()
+    audit_event('employee_shift_schedule_created', 'shift_schedules', row.id,
+                after={'employee_id': eid, 'scheduled_date': sched_date.isoformat()})
     db.session.commit()
     return jsonify({'id': row.id}), 201
 
 
 @bp.route('/api/employees/<int:eid>/schedule/<int:sid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_schedule_delete(eid, sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     row = ShiftSchedule.query.filter_by(id=sid, employee_id=eid).first_or_404()
+    audit_event('employee_shift_schedule_deleted', 'shift_schedules', sid,
+                before={'employee_id': eid, 'scheduled_date': row.scheduled_date.isoformat()}, after=None)
     db.session.delete(row)
     db.session.commit()
     return jsonify({'ok': True})
@@ -1519,6 +1579,7 @@ def _compute_leave_balance(emp, leave_type, as_of=None):
 # ── Leave ─────────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/leaves', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_leaves_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -1540,6 +1601,7 @@ def api_leaves_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/leaves', methods=['POST'])
+@audit_policy('AUDITED')
 def api_leaves_request(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -1593,11 +1655,17 @@ def api_leaves_request(eid):
         reason         = reason,
     )
     db.session.add(req)
+    db.session.flush()
+    audit_event('employee_leave_requested', 'leave_requests', req.id, after={
+        'employee_id': eid, 'leave_type': leave_type, 'date_from': d_from.isoformat(),
+        'date_to': d_to.isoformat(), 'days_requested': float(days),
+    })
     db.session.commit()
     return jsonify({'id': req.id, 'status': req.status, 'days_requested': float(days)}), 201
 
 
 @bp.route('/api/employees/<int:eid>/leaves/<int:lid>/approve', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_leaves_approve(eid, lid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1654,17 +1722,23 @@ def api_leaves_approve(eid, lid):
                     ))
         current_day += timedelta(days=1)
 
+    audit_event('employee_leave_approved', 'leave_requests', lid, after={
+        'employee_id': eid, 'leave_type': req.leave_type, 'warnings': warnings,
+    })
     db.session.commit()
     return jsonify({'ok': True, 'status': 'approved', 'warnings': warnings})
 
 
 @bp.route('/api/employees/<int:eid>/leaves/<int:lid>/reject', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_leaves_reject(eid, lid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     req = LeaveRequest.query.filter_by(id=lid, employee_id=eid).first_or_404()
     req.status           = 'rejected'
     req.rejection_reason = ((request.json or {}).get('reason') or '').strip() or None
+    audit_event('employee_leave_rejected', 'leave_requests', lid,
+                after={'employee_id': eid, 'reason': req.rejection_reason})
     db.session.commit()
     return jsonify({'ok': True, 'status': 'rejected'})
 
@@ -1672,6 +1746,7 @@ def api_leaves_reject(eid, lid):
 # ── Advances ──────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/advances', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_advances_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -1689,6 +1764,7 @@ def api_advances_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/advances', methods=['POST'])
+@audit_policy('AUDITED')
 def api_advances_create(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1703,16 +1779,22 @@ def api_advances_create(eid):
         approved_by = u.id if u else None,
     )
     db.session.add(adv)
+    db.session.flush()
+    audit_event('employee_advance_created', 'employee_advances', adv.id,
+                after={'employee_id': eid, 'amount': float(adv.amount)})
     db.session.commit()
     return jsonify({'id': adv.id, 'amount': float(adv.amount)}), 201
 
 
 @bp.route('/api/employees/<int:eid>/advances/<int:aid>/cancel', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_advances_cancel(eid, aid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     adv = EmployeeAdvance.query.filter_by(id=aid, employee_id=eid, status='outstanding').first_or_404()
     adv.status = 'cancelled'
+    audit_event('employee_advance_cancelled', 'employee_advances', aid,
+                before={'status': 'outstanding'}, after={'status': 'cancelled'})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -1720,6 +1802,7 @@ def api_advances_cancel(eid, aid):
 # ── Loans ─────────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/loans', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_loans_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -1738,6 +1821,7 @@ def api_loans_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/loans', methods=['POST'])
+@audit_policy('AUDITED')
 def api_loans_create(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1755,6 +1839,9 @@ def api_loans_create(eid):
         approved_by = u.id if u else None,
     )
     db.session.add(loan)
+    db.session.flush()
+    audit_event('employee_loan_created', 'employee_loans', loan.id,
+                after={'employee_id': eid, 'principal': float(principal)})
     db.session.commit()
     return jsonify({'id': loan.id}), 201
 
@@ -1762,6 +1849,7 @@ def api_loans_create(eid):
 # ── Documents ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/documents', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_documents_list(eid):
     _, _, err = _own_or_admin(eid)
     if err:
@@ -1777,6 +1865,7 @@ def api_documents_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/documents', methods=['POST'])
+@audit_policy('AUDITED')
 def api_documents_upload(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1801,11 +1890,15 @@ def api_documents_upload(eid):
         uploaded_by   = u.id if u else None,
     )
     db.session.add(doc)
+    db.session.flush()
+    audit_event('employee_document_uploaded', 'employee_documents', doc.id,
+                after={'employee_id': eid, 'document_type': doc_type, 'label': label})
     db.session.commit()
     return jsonify({'id': doc.id, 'label': doc.label}), 201
 
 
 @bp.route('/api/employees/<int:eid>/documents/<int:did>/download', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_documents_download(eid, did):
     _, _, err = _own_or_admin(eid)
     if err:
@@ -1817,6 +1910,7 @@ def api_documents_download(eid, did):
 
 
 @bp.route('/api/employees/<int:eid>/documents/<int:did>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_documents_delete(eid, did):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1826,6 +1920,8 @@ def api_documents_delete(eid, did):
         os.remove(path)
     except FileNotFoundError:
         pass
+    audit_event('employee_document_deleted', 'employee_documents', did,
+                before={'employee_id': eid, 'label': doc.label}, after=None)
     db.session.delete(doc)
     db.session.commit()
     return jsonify({'ok': True})
@@ -1834,6 +1930,7 @@ def api_documents_delete(eid, did):
 # ── Pay Runs ──────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/<int:eid>/pay_runs', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_pay_runs_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -1843,6 +1940,7 @@ def api_pay_runs_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/preview', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_pay_runs_preview(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1860,6 +1958,7 @@ def api_pay_runs_preview(eid):
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs', methods=['POST'])
+@audit_policy('AUDITED')
 def api_pay_runs_create(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1906,11 +2005,17 @@ def api_pay_runs_create(eid):
         created_by                 = u.id if u else None,
     )
     db.session.add(pr)
+    db.session.flush()
+    audit_event('employee_pay_run_created', 'pay_runs', pr.id, after={
+        'employee_id': eid, 'reference': ref, 'period_start': p_start.isoformat(),
+        'period_end': p_end.isoformat(), 'gross_pay': float(pr.gross_pay), 'net_pay': float(pr.net_pay),
+    })
     db.session.commit()
     return jsonify(_serialize_pay_run(pr)), 201
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/approve', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_pay_runs_approve(eid, pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1938,11 +2043,14 @@ def api_pay_runs_approve(eid, pid):
                 if loan.balance == 0:
                     loan.status = 'settled'
 
+    audit_event('employee_pay_run_approved', 'pay_runs', pid,
+                after={'employee_id': eid, 'reference': pr.reference, 'net_pay': float(pr.net_pay)})
     db.session.commit()
     return jsonify({'ok': True, 'status': 'approved', 'reference': pr.reference})
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_pay_runs_delete(eid, pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1963,12 +2071,15 @@ def api_pay_runs_delete(eid, pid):
                     loan.balance = Decimal(str(loan.balance)) + Decimal(str(ded['amount']))
                     if loan.status == 'settled':
                         loan.status = 'active'
+    audit_event('employee_pay_run_deleted', 'pay_runs', pid,
+                before={'employee_id': eid, 'reference': pr.reference, 'status': pr.status}, after=None)
     db.session.delete(pr)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/employees/pay_runs/bulk', methods=['POST'])
+@audit_policy('AUDITED')
 def api_pay_runs_bulk():
     """Create draft pay runs for all (or selected) active employees for the same period."""
     if not require_role('admin'):
@@ -2045,11 +2156,16 @@ def api_pay_runs_bulk():
             'gross': float(calc['gross_pay']), 'net': float(calc['net_pay']),
         })
 
+    audit_event('employee_pay_runs_bulk_created', 'pay_runs', None, after={
+        'period_start': p_start.isoformat(), 'period_end': p_end.isoformat(),
+        'created': [c['id'] for c in created], 'skipped': len(skipped), 'errors': len(errors),
+    })
     db.session.commit()
     return jsonify({'created': created, 'skipped': skipped, 'errors': errors}), 201
 
 
 @bp.route('/api/employees/schedule_rules', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_schedule_rules_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2063,6 +2179,7 @@ def api_schedule_rules_get():
 
 
 @bp.route('/api/employees/schedule_rules', methods=['POST'])
+@audit_policy('AUDITED')
 def api_schedule_rules_save():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2083,11 +2200,13 @@ def api_schedule_rules_save():
         _save('schedule_default_clock_in', d['default_clock_in'])
     if 'default_clock_out' in d:
         _save('schedule_default_clock_out', d['default_clock_out'])
+    audit_event('employee_schedule_rules_saved', 'settings', None, after=d)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/paid', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_pay_runs_paid(eid, pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2096,11 +2215,14 @@ def api_pay_runs_paid(eid, pid):
         return jsonify({'error': 'Pay run must be approved first'}), 400
     pr.status  = 'paid'
     pr.paid_at = datetime.utcnow()
+    audit_event('employee_pay_run_marked_paid', 'pay_runs', pid,
+                after={'employee_id': eid, 'reference': pr.reference, 'net_pay': float(pr.net_pay)})
     db.session.commit()
     return jsonify({'ok': True, 'status': 'paid'})
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/revert_to_draft', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_pay_runs_revert_to_draft(eid, pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2123,11 +2245,14 @@ def api_pay_runs_revert_to_draft(eid, pid):
     pr.approved_by = None
     pr.approved_at = None
     pr.paid_at     = None
+    audit_event('employee_pay_run_reverted_to_draft', 'pay_runs', pid,
+                after={'employee_id': eid, 'reference': pr.reference})
     db.session.commit()
     return jsonify({'ok': True, 'status': 'draft'})
 
 
 @bp.route('/api/employees/<int:eid>/leave_balance', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_leave_balance(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -2141,6 +2266,7 @@ def api_leave_balance(eid):
 
 
 @bp.route('/api/employees/leave_policies', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_leave_policies_list():
     if not require_login():
         return jsonify({'error': 'Login required'}), 401
@@ -2162,6 +2288,7 @@ def api_leave_policies_list():
 
 
 @bp.route('/api/employees/leave_policies/<leave_type>', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_leave_policy_update(leave_type):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2176,6 +2303,7 @@ def api_leave_policy_update(leave_type):
     if 'first_period_per_26'       in d: p.first_period_per_26       = bool(d['first_period_per_26'])
     if 'requires_proof_after_days' in d: p.requires_proof_after_days = d['requires_proof_after_days']
     if 'is_paid'                   in d: p.is_paid                   = bool(d['is_paid'])
+    audit_event('employee_leave_policy_updated', 'leave_policies', leave_type, after=d)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -2184,6 +2312,7 @@ _BUILTIN_LEAVE_TYPES = {'annual', 'sick', 'family_responsibility', 'unpaid'}
 
 
 @bp.route('/api/employees/leave_policies', methods=['POST'])
+@audit_policy('AUDITED')
 def api_leave_policy_create():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2203,23 +2332,28 @@ def api_leave_policy_create():
         sort_order     = 99,
     )
     db.session.add(p)
+    db.session.flush()
+    audit_event('employee_leave_policy_created', 'leave_policies', leave_type, after={'label': label})
     db.session.commit()
     return jsonify({'ok': True, 'leave_type': leave_type}), 201
 
 
 @bp.route('/api/employees/leave_policies/<leave_type>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_leave_policy_delete(leave_type):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     if leave_type in _BUILTIN_LEAVE_TYPES:
         return jsonify({'error': 'Built-in leave types cannot be deleted'}), 400
     p = LeavePolicy.query.filter_by(leave_type=leave_type).first_or_404()
+    audit_event('employee_leave_policy_deleted', 'leave_policies', leave_type, before={'label': p.label}, after=None)
     db.session.delete(p)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/employees/<int:eid>/leaves/<int:lid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_leaves_cancel(eid, lid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -2227,6 +2361,8 @@ def api_leaves_cancel(eid, lid):
     req = LeaveRequest.query.filter_by(id=lid, employee_id=eid).first_or_404()
     if req.status != 'requested':
         return jsonify({'error': 'Only pending requests can be cancelled'}), 400
+    audit_event('employee_leave_cancelled', 'leave_requests', lid,
+                before={'employee_id': eid, 'leave_type': req.leave_type}, after=None)
     db.session.delete(req)
     db.session.commit()
     return jsonify({'ok': True})
@@ -2235,6 +2371,7 @@ def api_leaves_cancel(eid, lid):
 # ── Leave Adjustments (per-employee bonus/deduction days) ─────────────────────
 
 @bp.route('/api/employees/<int:eid>/leave_adjustments', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_leave_adjustments_list(eid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -2252,6 +2389,7 @@ def api_leave_adjustments_list(eid):
 
 
 @bp.route('/api/employees/<int:eid>/leave_adjustments', methods=['POST'])
+@audit_policy('AUDITED')
 def api_leave_adjustments_create(eid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2271,21 +2409,28 @@ def api_leave_adjustments_create(eid):
         created_by      = u.id if u else None,
     )
     db.session.add(adj)
+    db.session.flush()
+    audit_event('employee_leave_adjustment_created', 'employee_leave_adjustments', adj.id,
+                after={'employee_id': eid, 'leave_type': adj.leave_type, 'adjustment_days': float(days)})
     db.session.commit()
     return jsonify({'id': adj.id}), 201
 
 
 @bp.route('/api/employees/<int:eid>/leave_adjustments/<int:aid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_leave_adjustments_delete(eid, aid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     adj = EmployeeLeaveAdjustment.query.filter_by(id=aid, employee_id=eid).first_or_404()
+    audit_event('employee_leave_adjustment_deleted', 'employee_leave_adjustments', aid,
+                before={'employee_id': eid, 'adjustment_days': float(adj.adjustment_days)}, after=None)
     db.session.delete(adj)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/employees/<int:eid>/pay_runs/<int:pid>/payslip', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_payslip(eid, pid):
     emp, is_own, err = _own_or_admin(eid)
     if err:
@@ -2393,6 +2538,7 @@ def api_payslip(eid, pid):
 # ── Pay Rules ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/pay_rules', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_pay_rules_list():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2405,14 +2551,18 @@ def api_pay_rules_list():
 
 
 @bp.route('/api/employees/pay_rules/<int:rid>', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_pay_rules_update(rid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     rule = PayRule.query.get_or_404(rid)
     d    = request.json or {}
+    _before = {'multiplier': float(rule.multiplier), 'is_paid': rule.is_paid}
     if 'multiplier' in d:  rule.multiplier = Decimal(str(d['multiplier']))
     if 'is_paid'    in d:  rule.is_paid     = bool(d['is_paid'])
     if 'description' in d: rule.description = d['description']
+    audit_event('employee_pay_rule_updated', 'pay_rules', rid, before=_before,
+                after={'multiplier': float(rule.multiplier), 'is_paid': rule.is_paid})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -2420,6 +2570,7 @@ def api_pay_rules_update(rid):
 # ── Password verification (teller self-service gate) ─────────────────────────
 
 @bp.route('/api/employees/me/verify_password', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_verify_password():
     u = current_user()
     if not u:
@@ -2433,6 +2584,7 @@ def api_verify_password():
 # ── Pending leave requests (admin overview) ───────────────────────────────────
 
 @bp.route('/api/employees/leaves/pending', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_leaves_pending():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -2460,6 +2612,7 @@ def api_leaves_pending():
 # ── Me (teller: find own employee record) ────────────────────────────────────
 
 @bp.route('/api/employees/me', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_employees_me():
     u = current_user()
     if not u:
@@ -2473,6 +2626,7 @@ def api_employees_me():
 # ── Public Holidays ───────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/public_holidays', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_public_holidays():
     if not require_login():
         return jsonify({'error': 'Login required'}), 401
@@ -2484,6 +2638,7 @@ def api_public_holidays():
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/employees/dashboard', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_employees_dashboard():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
