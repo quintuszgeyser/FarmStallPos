@@ -12,11 +12,11 @@ from helpers import (
     require_login, require_role, current_user,
     get_stock_level, consume_fifo, reverse_fifo, _parse_dt, _auto_price_products,
     absorb_neg_placeholder, backfill_consignment_liabilities, write_stock_movement,
-    audit_event, audit_policy,
+    void_unconsumed_batch, audit_event, audit_policy,
 )
 from models import (
     db,
-    Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, StockMovement, Purchase,
+    Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment, Purchase,
     Supplier, User, SupplierInvoice, Sale,
 )
 
@@ -436,13 +436,16 @@ def api_stock_batch_delete(batch_id):
     }
     if batch.produce_ref:
         reverse_fifo(batch.produce_ref, movement_source_type='production')
-    # Rev 5 P2-0: a never-consumed batch can still carry its own RECEIPT/
-    # STOCKTAKE_INCREASE movement — purge before delete or the FK on
-    # stock_movements.batch_id blocks it (see tests/test_locking.py's cleanup
-    # fix for the same trap).
-    StockMovement.query.filter_by(batch_id=batch_id).delete()
     ingredients_restored = bool(batch.produce_ref)
-    db.session.delete(batch)
+    # Rev 5 P3-2: void, don't hard-delete — same reasoning as suppliers.py's
+    # invoice-delete path. A never-consumed batch can still carry its own
+    # RECEIPT/STOCKTAKE_INCREASE movement, and purging that movement before
+    # deleting the batch (the old approach) breaks the ledger's own
+    # append-only invariant. void_unconsumed_batch zeroes the batch instead
+    # and leaves both the batch and its movements in place.
+    u = current_user()
+    void_unconsumed_batch(batch, source_type='reconciliation', source_id=batch_id,
+                           note='Deleted via /api/stock/batches', user_id=u.id if u else None)
     audit_event('batch_deleted', 'stock_batches', batch_id, before=before,
                  after={'ingredients_restored': ingredients_restored})
     db.session.commit()
@@ -753,7 +756,7 @@ def api_stock_adjustment_edit(adj_id):
         return jsonify({'error': 'Forbidden'}), 403
     data = request.json or {}
     adj  = db.session.get(StockAdjustment, adj_id)
-    if not adj: return jsonify({'error': 'Adjustment not found'}), 404
+    if not adj or adj.deleted_at is not None: return jsonify({'error': 'Adjustment not found'}), 404
     before = {'qty_change_base': float(adj.qty_change_base), 'reason': adj.reason,
               'cost_written_off': float(adj.cost_written_off) if adj.cost_written_off else None}
     if adj.adjustment_type != 'writeoff': return jsonify({'error': 'Only write-offs can be edited'}), 400
@@ -811,7 +814,7 @@ def api_stock_adjustment_delete(adj_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     adj = db.session.get(StockAdjustment, adj_id)
-    if not adj:
+    if not adj or adj.deleted_at is not None:
         return jsonify({'error': 'Adjustment not found'}), 404
     p = db.session.get(Product, adj.product_id)
     if not p:
@@ -853,8 +856,13 @@ def api_stock_adjustment_delete(adj_id):
         current_stock = Decimal(str(get_stock_level(p.id)))
         if diff > current_stock:
             return jsonify({'error': f'Cannot reverse — only {float(current_stock)}{p.base_unit} in stock but adjustment added {float(diff)}{p.base_unit}. Some has already been sold.'}), 400
-        consume_fifo(p.id, diff, f'adj-del-{uuid.uuid4()}', now, is_writeoff=True, movement_source_type='stocktake')
-    db.session.delete(adj)
+        consume_fifo(p.id, diff, f'adj-del-{adj_id}', now, is_writeoff=True, movement_source_type='stocktake')
+    # Rev 5 P3-2: soft delete — the WRITEOFF_REVERSAL movements just written above
+    # (diff<0 branch) cite adj_id as their source_id; a hard delete here would make
+    # that reference permanently unresolvable the instant this transaction commits.
+    u = current_user()
+    adj.deleted_at = now
+    adj.deleted_by = u.id if u else None
     audit_event('adjustment_deleted', 'stock_adjustments', adj_id, before=before)
     db.session.commit()
     return jsonify({'ok': True})
@@ -869,7 +877,7 @@ def api_stock_adjustments():
     adj_type    = request.args.get('type')
     start_param = request.args.get('start')
     end_param   = request.args.get('end')
-    q = StockAdjustment.query
+    q = StockAdjustment.query.filter(StockAdjustment.deleted_at.is_(None))
     if pid:        q = q.filter_by(product_id=int(pid))
     if adj_type:   q = q.filter_by(adjustment_type=adj_type)
     if start_param:
@@ -1134,15 +1142,17 @@ def api_opening_stock_undo(run_id):
         return jsonify({'error': 'Import run not found or already undone'}), 404
     skipped = 0
     deleted = 0
+    u = current_user()
     for b in batches:
         consumed = StockConsumption.query.filter_by(batch_id=b.id).first()
         if consumed or Decimal(str(b.qty_remaining_base)) != Decimal(str(b.qty_purchased_base)):
             skipped += 1
         else:
-            # Rev 5 P2-0: purge this batch's own RECEIPT movement first — see
-            # api_stock_batch_delete's comment for why (same FK, same trap).
-            StockMovement.query.filter_by(batch_id=b.id).delete()
-            db.session.delete(b)
+            # Rev 5 P3-2: void, don't hard-delete — see api_stock_batch_delete's
+            # comment for why (same FK, same append-only-ledger reasoning).
+            void_unconsumed_batch(b, source_type='reconciliation', source_id=b.id,
+                                   note=f'Undone opening-stock import run_id={run_id}',
+                                   user_id=u.id if u else None)
             deleted += 1
     audit_event('stock_opening_import_undone', 'products', None,
                  reason=f'run_id={run_id}', after={'deleted': deleted, 'skipped_consumed': skipped})

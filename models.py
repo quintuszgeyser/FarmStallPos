@@ -319,14 +319,24 @@ class KitchenOrder(db.Model):
 
 
 class Supplier(db.Model):
+    """Rev 5 P3-2 — deleted_at/deleted_by mark a supplier gone from every picker
+    without erasing it: historical stock_batches/stock_movements/consignment
+    liabilities keep resolving supplier_id to a real row instead of NULL or a
+    ForeignKeyViolation on delete. `name`'s uniqueness is enforced by a partial
+    index in strong_migrate (WHERE deleted_at IS NULL), not a plain column
+    constraint here, so a deleted supplier's name can be reused — see
+    ix_suppliers_name_live.
+    """
     __tablename__ = 'suppliers'
     id      = db.Column(db.Integer, primary_key=True)
-    name    = db.Column(db.String(120), unique=True, nullable=False)
+    name    = db.Column(db.String(120), nullable=False)
     phone   = db.Column(db.String(50),  nullable=True)
     email   = db.Column(db.String(120), nullable=True)
     website = db.Column(db.String(200), nullable=True)
     notes   = db.Column(db.String(500), nullable=True)
     last_run_costs = db.Column(db.Text, nullable=True)  # JSON — pre-fills next purchase run
+    deleted_at = db.Column(db.DateTime, nullable=True)
+    deleted_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 
 class CostCategory(db.Model):
@@ -366,6 +376,12 @@ class SupplierInvoice(db.Model):
     scan_raw_json            = db.Column(db.Text, nullable=True)            # original parser output for learning
     documents                = db.relationship('SupplierDocument', backref='invoice', lazy='dynamic',
                                                foreign_keys='SupplierDocument.invoice_id')
+    # Rev 5 P3-2 — see Supplier's docstring for why this exists: a hard delete
+    # here used to run right after void_unconsumed_batch wrote 'reconciliation'
+    # movements citing this row's own id as source_id, making that reference
+    # permanently unresolvable the instant the delete committed.
+    deleted_at               = db.Column(db.DateTime, nullable=True)
+    deleted_by               = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 
 class SupplierInvoiceTemplate(db.Model):
@@ -527,6 +543,17 @@ class StockAdjustment(db.Model):
     reason            = db.Column(db.String(200), nullable=False)
     adjusted_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id           = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    # Rev 5 P3-2 — a delete used to reverse the adjustment's stock effect and
+    # then erase the row in the same request, leaving no trace it ever
+    # happened beyond the audit_log's own before-snapshot. Soft-deleting
+    # keeps the row (still reversed) so "this adjustment existed, then was
+    # reversed by whom and when" is answerable directly. Every read site that
+    # lists current adjustments (not historical aggregates) filters on
+    # deleted_at IS NULL — see stock.py's list route and stats.py's write-off
+    # totals, which must keep excluding a reversed adjustment exactly as a
+    # hard delete already did.
+    deleted_at        = db.Column(db.DateTime, nullable=True)
+    deleted_by        = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 
 class StockMovement(db.Model):
@@ -753,9 +780,16 @@ class Special(db.Model):
 
 
 class Invoice(db.Model):
+    """Rev 5 P3-2 — deleted_at/deleted_by, same rationale as Supplier's
+    docstring. invoice_number's uniqueness is enforced by a partial index in
+    strong_migrate (WHERE deleted_at IS NULL), not a plain column constraint
+    here — see ix_invoices_number_live. In practice numbers come from a
+    Postgres sequence (_next_invoice_number) and are never reused anyway;
+    this is defense-in-depth for its MAX+1 fallback path.
+    """
     __tablename__ = 'invoices'
     id               = db.Column(db.Integer, primary_key=True)
-    invoice_number   = db.Column(db.String(20), unique=True, nullable=False)
+    invoice_number   = db.Column(db.String(20), nullable=False)
     created_at       = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     due_date         = db.Column(db.String(20), nullable=True)
     customer_name    = db.Column(db.String(120), nullable=True)
@@ -772,6 +806,8 @@ class Invoice(db.Model):
     status           = db.Column(db.String(20), nullable=False, default='draft')
     created_by       = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
     customer_id      = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
+    deleted_at       = db.Column(db.DateTime, nullable=True)
+    deleted_by       = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
 
 
 class SpecialLine(db.Model):

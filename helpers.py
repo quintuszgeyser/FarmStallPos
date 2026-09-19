@@ -468,7 +468,13 @@ def void_unconsumed_batch(batch, source_type, source_id, note=None, user_id=None
     and invoice-undo: reverse with a movement, never delete history.
 
     Caller must have already verified no StockConsumption references this
-    batch (both call sites do, as a precondition for allowing the edit).
+    batch (every call site does, as a precondition for allowing the delete/edit).
+
+    Rev 5 P3-2 reused this same function for api_stock_batch_delete and the
+    opening-stock-import undo route in blueprints/stock.py, which used to hard-
+    delete the batch after manually purging its own stock_movements rows —
+    the exact append-only violation this function exists to avoid. Both now
+    void instead, same as the supplier-invoice paths above.
     """
     remaining = Decimal(str(batch.qty_remaining_base))
     if remaining != Decimal('0'):

@@ -99,7 +99,11 @@ def test_invoice_delete_writes_audit_event(db_session, client):
     row = _last_event('invoice_deleted')
     assert row is not None
     assert row.target_id == str(inv_id)
-    assert db.session.get(Invoice, inv_id) is None
+    # Rev 5 P3-2: soft delete, not a hard delete — see test_soft_delete_p3_2.py
+    # for the full characterization of this behaviour.
+    deleted = db.session.get(Invoice, inv_id)
+    assert deleted is not None
+    assert deleted.deleted_at is not None
 
 
 def test_invoice_copy_writes_audit_event(db_session, client):

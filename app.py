@@ -2426,9 +2426,11 @@ def strong_migrate():
             "CREATE INDEX IF NOT EXISTS ix_cost_adj_lines_adj ON cost_adjustment_lines (adjustment_id)"
         )
 
-        # Rev 5 P2-0 — unified stock movement ledger. Additive only: nothing writes
-        # here yet (see StockMovement's docstring in models.py for why, and for the
-        # dual-write/cutover gate this table is waiting on before it goes live).
+        # Rev 5 P2-0 — unified stock movement ledger. Every write path dual-writes
+        # here alongside the existing StockBatch/StockConsumption tables (see
+        # StockMovement's and write_stock_movement's docstrings in models.py /
+        # helpers.py for the coverage map and for the cutover gate this table is
+        # waiting on before it becomes authoritative).
         pg_try("""CREATE TABLE IF NOT EXISTS stock_movements (
             id              SERIAL PRIMARY KEY,
             movement_type   VARCHAR(30) NOT NULL,
@@ -2458,6 +2460,25 @@ def strong_migrate():
         pg_try("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS store_id VARCHAR(64)")
         pg_try("ALTER TABLE audit_log ADD COLUMN IF NOT EXISTS source VARCHAR(20) NOT NULL DEFAULT 'ui'")
         pg_try("CREATE INDEX IF NOT EXISTS ix_audit_log_correlation ON audit_log (correlation_id)")
+
+        # Rev 5 P3-2 — soft delete for the four entities the plan names alongside
+        # users (users already got theirs via the pre-existing `active` flag — see
+        # _deactivate_user in helpers.py). A hard delete on any of these either
+        # 500s once the row has history a foreign key protects, or — worse —
+        # succeeds and permanently orphans a stock_movements 'reconciliation'
+        # source_id or a stock_adjustments row an audit event still points at.
+        # deleted_at/deleted_by hide a row from pickers/lists without erasing it.
+        for _sd_tbl in ('suppliers', 'stock_adjustments', 'invoices', 'supplier_invoices'):
+            pg_try(f"ALTER TABLE {_sd_tbl} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP")
+            pg_try(f"ALTER TABLE {_sd_tbl} ADD COLUMN IF NOT EXISTS deleted_by INTEGER REFERENCES users(id)")
+        # suppliers.name and invoices.invoice_number each carry a plain UNIQUE
+        # constraint from their original CREATE TABLE above — soft-deleting a row
+        # would then permanently block reusing that name/number. Replace the
+        # whole-table constraint with one that only applies to live rows.
+        pg_try("ALTER TABLE suppliers DROP CONSTRAINT IF EXISTS suppliers_name_key")
+        pg_try("CREATE UNIQUE INDEX IF NOT EXISTS ix_suppliers_name_live ON suppliers (name) WHERE deleted_at IS NULL")
+        pg_try("ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key")
+        pg_try("CREATE UNIQUE INDEX IF NOT EXISTS ix_invoices_number_live ON invoices (invoice_number) WHERE deleted_at IS NULL")
 
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.

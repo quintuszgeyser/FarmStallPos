@@ -1363,7 +1363,8 @@ _UNIT_CONVERSIONS = {
 def api_suppliers_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
-    suppliers = Supplier.query.order_by(Supplier.name.asc()).all()
+    suppliers = (Supplier.query.filter(Supplier.deleted_at.is_(None))
+                 .order_by(Supplier.name.asc()).all())
     return jsonify([{
         'id': s.id, 'name': s.name, 'phone': s.phone,
         'email': s.email, 'website': s.website, 'notes': s.notes,
@@ -1384,7 +1385,7 @@ def api_suppliers_post():
     notes   = data.get('notes',   '').strip() or None
     if not name:
         return jsonify({'error': 'name required'}), 400
-    if Supplier.query.filter_by(name=name).first():
+    if Supplier.query.filter_by(name=name, deleted_at=None).first():
         return jsonify({'error': 'Supplier already exists'}), 409
     s = Supplier(name=name, phone=phone, email=email, website=website, notes=notes)
     db.session.add(s)
@@ -1408,7 +1409,8 @@ def api_suppliers_update(sid):
     before = {'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website, 'notes': s.notes}
     if 'name' in data:
         name  = data['name'].strip()
-        clash = Supplier.query.filter(Supplier.id != sid, Supplier.name == name).first()
+        clash = Supplier.query.filter(Supplier.id != sid, Supplier.name == name,
+                                       Supplier.deleted_at.is_(None)).first()
         if clash:
             return jsonify({'error': 'Supplier name already exists'}), 409
         s.name = name
@@ -1429,14 +1431,16 @@ def api_suppliers_delete(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     s = db.session.get(Supplier, sid)
-    if not s:
+    if not s or s.deleted_at is not None:
         return jsonify({'error': 'Not found'}), 404
     before = {'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website}
-    detached_batches = StockBatch.query.filter_by(supplier_id=sid).count()
-    StockBatch.query.filter_by(supplier_id=sid).update({'supplier_id': None})
-    audit_event('supplier_deleted', 'suppliers', sid, before=before,
-                after={'batches_detached': detached_batches})
-    db.session.delete(s)
+    # Rev 5 P3-2: soft delete, not a detach-then-hard-delete. The row survives so
+    # every historical stock_batches.supplier_id / consignment_liabilities row
+    # keeps resolving to a real supplier instead of NULL.
+    u = current_user()
+    s.deleted_at = datetime.utcnow()
+    s.deleted_by = u.id if u else None
+    audit_event('supplier_deleted', 'suppliers', sid, before=before, after=None)
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -2025,6 +2029,7 @@ def api_supplier_invoices(sid):
     # Fetch all invoices for this supplier (most recent first)
     invoices = (SupplierInvoice.query
                 .filter_by(supplier_id=sid)
+                .filter(SupplierInvoice.deleted_at.is_(None))
                 .order_by(SupplierInvoice.date.desc(), SupplierInvoice.id.desc())
                 .limit(50)
                 .all())
@@ -2377,7 +2382,7 @@ def api_supplier_invoice_delete(sid, inv_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(SupplierInvoice, inv_id)
-    if not inv or inv.supplier_id != sid:
+    if not inv or inv.supplier_id != sid or inv.deleted_at is not None:
         return jsonify({'error': 'Invoice not found'}), 404
 
     batches = StockBatch.query.filter_by(invoice_id=inv_id).all()
@@ -2403,9 +2408,7 @@ def api_supplier_invoice_delete(sid, inv_id):
     }, after=None)
     # Void, don't delete — see void_unconsumed_batch's docstring for why a hard
     # db.session.delete(b) now raises a ForeignKeyViolation against the P2-0
-    # stock_movements ledger for any batch that's ever been receipted. Voiding
-    # also detaches invoice_id, so the invoice row below can still be deleted
-    # without a dangling FK from a voided batch pointing at it.
+    # stock_movements ledger for any batch that's ever been receipted.
     u = current_user()
     for b in batches:
         void_unconsumed_batch(
@@ -2413,7 +2416,11 @@ def api_supplier_invoice_delete(sid, inv_id):
             note=f'Voided by deletion of supplier invoice {inv.invoice_number or inv_id}',
             user_id=u.id if u else None,
         )
-    db.session.delete(inv)
+    # Rev 5 P3-2: soft delete the invoice row itself too — those void movements
+    # just written cite inv_id as their source_id, which a hard delete here
+    # would make permanently unresolvable the instant this transaction commits.
+    inv.deleted_at = datetime.utcnow()
+    inv.deleted_by = u.id if u else None
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -2461,7 +2468,7 @@ def api_suppliers_search():
 
     q = str(request.args.get('q') or '').strip().lower()
     if not q:
-        all_suppliers = Supplier.query.order_by(Supplier.name).all()
+        all_suppliers = Supplier.query.filter(Supplier.deleted_at.is_(None)).order_by(Supplier.name).all()
         return jsonify({
             'supplier_ids': [s.id for s in all_suppliers],
             'invoice_ids': [],
@@ -2470,7 +2477,7 @@ def api_suppliers_search():
 
     # Match suppliers by name
     matched_sids = set()
-    for s in Supplier.query.all():
+    for s in Supplier.query.filter(Supplier.deleted_at.is_(None)).all():
         if q in (s.name or '').lower():
             matched_sids.add(s.id)
 
@@ -2484,7 +2491,7 @@ def api_suppliers_search():
 
     # Match invoices by invoice_number or notes
     matched_invoice_ids = []
-    inv_q = SupplierInvoice.query.all()
+    inv_q = SupplierInvoice.query.filter(SupplierInvoice.deleted_at.is_(None)).all()
     for inv in inv_q:
         if q in (inv.invoice_number or '').lower():
             matched_invoice_ids.append(inv.id)

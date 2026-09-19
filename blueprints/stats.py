@@ -145,7 +145,7 @@ def api_stats():
     gross_profit = total_sales_value - total_cogs
     gross_margin = round(gross_profit / total_sales_value * 100, 1) if total_sales_value > 0 else None
 
-    wq = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt)
+    wq = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt, StockAdjustment.deleted_at.is_(None))
     if product_id_filter: wq = wq.filter(StockAdjustment.product_id == product_id_filter)
     if user_id_filter:    wq = wq.filter(StockAdjustment.user_id    == user_id_filter)
     writeoffs = wq.all()
@@ -222,7 +222,8 @@ def api_stats():
         if produced_recipes:
             produce_adjs = StockAdjustment.query.filter(
                 StockAdjustment.product_id.in_(list(produced_recipes)),
-                StockAdjustment.adjustment_type == 'produce'
+                StockAdjustment.adjustment_type == 'produce',
+                StockAdjustment.deleted_at.is_(None)
             ).all()
             _produce_totals = defaultdict(lambda: {'cost': Decimal('0'), 'units': 0})
             for adj in produce_adjs:
@@ -706,7 +707,7 @@ def api_stats_drilldown_writeoffs():
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
     user_id_filter    = request.args.get('user_id',    type=int)
     product_id_filter = request.args.get('product_id', type=int)
-    wq = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt)
+    wq = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt, StockAdjustment.deleted_at.is_(None))
     if user_id_filter:    wq = wq.filter(StockAdjustment.user_id    == user_id_filter)
     if product_id_filter: wq = wq.filter(StockAdjustment.product_id == product_id_filter)
     writeoffs = wq.order_by(StockAdjustment.adjusted_at.desc()).all()
@@ -913,7 +914,7 @@ def export_writeoffs_csv():
     except: pid_filter_wo = None
     try: uid_filter_wo = int(request.args.get('user_id')) if request.args.get('user_id') else None
     except: uid_filter_wo = None
-    wo_q = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt)
+    wo_q = StockAdjustment.query.filter(StockAdjustment.adjustment_type == 'writeoff', StockAdjustment.adjusted_at >= start_dt, StockAdjustment.adjusted_at <= end_dt, StockAdjustment.deleted_at.is_(None))
     if pid_filter_wo: wo_q = wo_q.filter(StockAdjustment.product_id == pid_filter_wo)
     if uid_filter_wo: wo_q = wo_q.filter(StockAdjustment.user_id    == uid_filter_wo)
     writeoffs = wo_q.order_by(StockAdjustment.adjusted_at.asc()).all()
@@ -1963,6 +1964,7 @@ def api_stats_inventory():
         StockAdjustment.adjusted_at >= start_dt,
         StockAdjustment.adjusted_at <= end_dt,
         StockAdjustment.qty_change_base < 0,
+        StockAdjustment.deleted_at.is_(None),
     )
     if product_id_filter:
         adj_q = adj_q.filter_by(product_id=product_id_filter)

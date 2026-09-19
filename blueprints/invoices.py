@@ -98,7 +98,8 @@ def _resolve_online_customer(email, name, phone):
 @audit_policy('NO_STATE_CHANGE')
 def api_invoices_list():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
-    invs = db.session.query(Invoice).order_by(Invoice.created_at.desc()).all()
+    invs = (db.session.query(Invoice).filter(Invoice.deleted_at.is_(None))
+            .order_by(Invoice.created_at.desc()).all())
     return jsonify([{'id': i.id, 'invoice_number': i.invoice_number, 'created_at': i.created_at.isoformat() if i.created_at else None, 'due_date': i.due_date, 'customer_name': i.customer_name, 'customer_phone': i.customer_phone, 'customer_email': i.customer_email, 'total': float(i.total), 'status': i.status, 'customer_id': i.customer_id} for i in invs])
 
 
@@ -130,7 +131,7 @@ def api_invoices_create():
 def api_invoices_get(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
-    if not inv: return jsonify({'error': 'Not found'}), 404
+    if not inv or inv.deleted_at is not None: return jsonify({'error': 'Not found'}), 404
     return jsonify({'id': inv.id, 'invoice_number': inv.invoice_number, 'created_at': inv.created_at.isoformat() if inv.created_at else None, 'due_date': inv.due_date, 'customer_name': inv.customer_name, 'customer_phone': inv.customer_phone, 'customer_email': inv.customer_email, 'customer_address': inv.customer_address, 'notes': inv.notes, 'bank_details': inv.bank_details, 'lines': _json.loads(inv.lines_json or '[]'), 'subtotal': float(inv.subtotal), 'discount_pct': float(inv.discount_pct or 0), 'total': float(inv.total), 'status': inv.status, 'sale_id': inv.sale_id, 'customer_id': inv.customer_id})
 
 
@@ -139,7 +140,7 @@ def api_invoices_get(inv_id):
 def api_invoices_update(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
-    if not inv: return jsonify({'error': 'Not found'}), 404
+    if not inv or inv.deleted_at is not None: return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
     allowed_fields = ('due_date', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'notes', 'bank_details', 'status')
     before = {f: getattr(inv, f) for f in allowed_fields}
@@ -166,13 +167,17 @@ def api_invoices_update(inv_id):
 def api_invoices_delete(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
-    if not inv: return jsonify({'error': 'Not found'}), 404
+    if not inv or inv.deleted_at is not None: return jsonify({'error': 'Not found'}), 404
     if inv.status == 'finalised':
         return jsonify({'error': 'Cannot delete a finalised invoice. Use Undo to reverse it first.'}), 400
     before = {'invoice_number': inv.invoice_number, 'status': inv.status,
               'total': float(inv.total), 'customer_id': inv.customer_id}
     audit_event('invoice_deleted', 'invoices', inv.id, before=before, after=None)
-    db.session.delete(inv); db.session.commit()
+    # Rev 5 P3-2: soft delete — preserves the record instead of erasing it outright.
+    u = current_user()
+    inv.deleted_at = datetime.utcnow()
+    inv.deleted_by = u.id if u else None
+    db.session.commit()
     return jsonify({'ok': True})
 
 
@@ -181,7 +186,7 @@ def api_invoices_delete(inv_id):
 def api_invoices_copy(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     src = db.session.get(Invoice, inv_id)
-    if not src: return jsonify({'error': 'Not found'}), 404
+    if not src or src.deleted_at is not None: return jsonify({'error': 'Not found'}), 404
     bank = get_setting('invoice_bank_details') or src.bank_details
     copy = Invoice(
         invoice_number=_next_invoice_number(),
@@ -213,7 +218,7 @@ def api_invoices_copy(inv_id):
 def api_invoices_finalise(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
-    if not inv: return jsonify({'error': 'Not found'}), 404
+    if not inv or inv.deleted_at is not None: return jsonify({'error': 'Not found'}), 404
     if inv.sale_id and inv.status == 'finalised': return jsonify({'ok': True, 'sale_id': inv.sale_id})
     is_online = bool(inv.notes and '[ONLINE' in inv.notes)
     if not inv.customer_id:
