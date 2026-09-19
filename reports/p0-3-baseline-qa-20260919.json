@@ -1,0 +1,4706 @@
+{
+  "generated_at": "2026-09-19T13:09:20.528724+00:00",
+  "overall_status": "FAIL",
+  "invariants": [
+    {
+      "id": "INV-2",
+      "name": "No orphan movement",
+      "severity": "high",
+      "blocks": [
+        "deployment",
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 4388,
+      "skipped_count": 0,
+      "violation_count": 563,
+      "violations": [
+        {
+          "stock_consumption_id": 2946,
+          "sale_id": "ef4525b9-e646-4c8e-ba2c-c9f0fee9c3d9",
+          "ingredient_id": 643,
+          "orphaned_batch_id": 1798
+        },
+        {
+          "stock_consumption_id": 2950,
+          "sale_id": "e7e138ac-7613-40c9-a12c-31f443f5dc17",
+          "ingredient_id": 636,
+          "orphaned_batch_id": 1773
+        },
+        {
+          "stock_consumption_id": 3002,
+          "sale_id": "6f9c462e-3a5c-42fa-b4e7-d0dc56f928bc",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1804
+        },
+        {
+          "stock_consumption_id": 3004,
+          "sale_id": "6f9c462e-3a5c-42fa-b4e7-d0dc56f928bc",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3011,
+          "sale_id": "c3daa305-bfd0-4c58-8d5f-7aa84907441d",
+          "ingredient_id": 636,
+          "orphaned_batch_id": 1774
+        },
+        {
+          "stock_consumption_id": 3012,
+          "sale_id": "c3daa305-bfd0-4c58-8d5f-7aa84907441d",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 1796
+        },
+        {
+          "stock_consumption_id": 3013,
+          "sale_id": "c3daa305-bfd0-4c58-8d5f-7aa84907441d",
+          "ingredient_id": 644,
+          "orphaned_batch_id": 1795
+        },
+        {
+          "stock_consumption_id": 3101,
+          "sale_id": "67df0c56-24f6-4552-bed8-5df0eba6dd04",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1804
+        },
+        {
+          "stock_consumption_id": 3103,
+          "sale_id": "67df0c56-24f6-4552-bed8-5df0eba6dd04",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3115,
+          "sale_id": "5e7db254-ed0b-4835-a57f-ac68d1b0becd",
+          "ingredient_id": 442,
+          "orphaned_batch_id": 1800
+        },
+        {
+          "stock_consumption_id": 3146,
+          "sale_id": "687045f1-f2c5-49f3-ba08-8227336b1610",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 3175,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1783
+        },
+        {
+          "stock_consumption_id": 3176,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1819
+        },
+        {
+          "stock_consumption_id": 3177,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3179,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 3180,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1804
+        },
+        {
+          "stock_consumption_id": 3181,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1767
+        },
+        {
+          "stock_consumption_id": 3182,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 3192,
+          "sale_id": "4e31d3ca-186b-42e9-b8ee-56677e89ec9c",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3015,
+          "sale_id": "62f764e1-41bd-4f37-95e4-31d4a745ebba",
+          "ingredient_id": 636,
+          "orphaned_batch_id": 1774
+        },
+        {
+          "stock_consumption_id": 2971,
+          "sale_id": "8d08d59c-e5c2-4f7d-931e-743301551887",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1787
+        },
+        {
+          "stock_consumption_id": 2973,
+          "sale_id": "8d08d59c-e5c2-4f7d-931e-743301551887",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 3021,
+          "sale_id": "f98e5ad6-be22-4452-95a7-d13eafdf814b",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1804
+        },
+        {
+          "stock_consumption_id": 3023,
+          "sale_id": "f98e5ad6-be22-4452-95a7-d13eafdf814b",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3116,
+          "sale_id": "5801f781-c2f9-4e6e-8833-0908a9ddceca",
+          "ingredient_id": 645,
+          "orphaned_batch_id": 1797
+        },
+        {
+          "stock_consumption_id": 3118,
+          "sale_id": "c754bec7-e9c7-4ee2-b8d2-3a2bfb77615c",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 3125,
+          "sale_id": "c754bec7-e9c7-4ee2-b8d2-3a2bfb77615c",
+          "ingredient_id": 643,
+          "orphaned_batch_id": 1798
+        },
+        {
+          "stock_consumption_id": 3135,
+          "sale_id": "020b854d-6d8f-4a6f-ad14-1a6b66e57e68",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1804
+        },
+        {
+          "stock_consumption_id": 3137,
+          "sale_id": "020b854d-6d8f-4a6f-ad14-1a6b66e57e68",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3184,
+          "sale_id": "896b80b7-b301-479e-bc0c-5d0e19ae8dd0",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3206,
+          "sale_id": "4e31d3ca-186b-42e9-b8ee-56677e89ec9c",
+          "ingredient_id": 20,
+          "orphaned_batch_id": 1753
+        },
+        {
+          "stock_consumption_id": 3209,
+          "sale_id": "1d4c8329-8a11-4f51-888b-094fbc5dbd27",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3218,
+          "sale_id": "0e874435-15be-4857-ba57-d8b7434854e3",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3036,
+          "sale_id": "bb287000-509f-418b-930e-6480f005f2a2",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1787
+        },
+        {
+          "stock_consumption_id": 3039,
+          "sale_id": "bb287000-509f-418b-930e-6480f005f2a2",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 3091,
+          "sale_id": "ff96418f-8b4e-452f-9063-b21299bd55a7",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 3131,
+          "sale_id": "32330f0f-2358-42ee-bbfe-f4b291452361",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1804
+        },
+        {
+          "stock_consumption_id": 3133,
+          "sale_id": "32330f0f-2358-42ee-bbfe-f4b291452361",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3155,
+          "sale_id": "335d6067-99bd-4db0-954d-325eb539d6a9",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 3165,
+          "sale_id": "573b8135-a127-4d70-858a-f2339628b0b6",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1801
+        },
+        {
+          "stock_consumption_id": 3166,
+          "sale_id": "573b8135-a127-4d70-858a-f2339628b0b6",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1801
+        },
+        {
+          "stock_consumption_id": 3170,
+          "sale_id": "573b8135-a127-4d70-858a-f2339628b0b6",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3172,
+          "sale_id": "573b8135-a127-4d70-858a-f2339628b0b6",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 3174,
+          "sale_id": "301271a7-470b-4d6d-bc7f-0acee32d3a89",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2350,
+          "sale_id": "25dac7af-9db7-4fa2-bf91-abd3004d090a",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2372,
+          "sale_id": "8369ce18-643f-4677-8d82-36278abfe2c2",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2374,
+          "sale_id": "8369ce18-643f-4677-8d82-36278abfe2c2",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2381,
+          "sale_id": "820b71f2-9fa0-4ab8-a6e2-6c54387eb355",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2383,
+          "sale_id": "820b71f2-9fa0-4ab8-a6e2-6c54387eb355",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2458,
+          "sale_id": "519827d9-2714-44b5-99bd-598e2386eda2",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2460,
+          "sale_id": "519827d9-2714-44b5-99bd-598e2386eda2",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2469,
+          "sale_id": "8e4b8051-4f0c-425b-a23b-a9c5cefe117e",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2472,
+          "sale_id": "8e4b8051-4f0c-425b-a23b-a9c5cefe117e",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2506,
+          "sale_id": "95b9abe3-7b9d-44c6-8e5a-99d6a9094872",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2508,
+          "sale_id": "7b084740-cb66-4fc7-bac0-1757870e60cd",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1737
+        },
+        {
+          "stock_consumption_id": 2509,
+          "sale_id": "7b084740-cb66-4fc7-bac0-1757870e60cd",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1737
+        },
+        {
+          "stock_consumption_id": 2513,
+          "sale_id": "7b084740-cb66-4fc7-bac0-1757870e60cd",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2515,
+          "sale_id": "7b084740-cb66-4fc7-bac0-1757870e60cd",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2517,
+          "sale_id": "0f7898ba-107f-4518-b246-8ea561056866",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2519,
+          "sale_id": "0f7898ba-107f-4518-b246-8ea561056866",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1743
+        },
+        {
+          "stock_consumption_id": 2522,
+          "sale_id": "0f7898ba-107f-4518-b246-8ea561056866",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1735
+        },
+        {
+          "stock_consumption_id": 2523,
+          "sale_id": "0f7898ba-107f-4518-b246-8ea561056866",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2532,
+          "sale_id": "863fc8f4-6016-4132-b3e5-cdc2f633d2bb",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2536,
+          "sale_id": "0807eebf-d668-4661-a531-5a472a1086c0",
+          "ingredient_id": 442,
+          "orphaned_batch_id": 1729
+        },
+        {
+          "stock_consumption_id": 2569,
+          "sale_id": "d2d80953-f221-4f99-9460-5aa9b5ffac50",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2570,
+          "sale_id": "d2d80953-f221-4f99-9460-5aa9b5ffac50",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1743
+        },
+        {
+          "stock_consumption_id": 2573,
+          "sale_id": "d2d80953-f221-4f99-9460-5aa9b5ffac50",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1735
+        },
+        {
+          "stock_consumption_id": 2574,
+          "sale_id": "d2d80953-f221-4f99-9460-5aa9b5ffac50",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1724
+        },
+        {
+          "stock_consumption_id": 2578,
+          "sale_id": "39e2133d-e0dc-44f2-8cc1-e5ec40bae71b",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2583,
+          "sale_id": "00f925c2-fae7-47a5-ab9e-222764b93d80",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2587,
+          "sale_id": "a2d9220e-2abe-47ee-8259-5e419f2addac",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2593,
+          "sale_id": "23a333b3-fd53-430f-8572-1b9b78f232e5",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2597,
+          "sale_id": "b1d7a89c-e397-42b2-905d-543641737ac2",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2602,
+          "sale_id": "e721eff6-d7d4-4755-8fd6-fe8186e4be53",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2609,
+          "sale_id": "a8aaa700-3be4-4b5a-8f74-6a89adbf74b6",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2610,
+          "sale_id": "a8aaa700-3be4-4b5a-8f74-6a89adbf74b6",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1743
+        },
+        {
+          "stock_consumption_id": 2613,
+          "sale_id": "a8aaa700-3be4-4b5a-8f74-6a89adbf74b6",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 2614,
+          "sale_id": "a8aaa700-3be4-4b5a-8f74-6a89adbf74b6",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2621,
+          "sale_id": "6afe0872-f004-4ed2-af72-52465d6bde66",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2624,
+          "sale_id": "a871c491-b117-4ceb-9248-eadee6d24792",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2626,
+          "sale_id": "a871c491-b117-4ceb-9248-eadee6d24792",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2632,
+          "sale_id": "808979c7-e231-4195-bffe-dce2b5061731",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2636,
+          "sale_id": "808979c7-e231-4195-bffe-dce2b5061731",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2639,
+          "sale_id": "d56f26ff-5674-4977-93ef-0b4722fa4e33",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2656,
+          "sale_id": "fd279ee4-9a4d-4c3c-a731-9d0dc24a1e16",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2657,
+          "sale_id": "fd279ee4-9a4d-4c3c-a731-9d0dc24a1e16",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2665,
+          "sale_id": "725627f6-779b-4b94-a810-c12e3e0ed03e",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2666,
+          "sale_id": "725627f6-779b-4b94-a810-c12e3e0ed03e",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1732
+        },
+        {
+          "stock_consumption_id": 2667,
+          "sale_id": "725627f6-779b-4b94-a810-c12e3e0ed03e",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2669,
+          "sale_id": "725627f6-779b-4b94-a810-c12e3e0ed03e",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 2671,
+          "sale_id": "5707027c-78e8-499b-beec-9246a12d5c4a",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2672,
+          "sale_id": "5707027c-78e8-499b-beec-9246a12d5c4a",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1743
+        },
+        {
+          "stock_consumption_id": 2673,
+          "sale_id": "5707027c-78e8-499b-beec-9246a12d5c4a",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 2675,
+          "sale_id": "5707027c-78e8-499b-beec-9246a12d5c4a",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 2676,
+          "sale_id": "5707027c-78e8-499b-beec-9246a12d5c4a",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2677,
+          "sale_id": "5707027c-78e8-499b-beec-9246a12d5c4a",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1767
+        },
+        {
+          "stock_consumption_id": 2680,
+          "sale_id": "bacbe021-4604-48a0-9b02-8637a72a69fa",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2684,
+          "sale_id": "bacbe021-4604-48a0-9b02-8637a72a69fa",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2693,
+          "sale_id": "2bb84a2f-8828-4f56-a28b-ba792a137389",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2700,
+          "sale_id": "9c12a368-bb31-4f62-9d6c-77f43468e935",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2704,
+          "sale_id": "9c12a368-bb31-4f62-9d6c-77f43468e935",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2711,
+          "sale_id": "98b3d75b-61d6-4e14-8cef-276f178dadbf",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2715,
+          "sale_id": "beed2e56-edb9-4296-82bb-9716c34757f9",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2720,
+          "sale_id": "49b594b0-cc63-4e1f-88e7-610c8c9a73d6",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2723,
+          "sale_id": "068f9774-d34c-4ba6-a510-24f157260c11",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2726,
+          "sale_id": "068f9774-d34c-4ba6-a510-24f157260c11",
+          "ingredient_id": 636,
+          "orphaned_batch_id": 1773
+        },
+        {
+          "stock_consumption_id": 2728,
+          "sale_id": "f5a24997-c3b5-4571-a2c1-c5a6b225d744",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2733,
+          "sale_id": "4cc0e747-3256-4a0d-be34-24d4e7d9bc3d",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2735,
+          "sale_id": "2bcbd919-9685-4b4d-8535-97117c43e4f1",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2738,
+          "sale_id": "53df900f-af67-470a-8c49-1228d268319f",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1764
+        },
+        {
+          "stock_consumption_id": 2745,
+          "sale_id": "faf5123d-f89a-4e5c-acf9-1532c1cd3492",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2748,
+          "sale_id": "faf5123d-f89a-4e5c-acf9-1532c1cd3492",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1764
+        },
+        {
+          "stock_consumption_id": 2750,
+          "sale_id": "2297542c-c017-49f5-bfad-0213cd14ba70",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1752
+        },
+        {
+          "stock_consumption_id": 2753,
+          "sale_id": "2297542c-c017-49f5-bfad-0213cd14ba70",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1764
+        },
+        {
+          "stock_consumption_id": 2767,
+          "sale_id": "2417f3ec-21ac-4ac2-b960-360e86d359a3",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2774,
+          "sale_id": "e8b60003-6d72-47a7-b1b5-c109ce8f2c03",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2785,
+          "sale_id": "e8b60003-6d72-47a7-b1b5-c109ce8f2c03",
+          "ingredient_id": 20,
+          "orphaned_batch_id": 1753
+        },
+        {
+          "stock_consumption_id": 2790,
+          "sale_id": "2f7de737-cb47-49d5-9e29-6361f084cd21",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2791,
+          "sale_id": "2f7de737-cb47-49d5-9e29-6361f084cd21",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1743
+        },
+        {
+          "stock_consumption_id": 2792,
+          "sale_id": "2f7de737-cb47-49d5-9e29-6361f084cd21",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 2794,
+          "sale_id": "2f7de737-cb47-49d5-9e29-6361f084cd21",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 2795,
+          "sale_id": "2f7de737-cb47-49d5-9e29-6361f084cd21",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2796,
+          "sale_id": "2f7de737-cb47-49d5-9e29-6361f084cd21",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1767
+        },
+        {
+          "stock_consumption_id": 2798,
+          "sale_id": "c2113b29-567a-4728-9e67-d22aa39354d0",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1737
+        },
+        {
+          "stock_consumption_id": 2799,
+          "sale_id": "c2113b29-567a-4728-9e67-d22aa39354d0",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1737
+        },
+        {
+          "stock_consumption_id": 2803,
+          "sale_id": "c2113b29-567a-4728-9e67-d22aa39354d0",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2805,
+          "sale_id": "c2113b29-567a-4728-9e67-d22aa39354d0",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2807,
+          "sale_id": "d6e1c2cf-e6a3-4121-be07-0b2bb3b9fcd3",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2808,
+          "sale_id": "d6e1c2cf-e6a3-4121-be07-0b2bb3b9fcd3",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1743
+        },
+        {
+          "stock_consumption_id": 2809,
+          "sale_id": "d6e1c2cf-e6a3-4121-be07-0b2bb3b9fcd3",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1783
+        },
+        {
+          "stock_consumption_id": 2810,
+          "sale_id": "d6e1c2cf-e6a3-4121-be07-0b2bb3b9fcd3",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 2812,
+          "sale_id": "d6e1c2cf-e6a3-4121-be07-0b2bb3b9fcd3",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 2813,
+          "sale_id": "d6e1c2cf-e6a3-4121-be07-0b2bb3b9fcd3",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2814,
+          "sale_id": "d6e1c2cf-e6a3-4121-be07-0b2bb3b9fcd3",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1767
+        },
+        {
+          "stock_consumption_id": 2818,
+          "sale_id": "48afe184-9f34-45d7-957a-abd4348476f8",
+          "ingredient_id": 468,
+          "orphaned_batch_id": 1736
+        },
+        {
+          "stock_consumption_id": 2819,
+          "sale_id": "48afe184-9f34-45d7-957a-abd4348476f8",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1763
+        },
+        {
+          "stock_consumption_id": 2823,
+          "sale_id": "12f49e37-337e-492f-af15-118d17199efb",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2825,
+          "sale_id": "12f49e37-337e-492f-af15-118d17199efb",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1785
+        },
+        {
+          "stock_consumption_id": 2832,
+          "sale_id": "a58b16e2-86ae-43c2-867c-6f0d88da76c7",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1787
+        },
+        {
+          "stock_consumption_id": 2835,
+          "sale_id": "a58b16e2-86ae-43c2-867c-6f0d88da76c7",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2836,
+          "sale_id": "a58b16e2-86ae-43c2-867c-6f0d88da76c7",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1785
+        },
+        {
+          "stock_consumption_id": 2837,
+          "sale_id": "e936cef8-7946-4b3e-80c0-523f1a2474d2",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1787
+        },
+        {
+          "stock_consumption_id": 2841,
+          "sale_id": "e936cef8-7946-4b3e-80c0-523f1a2474d2",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1726
+        },
+        {
+          "stock_consumption_id": 2843,
+          "sale_id": "e936cef8-7946-4b3e-80c0-523f1a2474d2",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1751
+        },
+        {
+          "stock_consumption_id": 2850,
+          "sale_id": "c43c160d-1374-46db-b60f-4562ce3500fe",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1767
+        },
+        {
+          "stock_consumption_id": 2853,
+          "sale_id": "aec23d03-a35a-477f-9f90-c10641a0e457",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1799
+        },
+        {
+          "stock_consumption_id": 2857,
+          "sale_id": "5cc74816-4bc8-4c49-b59c-cab5d80ec247",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1799
+        },
+        {
+          "stock_consumption_id": 2860,
+          "sale_id": "7c4c7991-3f35-4942-90f1-fa389e36c10b",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1799
+        },
+        {
+          "stock_consumption_id": 2865,
+          "sale_id": "28f6bafd-06d4-4b87-9386-eae28cebaf34",
+          "ingredient_id": 636,
+          "orphaned_batch_id": 1773
+        },
+        {
+          "stock_consumption_id": 2910,
+          "sale_id": "18ec5f0b-150f-4469-848f-3dd7bc4cb5a5",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1787
+        },
+        {
+          "stock_consumption_id": 2912,
+          "sale_id": "18ec5f0b-150f-4469-848f-3dd7bc4cb5a5",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 2922,
+          "sale_id": "a76b493c-21bc-4693-b412-7fe147d02940",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1787
+        },
+        {
+          "stock_consumption_id": 2924,
+          "sale_id": "a76b493c-21bc-4693-b412-7fe147d02940",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1803
+        },
+        {
+          "stock_consumption_id": 2931,
+          "sale_id": "f359e535-8c50-4813-bfde-e0856fc7b69c",
+          "ingredient_id": 644,
+          "orphaned_batch_id": 1795
+        },
+        {
+          "stock_consumption_id": 2935,
+          "sale_id": "a8dd6ced-4d49-4c06-b7cc-08c0dd167631",
+          "ingredient_id": 643,
+          "orphaned_batch_id": 1798
+        },
+        {
+          "stock_consumption_id": 2942,
+          "sale_id": "a1e9ede4-34cd-4268-9fdc-7357c0550370",
+          "ingredient_id": 643,
+          "orphaned_batch_id": 1798
+        },
+        {
+          "stock_consumption_id": 3230,
+          "sale_id": "0e874435-15be-4857-ba57-d8b7434854e3",
+          "ingredient_id": 20,
+          "orphaned_batch_id": 1753
+        },
+        {
+          "stock_consumption_id": 3236,
+          "sale_id": "88777673-b425-4b12-846d-74f7f0c60ad8",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1801
+        },
+        {
+          "stock_consumption_id": 3241,
+          "sale_id": "3080eb59-e8d1-4128-8f73-e69c71a43afc",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1830
+        },
+        {
+          "stock_consumption_id": 3244,
+          "sale_id": "3080eb59-e8d1-4128-8f73-e69c71a43afc",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1726
+        },
+        {
+          "stock_consumption_id": 3245,
+          "sale_id": "f19021a4-6172-45b7-b1a0-9db6215ab0d4",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1830
+        },
+        {
+          "stock_consumption_id": 3247,
+          "sale_id": "f19021a4-6172-45b7-b1a0-9db6215ab0d4",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1726
+        },
+        {
+          "stock_consumption_id": 3248,
+          "sale_id": "f19021a4-6172-45b7-b1a0-9db6215ab0d4",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1785
+        },
+        {
+          "stock_consumption_id": 3258,
+          "sale_id": "358803cd-d9ec-4a1d-8a7f-47b5a7d76434",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3266,
+          "sale_id": "669d883a-4469-4da0-9473-c8cbb40fceec",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3288,
+          "sale_id": "b065578a-fe7f-4db7-9d80-7aca17920cf4",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 1796
+        },
+        {
+          "stock_consumption_id": 3320,
+          "sale_id": "65e029fb-b841-4e4d-a92f-fa6198f363eb",
+          "ingredient_id": 645,
+          "orphaned_batch_id": 1797
+        },
+        {
+          "stock_consumption_id": 3324,
+          "sale_id": "30e5bc7d-91b2-419b-894f-552b8e2b7b9c",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3326,
+          "sale_id": "9cd2d9ee-8272-435a-a615-d73293b66365",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1801
+        },
+        {
+          "stock_consumption_id": 3331,
+          "sale_id": "023d1c15-8665-47dd-94ec-f9f4b61830f5",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1830
+        },
+        {
+          "stock_consumption_id": 3332,
+          "sale_id": "023d1c15-8665-47dd-94ec-f9f4b61830f5",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1844
+        },
+        {
+          "stock_consumption_id": 3335,
+          "sale_id": "023d1c15-8665-47dd-94ec-f9f4b61830f5",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1726
+        },
+        {
+          "stock_consumption_id": 3336,
+          "sale_id": "5a872761-5318-4588-8c67-0249bb267153",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3339,
+          "sale_id": "b8ee056a-000e-4f61-8450-1b98a6be6c06",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1844
+        },
+        {
+          "stock_consumption_id": 3341,
+          "sale_id": "b8ee056a-000e-4f61-8450-1b98a6be6c06",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1785
+        },
+        {
+          "stock_consumption_id": 3342,
+          "sale_id": "e1452230-b0e6-4659-b050-5f240e7e56d9",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1819
+        },
+        {
+          "stock_consumption_id": 3343,
+          "sale_id": "e1452230-b0e6-4659-b050-5f240e7e56d9",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3345,
+          "sale_id": "e1452230-b0e6-4659-b050-5f240e7e56d9",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 3348,
+          "sale_id": "fc0fe684-bb84-4032-82be-58e65ddc82c8",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1853
+        },
+        {
+          "stock_consumption_id": 3350,
+          "sale_id": "fc0fe684-bb84-4032-82be-58e65ddc82c8",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1853
+        },
+        {
+          "stock_consumption_id": 3353,
+          "sale_id": "334ab9f3-f354-49a6-aa67-e66703540f1e",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1853
+        },
+        {
+          "stock_consumption_id": 3354,
+          "sale_id": "334ab9f3-f354-49a6-aa67-e66703540f1e",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1853
+        },
+        {
+          "stock_consumption_id": 3356,
+          "sale_id": "ab6961b6-9e1d-470f-8d72-630c19bdf0ea",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1853
+        },
+        {
+          "stock_consumption_id": 3360,
+          "sale_id": "ab6961b6-9e1d-470f-8d72-630c19bdf0ea",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1853
+        },
+        {
+          "stock_consumption_id": 3362,
+          "sale_id": "b65c9bee-c18b-4e1a-abec-9fdedde8e316",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1833
+        },
+        {
+          "stock_consumption_id": 3364,
+          "sale_id": "b65c9bee-c18b-4e1a-abec-9fdedde8e316",
+          "ingredient_id": 636,
+          "orphaned_batch_id": 1774
+        },
+        {
+          "stock_consumption_id": 3365,
+          "sale_id": "a9f1de5f-8d16-49c7-93de-3e43b3912d49",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3366,
+          "sale_id": "a9f1de5f-8d16-49c7-93de-3e43b3912d49",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1854
+        },
+        {
+          "stock_consumption_id": 3374,
+          "sale_id": "37a8f76c-e5ab-40da-b4ed-60012db2c1a7",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3376,
+          "sale_id": "80bd8154-0a73-4776-9698-e68552d40ad6",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 1796
+        },
+        {
+          "stock_consumption_id": 3378,
+          "sale_id": "04455ecf-9350-4316-b912-e74a95b710bd",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1844
+        },
+        {
+          "stock_consumption_id": 3381,
+          "sale_id": "04455ecf-9350-4316-b912-e74a95b710bd",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1857
+        },
+        {
+          "stock_consumption_id": 3382,
+          "sale_id": "04455ecf-9350-4316-b912-e74a95b710bd",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1855
+        },
+        {
+          "stock_consumption_id": 3383,
+          "sale_id": "04455ecf-9350-4316-b912-e74a95b710bd",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1854
+        },
+        {
+          "stock_consumption_id": 3384,
+          "sale_id": "15a300f1-753c-4013-b4a8-2b368959d05e",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1844
+        },
+        {
+          "stock_consumption_id": 3386,
+          "sale_id": "15a300f1-753c-4013-b4a8-2b368959d05e",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1857
+        },
+        {
+          "stock_consumption_id": 3387,
+          "sale_id": "15a300f1-753c-4013-b4a8-2b368959d05e",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1854
+        },
+        {
+          "stock_consumption_id": 3388,
+          "sale_id": "15a300f1-753c-4013-b4a8-2b368959d05e",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1785
+        },
+        {
+          "stock_consumption_id": 3394,
+          "sale_id": "e1e52c60-2c88-4514-aeda-ed0497559c63",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3395,
+          "sale_id": "e1e52c60-2c88-4514-aeda-ed0497559c63",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1854
+        },
+        {
+          "stock_consumption_id": 3401,
+          "sale_id": "5e7122d9-d666-4f8b-ba26-2cab87a66ad5",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1844
+        },
+        {
+          "stock_consumption_id": 3403,
+          "sale_id": "5e7122d9-d666-4f8b-ba26-2cab87a66ad5",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1857
+        },
+        {
+          "stock_consumption_id": 3404,
+          "sale_id": "5e7122d9-d666-4f8b-ba26-2cab87a66ad5",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1854
+        },
+        {
+          "stock_consumption_id": 3405,
+          "sale_id": "5e7122d9-d666-4f8b-ba26-2cab87a66ad5",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1785
+        },
+        {
+          "stock_consumption_id": 3406,
+          "sale_id": "ef375285-88fa-4344-aef9-d23d43c1f2de",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3407,
+          "sale_id": "ef375285-88fa-4344-aef9-d23d43c1f2de",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1854
+        },
+        {
+          "stock_consumption_id": 3427,
+          "sale_id": "0345c933-9128-49f7-b2f5-1eca341fd365",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 3431,
+          "sale_id": "298fc0e9-78f2-4894-b9fe-8a27f70acbfd",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1844
+        },
+        {
+          "stock_consumption_id": 3433,
+          "sale_id": "298fc0e9-78f2-4894-b9fe-8a27f70acbfd",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1855
+        },
+        {
+          "stock_consumption_id": 3436,
+          "sale_id": "298fc0e9-78f2-4894-b9fe-8a27f70acbfd",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 3437,
+          "sale_id": "298fc0e9-78f2-4894-b9fe-8a27f70acbfd",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 1796
+        },
+        {
+          "stock_consumption_id": 3438,
+          "sale_id": "298fc0e9-78f2-4894-b9fe-8a27f70acbfd",
+          "ingredient_id": 646,
+          "orphaned_batch_id": 1793
+        },
+        {
+          "stock_consumption_id": 3455,
+          "sale_id": "7ffc5270-ce20-43db-ad3c-073dbb67ffd1",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1833
+        },
+        {
+          "stock_consumption_id": 3464,
+          "sale_id": "35345774-ad62-4914-bdcc-4440f9c7cb55",
+          "ingredient_id": 649,
+          "orphaned_batch_id": 1794
+        },
+        {
+          "stock_consumption_id": 3466,
+          "sale_id": "c5fc42bf-e911-4f11-88a9-71a224062103",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1801
+        },
+        {
+          "stock_consumption_id": 3467,
+          "sale_id": "c5fc42bf-e911-4f11-88a9-71a224062103",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1801
+        },
+        {
+          "stock_consumption_id": 3473,
+          "sale_id": "21be26c3-5d3f-44ce-8599-d6bc92b81b9f",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1819
+        },
+        {
+          "stock_consumption_id": 3474,
+          "sale_id": "21be26c3-5d3f-44ce-8599-d6bc92b81b9f",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 3475,
+          "sale_id": "21be26c3-5d3f-44ce-8599-d6bc92b81b9f",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3477,
+          "sale_id": "21be26c3-5d3f-44ce-8599-d6bc92b81b9f",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 3478,
+          "sale_id": "21be26c3-5d3f-44ce-8599-d6bc92b81b9f",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1854
+        },
+        {
+          "stock_consumption_id": 3479,
+          "sale_id": "21be26c3-5d3f-44ce-8599-d6bc92b81b9f",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1856
+        },
+        {
+          "stock_consumption_id": 3480,
+          "sale_id": "21be26c3-5d3f-44ce-8599-d6bc92b81b9f",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1855
+        },
+        {
+          "stock_consumption_id": 3486,
+          "sale_id": "5409de92-58cb-445f-85ee-f0ca8db1e9dd",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1879
+        },
+        {
+          "stock_consumption_id": 3489,
+          "sale_id": "5409de92-58cb-445f-85ee-f0ca8db1e9dd",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1857
+        },
+        {
+          "stock_consumption_id": 3490,
+          "sale_id": "5409de92-58cb-445f-85ee-f0ca8db1e9dd",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1855
+        },
+        {
+          "stock_consumption_id": 3494,
+          "sale_id": "2d9d308a-74f0-4c41-a846-fabd1e35365a",
+          "ingredient_id": 645,
+          "orphaned_batch_id": 1797
+        },
+        {
+          "stock_consumption_id": 3498,
+          "sale_id": "be916c73-d315-4aeb-93d7-823a8b49f1c0",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 1796
+        },
+        {
+          "stock_consumption_id": 3499,
+          "sale_id": "c58c0127-70ec-406d-89a5-8b226fc683e0",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3518,
+          "sale_id": "afb30ce4-e4e4-4af2-b3dc-5bd2b4cc81bd",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3523,
+          "sale_id": "24daf607-b011-4340-adc7-2976d8165ad4",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3532,
+          "sale_id": "1347649d-ea0b-4691-adb2-d1e533078fb7",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1879
+        },
+        {
+          "stock_consumption_id": 3534,
+          "sale_id": "1347649d-ea0b-4691-adb2-d1e533078fb7",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1855
+        },
+        {
+          "stock_consumption_id": 3541,
+          "sale_id": "11b5ef23-db1f-47e7-b9ea-5d61e57e4032",
+          "ingredient_id": 468,
+          "orphaned_batch_id": 1736
+        },
+        {
+          "stock_consumption_id": 3542,
+          "sale_id": "0de08737-d63e-4b59-a0ab-50279c3805fb",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1879
+        },
+        {
+          "stock_consumption_id": 3544,
+          "sale_id": "0de08737-d63e-4b59-a0ab-50279c3805fb",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1857
+        },
+        {
+          "stock_consumption_id": 3545,
+          "sale_id": "0de08737-d63e-4b59-a0ab-50279c3805fb",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1785
+        },
+        {
+          "stock_consumption_id": 3546,
+          "sale_id": "0de08737-d63e-4b59-a0ab-50279c3805fb",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1885
+        },
+        {
+          "stock_consumption_id": 3547,
+          "sale_id": "eec743e1-6c6e-4dcd-8707-b54ae9949fd8",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1879
+        },
+        {
+          "stock_consumption_id": 3550,
+          "sale_id": "eec743e1-6c6e-4dcd-8707-b54ae9949fd8",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1855
+        },
+        {
+          "stock_consumption_id": 3551,
+          "sale_id": "0ec54838-7307-4863-93c2-b7661685f3c7",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3574,
+          "sale_id": "84affc1e-4d48-4a0c-b7d5-5554e4b988fc",
+          "ingredient_id": 643,
+          "orphaned_batch_id": 1798
+        },
+        {
+          "stock_consumption_id": 3575,
+          "sale_id": "84affc1e-4d48-4a0c-b7d5-5554e4b988fc",
+          "ingredient_id": 644,
+          "orphaned_batch_id": 1795
+        },
+        {
+          "stock_consumption_id": 3576,
+          "sale_id": "7ab042d5-fd78-43c8-b541-5bb9c4e3767e",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3585,
+          "sale_id": "8f7cb7d1-a2b3-4322-a2b2-f5e388434b98",
+          "ingredient_id": 643,
+          "orphaned_batch_id": 1798
+        },
+        {
+          "stock_consumption_id": 3595,
+          "sale_id": "c1d4ee6a-d493-401e-9107-9446ed0163a8",
+          "ingredient_id": 644,
+          "orphaned_batch_id": 1795
+        },
+        {
+          "stock_consumption_id": 3603,
+          "sale_id": "03594ca6-dadb-4f09-946f-a49ffedd4ab6",
+          "ingredient_id": 645,
+          "orphaned_batch_id": 1797
+        },
+        {
+          "stock_consumption_id": 3624,
+          "sale_id": "22174113-0345-455a-9d9e-ceb5d18e7a9e",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 3630,
+          "sale_id": "db8c8884-64dd-4de3-a06e-e954ecd75905",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3631,
+          "sale_id": "a13adf89-daaf-416d-a2f2-56506c94fb68",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 3632,
+          "sale_id": "a13adf89-daaf-416d-a2f2-56506c94fb68",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3634,
+          "sale_id": "a13adf89-daaf-416d-a2f2-56506c94fb68",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 3635,
+          "sale_id": "a13adf89-daaf-416d-a2f2-56506c94fb68",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1856
+        },
+        {
+          "stock_consumption_id": 3636,
+          "sale_id": "73a307bb-25d7-4e55-af24-cf2e66fdc9df",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3639,
+          "sale_id": "5bb47ab7-bf95-4b7e-ba5d-3d144bd62fb4",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3647,
+          "sale_id": "5d9f5a49-9a0e-4bc4-a6ae-dccd171897ff",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1902
+        },
+        {
+          "stock_consumption_id": 3649,
+          "sale_id": "5d9f5a49-9a0e-4bc4-a6ae-dccd171897ff",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1885
+        },
+        {
+          "stock_consumption_id": 3650,
+          "sale_id": "6f222741-bb63-436f-872b-584fb13034dd",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3652,
+          "sale_id": "33430b12-03d7-480c-9607-7691023b38cf",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 3653,
+          "sale_id": "33430b12-03d7-480c-9607-7691023b38cf",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 1796
+        },
+        {
+          "stock_consumption_id": 3654,
+          "sale_id": "33430b12-03d7-480c-9607-7691023b38cf",
+          "ingredient_id": 646,
+          "orphaned_batch_id": 1793
+        },
+        {
+          "stock_consumption_id": 3665,
+          "sale_id": "3c669927-1c25-44c6-b605-f7e6f67a178d",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3688,
+          "sale_id": "50550232-5977-4971-aa78-68fb3657d6d5",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3692,
+          "sale_id": "ee525554-bd83-4624-8d1d-c4d3bb515923",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 3693,
+          "sale_id": "ee525554-bd83-4624-8d1d-c4d3bb515923",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3695,
+          "sale_id": "ee525554-bd83-4624-8d1d-c4d3bb515923",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 3696,
+          "sale_id": "ee525554-bd83-4624-8d1d-c4d3bb515923",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1856
+        },
+        {
+          "stock_consumption_id": 3697,
+          "sale_id": "88c268b3-f18e-4ae0-896a-f6274bbe7b72",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1902
+        },
+        {
+          "stock_consumption_id": 3699,
+          "sale_id": "88c268b3-f18e-4ae0-896a-f6274bbe7b72",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1885
+        },
+        {
+          "stock_consumption_id": 3700,
+          "sale_id": "85edd35b-b47a-45c1-8ec3-67751e7cbf2e",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3704,
+          "sale_id": "302645c9-2d90-479f-9416-7fc7a4be01e2",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 3705,
+          "sale_id": "302645c9-2d90-479f-9416-7fc7a4be01e2",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3707,
+          "sale_id": "302645c9-2d90-479f-9416-7fc7a4be01e2",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 3708,
+          "sale_id": "302645c9-2d90-479f-9416-7fc7a4be01e2",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1856
+        },
+        {
+          "stock_consumption_id": 3709,
+          "sale_id": "ee27a454-3dfb-4b37-a7ca-6336d0f71e46",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3711,
+          "sale_id": "ee27a454-3dfb-4b37-a7ca-6336d0f71e46",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1919
+        },
+        {
+          "stock_consumption_id": 3714,
+          "sale_id": "ee27a454-3dfb-4b37-a7ca-6336d0f71e46",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1902
+        },
+        {
+          "stock_consumption_id": 3716,
+          "sale_id": "ee27a454-3dfb-4b37-a7ca-6336d0f71e46",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 3721,
+          "sale_id": "6c512898-e0ae-4db1-b40a-9291cfd9ea24",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1916
+        },
+        {
+          "stock_consumption_id": 3725,
+          "sale_id": "f9b2ff01-8717-4dc6-aeea-1e91c4518d6b",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1919
+        },
+        {
+          "stock_consumption_id": 3728,
+          "sale_id": "f9b2ff01-8717-4dc6-aeea-1e91c4518d6b",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 3729,
+          "sale_id": "189830fd-eb4e-4332-80f1-113b523ba5d1",
+          "ingredient_id": 534,
+          "orphaned_batch_id": 1927
+        },
+        {
+          "stock_consumption_id": 3731,
+          "sale_id": "189830fd-eb4e-4332-80f1-113b523ba5d1",
+          "ingredient_id": 645,
+          "orphaned_batch_id": 1797
+        },
+        {
+          "stock_consumption_id": 3732,
+          "sale_id": "f4adfc81-9e9a-4c6a-990c-373313f5be8d",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 1919
+        },
+        {
+          "stock_consumption_id": 3737,
+          "sale_id": "f4adfc81-9e9a-4c6a-990c-373313f5be8d",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3738,
+          "sale_id": "f4adfc81-9e9a-4c6a-990c-373313f5be8d",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1913
+        },
+        {
+          "stock_consumption_id": 3740,
+          "sale_id": "f4adfc81-9e9a-4c6a-990c-373313f5be8d",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1920
+        },
+        {
+          "stock_consumption_id": 3741,
+          "sale_id": "ee61cfff-1872-457a-83d8-7bf8b83bb156",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3742,
+          "sale_id": "ee61cfff-1872-457a-83d8-7bf8b83bb156",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 3744,
+          "sale_id": "4da06583-5b4d-4dff-9783-f3110bf750fb",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3758,
+          "sale_id": "8661ae8d-2995-4637-b152-7da1ec0a4361",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3759,
+          "sale_id": "8661ae8d-2995-4637-b152-7da1ec0a4361",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1913
+        },
+        {
+          "stock_consumption_id": 3761,
+          "sale_id": "8661ae8d-2995-4637-b152-7da1ec0a4361",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 1920
+        },
+        {
+          "stock_consumption_id": 3763,
+          "sale_id": "8661ae8d-2995-4637-b152-7da1ec0a4361",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1913
+        },
+        {
+          "stock_consumption_id": 3765,
+          "sale_id": "df69e1fb-91e7-4d63-857a-56a61b0e2896",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1902
+        },
+        {
+          "stock_consumption_id": 3767,
+          "sale_id": "df69e1fb-91e7-4d63-857a-56a61b0e2896",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1915
+        },
+        {
+          "stock_consumption_id": 3768,
+          "sale_id": "df69e1fb-91e7-4d63-857a-56a61b0e2896",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1913
+        },
+        {
+          "stock_consumption_id": 3769,
+          "sale_id": "df69e1fb-91e7-4d63-857a-56a61b0e2896",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1885
+        },
+        {
+          "stock_consumption_id": 3770,
+          "sale_id": "2b00cc06-4fb0-4fe5-8cfa-25e43269a680",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3771,
+          "sale_id": "2b00cc06-4fb0-4fe5-8cfa-25e43269a680",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1913
+        },
+        {
+          "stock_consumption_id": 3774,
+          "sale_id": "4beaffd1-2d83-4f26-8672-8d30d30970b9",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1902
+        },
+        {
+          "stock_consumption_id": 3776,
+          "sale_id": "4beaffd1-2d83-4f26-8672-8d30d30970b9",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1915
+        },
+        {
+          "stock_consumption_id": 3777,
+          "sale_id": "4beaffd1-2d83-4f26-8672-8d30d30970b9",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1885
+        },
+        {
+          "stock_consumption_id": 3778,
+          "sale_id": "3e43a980-2f79-4b27-895d-81e2994643c8",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3786,
+          "sale_id": "80e3528a-bf67-4469-ba5b-b98bddee35f6",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3810,
+          "sale_id": "0940ec89-3a73-41ea-b60a-9c378361008d",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 3817,
+          "sale_id": "0940ec89-3a73-41ea-b60a-9c378361008d",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 3821,
+          "sale_id": "c3c418a6-9baf-415b-9bd2-6b8b5e5d17f7",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 3825,
+          "sale_id": "74dae9f4-a0c8-49ec-94ce-51698b266784",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3826,
+          "sale_id": "74dae9f4-a0c8-49ec-94ce-51698b266784",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3854,
+          "sale_id": "6266e9cc-39b6-4952-854a-117ccdd490e8",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3855,
+          "sale_id": "6266e9cc-39b6-4952-854a-117ccdd490e8",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1934
+        },
+        {
+          "stock_consumption_id": 3859,
+          "sale_id": "b8083cb0-62ca-47db-8dba-2c4245792ef9",
+          "ingredient_id": 181,
+          "orphaned_batch_id": 1916
+        },
+        {
+          "stock_consumption_id": 3864,
+          "sale_id": "5141c66d-be04-44ea-9de2-92a91bdf41f5",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 3867,
+          "sale_id": "5141c66d-be04-44ea-9de2-92a91bdf41f5",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1935
+        },
+        {
+          "stock_consumption_id": 3868,
+          "sale_id": "5141c66d-be04-44ea-9de2-92a91bdf41f5",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 3869,
+          "sale_id": "5141c66d-be04-44ea-9de2-92a91bdf41f5",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1934
+        },
+        {
+          "stock_consumption_id": 3872,
+          "sale_id": "0890a705-e8c2-4f56-80e9-7e628ab0bf0d",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 3874,
+          "sale_id": "0890a705-e8c2-4f56-80e9-7e628ab0bf0d",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1935
+        },
+        {
+          "stock_consumption_id": 3875,
+          "sale_id": "0890a705-e8c2-4f56-80e9-7e628ab0bf0d",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1885
+        },
+        {
+          "stock_consumption_id": 3876,
+          "sale_id": "0890a705-e8c2-4f56-80e9-7e628ab0bf0d",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1953
+        },
+        {
+          "stock_consumption_id": 3877,
+          "sale_id": "7c864e9a-e252-476b-8ac5-1b13a314d4f0",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3881,
+          "sale_id": "38ca509c-9315-4890-ada9-82b9022204ab",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 3882,
+          "sale_id": "38ca509c-9315-4890-ada9-82b9022204ab",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3884,
+          "sale_id": "38ca509c-9315-4890-ada9-82b9022204ab",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 3885,
+          "sale_id": "38ca509c-9315-4890-ada9-82b9022204ab",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1856
+        },
+        {
+          "stock_consumption_id": 3886,
+          "sale_id": "38ca509c-9315-4890-ada9-82b9022204ab",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 3893,
+          "sale_id": "a190ba63-e872-468f-a04d-9e077174ed80",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1856
+        },
+        {
+          "stock_consumption_id": 3895,
+          "sale_id": "da7ef927-5239-46fc-9d0c-6d4a216a6cdd",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 3898,
+          "sale_id": "da7ef927-5239-46fc-9d0c-6d4a216a6cdd",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1935
+        },
+        {
+          "stock_consumption_id": 3899,
+          "sale_id": "da7ef927-5239-46fc-9d0c-6d4a216a6cdd",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 3903,
+          "sale_id": "393a96e7-8cf3-4373-8acc-7dec3ba830b4",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 3920,
+          "sale_id": "74fdd1e5-d834-475e-93a1-d84c6f2ca413",
+          "ingredient_id": 20,
+          "orphaned_batch_id": 1753
+        },
+        {
+          "stock_consumption_id": 3921,
+          "sale_id": "74fdd1e5-d834-475e-93a1-d84c6f2ca413",
+          "ingredient_id": 196,
+          "orphaned_batch_id": 1852
+        },
+        {
+          "stock_consumption_id": 3923,
+          "sale_id": "e6a8b398-0e03-4443-9797-9158792a7afc",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 3928,
+          "sale_id": "c591053e-fc9e-4e44-b181-bfa671992de8",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1833
+        },
+        {
+          "stock_consumption_id": 3931,
+          "sale_id": "c591053e-fc9e-4e44-b181-bfa671992de8",
+          "ingredient_id": 508,
+          "orphaned_batch_id": 1918
+        },
+        {
+          "stock_consumption_id": 3939,
+          "sale_id": "04d47ef0-39b7-424c-a0e6-6bda2fede4e3",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3942,
+          "sale_id": "9c56319f-d054-403f-80fc-ddacfb96af1a",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3946,
+          "sale_id": "9c56319f-d054-403f-80fc-ddacfb96af1a",
+          "ingredient_id": 656,
+          "orphaned_batch_id": 1897
+        },
+        {
+          "stock_consumption_id": 3947,
+          "sale_id": "5ba16eef-65ba-48db-9340-680379d43b58",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3951,
+          "sale_id": "5ba16eef-65ba-48db-9340-680379d43b58",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3955,
+          "sale_id": "5ba16eef-65ba-48db-9340-680379d43b58",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 1796
+        },
+        {
+          "stock_consumption_id": 3957,
+          "sale_id": "8644ab0d-bf68-42ca-8839-db6340912f89",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3960,
+          "sale_id": "8763d16d-953e-46ac-b8aa-9995b1dd92c5",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 3962,
+          "sale_id": "8763d16d-953e-46ac-b8aa-9995b1dd92c5",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3968,
+          "sale_id": "e73b694c-ee9b-42f2-837d-c3d403e73c17",
+          "ingredient_id": 508,
+          "orphaned_batch_id": 1918
+        },
+        {
+          "stock_consumption_id": 3979,
+          "sale_id": "e3228198-6da5-4965-ac89-a4de748f97c0",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3982,
+          "sale_id": "e3228198-6da5-4965-ac89-a4de748f97c0",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3985,
+          "sale_id": "e3228198-6da5-4965-ac89-a4de748f97c0",
+          "ingredient_id": 559,
+          "orphaned_batch_id": 2016
+        },
+        {
+          "stock_consumption_id": 3987,
+          "sale_id": "e3228198-6da5-4965-ac89-a4de748f97c0",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3988,
+          "sale_id": "e3228198-6da5-4965-ac89-a4de748f97c0",
+          "ingredient_id": 559,
+          "orphaned_batch_id": 2016
+        },
+        {
+          "stock_consumption_id": 3990,
+          "sale_id": "e3228198-6da5-4965-ac89-a4de748f97c0",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 3995,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 3996,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 3997,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 3998,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 3999,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1754
+        },
+        {
+          "stock_consumption_id": 4000,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1995
+        },
+        {
+          "stock_consumption_id": 4001,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4002,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 1856
+        },
+        {
+          "stock_consumption_id": 4003,
+          "sale_id": "a3da6cd6-75c6-4c0a-97fb-61a889dbe4f7",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4004,
+          "sale_id": "07aa8753-26bb-4218-9245-c7b5d3da8720",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 1733
+        },
+        {
+          "stock_consumption_id": 4005,
+          "sale_id": "07aa8753-26bb-4218-9245-c7b5d3da8720",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4006,
+          "sale_id": "07aa8753-26bb-4218-9245-c7b5d3da8720",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4008,
+          "sale_id": "07aa8753-26bb-4218-9245-c7b5d3da8720",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4009,
+          "sale_id": "f3073ae3-49e5-408e-8fc9-0a0c6c7d054d",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 4012,
+          "sale_id": "f3073ae3-49e5-408e-8fc9-0a0c6c7d054d",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1935
+        },
+        {
+          "stock_consumption_id": 4013,
+          "sale_id": "f3073ae3-49e5-408e-8fc9-0a0c6c7d054d",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4014,
+          "sale_id": "f3073ae3-49e5-408e-8fc9-0a0c6c7d054d",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4020,
+          "sale_id": "72a757f6-cbd0-4782-ae7c-fc87625e04b0",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4022,
+          "sale_id": "72a757f6-cbd0-4782-ae7c-fc87625e04b0",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4025,
+          "sale_id": "72a757f6-cbd0-4782-ae7c-fc87625e04b0",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 1862
+        },
+        {
+          "stock_consumption_id": 4028,
+          "sale_id": "2b534ceb-f2d0-486a-80fd-c0f4346f13f5",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4032,
+          "sale_id": "2b534ceb-f2d0-486a-80fd-c0f4346f13f5",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4036,
+          "sale_id": "2b534ceb-f2d0-486a-80fd-c0f4346f13f5",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4039,
+          "sale_id": "2b534ceb-f2d0-486a-80fd-c0f4346f13f5",
+          "ingredient_id": 558,
+          "orphaned_batch_id": 2015
+        },
+        {
+          "stock_consumption_id": 4041,
+          "sale_id": "2b534ceb-f2d0-486a-80fd-c0f4346f13f5",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4045,
+          "sale_id": "38fa59e8-0ecc-467b-a226-8511e9bde59b",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4048,
+          "sale_id": "38fa59e8-0ecc-467b-a226-8511e9bde59b",
+          "ingredient_id": 636,
+          "orphaned_batch_id": 1774
+        },
+        {
+          "stock_consumption_id": 4049,
+          "sale_id": "38fa59e8-0ecc-467b-a226-8511e9bde59b",
+          "ingredient_id": 644,
+          "orphaned_batch_id": 1795
+        },
+        {
+          "stock_consumption_id": 4051,
+          "sale_id": "571ba324-1c68-4346-99f4-19a73bf5cd86",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4054,
+          "sale_id": "571ba324-1c68-4346-99f4-19a73bf5cd86",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1833
+        },
+        {
+          "stock_consumption_id": 4055,
+          "sale_id": "0a45a1a6-9e5b-4139-b7f9-599e46cb2f48",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 4057,
+          "sale_id": "0a45a1a6-9e5b-4139-b7f9-599e46cb2f48",
+          "ingredient_id": 645,
+          "orphaned_batch_id": 1797
+        },
+        {
+          "stock_consumption_id": 4062,
+          "sale_id": "7f9bc112-34c3-4b4e-b390-d743fb6c9dac",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4065,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4066,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 4067,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 4068,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4069,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1995
+        },
+        {
+          "stock_consumption_id": 4070,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4071,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 2056
+        },
+        {
+          "stock_consumption_id": 4072,
+          "sale_id": "c326e501-0a94-4026-affc-c39adf159855",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4074,
+          "sale_id": "094478de-5b5d-4ed6-81d7-55ca836a567d",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4076,
+          "sale_id": "094478de-5b5d-4ed6-81d7-55ca836a567d",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4079,
+          "sale_id": "094478de-5b5d-4ed6-81d7-55ca836a567d",
+          "ingredient_id": 594,
+          "orphaned_batch_id": 2061
+        },
+        {
+          "stock_consumption_id": 4080,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4081,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 4082,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 4083,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4084,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1995
+        },
+        {
+          "stock_consumption_id": 4085,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4086,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 2056
+        },
+        {
+          "stock_consumption_id": 4087,
+          "sale_id": "387ed7b2-1ede-4fca-9088-3405f16223b0",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4090,
+          "sale_id": "2d525ea6-16b8-41ac-9a54-109a80058700",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4093,
+          "sale_id": "2d525ea6-16b8-41ac-9a54-109a80058700",
+          "ingredient_id": 594,
+          "orphaned_batch_id": 2062
+        },
+        {
+          "stock_consumption_id": 4095,
+          "sale_id": "d6ca7f94-1ce2-459f-ba60-381340bc1162",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4098,
+          "sale_id": "d6ca7f94-1ce2-459f-ba60-381340bc1162",
+          "ingredient_id": 544,
+          "orphaned_batch_id": 2057
+        },
+        {
+          "stock_consumption_id": 4101,
+          "sale_id": "14c61ea5-3c74-45d9-a5c3-714ae988faa8",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4106,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4107,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 4108,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 4109,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4110,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1995
+        },
+        {
+          "stock_consumption_id": 4111,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4112,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 2056
+        },
+        {
+          "stock_consumption_id": 4113,
+          "sale_id": "bc5fa6ae-6498-4482-a543-2d5c02ebe921",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4116,
+          "sale_id": "445ba3e0-a8dc-4420-b720-f59412fbdada",
+          "ingredient_id": 594,
+          "orphaned_batch_id": 2064
+        },
+        {
+          "stock_consumption_id": 4117,
+          "sale_id": "2d278484-4bb0-4fb5-b998-77c4dfc3f477",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4118,
+          "sale_id": "2d278484-4bb0-4fb5-b998-77c4dfc3f477",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4120,
+          "sale_id": "2d278484-4bb0-4fb5-b998-77c4dfc3f477",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4121,
+          "sale_id": "878c6d58-fa46-4f66-b3df-fd95a34ef4ca",
+          "ingredient_id": 504,
+          "orphaned_batch_id": 2065
+        },
+        {
+          "stock_consumption_id": 4126,
+          "sale_id": "55521efe-e272-4f94-9c5d-72f29b69c54d",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4136,
+          "sale_id": "55521efe-e272-4f94-9c5d-72f29b69c54d",
+          "ingredient_id": 21,
+          "orphaned_batch_id": 2028
+        },
+        {
+          "stock_consumption_id": 4137,
+          "sale_id": "55521efe-e272-4f94-9c5d-72f29b69c54d",
+          "ingredient_id": 20,
+          "orphaned_batch_id": 1753
+        },
+        {
+          "stock_consumption_id": 4138,
+          "sale_id": "55521efe-e272-4f94-9c5d-72f29b69c54d",
+          "ingredient_id": 196,
+          "orphaned_batch_id": 1852
+        },
+        {
+          "stock_consumption_id": 4142,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4143,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 4144,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 4145,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4146,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1995
+        },
+        {
+          "stock_consumption_id": 4147,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4148,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 2056
+        },
+        {
+          "stock_consumption_id": 4149,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4150,
+          "sale_id": "0d334ed9-b18c-440a-8a8e-eda4935bcaad",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4151,
+          "sale_id": "54fae2c8-af7f-46f1-bc3c-a7ff6e86d20c",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 1829
+        },
+        {
+          "stock_consumption_id": 4152,
+          "sale_id": "54fae2c8-af7f-46f1-bc3c-a7ff6e86d20c",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 2067
+        },
+        {
+          "stock_consumption_id": 4153,
+          "sale_id": "54fae2c8-af7f-46f1-bc3c-a7ff6e86d20c",
+          "ingredient_id": 61,
+          "orphaned_batch_id": 1981
+        },
+        {
+          "stock_consumption_id": 4157,
+          "sale_id": "54fae2c8-af7f-46f1-bc3c-a7ff6e86d20c",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4161,
+          "sale_id": "54fae2c8-af7f-46f1-bc3c-a7ff6e86d20c",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4165,
+          "sale_id": "54fae2c8-af7f-46f1-bc3c-a7ff6e86d20c",
+          "ingredient_id": 585,
+          "orphaned_batch_id": 1837
+        },
+        {
+          "stock_consumption_id": 4166,
+          "sale_id": "54fae2c8-af7f-46f1-bc3c-a7ff6e86d20c",
+          "ingredient_id": 594,
+          "orphaned_batch_id": 2069
+        },
+        {
+          "stock_consumption_id": 4167,
+          "sale_id": "d55f2d30-a1e8-46b2-ba4e-aa2c9785f7d9",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4168,
+          "sale_id": "d55f2d30-a1e8-46b2-ba4e-aa2c9785f7d9",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4170,
+          "sale_id": "d55f2d30-a1e8-46b2-ba4e-aa2c9785f7d9",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4171,
+          "sale_id": "0226393e-a977-4afb-92fd-9118ff645666",
+          "ingredient_id": 504,
+          "orphaned_batch_id": 2070
+        },
+        {
+          "stock_consumption_id": 4173,
+          "sale_id": "0226393e-a977-4afb-92fd-9118ff645666",
+          "ingredient_id": 558,
+          "orphaned_batch_id": 2015
+        },
+        {
+          "stock_consumption_id": 4174,
+          "sale_id": "0226393e-a977-4afb-92fd-9118ff645666",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4177,
+          "sale_id": "e28308df-3d4c-4d22-872b-46e02f7bcebd",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4181,
+          "sale_id": "880ebb15-8deb-4bdc-ad0c-f2b991cac3e3",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2026
+        },
+        {
+          "stock_consumption_id": 4182,
+          "sale_id": "880ebb15-8deb-4bdc-ad0c-f2b991cac3e3",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4185,
+          "sale_id": "880ebb15-8deb-4bdc-ad0c-f2b991cac3e3",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4186,
+          "sale_id": "880ebb15-8deb-4bdc-ad0c-f2b991cac3e3",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4187,
+          "sale_id": "880ebb15-8deb-4bdc-ad0c-f2b991cac3e3",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4188,
+          "sale_id": "880ebb15-8deb-4bdc-ad0c-f2b991cac3e3",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4191,
+          "sale_id": "b988a1ba-8fa0-41b1-9e72-a660c1806e39",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4192,
+          "sale_id": "b988a1ba-8fa0-41b1-9e72-a660c1806e39",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4194,
+          "sale_id": "f021289a-a47d-45cf-bf5e-d1895a153db6",
+          "ingredient_id": 505,
+          "orphaned_batch_id": 2084
+        },
+        {
+          "stock_consumption_id": 4195,
+          "sale_id": "f021289a-a47d-45cf-bf5e-d1895a153db6",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 2063
+        },
+        {
+          "stock_consumption_id": 4197,
+          "sale_id": "8dcf75f1-ebe9-4b79-948d-50ebc57437e3",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4203,
+          "sale_id": "0006d2fe-869f-45f6-a619-2861a48b0ae0",
+          "ingredient_id": 508,
+          "orphaned_batch_id": 1918
+        },
+        {
+          "stock_consumption_id": 4210,
+          "sale_id": "580bf5a6-2dbd-419d-90d2-f2558ea54ced",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4213,
+          "sale_id": "b5986452-801a-4095-ac5e-d1f4d461265b",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 4215,
+          "sale_id": "b5986452-801a-4095-ac5e-d1f4d461265b",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 1935
+        },
+        {
+          "stock_consumption_id": 4216,
+          "sale_id": "b5986452-801a-4095-ac5e-d1f4d461265b",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 2004
+        },
+        {
+          "stock_consumption_id": 4217,
+          "sale_id": "b5986452-801a-4095-ac5e-d1f4d461265b",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4218,
+          "sale_id": "b5986452-801a-4095-ac5e-d1f4d461265b",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1953
+        },
+        {
+          "stock_consumption_id": 4219,
+          "sale_id": "831a6a5e-22b2-48d9-b29a-7e8d5c265470",
+          "ingredient_id": 35,
+          "orphaned_batch_id": 2067
+        },
+        {
+          "stock_consumption_id": 4224,
+          "sale_id": "831a6a5e-22b2-48d9-b29a-7e8d5c265470",
+          "ingredient_id": 477,
+          "orphaned_batch_id": 2086
+        },
+        {
+          "stock_consumption_id": 4225,
+          "sale_id": "831a6a5e-22b2-48d9-b29a-7e8d5c265470",
+          "ingredient_id": 477,
+          "orphaned_batch_id": 2086
+        },
+        {
+          "stock_consumption_id": 4234,
+          "sale_id": "e6e2546a-cfb9-4926-abcf-a2bfd4e78611",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4235,
+          "sale_id": "e6e2546a-cfb9-4926-abcf-a2bfd4e78611",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4237,
+          "sale_id": "e6e2546a-cfb9-4926-abcf-a2bfd4e78611",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4239,
+          "sale_id": "055d7531-9108-4086-a2fc-19719dced4ee",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4242,
+          "sale_id": "055d7531-9108-4086-a2fc-19719dced4ee",
+          "ingredient_id": 504,
+          "orphaned_batch_id": 2088
+        },
+        {
+          "stock_consumption_id": 4243,
+          "sale_id": "feaf7af8-5bb6-41dc-9b06-583a2aef4abd",
+          "ingredient_id": 559,
+          "orphaned_batch_id": 2016
+        },
+        {
+          "stock_consumption_id": 4245,
+          "sale_id": "feaf7af8-5bb6-41dc-9b06-583a2aef4abd",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4246,
+          "sale_id": "31e260c0-4dd3-4a5b-b64f-30efc0f6dbff",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4247,
+          "sale_id": "31e260c0-4dd3-4a5b-b64f-30efc0f6dbff",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4249,
+          "sale_id": "31e260c0-4dd3-4a5b-b64f-30efc0f6dbff",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4251,
+          "sale_id": "cea408e3-7351-4cb4-a93b-0e77575c0531",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4254,
+          "sale_id": "cea408e3-7351-4cb4-a93b-0e77575c0531",
+          "ingredient_id": 504,
+          "orphaned_batch_id": 2089
+        },
+        {
+          "stock_consumption_id": 4257,
+          "sale_id": "bd3ede7a-19c3-4642-9f83-e081ba134fe4",
+          "ingredient_id": 558,
+          "orphaned_batch_id": 2015
+        },
+        {
+          "stock_consumption_id": 4259,
+          "sale_id": "bd3ede7a-19c3-4642-9f83-e081ba134fe4",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4261,
+          "sale_id": "9274f0f0-c083-49da-924c-fb777bb709c8",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4264,
+          "sale_id": "9274f0f0-c083-49da-924c-fb777bb709c8",
+          "ingredient_id": 442,
+          "orphaned_batch_id": 1850
+        },
+        {
+          "stock_consumption_id": 4265,
+          "sale_id": "9274f0f0-c083-49da-924c-fb777bb709c8",
+          "ingredient_id": 442,
+          "orphaned_batch_id": 1850
+        },
+        {
+          "stock_consumption_id": 4266,
+          "sale_id": "9274f0f0-c083-49da-924c-fb777bb709c8",
+          "ingredient_id": 442,
+          "orphaned_batch_id": 1850
+        },
+        {
+          "stock_consumption_id": 4268,
+          "sale_id": "bc819881-969e-4036-9bfe-b6c30be997dd",
+          "ingredient_id": 508,
+          "orphaned_batch_id": 1918
+        },
+        {
+          "stock_consumption_id": 4271,
+          "sale_id": "0e38ae4d-6715-4eb9-bd7d-8fbe19d2ce20",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4272,
+          "sale_id": "0e38ae4d-6715-4eb9-bd7d-8fbe19d2ce20",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4274,
+          "sale_id": "0e38ae4d-6715-4eb9-bd7d-8fbe19d2ce20",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4277,
+          "sale_id": "fe12fb5a-91b0-4e71-9687-d32b74e6f464",
+          "ingredient_id": 504,
+          "orphaned_batch_id": 2091
+        },
+        {
+          "stock_consumption_id": 4280,
+          "sale_id": "fe12fb5a-91b0-4e71-9687-d32b74e6f464",
+          "ingredient_id": 508,
+          "orphaned_batch_id": 1918
+        },
+        {
+          "stock_consumption_id": 4281,
+          "sale_id": "4f7b18ff-2b6b-4c23-bd7b-f31ccdce9313",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 4283,
+          "sale_id": "4f7b18ff-2b6b-4c23-bd7b-f31ccdce9313",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 2004
+        },
+        {
+          "stock_consumption_id": 4284,
+          "sale_id": "4f7b18ff-2b6b-4c23-bd7b-f31ccdce9313",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4285,
+          "sale_id": "4f7b18ff-2b6b-4c23-bd7b-f31ccdce9313",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1953
+        },
+        {
+          "stock_consumption_id": 4286,
+          "sale_id": "8e289b12-9828-4f80-a8c3-728f97b94897",
+          "ingredient_id": 437,
+          "orphaned_batch_id": 2018
+        },
+        {
+          "stock_consumption_id": 4287,
+          "sale_id": "8e289b12-9828-4f80-a8c3-728f97b94897",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4289,
+          "sale_id": "8e289b12-9828-4f80-a8c3-728f97b94897",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4290,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 4294,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4296,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4299,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 477,
+          "orphaned_batch_id": 2092
+        },
+        {
+          "stock_consumption_id": 4300,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 477,
+          "orphaned_batch_id": 2092
+        },
+        {
+          "stock_consumption_id": 4302,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 504,
+          "orphaned_batch_id": 2093
+        },
+        {
+          "stock_consumption_id": 4303,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 2063
+        },
+        {
+          "stock_consumption_id": 4304,
+          "sale_id": "f12fe8a6-5fba-4d65-b2a6-a9a2af94db2d",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4309,
+          "sale_id": "28528e60-2e05-4028-902b-301cb29cfa6b",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4312,
+          "sale_id": "dcf9a5ba-0e28-4bc1-81eb-cbe62aad4ded",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 4316,
+          "sale_id": "dcf9a5ba-0e28-4bc1-81eb-cbe62aad4ded",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4319,
+          "sale_id": "dcf9a5ba-0e28-4bc1-81eb-cbe62aad4ded",
+          "ingredient_id": 535,
+          "orphaned_batch_id": 2063
+        },
+        {
+          "stock_consumption_id": 4320,
+          "sale_id": "dcf9a5ba-0e28-4bc1-81eb-cbe62aad4ded",
+          "ingredient_id": 685,
+          "orphaned_batch_id": 2074
+        },
+        {
+          "stock_consumption_id": 4321,
+          "sale_id": "8086c883-0e13-495a-9f56-a2442621695a",
+          "ingredient_id": 559,
+          "orphaned_batch_id": 2016
+        },
+        {
+          "stock_consumption_id": 4323,
+          "sale_id": "8086c883-0e13-495a-9f56-a2442621695a",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4324,
+          "sale_id": "8086c883-0e13-495a-9f56-a2442621695a",
+          "ingredient_id": 508,
+          "orphaned_batch_id": 1918
+        },
+        {
+          "stock_consumption_id": 4326,
+          "sale_id": "b34fdfb9-4cc4-4a7d-b5e5-3d7f52b56ad6",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4329,
+          "sale_id": "1ea03d61-ff85-4096-a78d-a8b8bbe398b9",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 4335,
+          "sale_id": "952b4422-a3aa-48d0-9838-096f94d6b824",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4338,
+          "sale_id": "5a297e1e-6da3-43b5-959e-3ff10b61f864",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 4340,
+          "sale_id": "5a297e1e-6da3-43b5-959e-3ff10b61f864",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 2004
+        },
+        {
+          "stock_consumption_id": 4341,
+          "sale_id": "5a297e1e-6da3-43b5-959e-3ff10b61f864",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4342,
+          "sale_id": "5a297e1e-6da3-43b5-959e-3ff10b61f864",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1953
+        },
+        {
+          "stock_consumption_id": 4343,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4344,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 618,
+          "orphaned_batch_id": 1876
+        },
+        {
+          "stock_consumption_id": 4345,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 605,
+          "orphaned_batch_id": 1761
+        },
+        {
+          "stock_consumption_id": 4346,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 430,
+          "orphaned_batch_id": 2021
+        },
+        {
+          "stock_consumption_id": 4347,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 617,
+          "orphaned_batch_id": 1995
+        },
+        {
+          "stock_consumption_id": 4348,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4349,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 613,
+          "orphaned_batch_id": 2056
+        },
+        {
+          "stock_consumption_id": 4350,
+          "sale_id": "39c92208-d70c-490a-9d6b-73871190ea51",
+          "ingredient_id": 296,
+          "orphaned_batch_id": 1914
+        },
+        {
+          "stock_consumption_id": 4352,
+          "sale_id": "8fa974aa-0dec-46d5-97ce-cbd39509725a",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 4353,
+          "sale_id": "8fa974aa-0dec-46d5-97ce-cbd39509725a",
+          "ingredient_id": 412,
+          "orphaned_batch_id": 2052
+        },
+        {
+          "stock_consumption_id": 4355,
+          "sale_id": "8fa974aa-0dec-46d5-97ce-cbd39509725a",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4359,
+          "sale_id": "8fa974aa-0dec-46d5-97ce-cbd39509725a",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4362,
+          "sale_id": "8fa974aa-0dec-46d5-97ce-cbd39509725a",
+          "ingredient_id": 477,
+          "orphaned_batch_id": 2101
+        },
+        {
+          "stock_consumption_id": 4363,
+          "sale_id": "8fa974aa-0dec-46d5-97ce-cbd39509725a",
+          "ingredient_id": 594,
+          "orphaned_batch_id": 2102
+        },
+        {
+          "stock_consumption_id": 4364,
+          "sale_id": "8fa974aa-0dec-46d5-97ce-cbd39509725a",
+          "ingredient_id": 642,
+          "orphaned_batch_id": 2095
+        },
+        {
+          "stock_consumption_id": 4365,
+          "sale_id": "b72c43a8-cac2-48e8-8c73-9b2858cf22aa",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1825
+        },
+        {
+          "stock_consumption_id": 4367,
+          "sale_id": "b72c43a8-cac2-48e8-8c73-9b2858cf22aa",
+          "ingredient_id": 685,
+          "orphaned_batch_id": 2074
+        },
+        {
+          "stock_consumption_id": 4369,
+          "sale_id": "7a19072d-f3aa-44bc-bfd5-ee7faf326d95",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4373,
+          "sale_id": "7a19072d-f3aa-44bc-bfd5-ee7faf326d95",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4376,
+          "sale_id": "ab79a6fe-4765-4cf1-9be5-8d9adaca4071",
+          "ingredient_id": 310,
+          "orphaned_batch_id": 1965
+        },
+        {
+          "stock_consumption_id": 4386,
+          "sale_id": "f3f4ab01-2398-4e82-8477-9a477d5e023b",
+          "ingredient_id": 412,
+          "orphaned_batch_id": 2052
+        },
+        {
+          "stock_consumption_id": 4387,
+          "sale_id": "f3f4ab01-2398-4e82-8477-9a477d5e023b",
+          "ingredient_id": 414,
+          "orphaned_batch_id": 2115
+        },
+        {
+          "stock_consumption_id": 4388,
+          "sale_id": "9ca96bca-db02-4765-bdd5-1280c90dcaee",
+          "ingredient_id": 292,
+          "orphaned_batch_id": 1949
+        },
+        {
+          "stock_consumption_id": 4390,
+          "sale_id": "9ca96bca-db02-4765-bdd5-1280c90dcaee",
+          "ingredient_id": 327,
+          "orphaned_batch_id": 2004
+        },
+        {
+          "stock_consumption_id": 4391,
+          "sale_id": "9ca96bca-db02-4765-bdd5-1280c90dcaee",
+          "ingredient_id": 331,
+          "orphaned_batch_id": 1997
+        },
+        {
+          "stock_consumption_id": 4392,
+          "sale_id": "9ca96bca-db02-4765-bdd5-1280c90dcaee",
+          "ingredient_id": 481,
+          "orphaned_batch_id": 1953
+        },
+        {
+          "stock_consumption_id": 4393,
+          "sale_id": "2c5dbd5e-b79e-4c2f-8ae3-67c6389c6eaa",
+          "ingredient_id": 415,
+          "orphaned_batch_id": 2113
+        },
+        {
+          "stock_consumption_id": 4394,
+          "sale_id": "2c5dbd5e-b79e-4c2f-8ae3-67c6389c6eaa",
+          "ingredient_id": 477,
+          "orphaned_batch_id": 2117
+        },
+        {
+          "stock_consumption_id": 4396,
+          "sale_id": "eebd3a0a-3c9c-419e-88fa-c8d529ddcb13",
+          "ingredient_id": 508,
+          "orphaned_batch_id": 1918
+        },
+        {
+          "stock_consumption_id": 4397,
+          "sale_id": "9c2fb1bc-56a5-4523-b72a-5abe63bd70e8",
+          "ingredient_id": 14,
+          "orphaned_batch_id": 2022
+        },
+        {
+          "stock_consumption_id": 4399,
+          "sale_id": "9c2fb1bc-56a5-4523-b72a-5abe63bd70e8",
+          "ingredient_id": 21,
+          "orphaned_batch_id": 2028
+        },
+        {
+          "stock_consumption_id": 4402,
+          "sale_id": "9c2fb1bc-56a5-4523-b72a-5abe63bd70e8",
+          "ingredient_id": 32,
+          "orphaned_batch_id": 2027
+        },
+        {
+          "stock_consumption_id": 4405,
+          "sale_id": "9c2fb1bc-56a5-4523-b72a-5abe63bd70e8",
+          "ingredient_id": 196,
+          "orphaned_batch_id": 1852
+        },
+        {
+          "stock_consumption_id": 4406,
+          "sale_id": "9c2fb1bc-56a5-4523-b72a-5abe63bd70e8",
+          "ingredient_id": 196,
+          "orphaned_batch_id": 1979
+        },
+        {
+          "stock_consumption_id": 4407,
+          "sale_id": "9c2fb1bc-56a5-4523-b72a-5abe63bd70e8",
+          "ingredient_id": 21,
+          "orphaned_batch_id": 2028
+        },
+        {
+          "stock_consumption_id": 4411,
+          "sale_id": "37442aeb-c4de-40df-976c-32742585e9d2",
+          "ingredient_id": 330,
+          "orphaned_batch_id": 2046
+        },
+        {
+          "stock_consumption_id": 4412,
+          "sale_id": "37442aeb-c4de-40df-976c-32742585e9d2",
+          "ingredient_id": 414,
+          "orphaned_batch_id": 2115
+        },
+        {
+          "stock_consumption_id": 4413,
+          "sale_id": "37442aeb-c4de-40df-976c-32742585e9d2",
+          "ingredient_id": 493,
+          "orphaned_batch_id": 1833
+        }
+      ],
+      "note": "Pre-P2-0 proxy: checks StockConsumption.batch_id against stock_batches. FK-enforced (StockConsumption.batch_id is NOT NULL with a real FK), so this is expected to always pass unless referential integrity was bypassed (e.g. a hard delete outside the ORM). Superseded by the real movement.batch_id check once P2-0 ships."
+    },
+    {
+      "id": "INV-1",
+      "name": "Quantity closure",
+      "severity": "n/a",
+      "blocks": [
+        "cutover"
+      ],
+      "tolerance": "n/a",
+      "status": "NOT_YET_COMPUTABLE",
+      "checked_count": 0,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "Requires the P2-0 movement ledger."
+    },
+    {
+      "id": "INV-3",
+      "name": "Typed source resolves",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero, excluding documented proxies",
+      "status": "FAIL",
+      "checked_count": 23,
+      "skipped_count": 0,
+      "violation_count": 18,
+      "violations": [
+        {
+          "movement_id": 2,
+          "source_type": "sale",
+          "source_id": "9c7a210e-18f2-4d2e-be7f-e9d7754c90c1",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 3,
+          "source_type": "sale",
+          "source_id": "9c7a210e-18f2-4d2e-be7f-e9d7754c90c1",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 4,
+          "source_type": "sale",
+          "source_id": "c448e4ed-71ca-4020-a90f-b1a5e9284e65",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 5,
+          "source_type": "return",
+          "source_id": "485e232b-d700-4534-9f43-248be8eb1e14",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 7,
+          "source_type": "sale",
+          "source_id": "417c10b9-aad5-4d8e-ac16-0414ab6ba4d2",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 8,
+          "source_type": "sale",
+          "source_id": "417c10b9-aad5-4d8e-ac16-0414ab6ba4d2",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 9,
+          "source_type": "sale",
+          "source_id": "2059e260-308f-480d-985f-b74dd8776feb",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 10,
+          "source_type": "sale",
+          "source_id": "2059e260-308f-480d-985f-b74dd8776feb",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 11,
+          "source_type": "sale",
+          "source_id": "2059e260-308f-480d-985f-b74dd8776feb",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 13,
+          "source_type": "sale",
+          "source_id": "8f78c2f5-b168-4b2e-8196-1d30233d2bcf",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 14,
+          "source_type": "sale",
+          "source_id": "8f78c2f5-b168-4b2e-8196-1d30233d2bcf",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 15,
+          "source_type": "sale",
+          "source_id": "8f78c2f5-b168-4b2e-8196-1d30233d2bcf",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 16,
+          "source_type": "sale",
+          "source_id": "8f78c2f5-b168-4b2e-8196-1d30233d2bcf",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 17,
+          "source_type": "sale",
+          "source_id": "ba43b5af-ed6d-4d97-9557-0c4a59ce6173",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 18,
+          "source_type": "return",
+          "source_id": "3bc76ffc-45b8-4136-9b57-403efb37ab0f",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 21,
+          "source_type": "sale",
+          "source_id": "574e56cc-2198-4085-8ea0-e701b274c4aa",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 22,
+          "source_type": "sale",
+          "source_id": "574e56cc-2198-4085-8ea0-e701b274c4aa",
+          "issue": "no Sale row with this sale_id"
+        },
+        {
+          "movement_id": 23,
+          "source_type": "sale",
+          "source_id": "4498a2d3-2751-413e-8681-19d98d8393b8",
+          "issue": "no Sale row with this sale_id"
+        }
+      ],
+      "note": "0 of 23 movements are documented proxies not checked here: migration rows (exempt by design), absorb_neg_placeholder's NULL-source_id receipts, and writeoff CONSUMPTION movements whose source_id is a correlation-only token with no independently resolvable record \u2014 see this function's docstring for all three."
+    },
+    {
+      "id": "INV-4",
+      "name": "No free stock",
+      "severity": "high",
+      "blocks": [
+        "deployment",
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 626,
+      "skipped_count": 0,
+      "violation_count": 29,
+      "violations": [
+        {
+          "batch_id": 1529,
+          "product_id": 451,
+          "qty_remaining_base": "29907.0000",
+          "purchased_at": "2026-08-22T00:00:00"
+        },
+        {
+          "batch_id": 1479,
+          "product_id": 419,
+          "qty_remaining_base": "17.0000",
+          "purchased_at": "2026-08-19T09:37:57.538370"
+        },
+        {
+          "batch_id": 1617,
+          "product_id": 574,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-27T13:28:52.132197"
+        },
+        {
+          "batch_id": 1568,
+          "product_id": 594,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-24T14:33:33.968599"
+        },
+        {
+          "batch_id": 866,
+          "product_id": 315,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-04T14:55:11.638593"
+        },
+        {
+          "batch_id": 1449,
+          "product_id": 60,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-17T13:42:38.733480"
+        },
+        {
+          "batch_id": 1443,
+          "product_id": 330,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-16T13:16:35.340526"
+        },
+        {
+          "batch_id": 1332,
+          "product_id": 534,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-13T00:00:00"
+        },
+        {
+          "batch_id": 1515,
+          "product_id": 451,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-22T00:00:00"
+        },
+        {
+          "batch_id": 1453,
+          "product_id": 157,
+          "qty_remaining_base": "1.0000",
+          "purchased_at": "2026-08-18T13:41:16.512510"
+        },
+        {
+          "batch_id": 1253,
+          "product_id": 276,
+          "qty_remaining_base": "2.0000",
+          "purchased_at": "2026-05-27T00:00:00"
+        },
+        {
+          "batch_id": 1468,
+          "product_id": 315,
+          "qty_remaining_base": "1.0000",
+          "purchased_at": "2026-08-19T09:11:37.090747"
+        },
+        {
+          "batch_id": 1522,
+          "product_id": 291,
+          "qty_remaining_base": "997180.0000",
+          "purchased_at": "2026-08-22T00:00:00"
+        },
+        {
+          "batch_id": 1628,
+          "product_id": 574,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-27T14:21:52.451902"
+        },
+        {
+          "batch_id": 1576,
+          "product_id": 602,
+          "qty_remaining_base": "5.0000",
+          "purchased_at": "2026-08-25T06:21:39.138173"
+        },
+        {
+          "batch_id": 1605,
+          "product_id": 595,
+          "qty_remaining_base": "16.0000",
+          "purchased_at": "2026-08-25T00:00:00"
+        },
+        {
+          "batch_id": 1394,
+          "product_id": 558,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-15T00:00:00"
+        },
+        {
+          "batch_id": 1663,
+          "product_id": 441,
+          "qty_remaining_base": "150.0000",
+          "purchased_at": "2026-08-28T07:10:18.293585"
+        },
+        {
+          "batch_id": 1577,
+          "product_id": 330,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-25T06:22:11.483574"
+        },
+        {
+          "batch_id": 1651,
+          "product_id": 35,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-28T07:01:26.922166"
+        },
+        {
+          "batch_id": 1615,
+          "product_id": 594,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-27T06:54:16.828848"
+        },
+        {
+          "batch_id": 1526,
+          "product_id": 594,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-22T06:29:22.513430"
+        },
+        {
+          "batch_id": 1578,
+          "product_id": 608,
+          "qty_remaining_base": "2.0000",
+          "purchased_at": "2026-08-25T06:22:25.528944"
+        },
+        {
+          "batch_id": 1327,
+          "product_id": 535,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-13T00:00:00"
+        },
+        {
+          "batch_id": 865,
+          "product_id": 314,
+          "qty_remaining_base": "2.0000",
+          "purchased_at": "2026-08-04T14:52:53.454330"
+        },
+        {
+          "batch_id": 1649,
+          "product_id": 330,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-28T07:01:04.874974"
+        },
+        {
+          "batch_id": 1335,
+          "product_id": 447,
+          "qty_remaining_base": "12216.0000",
+          "purchased_at": "2026-08-13T00:00:00"
+        },
+        {
+          "batch_id": 1478,
+          "product_id": 412,
+          "qty_remaining_base": "9.0000",
+          "purchased_at": "2026-08-19T09:37:14.096911"
+        },
+        {
+          "batch_id": 1575,
+          "product_id": 504,
+          "qty_remaining_base": "4.0000",
+          "purchased_at": "2026-08-25T06:20:52.725316"
+        }
+      ],
+      "note": null
+    },
+    {
+      "id": "INV-5",
+      "name": "Consignment closure",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 34,
+      "skipped_count": 0,
+      "violation_count": 11,
+      "violations": [
+        {
+          "batch_id": 1729,
+          "liability_qty_outstanding_plus_settled": "484.0000",
+          "consumed_qty": "0",
+          "difference": "484.0000"
+        },
+        {
+          "batch_id": 1384,
+          "liability_qty_outstanding_plus_settled": "4584.0000",
+          "consumed_qty": "4136.0000",
+          "difference": "448.0000"
+        },
+        {
+          "batch_id": 1850,
+          "liability_qty_outstanding_plus_settled": "542.0000",
+          "consumed_qty": "0",
+          "difference": "542.0000"
+        },
+        {
+          "batch_id": 1383,
+          "liability_qty_outstanding_plus_settled": "3491.0000",
+          "consumed_qty": "2662.0000",
+          "difference": "829.0000"
+        },
+        {
+          "batch_id": 1862,
+          "liability_qty_outstanding_plus_settled": "10.0000",
+          "consumed_qty": "0",
+          "difference": "10.0000"
+        },
+        {
+          "batch_id": 2057,
+          "liability_qty_outstanding_plus_settled": "146.0000",
+          "consumed_qty": "0",
+          "difference": "146.0000"
+        },
+        {
+          "batch_id": 2063,
+          "liability_qty_outstanding_plus_settled": "3.0000",
+          "consumed_qty": "0",
+          "difference": "3.0000"
+        },
+        {
+          "batch_id": 1382,
+          "liability_qty_outstanding_plus_settled": "1435.5200",
+          "consumed_qty": "5000.0000",
+          "difference": "-3564.4800"
+        },
+        {
+          "batch_id": 1800,
+          "liability_qty_outstanding_plus_settled": "250.0000",
+          "consumed_qty": "0",
+          "difference": "250.0000"
+        },
+        {
+          "batch_id": 1388,
+          "liability_qty_outstanding_plus_settled": "24.0000",
+          "consumed_qty": "20.0000",
+          "difference": "4.0000"
+        },
+        {
+          "batch_id": 1574,
+          "liability_qty_outstanding_plus_settled": "2.0000",
+          "consumed_qty": "10.0000",
+          "difference": "-8.0000"
+        }
+      ],
+      "note": "REDUCED PROXY \u2014 see module docstring. Compares, per (supplier_id, batch_id) and per (supplier_id, product_id) for batch_id IS NULL (simple consignment products), Sigma ConsignmentLiability.qty_consumed (status != voided) against Sigma StockConsumption.qty_consumed_base for that batch. Does NOT net returned quantity (no consumption<->return link exists pre-P2-2) \u2014 a partial return will currently show as a mismatch here, which is a known limitation, not a false invariant violation you should act on before P2-2 ships."
+    },
+    {
+      "id": "INV-6",
+      "name": "COGS agrees",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 1252,
+      "skipped_count": 21,
+      "violation_count": 47,
+      "violations": [
+        {
+          "sale_id": "8f3a374d-76f2-4382-9ace-1740f3eab39c",
+          "product_id": 478,
+          "sale_row_id": 22,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "bf8e7ce7-10ae-4e15-8a41-aa6c9825301b",
+          "product_id": 478,
+          "sale_row_id": 27,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "e0f5d80a-c4de-4d23-87a1-cef30ff985f2",
+          "product_id": 504,
+          "sale_row_id": 156,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "88232252-88ac-4791-933b-e96849550706",
+          "product_id": 504,
+          "sale_row_id": 166,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "adc87ca7-2d04-46ee-88c0-348a5f1ddf29",
+          "product_id": 477,
+          "sale_row_id": 521,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "223b2246-5ff6-44b8-bd7a-ad56bbe5a2a0",
+          "product_id": 477,
+          "sale_row_id": 589,
+          "sale_cogs": "81.37",
+          "consumption_derived_cogs": "0.00",
+          "difference": "81.37"
+        },
+        {
+          "sale_id": "6f4515a7-3060-41ed-b09c-aaf0755163a0",
+          "product_id": 504,
+          "sale_row_id": 216,
+          "sale_cogs": "28.82",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.82"
+        },
+        {
+          "sale_id": "a9651045-157a-4e0c-81c1-534c1b96e656",
+          "product_id": 477,
+          "sale_row_id": 150,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "a0f6bf1e-3500-40b9-b282-630bcc5806cc",
+          "product_id": 477,
+          "sale_row_id": 560,
+          "sale_cogs": "57.81",
+          "consumption_derived_cogs": "0.00",
+          "difference": "57.81"
+        },
+        {
+          "sale_id": "25063465-ef89-436e-9676-3c0672ebefac",
+          "product_id": 477,
+          "sale_row_id": 805,
+          "sale_cogs": "94.56",
+          "consumption_derived_cogs": "0.00",
+          "difference": "94.56"
+        },
+        {
+          "sale_id": "aca6473e-4019-4edd-a209-8f49f61dc542",
+          "product_id": 504,
+          "sale_row_id": 67,
+          "sale_cogs": "22.24",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.24"
+        },
+        {
+          "sale_id": "5bf676df-a1ed-4275-ab31-752597e9f040",
+          "product_id": 504,
+          "sale_row_id": 82,
+          "sale_cogs": "22.24",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.24"
+        },
+        {
+          "sale_id": "8179c37d-2a4c-4d55-b4ae-73cf3846d62e",
+          "product_id": 504,
+          "sale_row_id": 104,
+          "sale_cogs": "22.24",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.24"
+        },
+        {
+          "sale_id": "e9725a5a-ed15-4a0b-bd35-8b19a6ee30e1",
+          "product_id": 504,
+          "sale_row_id": 108,
+          "sale_cogs": "16.83",
+          "consumption_derived_cogs": "0.00",
+          "difference": "16.83"
+        },
+        {
+          "sale_id": "2e5fccfa-59cc-486e-a02d-1baa1cc810d6",
+          "product_id": 478,
+          "sale_row_id": 117,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "0552bfa4-6ce4-4620-a58f-a7bfb4ebd87e",
+          "product_id": 478,
+          "sale_row_id": 140,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "94dd7fca-5c5b-4e4f-8e64-e2a9aa24db24",
+          "product_id": 477,
+          "sale_row_id": 153,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "2ccd01e3-69ed-40d0-81e0-158cd06f2ac5",
+          "product_id": 477,
+          "sale_row_id": 868,
+          "sale_cogs": "51.59",
+          "consumption_derived_cogs": "0.00",
+          "difference": "51.59"
+        },
+        {
+          "sale_id": "1807ccbc-8895-48b6-bdae-7e2680206f44",
+          "product_id": 477,
+          "sale_row_id": 528,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "df5ed417-f743-4e17-840f-c2b01e303f0a",
+          "product_id": 478,
+          "sale_row_id": 764,
+          "sale_cogs": "42.99",
+          "consumption_derived_cogs": "0.00",
+          "difference": "42.99"
+        },
+        {
+          "sale_id": "a6c623a5-7112-412c-b58c-cf5b93cf5f11",
+          "product_id": 477,
+          "sale_row_id": 482,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "0c4ffc63-dfd8-4df2-bae3-67913814e1c9",
+          "product_id": 477,
+          "sale_row_id": 769,
+          "sale_cogs": "37.06",
+          "consumption_derived_cogs": "0.00",
+          "difference": "37.06"
+        },
+        {
+          "sale_id": "c3230a40-e187-4a0d-93b0-2ab46d649d2b",
+          "product_id": 477,
+          "sale_row_id": 822,
+          "sale_cogs": "10.40",
+          "consumption_derived_cogs": "0.00",
+          "difference": "10.40"
+        },
+        {
+          "sale_id": "20484e1b-1a1f-4ee8-819e-2fce98bc9933",
+          "product_id": 477,
+          "sale_row_id": 474,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "c0370527-4220-4992-b187-55ad7ec02755",
+          "product_id": 504,
+          "sale_row_id": 228,
+          "sale_cogs": "19.21",
+          "consumption_derived_cogs": "0.00",
+          "difference": "19.21"
+        },
+        {
+          "sale_id": "15c6fc48-d1c2-48ed-90d7-1583f5247ac0",
+          "product_id": 478,
+          "sale_row_id": 245,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "61c877b8-8b80-49e6-8642-178768aecbd4",
+          "product_id": 504,
+          "sale_row_id": 436,
+          "sale_cogs": "11.94",
+          "consumption_derived_cogs": "0.00",
+          "difference": "11.94"
+        },
+        {
+          "sale_id": "6dbc89a1-18b9-444c-a73c-89f4f005ec41",
+          "product_id": 504,
+          "sale_row_id": 438,
+          "sale_cogs": "11.16",
+          "consumption_derived_cogs": "0.00",
+          "difference": "11.16"
+        },
+        {
+          "sale_id": "d22bd5c1-619b-416f-ac9b-a7e3e46ab9c7",
+          "product_id": 504,
+          "sale_row_id": 191,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "551c7145-2c49-44f7-8dfe-1cdd0450c975",
+          "product_id": 477,
+          "sale_row_id": 187,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "dacbdff2-c125-4eb6-bede-09d16e70254d",
+          "product_id": 477,
+          "sale_row_id": 224,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "eb37905e-93fa-4866-96af-8a2556e34e06",
+          "product_id": 477,
+          "sale_row_id": 184,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "dacbdff2-c125-4eb6-bede-09d16e70254d",
+          "product_id": 504,
+          "sale_row_id": 225,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "8e4f4550-5d42-4087-a522-fdca46d5a911",
+          "product_id": 477,
+          "sale_row_id": 283,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "b50550e3-87d1-4de8-b62c-21583dac5a91",
+          "product_id": 504,
+          "sale_row_id": 305,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "f88eadf6-e014-42c6-af32-aee7891c00b3",
+          "product_id": 478,
+          "sale_row_id": 316,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "af1af31c-1cc4-4180-b7ab-3aa3f493e561",
+          "product_id": 477,
+          "sale_row_id": 366,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "c3dcc89b-525c-458a-bba5-79db775b4440",
+          "product_id": 504,
+          "sale_row_id": 384,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "cc82147b-e7cd-431e-bdc9-dda4b7b56706",
+          "product_id": 504,
+          "sale_row_id": 424,
+          "sale_cogs": "20.38",
+          "consumption_derived_cogs": "0.00",
+          "difference": "20.38"
+        },
+        {
+          "sale_id": "f9e38163-8d51-4afe-950e-a1e7ea5a26dd",
+          "product_id": 477,
+          "sale_row_id": 449,
+          "sale_cogs": "33.59",
+          "consumption_derived_cogs": "0.00",
+          "difference": "33.59"
+        },
+        {
+          "sale_id": "c3230a40-e187-4a0d-93b0-2ab46d649d2b",
+          "product_id": 594,
+          "sale_row_id": 828,
+          "sale_cogs": "26.86",
+          "consumption_derived_cogs": "0.00",
+          "difference": "26.86"
+        },
+        {
+          "sale_id": "66c32fc5-278d-4390-820f-255d1a878441",
+          "product_id": 477,
+          "sale_row_id": 202,
+          "sale_cogs": "62.58",
+          "consumption_derived_cogs": "0.00",
+          "difference": "62.58"
+        },
+        {
+          "sale_id": "aca4c0b2-825a-43e5-a494-67afe11e4db4",
+          "product_id": 477,
+          "sale_row_id": 624,
+          "sale_cogs": "31.34",
+          "consumption_derived_cogs": "0.00",
+          "difference": "31.34"
+        },
+        {
+          "sale_id": "0b8822d0-fcbc-4f07-924b-fbc28d58d475",
+          "product_id": 477,
+          "sale_row_id": 704,
+          "sale_cogs": "31.34",
+          "consumption_derived_cogs": "0.00",
+          "difference": "31.34"
+        },
+        {
+          "sale_id": "c3b46b1d-8b69-434f-9667-14038d6da673",
+          "product_id": 477,
+          "sale_row_id": 780,
+          "sale_cogs": "37.06",
+          "consumption_derived_cogs": "0.00",
+          "difference": "37.06"
+        },
+        {
+          "sale_id": "37e0eb78-65c2-4dc7-9fde-7f777e3d72fa",
+          "product_id": 477,
+          "sale_row_id": 852,
+          "sale_cogs": "43.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "43.90"
+        },
+        {
+          "sale_id": "5e30724f-3be2-4141-b3f0-c7fc672d1be6",
+          "product_id": 419,
+          "sale_row_id": 1032,
+          "sale_cogs": "31.80",
+          "consumption_derived_cogs": "31.79",
+          "difference": "0.01"
+        }
+      ],
+      "note": "Restricted to stock_item / produced-recipe Sale lines \u2014 see module docstring for why made-to-order recipe lines and duplicate product-per-sale lines are NOT_YET_COMPUTABLE pre-P2-0 (StockConsumption.sale_id is basket-scoped, not line-scoped, so attribution is ambiguous in those cases)."
+    },
+    {
+      "id": "INV-7",
+      "name": "VAT closure",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "PASS",
+      "checked_count": 8,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "Only checks vat_method=per_line headers (P1-1 checkout-forward sales) \u2014 formula: sum of per-line rounded vat_amount == header.total_vat, and header subtotals (standard+zero_rated+exempt) sum to total_excl_vat, and total_excl_vat + total_vat == total_incl_vat. legacy_flat headers (scripts/backfill_vat_headers.py) have no per-line data to check against by design \u2014 reported via skipped_count with the reason, not silently ignored and not treated as a violation."
+    },
+    {
+      "id": "INV-8",
+      "name": "Value closure",
+      "severity": "medium",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 687,
+      "skipped_count": 0,
+      "violation_count": 19,
+      "violations": [
+        {
+          "batch_id": 1687,
+          "product_id": 442,
+          "issue": "negative qty_remaining_base",
+          "value": "-1516.0000"
+        },
+        {
+          "batch_id": 1705,
+          "product_id": 311,
+          "issue": "negative qty_remaining_base",
+          "value": "-2.0000"
+        },
+        {
+          "batch_id": 1708,
+          "product_id": 35,
+          "issue": "negative qty_remaining_base",
+          "value": "-2.0000"
+        },
+        {
+          "batch_id": 1707,
+          "product_id": 297,
+          "issue": "negative qty_remaining_base",
+          "value": "-5.0000"
+        },
+        {
+          "batch_id": 1697,
+          "product_id": 468,
+          "issue": "negative qty_remaining_base",
+          "value": "-10.0000"
+        },
+        {
+          "batch_id": 1710,
+          "product_id": 478,
+          "issue": "negative qty_remaining_base",
+          "value": "-1.0000"
+        },
+        {
+          "batch_id": 1400,
+          "product_id": 330,
+          "issue": "negative qty_remaining_base",
+          "value": "-3.0000"
+        },
+        {
+          "batch_id": 1444,
+          "product_id": 315,
+          "issue": "negative qty_remaining_base",
+          "value": "-1.0000"
+        },
+        {
+          "batch_id": 1689,
+          "product_id": 181,
+          "issue": "negative qty_remaining_base",
+          "value": "-882.0000"
+        },
+        {
+          "batch_id": 1690,
+          "product_id": 32,
+          "issue": "negative qty_remaining_base",
+          "value": "-1765.0000"
+        },
+        {
+          "batch_id": 1685,
+          "product_id": 310,
+          "issue": "negative qty_remaining_base",
+          "value": "-2.0000"
+        },
+        {
+          "batch_id": 1623,
+          "product_id": 441,
+          "issue": "negative qty_remaining_base",
+          "value": "-150.0000"
+        },
+        {
+          "batch_id": 1563,
+          "product_id": 602,
+          "issue": "negative qty_remaining_base",
+          "value": "-5.0000"
+        },
+        {
+          "batch_id": 1560,
+          "product_id": 504,
+          "issue": "negative qty_remaining_base",
+          "value": "-4.0000"
+        },
+        {
+          "batch_id": 1564,
+          "product_id": 535,
+          "issue": "negative qty_remaining_base",
+          "value": "-5.0000"
+        },
+        {
+          "batch_id": 1706,
+          "product_id": 477,
+          "issue": "negative qty_remaining_base",
+          "value": "-3.0000"
+        },
+        {
+          "batch_id": 1711,
+          "product_id": 617,
+          "issue": "negative qty_remaining_base",
+          "value": "-35.0000"
+        },
+        {
+          "batch_id": 1692,
+          "product_id": 331,
+          "issue": "negative qty_remaining_base",
+          "value": "-565.0000"
+        },
+        {
+          "batch_id": 1719,
+          "product_id": 635,
+          "issue": "negative qty_remaining_base",
+          "value": "-7.0000"
+        }
+      ],
+      "note": "NOT A TRUE CLOSURE \u2014 see module docstring. No inventory valuation report exists in this codebase to close against, so this reports the batch-derived valuation as a baseline plus a sanity check (no negative remaining qty, no negative cost) rather than a two-source agreement. Baseline total inventory value: R239718.73 across 482 products."
+    },
+    {
+      "id": "INV-9",
+      "name": "Allocation closure",
+      "severity": "medium",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "0.01 (see note)",
+      "status": "FAIL",
+      "checked_count": 539,
+      "skipped_count": 0,
+      "violation_count": 52,
+      "violations": [
+        {
+          "batch_id": 666,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "193.95",
+          "expected": "228.26"
+        },
+        {
+          "batch_id": 667,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "203.47",
+          "expected": "239.47"
+        },
+        {
+          "batch_id": 668,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "366.63",
+          "expected": "431.50"
+        },
+        {
+          "batch_id": 669,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "359.16",
+          "expected": "422.71"
+        },
+        {
+          "batch_id": 670,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "233.94",
+          "expected": "275.33"
+        },
+        {
+          "batch_id": 671,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "58.98",
+          "expected": "69.41"
+        },
+        {
+          "batch_id": 672,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "54.05",
+          "expected": "63.62"
+        },
+        {
+          "batch_id": 673,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "101.73",
+          "expected": "119.73"
+        },
+        {
+          "batch_id": 674,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "390.63",
+          "expected": "459.74"
+        },
+        {
+          "batch_id": 675,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "175.95",
+          "expected": "207.08"
+        },
+        {
+          "batch_id": 676,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "274.72",
+          "expected": "323.33"
+        },
+        {
+          "batch_id": 678,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "194.90",
+          "expected": "229.39"
+        },
+        {
+          "batch_id": 485,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "360.18",
+          "expected": "394.98"
+        },
+        {
+          "batch_id": 679,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "100.07",
+          "expected": "117.77"
+        },
+        {
+          "batch_id": 680,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "225.78",
+          "expected": "265.73"
+        },
+        {
+          "batch_id": 488,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "360.18",
+          "expected": "394.98"
+        },
+        {
+          "batch_id": 588,
+          "check": "cost_per_base_unit == final_cost_incl_vat / qty_purchased_base",
+          "stored": "223.03",
+          "expected": "250.33"
+        },
+        {
+          "batch_id": 681,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "1619.66",
+          "expected": "1906.24"
+        },
+        {
+          "batch_id": 486,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "329.13",
+          "expected": "360.93"
+        },
+        {
+          "batch_id": 792,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "99.62",
+          "expected": "193.72"
+        },
+        {
+          "batch_id": 793,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 794,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "179.31",
+          "expected": "348.69"
+        },
+        {
+          "batch_id": 795,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "66.42",
+          "expected": "129.15"
+        },
+        {
+          "batch_id": 490,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "490.59",
+          "expected": "537.99"
+        },
+        {
+          "batch_id": 796,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "99.62",
+          "expected": "193.72"
+        },
+        {
+          "batch_id": 487,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "360.18",
+          "expected": "394.98"
+        },
+        {
+          "batch_id": 489,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "490.59",
+          "expected": "537.99"
+        },
+        {
+          "batch_id": 797,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "199.24",
+          "expected": "387.44"
+        },
+        {
+          "batch_id": 798,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "199.24",
+          "expected": "387.44"
+        },
+        {
+          "batch_id": 867,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "2018.00",
+          "expected": "2235.00"
+        },
+        {
+          "batch_id": 868,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "2018.00",
+          "expected": "2235.00"
+        },
+        {
+          "batch_id": 491,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "496.80",
+          "expected": "544.80"
+        },
+        {
+          "batch_id": 869,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "2018.00",
+          "expected": "2235.00"
+        },
+        {
+          "batch_id": 799,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "199.24",
+          "expected": "387.44"
+        },
+        {
+          "batch_id": 800,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "199.24",
+          "expected": "387.44"
+        },
+        {
+          "batch_id": 801,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 802,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 803,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 804,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 805,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 806,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 807,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "199.24",
+          "expected": "387.44"
+        },
+        {
+          "batch_id": 808,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "199.24",
+          "expected": "387.44"
+        },
+        {
+          "batch_id": 809,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "199.24",
+          "expected": "387.44"
+        },
+        {
+          "batch_id": 810,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "99.62",
+          "expected": "193.72"
+        },
+        {
+          "batch_id": 811,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.64",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 812,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "265.61",
+          "expected": "516.58"
+        },
+        {
+          "batch_id": 677,
+          "check": "final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)",
+          "stored": "217.72",
+          "expected": "256.24"
+        },
+        {
+          "batch_id": 1329,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1700.00",
+          "expected": "1200.00"
+        },
+        {
+          "batch_id": 1330,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1600.00",
+          "expected": "1100.00"
+        },
+        {
+          "batch_id": 1328,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1200.00",
+          "expected": "1000.00"
+        },
+        {
+          "batch_id": 1331,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1600.00",
+          "expected": "1100.00"
+        }
+      ],
+      "note": "Only checks batches created via the VAT-aware purchase-run costing path (base_cost_incl_vat IS NOT NULL) \u2014 receive/stocktake/write-off/return batches don't populate these columns and are out of scope for this invariant. Formula reconstructed from actual suppliers.py code, not the literal Rev 5 column name \u2014 see module docstring discrepancy note. Tolerance 0.01 because these columns are independently rounded (quantize to 2dp/4dp) at several points during purchase-run allocation, not because exact equality is unattainable in principle."
+    },
+    {
+      "id": "INV-10",
+      "name": "Transaction immutability",
+      "severity": "n/a",
+      "blocks": [],
+      "tolerance": "n/a",
+      "status": "NOT_APPLICABLE_HERE",
+      "checked_count": 0,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "Enforced via DB trigger + CI per Rev 5 Section 6, not a reconcile.py check."
+    },
+    {
+      "id": "INV-11",
+      "name": "Projection rebuild",
+      "severity": "critical",
+      "blocks": [
+        "cutover"
+      ],
+      "tolerance": "zero, excluding not-yet-covered batches",
+      "status": "PASS",
+      "checked_count": 8,
+      "skipped_count": 679,
+      "violation_count": 0,
+      "violations": [],
+      "note": "679 of 687 batches have zero movements (not yet covered by dual-write \u2014 see docstring). 8 batches checked against the ledger sum."
+    }
+  ]
+}
