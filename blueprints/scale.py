@@ -29,7 +29,7 @@ from pathlib import Path
 import requests as _requests
 from flask import Blueprint, jsonify, request
 
-from helpers import require_role, get_setting, set_setting
+from helpers import require_role, get_setting, set_setting, audit_event, audit_policy
 from models import db, Product, ScaleSyncRun, ScaleSnapshot, ScaleKeyboardPreset, ScaleAdvertMessage
 
 SYNC_SOURCE_FILE = Path(os.environ.get('SCALE_DATA_DIR', '/scale_data')) / 'sync_source.json'
@@ -256,6 +256,7 @@ def _scale_delete_plu(ip, port, plu_no: int) -> dict:
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/scale/status')
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_status():
     if not require_role('admin', 'teller'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -293,6 +294,7 @@ def api_scale_status():
 
 
 @bp.route('/api/scale/preview', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_preview():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -329,6 +331,7 @@ def api_scale_preview():
 
 
 @bp.route('/api/scale/test-connection', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_test_connection():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -338,6 +341,7 @@ def api_scale_test_connection():
 
 
 @bp.route('/api/scale/sync-runs')
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_sync_runs():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -357,6 +361,7 @@ def api_scale_sync_runs():
 
 
 @bp.route('/api/scale/products/<int:product_id>/sync', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_product_sync(product_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -364,20 +369,24 @@ def api_scale_product_sync(product_id):
     if not p.sync_to_scale:
         return jsonify({'error': 'Product not marked for scale sync'}), 400
     p.scale_hash = None
+    audit_event('scale_product_resync_forced', 'products', product_id, after={'product_code': p.product_code})
     db.session.commit()
     return jsonify({'ok': True, 'product_code': p.product_code, 'name': p.name})
 
 
 @bp.route('/api/scale/force-resync', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_force_resync():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     count = Product.query.filter_by(sync_to_scale=True).update({'scale_hash': None})
+    audit_event('scale_force_resync_all', 'products', None, after={'products_marked': count})
     db.session.commit()
     return jsonify({'ok': True, 'products_marked': count})
 
 
 @bp.route('/api/scale/sync-source', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_sync_source_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -385,6 +394,7 @@ def api_scale_sync_source_get():
 
 
 @bp.route('/api/scale/sync-source', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_sync_source_set():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -394,6 +404,8 @@ def api_scale_sync_source_set():
         return jsonify({'error': 'source must be prod, qa, or none'}), 400
     try:
         _write_sync_source(source)
+        audit_event('scale_sync_source_changed', 'settings', None, after={'source': source})
+        db.session.commit()
         return jsonify({'ok': True, 'source': source})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -404,6 +416,7 @@ def api_scale_sync_source_set():
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/scale/contents')
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_contents():
     """
     Returns what's on the scale by cross-referencing scale_last_sync_status='ok'
@@ -459,6 +472,7 @@ def api_scale_contents():
 
 
 @bp.route('/api/scale/delete-plu', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_delete_plu():
     """Delete (prohibit/zero-out) a PLU on the scale."""
     if not require_role('admin'):
@@ -485,7 +499,9 @@ def api_scale_delete_plu():
         if p:
             p.scale_last_sync_status = 'removed'
             p.scale_hash = None
-            db.session.commit()
+
+    audit_event('scale_plu_deleted', 'scale', plu_no, after={'plu_no': plu_no, 'product_id': product_id})
+    db.session.commit()
 
     return jsonify({'ok': True, 'plu_no': plu_no, 'updated': result.get('updated', 0)})
 
@@ -497,6 +513,7 @@ def api_scale_delete_plu():
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/scale/keyboard')
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_keyboard_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -525,6 +542,7 @@ def api_scale_keyboard_get():
 
 
 @bp.route('/api/scale/keyboard', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_keyboard_save():
     """Save keyboard preset layout. Accepts list of {key_id, plu_no, label}."""
     if not require_role('admin'):
@@ -547,6 +565,7 @@ def api_scale_keyboard_save():
         else:
             db.session.add(ScaleKeyboardPreset(key_id=key_id, plu_no=plu_no, label=label))
 
+    audit_event('scale_keyboard_preset_saved', 'scale_keyboard_presets', None, after={'slots_saved': len(slots)})
     db.session.commit()
     return jsonify({'ok': True, 'saved': len(slots)})
 
@@ -556,6 +575,7 @@ def api_scale_keyboard_save():
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/scale/adverts')
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_adverts_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -577,6 +597,7 @@ def api_scale_adverts_get():
 
 
 @bp.route('/api/scale/adverts', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_adverts_save():
     """Save advertisement messages. Accepts list of {slot, text, enabled, display_no}."""
     if not require_role('admin'):
@@ -601,6 +622,7 @@ def api_scale_adverts_save():
         else:
             db.session.add(ScaleAdvertMessage(slot=slot, text=text, enabled=enabled, display_no=display_no))
 
+    audit_event('scale_adverts_saved', 'scale_advert_messages', None, after={'slots_saved': len(slots)})
     db.session.commit()
     return jsonify({'ok': True, 'saved': len(slots)})
 
@@ -610,6 +632,7 @@ def api_scale_adverts_save():
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/scale/connection-settings', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_scale_conn_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -626,6 +649,7 @@ def api_scale_conn_get():
 
 
 @bp.route('/api/scale/connection-settings', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_conn_save():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -666,10 +690,15 @@ def api_scale_conn_save():
         set_setting('router_password', router_password)
 
     cfg = _get_scale_config()
+    # set_setting() calls above already committed themselves — audit_event() needs its own commit.
+    audit_event('scale_connection_settings_updated', 'settings', None,
+                after={'scale_ip': cfg['ip'], 'scale_port': cfg['port']})
+    db.session.commit()
     return jsonify({'ok': True, 'scale_ip': cfg['ip'], 'scale_port': cfg['port']})
 
 
 @bp.route('/api/scale/reserve-dhcp', methods=['POST'])
+@audit_policy('AUDITED')
 def api_scale_reserve_dhcp():
     """Attempt to add a DHCP reservation on a TP-Link Archer router."""
     if not require_role('admin'):
@@ -695,6 +724,9 @@ def api_scale_reserve_dhcp():
     except Exception as e:
         return jsonify({'error': f'DHCP reservation failed: {e}'}), 502
 
+    audit_event('scale_dhcp_reservation_set', 'router', None,
+                after={'reserved_ip': scale_ip, 'reserved_mac': scale_mac})
+    db.session.commit()
     return jsonify({'ok': True, 'reserved_ip': scale_ip, 'reserved_mac': scale_mac})
 
 
