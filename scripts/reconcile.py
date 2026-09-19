@@ -339,12 +339,25 @@ def check_inv3_typed_source_resolves(session):
     return r
 
 
+CONFIRMED_FREE_MARKER = 'OWNER-CONFIRMED-FREE:'
+
+
 def check_inv4_no_free_stock(session):
     r = Result('INV-4', 'No free stock', 'high', ['deployment', 'pilot_readiness'], 'zero')
+    r.note = (f'A batch is not a violation when cost_adjustment_reason starts with '
+              f'{CONFIRMED_FREE_MARKER!r} — the plan\'s own text calls for "a deliberate '
+              f'zero-cost option for genuinely free stock as an explicit UI choice" (P2-3\'s '
+              f'section); this is that choice, made explicit and dated rather than an '
+              f'unexplained zero this check would otherwise flag forever.')
     batches = session.query(StockBatch).filter(StockBatch.batch_type == 'normal').all()
-    r.checked_count = len(batches)
     for b in batches:
-        if _d(b.cost_per_base_unit) == Decimal('0'):
+        is_zero_cost = _d(b.cost_per_base_unit) == Decimal('0')
+        is_confirmed_free = bool(b.cost_adjustment_reason) and b.cost_adjustment_reason.startswith(CONFIRMED_FREE_MARKER)
+        if is_zero_cost and is_confirmed_free:
+            r.skipped_count += 1
+            continue
+        r.checked_count += 1
+        if is_zero_cost:
             r.violations.append({
                 'batch_id': b.id, 'product_id': b.product_id,
                 'qty_remaining_base': str(b.qty_remaining_base),
