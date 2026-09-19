@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from flask import Blueprint, jsonify, request
 
-from helpers import require_login, require_role
+from helpers import require_login, require_role, audit_event, audit_policy
 from models import db, Special, SpecialLine, Product, Category, SubCategory
 
 _TIME_RE = _re.compile(r'^\d{2}:\d{2}$')
@@ -59,6 +59,7 @@ def _serialize_special(s):
 
 
 @bp.route('/api/specials', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_specials_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -113,6 +114,7 @@ def _save_lines(special_id, lines):
 
 
 @bp.route('/api/specials', methods=['POST'])
+@audit_policy('AUDITED')
 def api_specials_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -145,11 +147,15 @@ def api_specials_post():
     if err:
         db.session.rollback()
         return jsonify({'error': err}), 400
+    audit_event('special_created', 'specials', s.id, after={
+        'name': s.name, 'special_price': float(s.special_price), 'active': s.active,
+    })
     db.session.commit()
     return jsonify(_serialize_special(s)), 201
 
 
 @bp.route('/api/specials/<int:sid>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_specials_update(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -157,6 +163,7 @@ def api_specials_update(sid):
     if not s:
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
+    _before = {'name': s.name, 'special_price': float(s.special_price), 'active': s.active}
     if 'name'          in data: s.name          = data['name'].strip()
     if 'special_price' in data: s.special_price = Decimal(str(data['special_price']))
     if 'active'        in data: s.active        = bool(data['active'])
@@ -175,11 +182,14 @@ def api_specials_update(sid):
         if err:
             db.session.rollback()
             return jsonify({'error': err}), 400
+    audit_event('special_updated', 'specials', sid, before=_before,
+                after={'name': s.name, 'special_price': float(s.special_price), 'active': s.active})
     db.session.commit()
     return jsonify(_serialize_special(s))
 
 
 @bp.route('/api/specials/<int:sid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_specials_delete(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -187,6 +197,7 @@ def api_specials_delete(sid):
     if not s:
         return jsonify({'error': 'Not found'}), 404
     SpecialLine.query.filter_by(special_id=sid).delete()
+    audit_event('special_deleted', 'specials', sid, before={'name': s.name}, after=None)
     db.session.delete(s)
     db.session.commit()
     return jsonify({'ok': True})

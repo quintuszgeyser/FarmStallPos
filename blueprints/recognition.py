@@ -2,7 +2,7 @@ import os
 
 from flask import Blueprint, jsonify, request
 
-from helpers import require_role, get_setting, set_setting
+from helpers import require_role, get_setting, set_setting, audit_event, audit_policy
 
 bp = Blueprint('recognition', __name__)
 
@@ -10,6 +10,7 @@ RECOGNITION_SERVICE_URL = os.environ.get('RECOGNITION_URL', 'http://farmpos-reco
 
 
 @bp.route('/api/recognition/status', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_recognition_status():
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     try:
@@ -21,6 +22,7 @@ def api_recognition_status():
 
 
 @bp.route('/api/recognition/settings', methods=['GET', 'POST'])
+@audit_policy('AUDITED')
 def api_recognition_settings():
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     if request.method == 'GET':
@@ -38,10 +40,13 @@ def api_recognition_settings():
         if key in data:
             try: set_setting(key, cast(data[key])); saved[key] = cast(data[key])
             except Exception: return jsonify({'error': f'Invalid {key}'}), 400
+    if saved:
+        audit_event('recognition_settings_updated', 'settings', None, after=saved)
     return jsonify({'ok': True, 'saved': saved})
 
 
 @bp.route('/api/recognition/logs', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_recognition_logs():
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     try:
@@ -53,6 +58,7 @@ def api_recognition_logs():
 
 
 @bp.route('/api/recognition/identity_events', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_recognition_identity_events():
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     try:
@@ -64,6 +70,7 @@ def api_recognition_identity_events():
 
 
 @bp.route('/api/recognition/tracks', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_recognition_tracks():
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     try:
@@ -75,6 +82,7 @@ def api_recognition_tracks():
 
 
 @bp.route('/api/recognition/control/<action>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_recognition_control(action):
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     if action not in {'clear_queue', 'flush_sessions', 'clear_anon', 'sync_cache', 'requeue_clip', 'resync_customer', 'purge_customer'}:
@@ -82,6 +90,9 @@ def api_recognition_control(action):
     try:
         import requests as _req
         r = _req.post(f'{RECOGNITION_SERVICE_URL}/control/{action}', json=request.json or {}, timeout=5)
+        if 200 <= r.status_code < 300:
+            audit_event('recognition_control_action', 'recognition_service', action,
+                        after={'action': action, 'payload': request.json or {}})
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({'error': str(e), 'available': False}), 503

@@ -2,7 +2,7 @@ import json
 
 from flask import Blueprint, jsonify, request, Response
 
-from helpers import get_setting, set_setting, require_role
+from helpers import get_setting, set_setting, require_role, audit_event, audit_policy
 from models import db
 
 bp = Blueprint('kiosk', __name__)
@@ -16,6 +16,7 @@ def _kiosk_conn():
 
 
 @bp.route('/api/kiosk/tablets', methods=['GET', 'POST'])
+@audit_policy('AUDITED')
 def api_kiosk_tablets():
     if not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -29,11 +30,13 @@ def api_kiosk_tablets():
     data = request.json or {}
     tablets = data.get('tablets', [])
     set_setting('kiosk_tablets', json.dumps(tablets))
+    audit_event('kiosk_tablets_updated', 'settings', None, after={'tablet_count': len(tablets)})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/kiosk/status/<path:tablet_ip>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_kiosk_status(tablet_ip):
     if not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -48,6 +51,7 @@ def api_kiosk_status(tablet_ip):
 
 
 @bp.route('/api/kiosk/query/<path:tablet_ip>', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_kiosk_query(tablet_ip):
     if not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -71,6 +75,7 @@ def api_kiosk_query(tablet_ip):
 
 
 @bp.route('/api/kiosk/screenshot/<path:tablet_ip>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_kiosk_screenshot(tablet_ip):
     if not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -84,6 +89,7 @@ def api_kiosk_screenshot(tablet_ip):
 
 
 @bp.route('/api/kiosk/control/<path:tablet_ip>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_kiosk_control(tablet_ip):
     if not require_role('admin', 'developer'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -113,6 +119,8 @@ def api_kiosk_control(tablet_ip):
             r = _req.get(url, params={'map': keyboard_map}, headers=headers, timeout=5)
         else:
             r = _req.post(url, json=payload, headers=headers, timeout=5)
+        if 200 <= r.status_code < 300:
+            audit_event('kiosk_control_action', 'kiosk_tablets', tablet_ip, after={'action': action})
         return jsonify(r.json()), r.status_code
     except Exception as e:
         return jsonify({'error': str(e), 'available': False}), 503

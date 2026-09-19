@@ -67,11 +67,18 @@ frequency teller usage-counter telemetry, EXPLICITLY_EXEMPT — same reasoning
 as customers.py's recognition-telemetry routes). 'subcategories',
 'categories', 'cost_categories', 'families' (small taxonomy CRUD blueprints —
 create/update/delete/merge AUDITED, matching suppliers.py's CRUD precedent;
-reads NO_STATE_CHANGE).
+reads NO_STATE_CHANGE). 'kitchen' (all mutations EXPLICITLY_EXEMPT — routine
+kitchen-queue workflow, no financial/inventory impact, the KitchenOrder row
+is the record). 'specials' (promo pricing CRUD, AUDITED — changes what
+customers pay). 'settings' and 'recognition' (settings save AUDITED;
+recognition's control/<action> proxy AUDITED too — includes purge_customer).
+'kiosk' (tablet fleet config and remote control actions AUDITED — includes
+reboot; status/query/screenshot reads NO_STATE_CHANGE).
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
-                      'categories', 'cost_categories', 'families'}
+                      'categories', 'cost_categories', 'families', 'kitchen', 'specials',
+                      'settings', 'recognition', 'kiosk'}
 
 
 def _adopted_rules(app):

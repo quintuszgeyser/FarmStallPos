@@ -3,7 +3,7 @@ import re
 
 from flask import Blueprint, jsonify, request
 
-from helpers import get_setting, set_setting, require_role, require_login
+from helpers import get_setting, set_setting, require_role, require_login, audit_event, audit_policy
 from models import db, CustomisationRule
 
 bp = Blueprint('settings', __name__)
@@ -59,6 +59,7 @@ def _validate_branding(key, raw):
 
 
 @bp.route('/api/settings', methods=['GET', 'POST'])
+@audit_policy('AUDITED')
 def api_settings():
     if request.method == 'POST' and not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -156,12 +157,15 @@ def api_settings():
         set_setting(key, v)
         saved[key] = v
 
+    if saved:
+        audit_event('settings_updated', 'settings', None, after=saved)
     return jsonify({'ok': True, 'saved': saved})
 
 
 # ── Customisation Rules ────────────────────────────────────────────────────────
 
 @bp.route('/api/customisation-rules', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customisation_rules_list():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -180,6 +184,7 @@ def api_customisation_rules_list():
 
 
 @bp.route('/api/customisation-rules', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customisation_rules_create():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -204,11 +209,16 @@ def api_customisation_rules_create():
         sort_order=int(d.get('sort_order', 0)),
     )
     db.session.add(r)
+    db.session.flush()
+    audit_event('customisation_rule_created', 'customisation_rules', r.id, after={
+        'rule_type': r.rule_type, 'to_category': r.to_category, 'price_adj': r.price_adj,
+    })
     db.session.commit()
     return jsonify({'id': r.id, 'ok': True})
 
 
 @bp.route('/api/customisation-rules/<int:rid>', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_customisation_rules_update(rid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -216,6 +226,7 @@ def api_customisation_rules_update(rid):
     if not r:
         return jsonify({'error': 'Not found'}), 404
     d = request.json or {}
+    _before = {'rule_type': r.rule_type, 'to_category': r.to_category, 'price_adj': r.price_adj, 'active': r.active}
     if 'rule_type' in d:
         if d['rule_type'] not in ('swap', 'extra'):
             return jsonify({'error': 'rule_type must be swap or extra'}), 400
@@ -240,17 +251,21 @@ def api_customisation_rules_update(rid):
         r.active = bool(d['active'])
     if 'sort_order' in d:
         r.sort_order = int(d.get('sort_order', 0))
+    audit_event('customisation_rule_updated', 'customisation_rules', r.id, before=_before,
+                after={'rule_type': r.rule_type, 'to_category': r.to_category, 'price_adj': r.price_adj, 'active': r.active})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/customisation-rules/<int:rid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_customisation_rules_delete(rid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     r = db.session.get(CustomisationRule, rid)
     if not r:
         return jsonify({'error': 'Not found'}), 404
+    audit_event('customisation_rule_deleted', 'customisation_rules', r.id, before={'to_category': r.to_category}, after=None)
     db.session.delete(r)
     db.session.commit()
     return jsonify({'ok': True})

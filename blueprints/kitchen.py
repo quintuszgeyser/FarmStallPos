@@ -3,7 +3,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
-from helpers import require_login, current_user, _parse_dt, collect_kitchen_items
+from helpers import require_login, current_user, _parse_dt, collect_kitchen_items, audit_policy
 from models import db, KitchenOrder, User
 
 bp = Blueprint('kitchen', __name__)
@@ -37,6 +37,7 @@ def _serialize_kitchen_order(ko):
 
 
 @bp.route('/api/kitchen/orders', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_kitchen_orders():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -60,6 +61,7 @@ def api_kitchen_orders():
 
 
 @bp.route('/api/kitchen/orders/count', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_kitchen_orders_count():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -68,6 +70,7 @@ def api_kitchen_orders_count():
 
 
 @bp.route('/api/kitchen/orders/<int:order_id>/status', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine kitchen-ticket status change — no financial/inventory impact, the KitchenOrder row itself is the record')
 def api_kitchen_order_status(order_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -90,6 +93,7 @@ def api_kitchen_order_status(order_id):
 
 
 @bp.route('/api/kitchen/orders/<int:order_id>/move', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine kitchen-queue reordering — cosmetic ordering only')
 def api_kitchen_order_move(order_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -123,6 +127,7 @@ def api_kitchen_order_move(order_id):
 
 
 @bp.route('/api/kitchen/orders/sale/<sale_id>/status', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine kitchen-ticket status change — no financial/inventory impact, the KitchenOrder row itself is the record')
 def api_kitchen_sale_status(sale_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -147,6 +152,7 @@ def api_kitchen_sale_status(sale_id):
 
 
 @bp.route('/api/kitchen/orders/sale/<sale_id>/move', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine kitchen-queue reordering — cosmetic ordering only')
 def api_kitchen_sale_move(sale_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -188,6 +194,7 @@ def api_kitchen_sale_move(sale_id):
 
 
 @bp.route('/api/kitchen/send-cart', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine kitchen-ticket creation from an in-progress cart — no financial/inventory impact until checkout')
 def api_kitchen_send_cart():
     """Create kitchen orders from a draft cart without checking out.
     Uses draft_order_id as a temporary sale_id placeholder until checkout links it."""
