@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-19T14:43:10.227983+00:00",
+  "generated_at": "2026-09-19T14:55:58.558521+00:00",
   "overall_status": "FAIL",
   "invariants": [
     {
@@ -271,24 +271,6 @@
       "violation_count": 6,
       "violations": [
         {
-          "batch_id": 1384,
-          "liability_qty_outstanding_plus_settled": "4584.0000",
-          "consumed_qty": "4136.0000",
-          "difference": "448.0000"
-        },
-        {
-          "batch_id": 1850,
-          "liability_qty_outstanding_plus_settled": "542.0000",
-          "consumed_qty": "3140.0000",
-          "difference": "-2598.0000"
-        },
-        {
-          "batch_id": 1383,
-          "liability_qty_outstanding_plus_settled": "3491.0000",
-          "consumed_qty": "2662.0000",
-          "difference": "829.0000"
-        },
-        {
           "batch_id": 1382,
           "liability_qty_outstanding_plus_settled": "1435.5200",
           "consumed_qty": "5000.0000",
@@ -305,6 +287,24 @@
           "liability_qty_outstanding_plus_settled": "2.0000",
           "consumed_qty": "10.0000",
           "difference": "-8.0000"
+        },
+        {
+          "batch_id": 1384,
+          "liability_qty_outstanding_plus_settled": "4584.0000",
+          "consumed_qty": "4136.0000",
+          "difference": "448.0000"
+        },
+        {
+          "batch_id": 1850,
+          "liability_qty_outstanding_plus_settled": "542.0000",
+          "consumed_qty": "3140.0000",
+          "difference": "-2598.0000"
+        },
+        {
+          "batch_id": 1383,
+          "liability_qty_outstanding_plus_settled": "3491.0000",
+          "consumed_qty": "2662.0000",
+          "difference": "829.0000"
         }
       ],
       "note": "REDUCED PROXY \u2014 see module docstring. Compares, per (supplier_id, batch_id) and per (supplier_id, product_id) for batch_id IS NULL (simple consignment products), Sigma ConsignmentLiability.qty_consumed (status != voided) against Sigma StockConsumption.qty_consumed_base for that batch. Does NOT net returned quantity (no consumption<->return link exists pre-P2-2) \u2014 a partial return will currently show as a mismatch here, which is a known limitation, not a false invariant violation you should act on before P2-2 ships."
@@ -724,127 +724,12 @@
         "pilot_readiness"
       ],
       "tolerance": "zero",
-      "status": "FAIL",
-      "checked_count": 1108,
+      "status": "PASS",
+      "checked_count": 927,
       "skipped_count": 0,
-      "violation_count": 19,
-      "violations": [
-        {
-          "batch_id": 2085,
-          "product_id": 292,
-          "issue": "negative qty_remaining_base",
-          "value": "-18.0000"
-        },
-        {
-          "batch_id": 2140,
-          "product_id": 481,
-          "issue": "negative qty_remaining_base",
-          "value": "-40.0000"
-        },
-        {
-          "batch_id": 2119,
-          "product_id": 282,
-          "issue": "negative qty_remaining_base",
-          "value": "-9.0000"
-        },
-        {
-          "batch_id": 2142,
-          "product_id": 289,
-          "issue": "negative qty_remaining_base",
-          "value": "-250.0000"
-        },
-        {
-          "batch_id": 1444,
-          "product_id": 315,
-          "issue": "negative qty_remaining_base",
-          "value": "-1.0000"
-        },
-        {
-          "batch_id": 2090,
-          "product_id": 442,
-          "issue": "negative qty_remaining_base",
-          "value": "-2056.0000"
-        },
-        {
-          "batch_id": 2066,
-          "product_id": 440,
-          "issue": "negative qty_remaining_base",
-          "value": "-400.0000"
-        },
-        {
-          "batch_id": 1685,
-          "product_id": 310,
-          "issue": "negative qty_remaining_base",
-          "value": "-6.0000"
-        },
-        {
-          "batch_id": 1623,
-          "product_id": 441,
-          "issue": "negative qty_remaining_base",
-          "value": "-150.0000"
-        },
-        {
-          "batch_id": 2068,
-          "product_id": 296,
-          "issue": "negative qty_remaining_base",
-          "value": "-404.0000"
-        },
-        {
-          "batch_id": 2135,
-          "product_id": 331,
-          "issue": "negative qty_remaining_base",
-          "value": "-215.0000"
-        },
-        {
-          "batch_id": 2145,
-          "product_id": 477,
-          "issue": "negative qty_remaining_base",
-          "value": "-1.0000"
-        },
-        {
-          "batch_id": 1925,
-          "product_id": 541,
-          "issue": "negative qty_remaining_base",
-          "value": "-1.0000"
-        },
-        {
-          "batch_id": 1563,
-          "product_id": 602,
-          "issue": "negative qty_remaining_base",
-          "value": "-5.0000"
-        },
-        {
-          "batch_id": 2133,
-          "product_id": 613,
-          "issue": "negative qty_remaining_base",
-          "value": "-16.0000"
-        },
-        {
-          "batch_id": 2116,
-          "product_id": 449,
-          "issue": "negative qty_remaining_base",
-          "value": "-362.0000"
-        },
-        {
-          "batch_id": 2128,
-          "product_id": 614,
-          "issue": "negative qty_remaining_base",
-          "value": "-40.0000"
-        },
-        {
-          "batch_id": 2060,
-          "product_id": 618,
-          "issue": "negative qty_remaining_base",
-          "value": "-16.0000"
-        },
-        {
-          "batch_id": 2125,
-          "product_id": 14,
-          "issue": "negative qty_remaining_base",
-          "value": "-16.0000"
-        }
-      ],
-      "note": "NOT A TRUE CLOSURE \u2014 see module docstring. No inventory valuation report exists in this codebase to close against, so this reports the batch-derived valuation as a baseline plus a sanity check (no negative remaining qty, no negative cost) rather than a two-source agreement. Baseline total inventory value: R256197.11 across 529 products."
+      "violation_count": 0,
+      "violations": [],
+      "note": "NOT A TRUE CLOSURE \u2014 see module docstring. No inventory valuation report exists in this codebase to close against, so this reports the batch-derived valuation as a baseline plus a sanity check (no unexpected negative remaining qty, no negative cost) rather than a two-source agreement. CORRECTION (found while building the P4-1 apply step, before anything was written): this originally flagged EVERY negative qty_remaining_base as a violation, including batch_type='negative_placeholder' rows \u2014 which are supposed to be negative by design (they represent stock owed, per P2-1's oversell handling) and are supposed to carry cost_per_base_unit=0 by design (the real cost estimate lives in estimated_unit_cost instead \u2014 see StockBatch's own model comment). All 19 of the production baseline's INV-8 violations turned out to be legitimate pre-existing negative_placeholder rows dated across 2026-08-17 to 2026-09-19, not oversell corruption; 'repairing' them would have created a second placeholder per product, breaking the one-aggregate-per-product assumption absorb_neg_placeholder relies on. Skipped from this check entirely now, matching how the rest of the app already excludes this batch_type from valuation and FIFO-cost queries. Baseline total inventory value: R256197.11 across 528 products."
     },
     {
       "id": "INV-9",

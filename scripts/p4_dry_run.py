@@ -31,15 +31,20 @@ that could be wrong in a way nothing would ever catch):
     live sellable stock understating today's inventory value, not just a
     closed historical margin error.
 
-  INV-8 (negative qty_remaining_base) — PROPOSED. This is the pre-P2-1
-    defect: an oversell's shortfall was posted against a live batch instead
-    of a placeholder, driving it negative. Correction zeroes the batch back
-    to its true floor (0) and moves the negative delta into a NEW
-    batch_type='negative_placeholder' row for the same product, at the
-    batch's own cost_per_base_unit (the closest available cost basis) and
-    cost_estimation_method='historical_repair' — reusing the exact mechanism
-    P2-1 already ships, so the *existing* absorb_neg_placeholder code
-    reconciles it automatically the next time that product is received.
+  INV-8 (negative qty_remaining_base) — turned out to have ZERO real
+    violations once reconcile.py's own bug was fixed. The first pass here
+    proposed zeroing 19 "oversold" batches and splitting their shortfall
+    into a new negative_placeholder batch, on the theory that these were the
+    pre-P2-1 defect (shortfall posted against a live batch instead of a
+    placeholder). Inspecting the actual rows before applying anything showed
+    all 19 were already batch_type='negative_placeholder' — legitimate,
+    currently-correct oversell tracking dated across a month, which
+    check_inv8_value_baseline was wrongly flagging because it checked every
+    batch's qty for negativity without excluding the one batch_type that is
+    supposed to be negative. Fixed in reconcile.py; this function is kept
+    as-is (it will still propose a correction if a genuine negative-quantity
+    'normal' batch ever appears) but should propose nothing under normal
+    operation.
 
   INV-9 (allocation closure) — mechanical recomputation from the batch's own
     stored inputs (base_cost_total, vat_amount, additional_costs,
