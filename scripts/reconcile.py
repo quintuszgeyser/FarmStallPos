@@ -14,9 +14,21 @@ Pre-P2-0 (movement ledger) scope, per Rev 5 P0-2's note:
     CURRENT schema (stock_batches / stock_consumption / stock_adjustments /
     consignment_liabilities), because they don't require the unified movement
     ledger to compute.
-    INV-1, INV-3 still require full movement-ledger cutover (source_type/
-    source_id resolution and full quantity-closure accounting need dual-write
-    coverage complete, not just started) and remain NOT_YET_COMPUTABLE.
+    INV-1 (quantity closure) still requires full movement-ledger cutover —
+    the per-product formula in Rev 5's contract is arithmetically the same
+    statement as INV-11's per-batch check (both reduce to "signed sum of
+    movement qty_delta equals the live balance"), so implementing it
+    separately here would just restate INV-11 at a coarser grain without new
+    signal; it remains NOT_YET_COMPUTABLE until INV-11 passes clean and this
+    note gets revisited.
+    INV-3 (typed source resolves) IS now implemented — see
+    check_inv3_typed_source_resolves. Dual-write coverage across every
+    write_stock_movement call site went to 100% this session (closing the
+    two gaps in auto_produce_on_negative — see helpers.py), which is what
+    makes this check meaningful rather than reporting everything as
+    "not yet covered." Several source_type values resolve against a proxy
+    key rather than a literal business-record lookup — see that function's
+    own docstring for exactly which, and why each one is safe.
     INV-11 (projection rebuild) is now implemented — see
     check_inv11_projection_rebuild. It is the P2-0a cutover gate: it runs
     throughout the dual-write ramp-up (expect it to FAIL, entirely accounted
@@ -76,6 +88,7 @@ script (Operating Rule 16 — recorded, not silently resolved):
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
@@ -87,7 +100,7 @@ from sqlalchemy.orm import sessionmaker
 
 from models import (
     Product, StockBatch, StockConsumption, StockAdjustment,
-    ConsignmentLiability, Sale, SaleHeader, StockMovement,
+    ConsignmentLiability, Sale, SaleHeader, StockMovement, SupplierInvoice,
 )
 
 Q2 = Decimal('0.01')
@@ -158,6 +171,149 @@ def check_inv2_no_orphan_movement(session):
                 'stock_consumption_id': c.id, 'sale_id': c.sale_id,
                 'ingredient_id': c.ingredient_id, 'orphaned_batch_id': c.batch_id,
             })
+    r.status = 'FAIL' if r.violations else 'PASS'
+    return r
+
+
+_WRITEOFF_REVERSAL_SOURCE_ID = re.compile(r'^adj-(?:edit|del)-(\d+)$')
+
+
+def check_inv3_typed_source_resolves(session):
+    """Every movement's (source_type, source_id) should resolve to an existing
+    record of that business type. Unlike INV-2 (a real FK), nothing in the
+    schema enforces this — source_id is a free-text string precisely because
+    the tables it points at don't share a key space (Sale.sale_id is a UUID,
+    StockBatch.id/StockAdjustment.id/SupplierInvoice.id are integers).
+
+    Resolution rule per source_type, derived from reading every
+    write_stock_movement call site rather than assumed from the column
+    comment:
+      sale / return  -> a Sale row exists with that sale_id (the return's own
+                         new sale_id, for 'return' — see transactions.py's
+                         return endpoint, which stamps return_uuid onto the
+                         Sale rows it creates for the return transaction).
+      production     -> a StockBatch exists with that produce_ref (covers both
+                         the finished-goods output batch and, for the
+                         ingredient-consumption movements consume_fifo writes
+                         during a produce run, the same produce_uuid passed
+                         through as its `sale_id` parameter).
+      receipt        -> a StockBatch.id or StockBatch.import_run_id matches.
+                         source_id is deliberately NULL for
+                         absorb_neg_placeholder's two call sites (no batch
+                         exists yet at that point in the caller — see its
+                         docstring) and reported via skipped_count, not a
+                         violation.
+      stocktake      -> a StockBatch.id matches (the variance batch itself).
+      reconciliation -> a SupplierInvoice.id or StockBatch.id matches
+                         (void_unconsumed_batch is called with either,
+                         depending on caller — suppliers.py's invoice
+                         update/delete pass an invoice id, stock.py's batch
+                         delete / opening-import undo pass the batch's own id).
+      writeoff       -> two shapes exist under one source_type, found by
+                         reading every is_writeoff=True consume_fifo call
+                         site, not by assumption:
+                           - WRITEOFF_REVERSAL movements (stock.py's
+                             adjustment edit/delete) stamp 'adj-edit-<id>' /
+                             'adj-del-<id>', a real StockAdjustment.id.
+                           - the original write-off CONSUMPTION movements
+                             (api_stock_writeoff, the stocktake negative-
+                             variance path, archive's own write-off) stamp a
+                             synthetic 'wo-<uuid>' / 'archive-wo-<uuid>' /
+                             'adj-<uuid>' token that is never persisted
+                             anywhere else — it only ever correlates that
+                             movement to its sibling StockConsumption rows
+                             sharing the same sale_id, not to an independently
+                             resolvable business record. Reported via
+                             skipped_count with this note, not a violation:
+                             there is no bug to find here, just a source_id
+                             shape this invariant cannot check.
+      migration      -> exempt by the ledger's own design (StockMovement's
+                         docstring: "Migration backfill rows that cannot be
+                         classified... get source_type='migration'... per
+                         Rev 5's visible, not hidden rule").
+    """
+    r = Result('INV-3', 'Typed source resolves', 'high', ['pilot_readiness'], 'zero, excluding documented proxies')
+    sale_ids = {row[0] for row in session.query(Sale.sale_id).distinct().all()}
+    produce_refs = {row[0] for row in session.query(StockBatch.produce_ref)
+                     .filter(StockBatch.produce_ref.isnot(None)).distinct().all()}
+    batch_ids = {row[0] for row in session.query(StockBatch.id).all()}
+    import_run_ids = {row[0] for row in session.query(StockBatch.import_run_id)
+                       .filter(StockBatch.import_run_id.isnot(None)).distinct().all()}
+    adjustment_ids = {row[0] for row in session.query(StockAdjustment.id).all()}
+    supplier_invoice_ids = {row[0] for row in session.query(SupplierInvoice.id).all()}
+
+    def _as_int(s):
+        try:
+            return int(s)
+        except (TypeError, ValueError):
+            return None
+
+    movements = session.query(StockMovement).all()
+    for m in movements:
+        if m.source_type == 'migration':
+            r.skipped_count += 1
+            continue
+        if m.source_type in ('sale', 'return'):
+            r.checked_count += 1
+            if m.source_id not in sale_ids:
+                r.violations.append({
+                    'movement_id': m.id, 'source_type': m.source_type,
+                    'source_id': m.source_id, 'issue': 'no Sale row with this sale_id',
+                })
+        elif m.source_type == 'production':
+            r.checked_count += 1
+            if m.source_id not in produce_refs:
+                r.violations.append({
+                    'movement_id': m.id, 'source_type': m.source_type,
+                    'source_id': m.source_id, 'issue': 'no StockBatch with this produce_ref',
+                })
+        elif m.source_type == 'receipt':
+            if m.source_id is None:
+                r.skipped_count += 1  # absorb_neg_placeholder's documented best-effort case
+                continue
+            r.checked_count += 1
+            sid_int = _as_int(m.source_id)
+            if (sid_int not in batch_ids) and (m.source_id not in import_run_ids):
+                r.violations.append({
+                    'movement_id': m.id, 'source_type': m.source_type, 'source_id': m.source_id,
+                    'issue': 'source_id is not a live StockBatch.id or StockBatch.import_run_id',
+                })
+        elif m.source_type == 'stocktake':
+            r.checked_count += 1
+            if _as_int(m.source_id) not in batch_ids:
+                r.violations.append({
+                    'movement_id': m.id, 'source_type': m.source_type,
+                    'source_id': m.source_id, 'issue': 'no StockBatch with this id',
+                })
+        elif m.source_type == 'reconciliation':
+            r.checked_count += 1
+            sid_int = _as_int(m.source_id)
+            if (sid_int not in supplier_invoice_ids) and (sid_int not in batch_ids):
+                r.violations.append({
+                    'movement_id': m.id, 'source_type': m.source_type, 'source_id': m.source_id,
+                    'issue': 'source_id is not a live SupplierInvoice.id or StockBatch.id',
+                })
+        elif m.source_type == 'writeoff':
+            match = _WRITEOFF_REVERSAL_SOURCE_ID.match(m.source_id or '')
+            if not match:
+                r.skipped_count += 1  # synthetic correlation-only token — see docstring
+                continue
+            r.checked_count += 1
+            if int(match.group(1)) not in adjustment_ids:
+                r.violations.append({
+                    'movement_id': m.id, 'source_type': m.source_type, 'source_id': m.source_id,
+                    'issue': 'adj-edit-/adj-del- id is not a live StockAdjustment.id',
+                })
+        else:
+            r.checked_count += 1
+            r.violations.append({
+                'movement_id': m.id, 'source_type': m.source_type,
+                'source_id': m.source_id, 'issue': 'unrecognised source_type',
+            })
+    r.note = (f'{r.skipped_count} of {len(movements)} movements are documented proxies not checked here: '
+              "migration rows (exempt by design), absorb_neg_placeholder's NULL-source_id receipts, and "
+              "writeoff CONSUMPTION movements whose source_id is a correlation-only token with no "
+              'independently resolvable record — see this function\'s docstring for all three.')
     r.status = 'FAIL' if r.violations else 'PASS'
     return r
 
@@ -465,7 +621,7 @@ def run_all(session):
     results = [
         check_inv2_no_orphan_movement(session),
         not_yet_computable('INV-1', 'Quantity closure', 'Requires the P2-0 movement ledger.'),
-        not_yet_computable('INV-3', 'Typed source resolves', 'Requires the P2-0 movement ledger.'),
+        check_inv3_typed_source_resolves(session),
         check_inv4_no_free_stock(session),
         check_inv5_consignment_closure(session),
         check_inv6_cogs_agrees(session),
