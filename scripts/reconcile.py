@@ -78,12 +78,30 @@ script (Operating Rule 16 — recorded, not silently resolved):
     represents the batch's full overhead allocation. Reading the actual
     receive code (blueprints/suppliers.py ~1660-1716), `allocated_shipping`
     is only the shipping-typed SUBSET of a broader per-batch overhead
-    allocation (`share`); the real overhead applied to final_cost_incl_vat is
-    the `additional_costs` JSON total (which nets in the discount entry
-    appended for audit purposes). Checking literally against
-    `allocated_shipping` would false-positive on every batch with a
-    non-shipping overhead cost. This implementation reconstructs the real
-    overhead from `additional_costs` instead.
+    allocation (`share`). Checking literally against `allocated_shipping`
+    would false-positive on every batch with a non-shipping overhead cost.
+    This implementation reconstructs the real overhead from
+    `additional_costs` instead.
+
+    CORRECTION (found via the P4-1 dry-run's deviation-size check on the
+    2026-09-19 production baseline — see reports/p0-3-baseline-prod-
+    20260919.json's commit for the discovery): an earlier version of this
+    function summed every additional_costs entry and compared against
+    final_cost_incl_vat directly, which produced 47 false-positive
+    violations, all off by exactly one batch's discount amount. The actual
+    receive code's own comment states the real formula: "ex_vat + vat =
+    incl_vat -> + overheads - discount = final_cost". additional_costs'
+    entries are all positive overhead (shipping etc.) EXCEPT a type=
+    'discount' entry, which suppliers.py appends purely "for audit trail" —
+    it is a display duplicate of the line-level share already folded into
+    `allocated_discount` (batch_addl's own comment says so explicitly), not
+    an independent additive term. Summing it in AND separately subtracting
+    allocated_discount double-subtracts that line-level share. The fix:
+    sum additional_costs entries excluding type='discount', then subtract
+    allocated_discount once. Verified exactly against batch 667 (shipping
+    5.93, allocated_discount 36.00, base_incl_vat 233.54 -> 203.47, matching
+    the stored value to the cent) and batch 668 (same shape, different
+    numbers) before trusting the fix.
 """
 import argparse
 import json
@@ -488,16 +506,26 @@ def check_inv9_allocation_closure(session):
         if b.additional_costs:
             try:
                 entries = json.loads(b.additional_costs)
-                overhead_total = sum((_d(e.get('amount', 0)) for e in entries), Decimal('0'))
+                # type='discount' entries are an audit-trail duplicate of (part of) the same
+                # amount already stored in allocated_discount below — see suppliers.py's
+                # receive code: "Append per-line discount to batch_addl for audit trail"
+                # appends the line-level share into additional_costs purely for display,
+                # while allocated_discount already carries that same line-level share plus
+                # the invoice-level share. Summing every entry here and also subtracting
+                # allocated_discount would double-subtract the line-level portion.
+                overhead_total = sum((_d(e.get('amount', 0)) for e in entries
+                                      if e.get('type') != 'discount'), Decimal('0'))
             except (ValueError, TypeError):
                 r.violations.append({'batch_id': b.id, 'check': 'additional_costs JSON parse',
                                       'error': 'unparseable additional_costs'})
                 continue
-        expected_final = _q2(base_incl_vat + overhead_total)
+        allocated_discount = _d(b.allocated_discount) or Decimal('0')
+        expected_final = _q2(base_incl_vat + overhead_total - allocated_discount)
         if final_incl_vat is not None and _q2(final_incl_vat) != expected_final:
             r.violations.append({
                 'batch_id': b.id,
-                'check': 'final_cost_incl_vat == base_cost_incl_vat + sum(additional_costs)',
+                'check': ('final_cost_incl_vat == base_cost_incl_vat + '
+                          'sum(non-discount additional_costs) - allocated_discount'),
                 'stored': str(_q2(final_incl_vat)), 'expected': str(expected_final),
             })
             continue
