@@ -94,13 +94,15 @@ printer CRUD are AUDITED; print/print-bulk/browser-print/browser-print-bulk
 are EXPLICITLY_EXEMPT — LabelPrintJob is already a dedicated print audit log).
 'scale' (force-resync, PLU delete, keyboard/advert presets, connection
 settings, and the router DHCP reservation are all AUDITED; status/preview/
-contents/etc. reads are NO_STATE_CHANGE).
+contents/etc. reads are NO_STATE_CHANGE). 'imports' (the CSV product-import
+commit is AUDITED, same preview/commit split as stock.py's opening-stock
+import; preview writes nothing).
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
                       'categories', 'cost_categories', 'families', 'kitchen', 'specials',
                       'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule',
-                      'cost_corrections', 'bulk', 'backup', 'labels', 'scale'}
+                      'cost_corrections', 'bulk', 'backup', 'labels', 'scale', 'imports'}
 
 
 def _adopted_rules(app):

@@ -18,7 +18,7 @@ from flask import Blueprint, jsonify, request, Response
 from helpers import (
     require_role, current_user,
     _assign_product_code, _gen_barcode_from_code, _plu_range,
-    get_or_create_category,
+    get_or_create_category, audit_event, audit_policy,
 )
 
 # Unit conversion (grams/ml base)
@@ -298,6 +298,7 @@ def _parse_csv(file_bytes):
 
 
 @bp.route('/api/products/import-template')
+@audit_policy('NO_STATE_CHANGE')
 def api_import_template():
     """Download CSV template with headers, column guide, and example rows."""
     header = ','.join(ALL_COLS)
@@ -671,6 +672,7 @@ def api_import_template():
 
 
 @bp.route('/api/products/import', methods=['POST'])
+@audit_policy('AUDITED')
 def api_import_products():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -820,6 +822,10 @@ def api_import_products():
         run.rows_skipped   = sum(1 for r in results if r['action'] == 'skip')
         run.rows_error     = sum(1 for r in results if r['action'] == 'error')
         run.duration_ms    = int((_time.monotonic() - t0) * 1000)
+        audit_event('product_csv_import_committed', 'product_import_runs', run.id, after={
+            'mode': mode, 'file_name': file_name, 'rows_created': run.rows_created,
+            'rows_updated': run.rows_updated, 'rows_error': run.rows_error,
+        })
         db.session.commit()
 
     except Exception as e:
