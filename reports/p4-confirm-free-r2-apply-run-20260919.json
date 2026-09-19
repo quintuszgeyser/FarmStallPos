@@ -1,0 +1,14 @@
+{
+  "run_id": "c086c730-9e0d-4b64-bd2c-048b20834206",
+  "mode": "COMMITTED",
+  "log": [
+    {
+      "batch_id": 1332,
+      "action": "CONFIRMED_FREE"
+    },
+    {
+      "batch_id": 1927,
+      "action": "CONFIRMED_FREE"
+    }
+  ]
+}
