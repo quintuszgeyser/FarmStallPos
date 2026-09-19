@@ -1,0 +1,10 @@
+{
+  "run_id": "22ba1071-95ef-486f-8824-50f0f86ee9b9",
+  "mode": "COMMITTED",
+  "log": [
+    {
+      "action": "CONFIRMED_FREE",
+      "batch_id": 1574
+    }
+  ]
+}
