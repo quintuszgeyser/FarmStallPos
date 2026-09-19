@@ -92,15 +92,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from models import Product, StockBatch  # noqa: E402
 from reconcile import (  # noqa: E402
-    _make_session, _d, _q2, _q4,
+    _make_session, _d, _q4,
     check_inv4_no_free_stock, check_inv5_consignment_closure,
     check_inv6_cogs_agrees, check_inv8_value_baseline, check_inv9_allocation_closure,
 )
 
 Q6 = Decimal('0.000001')
-# INV-9's own documented tolerance is 0.01 for independent-rounding noise.
-# Anything more than 10x that is treated as a real data error, not rounding.
-INV9_ROUNDING_SCALE_LIMIT = Decimal('0.10')
 
 
 def _weighted_avg_cost(session, product_id, before_dt, exclude_batch_id):
@@ -134,7 +131,13 @@ def propose_inv4(session, run_id):
             'purchased_at': batch.purchased_at.isoformat() if batch.purchased_at else None,
             'still_live_stock': _d(batch.qty_remaining_base) > 0,
         }
-        if avg_cost is None:
+        if batch.base_cost_incl_vat is not None:
+            proposal['status'] = 'NEEDS_MANUAL_REVIEW'
+            proposal['reason'] = (f'base_cost_incl_vat is populated ({batch.base_cost_incl_vat}, not NULL) — '
+                                   f'this batch is also in INV-9\'s checked set, so a plain cost_per_base_unit '
+                                   f'fix would desync it from base_cost_incl_vat/final_cost_incl_vat. Needs a '
+                                   f'combined correction, reviewed by a human — see apply_inv4\'s matching guard.')
+        elif avg_cost is None:
             proposal['status'] = 'NEEDS_MANUAL_REVIEW'
             proposal['reason'] = ('no other normal batch with a positive cost exists for this product — '
                                    'no weighted average can be computed; owner must supply a cost or '
@@ -188,26 +191,72 @@ def propose_inv8(session, run_id):
 
 
 def propose_inv9(session, run_id):
+    """CORRECTED classification (superseding the raw-deviation-size heuristic this
+    started with). Investigating all 8 production violations — not just the smallest
+    one — found the real safety criterion isn't how big the base_cost_incl_vat gap is;
+    it's whether recomputing the FULL chain (base_cost_incl_vat, final_cost_incl_vat,
+    cost_per_base_unit) together from the batch's own base_cost_total/vat_amount/
+    additional_costs/allocated_discount/qty_purchased_base lands on a cost_per_base_unit
+    that's already correct. In 7 of 8 real violations, cost_per_base_unit already
+    exactly matched base_cost_total/qty — only the incl-VAT display fields were wrong,
+    by amounts from R0.10 to over R3000, and fixing them changes nothing costing-
+    related. Only 1 of 8 (batch 588) needed cost_per_base_unit itself corrected, and
+    that's additionally gated on the batch being fully unconsumed (qty_remaining_base
+    == qty_purchased_base), so no historical COGS is in play. See apply_inv9_correction
+    in p4_apply.py for the applied version of this same logic — this function mirrors
+    it exactly so the dry-run classification matches what would actually be applied.
+    """
     result = check_inv9_allocation_closure(session)
     proposals = []
     for v in result.violations:
-        try:
-            deviation = abs(Decimal(v['stored']) - Decimal(v['expected']))
-        except Exception:
+        batch = session.get(StockBatch, v['batch_id'])
+        if batch is None or not _d(batch.qty_purchased_base):
             proposals.append({**v, 'status': 'NEEDS_MANUAL_REVIEW',
-                               'reason': 'could not parse stored/expected as decimals (e.g. JSON parse failure)'})
+                               'reason': 'batch missing or qty_purchased_base is zero — cannot recompute'})
             continue
+
+        # base_cost_incl_vat/final_cost_incl_vat are Numeric(18,4); cost_per_base_unit is
+        # Numeric(10,6) — quantizing to reconcile.py's 2dp comparison precision here would
+        # preview a value the apply step would never actually write (e.g. 1100.00/20000 =
+        # 0.055 would round to 0.06 at 2dp, a full order of magnitude off). Match
+        # apply_inv9_correction's precision exactly so the dry-run preview is honest.
+        base_total = _d(batch.base_cost_total) or Decimal('0')
+        vat_amount = _d(batch.vat_amount) or Decimal('0')
+        expected_base_incl_vat = _q4(base_total + vat_amount)
+        overhead_total = Decimal('0')
+        if batch.additional_costs:
+            try:
+                entries = json.loads(batch.additional_costs)
+                overhead_total = sum((_d(e.get('amount', 0)) for e in entries
+                                      if e.get('type') != 'discount'), Decimal('0'))
+            except (ValueError, TypeError):
+                proposals.append({**v, 'status': 'NEEDS_MANUAL_REVIEW', 'reason': 'unparseable additional_costs'})
+                continue
+        allocated_discount = _d(batch.allocated_discount) or Decimal('0')
+        expected_final = _q4(expected_base_incl_vat + overhead_total - allocated_discount)
+        expected_cost_per_unit = (expected_final / _d(batch.qty_purchased_base)).quantize(Q6, rounding=ROUND_HALF_UP)
+        current_cost_per_unit = _d(batch.cost_per_base_unit)
+        cost_per_unit_changing = current_cost_per_unit.quantize(Q6, rounding=ROUND_HALF_UP) != expected_cost_per_unit
+
         proposal = dict(v)
-        if deviation > INV9_ROUNDING_SCALE_LIMIT:
+        proposal['recomputed'] = {
+            'base_cost_incl_vat': str(expected_base_incl_vat), 'final_cost_incl_vat': str(expected_final),
+            'cost_per_base_unit': str(expected_cost_per_unit),
+        }
+        if cost_per_unit_changing and _d(batch.qty_remaining_base) != _d(batch.qty_purchased_base):
             proposal['status'] = 'NEEDS_MANUAL_REVIEW'
-            proposal['deviation'] = str(deviation)
-            proposal['reason'] = (f'deviation of {deviation} is far outside the 0.01 rounding tolerance this '
-                                   f'invariant documents — more likely a real data-entry error at receive '
-                                   f'time than the independent-rounding bug the other violations show.')
+            proposal['reason'] = (f'cost_per_base_unit would change from {current_cost_per_unit} to '
+                                   f'{expected_cost_per_unit} and this batch has already been partially '
+                                   f'consumed ({batch.qty_remaining_base} of {batch.qty_purchased_base} '
+                                   f'remaining) — not assumed safe without a human look.')
         else:
             proposal['status'] = 'PROPOSED'
-            proposal['deviation'] = str(deviation)
-            proposal['correction'] = f"set {v['check'].split(' == ')[0]} to {v['expected']}"
+            proposal['cost_per_unit_changing'] = cost_per_unit_changing
+            proposal['correction'] = (
+                f'recompute base_cost_incl_vat/final_cost_incl_vat/cost_per_base_unit from '
+                f'base_cost_total+vat_amount(+overhead-discount); cost_per_base_unit '
+                f'{"changes to " + str(expected_cost_per_unit) if cost_per_unit_changing else "unchanged"}'
+            )
         proposals.append(proposal)
     return result, proposals
 
