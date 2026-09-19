@@ -16,8 +16,13 @@ policy fails test_every_route_in_an_adopted_blueprint_declares_a_policy.
 Extending ADOPTED_BLUEPRINTS to another blueprint is the natural way to grow
 coverage — do that once that blueprint's routes have actually been
 classified, not by adding its name here first.
+
+'stock' was adopted third (after transactions, auth): it's the direct
+inventory/costing mutation surface the P2 ledger-integrity work (movement
+ledger, FIFO reversal, stocktake variance) already hardened, so it's the
+next-highest-stakes blueprint after money movement and account lifecycle.
 """
-ADOPTED_BLUEPRINTS = {'transactions', 'auth'}
+ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock'}
 
 
 def _adopted_rules(app):
@@ -69,5 +74,9 @@ def test_adopted_blueprints_have_the_expected_policy_mix(app):
     assert 'transactions.api_transaction_return' in by_policy.get('AUDITED', [])
     assert 'auth.api_users_delete' in by_policy.get('AUDITED', [])
     assert 'auth.api_login' in by_policy.get('SECURITY_EVENT_ONLY', [])
+    assert 'stock.api_stock_receive' in by_policy.get('AUDITED', [])
+    assert 'stock.api_stock_writeoff' in by_policy.get('AUDITED', [])
+    assert 'stock.api_stock_adjust' in by_policy.get('AUDITED', [])
+    assert 'stock.api_stock_ingredients' in by_policy.get('NO_STATE_CHANGE', [])
     assert len(by_policy.get('NO_STATE_CHANGE', [])) >= 3
     assert len(by_policy.get('EXPLICITLY_EXEMPT', [])) >= 2

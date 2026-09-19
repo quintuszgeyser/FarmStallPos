@@ -12,6 +12,7 @@ from helpers import (
     require_login, require_role, current_user,
     get_stock_level, consume_fifo, reverse_fifo, _parse_dt, _auto_price_products,
     absorb_neg_placeholder, backfill_consignment_liabilities, write_stock_movement,
+    audit_event, audit_policy,
 )
 from models import (
     db,
@@ -54,6 +55,7 @@ def _unit_conversion(p, unit):
 
 
 @bp.route('/api/stock/ingredients', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_stock_ingredients():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -118,6 +120,7 @@ def api_stock_ingredients():
 
 
 @bp.route('/api/stock/products/<int:pid>/batch-history', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_stock_batch_history(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -169,8 +172,14 @@ def api_stock_batch_history(pid):
 
 
 @bp.route('/api/stock/batches/<int:batch_id>/reorder', methods=['POST'])
+@audit_policy('AUDITED')
 def api_stock_batch_reorder(batch_id):
-    """Move a batch to a specific position or reset to FIFO (sort_order=NULL)."""
+    """Move a batch to a specific position or reset to FIFO (sort_order=NULL).
+
+    Rev 5 P3-1b: audited, not exempted as cosmetic — reorder changes which
+    batch's cost_per_base_unit feeds COGS next, so it's a real lever on
+    reported margin timing, not just display order.
+    """
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     data   = request.json or {}
@@ -181,7 +190,10 @@ def api_stock_batch_reorder(batch_id):
         return jsonify({'error': 'Batch not found'}), 404
 
     if action == 'reset_fifo':
+        before = batch.sort_order
         batch.sort_order = None
+        audit_event('batch_reorder_reset', 'stock_batches', batch_id,
+                     before={'sort_order': before}, after={'sort_order': None})
         db.session.commit()
         return jsonify({'ok': True, 'sort_order': None})
 
@@ -195,8 +207,12 @@ def api_stock_batch_reorder(batch_id):
 
     if action == 'use_next':
         # Assign sort_order=1 to this batch; push all others to 2..N
+        before = {b.id: b.sort_order for b in siblings}
         for i, b in enumerate(siblings):
             b.sort_order = 2 + i if b.id != batch_id else 1
+        audit_event('batch_reorder_use_next', 'stock_batches', batch_id,
+                     before={'sort_order': before},
+                     after={'sort_order': {b.id: b.sort_order for b in siblings}})
         db.session.commit()
         return jsonify({'ok': True, 'sort_order': 1})
 
@@ -211,8 +227,12 @@ def api_stock_batch_reorder(batch_id):
             ids[idx], ids[idx + 1] = ids[idx + 1], ids[idx]
         # Re-assign positions; if a batch lands back at its FIFO position keep NULL
         sib_map = {b.id: b for b in siblings}
+        before = {b.id: b.sort_order for b in siblings}
         for pos, bid in enumerate(ids):
             sib_map[bid].sort_order = pos + 1
+        audit_event(f'batch_reorder_{action}', 'stock_batches', batch_id,
+                     before={'sort_order': before},
+                     after={'sort_order': {b.id: b.sort_order for b in siblings}})
         db.session.commit()
         new_order = next(b.sort_order for b in siblings if b.id == batch_id)
         return jsonify({'ok': True, 'sort_order': new_order})
@@ -221,16 +241,20 @@ def api_stock_batch_reorder(batch_id):
 
 
 @bp.route('/api/stock/products/<int:pid>/reset_batch_order', methods=['POST'])
+@audit_policy('AUDITED')
 def api_stock_reset_batch_order(pid):
     """Reset all batches for a product back to FIFO (clear all sort_order)."""
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
+    affected = StockBatch.query.filter_by(product_id=pid).filter(StockBatch.sort_order.isnot(None)).count()
     StockBatch.query.filter_by(product_id=pid).update({'sort_order': None})
+    audit_event('batch_order_reset_all', 'products', pid, after={'batches_reset': affected})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/stock/receive', methods=['POST'])
+@audit_policy('AUDITED')
 def api_stock_receive():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -295,6 +319,10 @@ def api_stock_receive():
     )
     if _is_consign and _neg_absorbed > 0:
         backfill_consignment_liabilities(pid, _neg_absorbed, supplier_id, _cuc)
+    audit_event('stock_received', 'stock_batches', batch.id, after={
+        'product_id': pid, 'qty_base': qty_base, 'cost_per_base_unit': float(cost_per_base),
+        'supplier_id': supplier_id, 'neg_absorbed': float(_neg_absorbed),
+    })
     db.session.commit()
     try:
         _auto_price_products([pid])
@@ -308,6 +336,7 @@ def api_stock_receive():
 
 
 @bp.route('/api/stock/adjust', methods=['POST'])
+@audit_policy('AUDITED')
 def api_stock_adjust():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -380,11 +409,16 @@ def api_stock_adjust():
         )
     adj_type = 'writeoff' if diff < 0 else 'stocktake'
     db.session.add(StockAdjustment(product_id=pid, adjustment_type=adj_type, qty_change_base=diff, system_qty_before=system_base, cost_written_off=cost_written_off if diff < 0 else None, base_unit=p.base_unit, reason=reason, adjusted_at=now, user_id=u.id if u else None))
+    audit_event('stock_adjusted', 'products', pid, reason=reason, after={
+        'adjustment_type': adj_type, 'system_before': float(system_base), 'actual': float(actual_base),
+        'difference': float(diff), 'cost_written_off': float(cost_written_off) if diff < 0 else None,
+    })
     db.session.commit()
     return jsonify({'ok': True, 'system_before': float(system_base), 'actual': float(actual_base), 'difference': float(diff), 'base_unit': p.base_unit})
 
 
 @bp.route('/api/stock/batches/<int:batch_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_stock_batch_delete(batch_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -396,6 +430,10 @@ def api_stock_batch_delete(batch_id):
         return jsonify({'error': 'Cannot delete — stock from this batch has already been used in sales'}), 400
     if Decimal(str(batch.qty_remaining_base)) != Decimal(str(batch.qty_purchased_base)):
         return jsonify({'error': 'Cannot delete — some stock from this batch has already been consumed'}), 400
+    before = {
+        'product_id': batch.product_id, 'qty_purchased_base': float(batch.qty_purchased_base),
+        'cost_per_base_unit': float(batch.cost_per_base_unit), 'produce_ref': batch.produce_ref,
+    }
     if batch.produce_ref:
         reverse_fifo(batch.produce_ref, movement_source_type='production')
     # Rev 5 P2-0: a never-consumed batch can still carry its own RECEIPT/
@@ -403,12 +441,16 @@ def api_stock_batch_delete(batch_id):
     # stock_movements.batch_id blocks it (see tests/test_locking.py's cleanup
     # fix for the same trap).
     StockMovement.query.filter_by(batch_id=batch_id).delete()
+    ingredients_restored = bool(batch.produce_ref)
     db.session.delete(batch)
+    audit_event('batch_deleted', 'stock_batches', batch_id, before=before,
+                 after={'ingredients_restored': ingredients_restored})
     db.session.commit()
-    return jsonify({'ok': True, 'ingredients_restored': bool(batch.produce_ref)})
+    return jsonify({'ok': True, 'ingredients_restored': ingredients_restored})
 
 
 @bp.route('/api/stock/batches/<int:batch_id>', methods=['PATCH'])
+@audit_policy('AUDITED')
 def api_stock_batch_edit(batch_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -416,6 +458,11 @@ def api_stock_batch_edit(batch_id):
     batch = db.session.get(StockBatch, batch_id)
     if not batch:
         return jsonify({'error': 'Batch not found'}), 404
+    before = {
+        'supplier_id': batch.supplier_id, 'purchased_at': batch.purchased_at.isoformat() if batch.purchased_at else None,
+        'qty_purchased_base': float(batch.qty_purchased_base), 'cost_per_base_unit': float(batch.cost_per_base_unit),
+        'base_cost_total': float(batch.base_cost_total) if batch.base_cost_total is not None else None,
+    }
 
     # Optimistic lock: if caller passed updated_at, verify it matches DB
     if 'updated_at' in data and data['updated_at'] is not None:
@@ -477,6 +524,12 @@ def api_stock_batch_edit(batch_id):
     batch.updated_by = u.id if u else None
     reprice_product = batch.product_id if (costs_changed or 'total_price' in data) else None
 
+    audit_event('batch_edited', 'stock_batches', batch_id, before=before, after={
+        'supplier_id': batch.supplier_id, 'purchased_at': batch.purchased_at.isoformat() if batch.purchased_at else None,
+        'qty_purchased_base': float(batch.qty_purchased_base), 'cost_per_base_unit': float(batch.cost_per_base_unit),
+        'base_cost_total': float(batch.base_cost_total) if batch.base_cost_total is not None else None,
+        'cost_adjustment_reason': batch.cost_adjustment_reason,
+    })
     db.session.commit()
     # Retroactively correct COGS on already-consumed stock if requested.
     # Updates cost_per_base_unit on every StockConsumption row for this batch
@@ -488,6 +541,8 @@ def api_stock_batch_edit(batch_id):
         for sc in consumptions:
             sc.cost_per_base_unit = batch.cost_per_base_unit
         retro_updated = len(consumptions)
+        audit_event('batch_cogs_recalculated', 'stock_batches', batch_id,
+                     after={'consumption_rows_updated': retro_updated, 'new_cost_per_base_unit': float(batch.cost_per_base_unit)})
         db.session.commit()
 
     # Backfill missing COGS records for sales that were made when stock was zero
@@ -532,6 +587,8 @@ def api_stock_batch_edit(batch_id):
                 ))
         if new_records:
             db.session.add_all(new_records)
+            audit_event('batch_cogs_backfilled', 'stock_batches', batch_id,
+                        after={'sale_lines_backfilled': len(new_records), 'product_id': pid})
             db.session.commit()
         backfilled = len(new_records)
 
@@ -549,6 +606,7 @@ def api_stock_batch_edit(batch_id):
 
 
 @bp.route('/api/stock/batches/apply-costs', methods=['POST'])
+@audit_policy('AUDITED')
 def api_stock_batches_apply_costs():
     """Retrospectively apply shared additional costs to multiple existing batches.
     Splits proportionally by base_cost_total; all updates in one transaction."""
@@ -638,6 +696,8 @@ def api_stock_batches_apply_costs():
         })
 
     reprice_ids = {b.product_id for b in batches}
+    audit_event('batch_costs_applied', 'stock_batches', ','.join(str(b.id) for b in batches),
+                 reason=reason, after={'batch_ids': batch_ids, 'results': results})
     db.session.commit()
     try:
         _auto_price_products(reprice_ids)
@@ -647,6 +707,7 @@ def api_stock_batches_apply_costs():
 
 
 @bp.route('/api/stock/writeoff', methods=['POST'])
+@audit_policy('AUDITED')
 def api_stock_writeoff():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -678,17 +739,23 @@ def api_stock_writeoff():
     u   = current_user(); now = datetime.utcnow()
     cost_written_off = consume_fifo(pid, qty_base, f'wo-{uuid.uuid4()}', now, is_writeoff=True)
     db.session.add(StockAdjustment(product_id=pid, adjustment_type='writeoff', qty_change_base=-qty_base, system_qty_before=system_before, cost_written_off=cost_written_off, base_unit=p.base_unit, reason=reason, adjusted_at=now, user_id=u.id if u else None))
+    audit_event('stock_written_off', 'products', pid, reason=reason, after={
+        'qty_written_off': float(qty_base), 'cost_written_off': float(cost_written_off),
+    })
     db.session.commit()
     return jsonify({'ok': True, 'qty_written_off': float(qty_base), 'base_unit': p.base_unit, 'cost_written_off': float(cost_written_off)})
 
 
 @bp.route('/api/stock/adjustments/<int:adj_id>', methods=['PATCH'])
+@audit_policy('AUDITED')
 def api_stock_adjustment_edit(adj_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     data = request.json or {}
     adj  = db.session.get(StockAdjustment, adj_id)
     if not adj: return jsonify({'error': 'Adjustment not found'}), 404
+    before = {'qty_change_base': float(adj.qty_change_base), 'reason': adj.reason,
+              'cost_written_off': float(adj.cost_written_off) if adj.cost_written_off else None}
     if adj.adjustment_type != 'writeoff': return jsonify({'error': 'Only write-offs can be edited'}), 400
     new_qty    = data.get('qty')
     new_unit   = data.get('unit', '')
@@ -730,11 +797,16 @@ def api_stock_adjustment_edit(adj_id):
         if old_qty_base > 0: adj.cost_written_off = Decimal(str(adj.cost_written_off or 0)) * (new_qty_base / old_qty_base)
     adj.qty_change_base = -new_qty_base
     adj.reason = new_reason
+    audit_event('adjustment_edited', 'stock_adjustments', adj_id, before=before, after={
+        'qty_change_base': float(adj.qty_change_base), 'reason': adj.reason,
+        'cost_written_off': float(adj.cost_written_off or 0),
+    })
     db.session.commit()
     return jsonify({'ok': True, 'new_qty_base': float(new_qty_base), 'cost_written_off': float(adj.cost_written_off or 0)})
 
 
 @bp.route('/api/stock/adjustments/<int:adj_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_stock_adjustment_delete(adj_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -744,6 +816,8 @@ def api_stock_adjustment_delete(adj_id):
     p = db.session.get(Product, adj.product_id)
     if not p:
         return jsonify({'error': 'Product not found'}), 404
+    before = {'product_id': adj.product_id, 'adjustment_type': adj.adjustment_type,
+              'qty_change_base': float(adj.qty_change_base), 'reason': adj.reason}
     diff = Decimal(str(adj.qty_change_base))
     now  = datetime.utcnow()
     if diff < 0:
@@ -781,11 +855,13 @@ def api_stock_adjustment_delete(adj_id):
             return jsonify({'error': f'Cannot reverse — only {float(current_stock)}{p.base_unit} in stock but adjustment added {float(diff)}{p.base_unit}. Some has already been sold.'}), 400
         consume_fifo(p.id, diff, f'adj-del-{uuid.uuid4()}', now, is_writeoff=True, movement_source_type='stocktake')
     db.session.delete(adj)
+    audit_event('adjustment_deleted', 'stock_adjustments', adj_id, before=before)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/stock/adjustments', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_stock_adjustments():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -814,6 +890,7 @@ def api_stock_adjustments():
 
 
 @bp.route('/api/purchases', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_purchases_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -827,18 +904,22 @@ def api_purchases_get():
 
 
 @bp.route('/api/purchases/<int:purchase_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_purchases_delete(purchase_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     row = db.session.get(Purchase, purchase_id)
     if not row:
         return jsonify({'error': 'Purchase not found'}), 404
+    before = {'product_id': row.product_id, 'qty_added': row.qty_added, 'purchase_price': float(row.purchase_price)}
     db.session.delete(row)
+    audit_event('purchase_deleted', 'purchases', purchase_id, before=before)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/purchases', methods=['POST'])
+@audit_policy('AUDITED')
 def api_purchases_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -856,6 +937,7 @@ def api_purchases_post():
     u = current_user()
     db.session.add(Purchase(product_id=pid, qty_added=qty, purchase_price=price, user_id=u.id if u else None))
     p.stock_qty = (p.stock_qty or 0) + qty
+    audit_event('purchase_recorded', 'purchases', pid, after={'qty_added': qty, 'purchase_price': price})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -870,6 +952,7 @@ _OPENING_STOCK_COLS = ['product_code', 'qty', 'unit', 'unit_cost', 'received_dat
 
 
 @bp.route('/api/stock/opening-import-template', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_opening_stock_template():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -884,10 +967,18 @@ def api_opening_stock_template():
 
 
 @bp.route('/api/stock/opening-import', methods=['POST'])
+@audit_policy('AUDITED')
 def api_opening_stock_import():
     """Import opening stock batches from CSV. Mode=preview returns rows without
     committing. Mode=import commits. Idempotent: duplicate (product_code, received_date)
-    pairs in the same file are summed; re-running the same CSV adds another batch."""
+    pairs in the same file are summed; re-running the same CSV adds another batch.
+
+    Rev 5 P3-1b: one route, two behaviours gated by ?mode=, so it's declared
+    AUDITED for the whole endpoint rather than split in two. The preview
+    branch writes its own event rather than a bare noop — "someone previewed
+    an N-row opening-stock import" is real audit-trail context on its own,
+    not just a completeness placeholder.
+    """
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
 
@@ -984,6 +1075,9 @@ def api_opening_stock_import():
         })
 
     if mode == 'preview':
+        audit_event('stock_opening_import_previewed', 'products', None,
+                     after={'rows_ok': len(results), 'rows_error': len(errors)})
+        db.session.commit()
         return jsonify({
             'mode': 'preview',
             'rows_ok': len(results),
@@ -1016,6 +1110,8 @@ def api_opening_stock_import():
             unit_cost=Decimal(str(b['cost_per_base_unit'])), source_type='receipt',
             source_id=run_id, when=b['received_at'],
         )
+    audit_event('stock_opening_import_committed', 'products', None,
+                 reason=f'run_id={run_id}', after={'rows_imported': len(batches_to_add)})
     db.session.commit()
 
     return jsonify({
@@ -1028,6 +1124,7 @@ def api_opening_stock_import():
 
 
 @bp.route('/api/stock/opening-import/<run_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_opening_stock_undo(run_id):
     """Delete all unconsumed batches from a single opening-stock import run."""
     if not require_role('admin'):
@@ -1047,11 +1144,14 @@ def api_opening_stock_undo(run_id):
             StockMovement.query.filter_by(batch_id=b.id).delete()
             db.session.delete(b)
             deleted += 1
+    audit_event('stock_opening_import_undone', 'products', None,
+                 reason=f'run_id={run_id}', after={'deleted': deleted, 'skipped_consumed': skipped})
     db.session.commit()
     return jsonify({'ok': True, 'deleted': deleted, 'skipped_consumed': skipped})
 
 
 @bp.route('/api/stock/negative', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_stock_negative():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
