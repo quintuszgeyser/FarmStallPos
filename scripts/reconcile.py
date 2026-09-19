@@ -450,9 +450,22 @@ def check_inv8_value_baseline(session):
     r = Result('INV-8', 'Value closure', 'medium', ['pilot_readiness'], 'zero')
     r.note = ('NOT A TRUE CLOSURE — see module docstring. No inventory valuation report exists '
               'in this codebase to close against, so this reports the batch-derived valuation '
-              'as a baseline plus a sanity check (no negative remaining qty, no negative cost) '
-              'rather than a two-source agreement.')
-    batches = session.query(StockBatch).all()
+              'as a baseline plus a sanity check (no unexpected negative remaining qty, no '
+              'negative cost) rather than a two-source agreement. '
+              "CORRECTION (found while building the P4-1 apply step, before anything was "
+              "written): this originally flagged EVERY negative qty_remaining_base as a "
+              "violation, including batch_type='negative_placeholder' rows — which are "
+              "supposed to be negative by design (they represent stock owed, per P2-1's "
+              "oversell handling) and are supposed to carry cost_per_base_unit=0 by design "
+              "(the real cost estimate lives in estimated_unit_cost instead — see StockBatch's "
+              "own model comment). All 19 of the production baseline's INV-8 violations turned "
+              "out to be legitimate pre-existing negative_placeholder rows dated across "
+              "2026-08-17 to 2026-09-19, not oversell corruption; 'repairing' them would have "
+              "created a second placeholder per product, breaking the one-aggregate-per-product "
+              "assumption absorb_neg_placeholder relies on. Skipped from this check entirely now, "
+              "matching how the rest of the app already excludes this batch_type from valuation "
+              "and FIFO-cost queries.")
+    batches = session.query(StockBatch).filter(StockBatch.batch_type != 'negative_placeholder').all()
     r.checked_count = len(batches)
     total_value = Decimal('0')
     by_product = {}
