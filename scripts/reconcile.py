@@ -367,6 +367,9 @@ def check_inv4_no_free_stock(session):
     return r
 
 
+_WRITEOFF_SALE_ID = re.compile(r'^(wo-|archive-wo-|adj-)')
+
+
 def check_inv5_consignment_closure(session):
     r = Result('INV-5', 'Consignment closure', 'high', ['pilot_readiness'], 'zero')
     r.note = ('REDUCED PROXY — see module docstring. Compares, per (supplier_id, batch_id) '
@@ -375,13 +378,30 @@ def check_inv5_consignment_closure(session):
               'Sigma StockConsumption.qty_consumed_base for that batch. Does NOT net returned '
               'quantity (no consumption<->return link exists pre-P2-2) — a partial return will '
               'currently show as a mismatch here, which is a known limitation, not a false '
-              'invariant violation you should act on before P2-2 ships.')
+              'invariant violation you should act on before P2-2 ships.'
+              ' CORRECTION: found investigating a real production discrepancy that turned '
+              'out to be two false-positive sources, not corruption. (1) ConsignmentLiability '
+              'rows with sale_id IS NULL are legitimate opening-balance entries — production '
+              'has four, all timestamped 2026-08-19 09:35:00.619177, entered when consignment '
+              'tracking started, to capture consumption that happened before per-sale liability '
+              'existed. They have no StockConsumption counterpart by design and are excluded '
+              'from this comparison entirely (reported separately, in unlinked_liability_qty). '
+              '(2) StockConsumption rows from a write-off (sale_id matching wo-/archive-wo-/'
+              'adj-) never get a matching liability — write-offs are absorbed as the store\'s '
+              'own loss, per consume_fifo\'s own comment: "supplier is not owed for spoilage/'
+              'damage." Summing them into consumed_qty made a batch look underpaid when the '
+              'true consumption (sales only) matched its liability exactly.')
     liabilities = session.query(ConsignmentLiability).filter(
         ConsignmentLiability.status != 'voided'
     ).all()
     by_batch = {}
+    unlinked_by_batch = {}
     for lib in liabilities:
         key = ('batch', lib.batch_id) if lib.batch_id else ('product', lib.supplier_id, lib.product_id)
+        if lib.sale_id is None:
+            unlinked_by_batch.setdefault(key, Decimal('0'))
+            unlinked_by_batch[key] += _d(lib.qty_consumed)
+            continue
         by_batch.setdefault(key, Decimal('0'))
         by_batch[key] += _d(lib.qty_consumed)
 
@@ -390,11 +410,13 @@ def check_inv5_consignment_closure(session):
     ).filter(StockBatch.ownership_type == 'CONSIGNMENT').all()
     consumed_by_batch = {}
     for c in consumptions:
+        if c.sale_id and _WRITEOFF_SALE_ID.match(c.sale_id):
+            continue  # write-off: absorbed as the store's own loss, never owed to the supplier
         consumed_by_batch.setdefault(('batch', c.batch_id), Decimal('0'))
         consumed_by_batch[('batch', c.batch_id)] += _d(c.qty_consumed_base)
 
-    r.checked_count = len(set(by_batch) | set(consumed_by_batch))
     all_keys = set(by_batch) | set(consumed_by_batch)
+    r.checked_count = len(all_keys)
     for key in all_keys:
         if key[0] != 'batch':
             continue  # simple-product (no-batch) consignment consumption isn't tracked in StockConsumption at all
@@ -404,6 +426,7 @@ def check_inv5_consignment_closure(session):
             r.violations.append({
                 'batch_id': key[1], 'liability_qty_outstanding_plus_settled': str(liability_qty),
                 'consumed_qty': str(consumed_qty), 'difference': str(liability_qty - consumed_qty),
+                'unlinked_liability_qty': str(unlinked_by_batch.get(key, Decimal('0'))),
             })
     r.status = 'FAIL' if r.violations else 'PASS'
     return r
