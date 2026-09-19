@@ -14,6 +14,7 @@ from helpers import (
     sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code,
     _serialize_product, validate_product_code, current_user,
     consume_fifo, get_or_create_category, _run_markup_drift_check, write_stock_movement,
+    audit_event, audit_policy,
 )
 from models import (
     db,
@@ -158,6 +159,7 @@ def _resolve_category_id(data):
 
 
 @bp.route('/api/products', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_products_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -246,6 +248,7 @@ def api_products_get():
 
 
 @bp.route('/api/products/<int:pid>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_product_get_one(pid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -256,6 +259,7 @@ def api_product_get_one(pid):
 
 
 @bp.route('/api/products', methods=['POST'])
+@audit_policy('AUDITED')
 def api_products_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -445,11 +449,20 @@ def api_products_post():
                 sort_order=int(opt.get('sort_order') or 0),
             ))
 
+    audit_event('product_created', 'products', p.id, after={
+        'name': p.name, 'product_type': p.product_type, 'price': float(p.price) if p.price is not None else None,
+        'barcode': p.barcode, 'is_for_sale': p.is_for_sale, 'inventory_policy': p.inventory_policy,
+    })
     db.session.commit()
     return jsonify({'ok': True, 'id': p.id})
 
 
+_PRODUCTS_AUDIT_FIELDS = ('name', 'price', 'price_per_unit', 'product_type', 'barcode',
+                          'is_archived', 'is_for_sale', 'inventory_policy', 'margin_pct')
+
+
 @bp.route('/api/products/update', methods=['POST'])
+@audit_policy('AUDITED')
 def api_products_update():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -463,6 +476,7 @@ def api_products_update():
     _old_cat_id    = p.category_id
     _old_sub_id    = p.sub_category_id
     _old_family_id = p.product_family_id
+    _before_audit  = {f: getattr(p, f) for f in _PRODUCTS_AUDIT_FIELDS}
 
     if 'name' in data:
         name = data['name'].strip()
@@ -709,6 +723,9 @@ def api_products_update():
         v = str(data['inventory_policy'] or 'ALLOW_NEGATIVE').strip().upper()
         p.inventory_policy = v if v in ('STRICT', 'WARN', 'ALLOW_NEGATIVE') else 'ALLOW_NEGATIVE'
 
+    _after_audit = {f: getattr(p, f) for f in _PRODUCTS_AUDIT_FIELDS}
+    audit_event('product_updated', 'products', p.id, before=_before_audit, after=_after_audit,
+                reason=f"fields touched: {sorted(k for k in data if k != 'id')}")
     db.session.commit()
     # Clean up any taxonomy entries that are now empty after this change
     _cleanup_empty_taxonomies(
@@ -747,6 +764,7 @@ def _parse_addl_costs_p(raw, source='produce_run'):
 
 
 @bp.route('/api/products/pending-prices', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_pending_prices():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -799,6 +817,7 @@ def api_pending_prices():
 
 
 @bp.route('/api/products/check-markup-drift', methods=['POST'])
+@audit_policy('AUDITED')
 def api_check_markup_drift():
     """Manually trigger the markup-drift scan. Returns count of products flagged."""
     if not require_role('admin'):
@@ -814,6 +833,7 @@ def api_check_markup_drift():
                 Product.pending_price_per_unit.isnot(None),
             )
         ).count()
+        audit_event('markup_drift_scan_run', 'products', None, after={'pending_count': count})
         return jsonify({'ok': True, 'pending_count': count})
     except Exception as e:
         current_app.logger.error(f'[check_markup_drift] {e}')
@@ -821,6 +841,7 @@ def api_check_markup_drift():
 
 
 @bp.route('/api/products/pending-prices/apply', methods=['POST'])
+@audit_policy('AUDITED')
 def api_pending_prices_apply():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -837,20 +858,31 @@ def api_pending_prices_apply():
     products = q.all()
     applied = []
     for p in products:
+        _before = {'price': float(p.price) if p.price is not None else None,
+                   'price_per_unit': float(p.price_per_unit) if p.price_per_unit is not None else None}
+        changed = False
         if p.pending_price is not None:
             p.price = p.pending_price
             p.pending_price = None
             applied.append(p.id)
+            changed = True
         if p.pending_price_per_unit is not None:
             p.price_per_unit = p.pending_price_per_unit
             p.pending_price_per_unit = None
             if p.id not in applied:
                 applied.append(p.id)
+            changed = True
+        if changed:
+            audit_event('pending_price_applied', 'products', p.id, before=_before, after={
+                'price': float(p.price) if p.price is not None else None,
+                'price_per_unit': float(p.price_per_unit) if p.price_per_unit is not None else None,
+            })
     db.session.commit()
     return jsonify({'ok': True, 'applied': len(applied)})
 
 
 @bp.route('/api/products/pending-prices/dismiss', methods=['POST'])
+@audit_policy('AUDITED')
 def api_pending_prices_dismiss():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -866,15 +898,20 @@ def api_pending_prices_dismiss():
         q = q.filter(Product.id.in_(ids))
     products = q.all()
     dismissed = 0
+    dismissed_ids = []
     for p in products:
         p.pending_price = None
         p.pending_price_per_unit = None
         dismissed += 1
+        dismissed_ids.append(p.id)
+    if dismissed_ids:
+        audit_event('pending_price_dismissed', 'products', None, after={'product_ids': dismissed_ids})
     db.session.commit()
     return jsonify({'ok': True, 'dismissed': dismissed})
 
 
 @bp.route('/api/products/pending-prices/accept-markup', methods=['POST'])
+@audit_policy('AUDITED')
 def api_pending_prices_accept_markup():
     """Accept current price as correct — set margin_pct to match current price vs WAC, clear pending."""
     if not require_role('admin'):
@@ -902,10 +939,14 @@ def api_pending_prices_accept_markup():
             total_cost = sum(Decimal(str(b.qty_remaining_base)) * Decimal(str(b.cost_per_base_unit)) for b in batches)
             if total_qty > 0 and total_cost > 0:
                 wac = total_cost / total_qty
+                _before_margin = float(p.margin_pct) if p.margin_pct is not None else None
                 p.margin_pct = (current / wac - 1) * 100
                 p.pending_price = None
                 p.pending_price_per_unit = None
                 applied.append(p.id)
+                audit_event('pending_price_accepted_as_markup', 'products', p.id,
+                            before={'margin_pct': _before_margin},
+                            after={'margin_pct': float(p.margin_pct)})
                 continue
         skipped.append(p.id)
     db.session.commit()
@@ -933,6 +974,7 @@ def _detect_circular_bom(product_id, path=None):
 
 
 @bp.route('/api/products/<int:pid>/produce-preview', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_produce_preview(pid):
     """Pre-flight BOM check: returns which sub-recipe ingredients are short and will
     be auto-produced if the user proceeds. Safe to call repeatedly — read-only."""
@@ -1132,6 +1174,7 @@ def _auto_produce_tree(product_id, batches_needed, now, u, parent_name, auto_pro
 
 
 @bp.route('/api/products/<int:pid>/produce', methods=['POST'])
+@audit_policy('AUDITED')
 def api_product_produce(pid):
     """Consume raw ingredients for N batches and create a StockBatch of finished units.
     Sub-recipe ingredients that are short are auto-produced recursively (full BOM tree)
@@ -1283,6 +1326,11 @@ def api_product_produce(pid):
             for c in addl_costs
         ])
 
+    audit_event('product_produced', 'products', pid, after={
+        'batches': float(batches), 'units_added': units_added,
+        'cost': float(total_ingredient_cost), 'produce_ref': produce_uuid,
+        'auto_produced': [a['product_id'] for a in auto_produced],
+    })
     db.session.commit()
     new_stock = get_stock_level(pid)
     return jsonify({
@@ -1296,6 +1344,8 @@ def api_product_produce(pid):
 
 
 @bp.route('/api/products/<int:pid>/image', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='cosmetic product photography — no financial, '
+              'inventory, or costing impact; current state is visible directly on the product')
 def api_product_image_upload(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1329,6 +1379,8 @@ def api_product_image_upload(pid):
 
 
 @bp.route('/api/products/<int:pid>/image', methods=['DELETE'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='cosmetic product photography — no financial, '
+              'inventory, or costing impact; current state is visible directly on the product')
 def api_product_image_delete(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1348,6 +1400,8 @@ def api_product_image_delete(pid):
 
 
 @bp.route('/api/products/<int:pid>/images', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='cosmetic product photography — no financial, '
+              'inventory, or costing impact; current state is visible directly on the product')
 def api_product_images_upload(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1385,6 +1439,8 @@ def api_product_images_upload(pid):
 
 
 @bp.route('/api/products/<int:pid>/images/<int:img_id>', methods=['DELETE'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='cosmetic product photography — no financial, '
+              'inventory, or costing impact; current state is visible directly on the product')
 def api_product_image_delete_one(pid, img_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1411,6 +1467,8 @@ def api_product_image_delete_one(pid, img_id):
 
 
 @bp.route('/api/products/<int:pid>/images/<int:img_id>/primary', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='cosmetic product photography — no financial, '
+              'inventory, or costing impact; current state is visible directly on the product')
 def api_product_image_set_primary(pid, img_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1425,6 +1483,8 @@ def api_product_image_set_primary(pid, img_id):
 
 
 @bp.route('/api/products/<int:pid>/images/reorder', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='cosmetic product photography — no financial, '
+              'inventory, or costing impact; current state is visible directly on the product')
 def api_product_images_reorder(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1447,6 +1507,7 @@ def api_product_images_reorder(pid):
 
 
 @bp.route('/api/products/<int:pid>/archive', methods=['POST'])
+@audit_policy('AUDITED')
 def api_product_archive(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1480,6 +1541,10 @@ def api_product_archive(pid):
         else:
             recipe.is_archived = True; recipe.archived_reason = 'cascade'
     p.is_archived = True; p.archived_reason = data.get('reason') or None
+    audit_event('product_archived', 'products', pid, before={'is_archived': False},
+                after={'is_archived': True, 'reason': p.archived_reason,
+                       'cascaded_recipe_ids': [r.id for r in affected_recipes
+                                               if r.is_archived and r.archived_reason == 'cascade']})
     if data.get('stock_action') == 'writeoff' and p.product_type == 'stock_item':
         stock_level = sum(
             Decimal(str(b.qty_remaining_base))
@@ -1514,6 +1579,7 @@ def api_product_archive(pid):
 
 
 @bp.route('/api/products/<int:pid>/restore', methods=['POST'])
+@audit_policy('AUDITED')
 def api_product_restore(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1522,6 +1588,7 @@ def api_product_restore(pid):
     if not p:
         return jsonify({'error': 'Not found'}), 404
     p.is_archived = False; p.archived_reason = None
+    audit_event('product_restored', 'products', pid, before={'is_archived': True}, after={'is_archived': False})
     for rid in data.get('restore_recipes', []):
         recipe = db.session.get(Product, int(rid))
         if not recipe or recipe.archived_reason != 'cascade': continue
@@ -1543,6 +1610,7 @@ def api_product_restore(pid):
 
 
 @bp.route('/api/products/<int:pid>/archive/preview', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_product_archive_preview(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1566,6 +1634,7 @@ def api_product_archive_preview(pid):
 
 
 @bp.route('/api/products/<name>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_products_delete(name):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1583,6 +1652,9 @@ def api_products_delete(name):
         if Sale.query.filter_by(product_id=child.id).count() == 0:
             RecipeLine.query.filter_by(product_id=child.id).delete()
             db.session.delete(child)
+    audit_event('product_deleted', 'products', p.id, before={
+        'name': p.name, 'product_type': p.product_type, 'barcode': p.barcode,
+    }, after=None)
     db.session.delete(p)
     db.session.commit()
     _cleanup_empty_taxonomies(
@@ -1594,6 +1666,7 @@ def api_products_delete(name):
 
 
 @bp.route('/api/products/<int:pid>/copy', methods=['POST'])
+@audit_policy('AUDITED')
 def api_product_copy(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1667,11 +1740,14 @@ def api_product_copy(pid):
     for rl in RecipeLine.query.filter_by(product_id=src.id).all():
         db.session.add(RecipeLine(product_id=copy.id, ingredient_id=rl.ingredient_id, qty_base=rl.qty_base))
 
+    audit_event('product_copied', 'products', copy.id, before={'source_product_id': src.id},
+                after={'name': copy.name, 'product_type': copy.product_type})
     db.session.commit()
     return jsonify({'ok': True, 'id': copy.id, 'name': copy.name})
 
 
 @bp.route('/api/products/<int:product_id>/purchase_option', methods=['POST'])
+@audit_policy('AUDITED')
 def api_add_purchase_option(product_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1698,6 +1774,10 @@ def api_add_purchase_option(product_id):
         sort_order=sort_order,
     )
     db.session.add(opt)
+    db.session.flush()
+    audit_event('purchase_option_added', 'product_purchase_options', opt.id, after={
+        'product_id': product_id, 'package_size': ps, 'package_size_unit': psu,
+    })
     db.session.commit()
     logger.info('Purchase option added to product %d: %.4f %s', product_id, ps, psu)
     return jsonify({'ok': True, 'option': {
@@ -1710,6 +1790,7 @@ def api_add_purchase_option(product_id):
 
 
 @bp.route('/api/products/<int:pid>/recipe_cost')
+@audit_policy('NO_STATE_CHANGE')
 def api_recipe_cost(pid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -1750,6 +1831,7 @@ def api_recipe_cost(pid):
 
 
 @bp.route('/api/products/<int:pid>/fifo_price')
+@audit_policy('NO_STATE_CHANGE')
 def api_fifo_price(pid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -1805,6 +1887,7 @@ def api_fifo_price(pid):
 
 
 @bp.route('/api/products/<int:pid>/suggested_price')
+@audit_policy('NO_STATE_CHANGE')
 def api_suggested_price(pid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -1856,6 +1939,7 @@ def api_suggested_price(pid):
 
 
 @bp.route('/api/products/<int:pid>/substitutions', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_product_substitutions(pid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401

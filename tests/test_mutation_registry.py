@@ -40,8 +40,17 @@ carries the VAT/discount/shipping allocation waterfall P0-2's INV-9 checks.
 The invoice PUT/DELETE routes and supplier CRUD are audited for the same
 reason invoices.py's routes are: they change billed amounts and vendor
 records with no prior trail.
+
+'products' was adopted seventh: create/update/archive/delete/copy and
+produce all change price, margin, or costing inputs that every other
+blueprint's cost calculations (FIFO, recipe cost, VAT) read from — the
+product record is the thing being protected, not just another mutation
+surface. Image management (upload/delete/reorder/set-primary) is the one
+deliberate EXPLICITLY_EXEMPT block in this blueprint: cosmetic product
+photography with no financial, inventory, or costing impact, current state
+always visible directly on the product.
 """
-ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers'}
+ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers', 'products'}
 
 
 def _adopted_rules(app):
@@ -109,5 +118,11 @@ def test_adopted_blueprints_have_the_expected_policy_mix(app):
     assert 'suppliers.api_supplier_invoice_delete' in by_policy.get('AUDITED', [])
     assert 'suppliers.api_suppliers_delete' in by_policy.get('AUDITED', [])
     assert 'suppliers.api_suppliers_get' in by_policy.get('NO_STATE_CHANGE', [])
+    assert 'products.api_products_post' in by_policy.get('AUDITED', [])
+    assert 'products.api_products_update' in by_policy.get('AUDITED', [])
+    assert 'products.api_product_archive' in by_policy.get('AUDITED', [])
+    assert 'products.api_products_delete' in by_policy.get('AUDITED', [])
+    assert 'products.api_products_get' in by_policy.get('NO_STATE_CHANGE', [])
+    assert 'products.api_product_image_upload' in by_policy.get('EXPLICITLY_EXEMPT', [])
     assert len(by_policy.get('NO_STATE_CHANGE', [])) >= 3
     assert len(by_policy.get('EXPLICITLY_EXEMPT', [])) >= 2
