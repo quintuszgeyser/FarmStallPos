@@ -89,13 +89,15 @@ filter/preview/fields/history routes are read-only queries, NO_STATE_CHANGE).
 'backup' (connect/disconnect, manual backup, verify, restore, file delete,
 settings, and database switch/delete are all AUDITED — this is the disaster-
 recovery surface; restore and database delete are the most consequential
-routes adopted so far. reads are NO_STATE_CHANGE).
+routes adopted so far. reads are NO_STATE_CHANGE). 'labels' (template and
+printer CRUD are AUDITED; print/print-bulk/browser-print/browser-print-bulk
+are EXPLICITLY_EXEMPT — LabelPrintJob is already a dedicated print audit log).
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
                       'categories', 'cost_categories', 'families', 'kitchen', 'specials',
                       'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule',
-                      'cost_corrections', 'bulk', 'backup'}
+                      'cost_corrections', 'bulk', 'backup', 'labels'}
 
 
 def _adopted_rules(app):

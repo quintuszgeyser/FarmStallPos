@@ -28,7 +28,7 @@ from decimal import Decimal
 
 from flask import Blueprint, jsonify, request, send_file
 
-from helpers import require_login, require_role, current_user, get_setting
+from helpers import require_login, require_role, current_user, get_setting, audit_event, audit_policy
 from models import db, Product, LabelTemplate, LabelPrintJob, LabelPrinter
 from services.label_service import LabelRenderService, PrintDispatchService
 
@@ -48,6 +48,7 @@ def _can_design():
 # ── Templates ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/label-templates', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_label_templates_list():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -56,6 +57,7 @@ def api_label_templates_list():
 
 
 @bp.route('/api/label-templates', methods=['POST'])
+@audit_policy('AUDITED')
 def api_label_templates_create():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -78,11 +80,14 @@ def api_label_templates_create():
         created_by      = u.id if u else None,
     )
     db.session.add(t)
+    db.session.flush()
+    audit_event('label_template_created', 'label_templates', t.id, after={'name': t.name})
     db.session.commit()
     return jsonify(_tmpl_dict(t)), 201
 
 
 @bp.route('/api/label-templates/<int:tmpl_id>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_label_templates_get(tmpl_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -93,6 +98,7 @@ def api_label_templates_get(tmpl_id):
 
 
 @bp.route('/api/label-templates/<int:tmpl_id>', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_label_templates_update(tmpl_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -114,11 +120,13 @@ def api_label_templates_update(tmpl_id):
     t.background_color = data.get('background_color', t.background_color)
     t.border           = bool(data.get('border', t.border))
     t.updated_at       = datetime.utcnow()
+    audit_event('label_template_updated', 'label_templates', t.id, after={'name': t.name})
     db.session.commit()
     return jsonify(_tmpl_dict(t))
 
 
 @bp.route('/api/label-templates/<int:tmpl_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_label_templates_delete(tmpl_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -129,11 +137,13 @@ def api_label_templates_delete(tmpl_id):
         return jsonify({'error': 'Template not found'}), 404
     t.is_archived = True
     t.updated_at  = datetime.utcnow()
+    audit_event('label_template_deleted', 'label_templates', t.id, before={'name': t.name}, after=None)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/label-templates/<int:tmpl_id>/duplicate', methods=['POST'])
+@audit_policy('AUDITED')
 def api_label_templates_duplicate(tmpl_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -155,6 +165,8 @@ def api_label_templates_duplicate(tmpl_id):
         created_by       = u.id if u else None,
     )
     db.session.add(copy)
+    db.session.flush()
+    audit_event('label_template_duplicated', 'label_templates', copy.id, before={'source_id': src.id}, after={'name': copy.name})
     db.session.commit()
     return jsonify(_tmpl_dict(copy)), 201
 
@@ -162,6 +174,7 @@ def api_label_templates_duplicate(tmpl_id):
 # ── Preview ───────────────────────────────────────────────────────────────────
 
 @bp.route('/api/labels/preview', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_labels_preview():
     """Return a PNG image of the rendered label. Used by the designer live-preview."""
     if not require_login():
@@ -201,6 +214,7 @@ def api_labels_preview():
 # ── Print ─────────────────────────────────────────────────────────────────────
 
 @bp.route('/api/labels/print', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='physical label printing — LabelPrintJob (see /api/label-print-jobs) is already the dedicated audit log for print actions')
 def api_labels_print():
     """Print one product's label N times."""
     if not require_login():
@@ -257,6 +271,7 @@ def api_labels_print():
 
 
 @bp.route('/api/labels/print-bulk', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='physical label printing — LabelPrintJob (see /api/label-print-jobs) is already the dedicated audit log for print actions')
 def api_labels_print_bulk():
     """Print labels for multiple products in one job."""
     if not require_login():
@@ -335,6 +350,7 @@ def api_labels_print_bulk():
 # ── Browser (client-side) print ──────────────────────────────────────────────
 
 @bp.route('/api/labels/browser-print', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='physical label printing — LabelPrintJob (see /api/label-print-jobs) is already the dedicated audit log for print actions')
 def api_labels_browser_print():
     """Return a self-printing HTML page — the browser opens it and window.print() fires.
     The label is sized with @page CSS so it prints at the exact physical dimensions
@@ -409,6 +425,7 @@ def api_labels_browser_print():
 
 
 @bp.route('/api/labels/browser-print-bulk', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='physical label printing — LabelPrintJob (see /api/label-print-jobs) is already the dedicated audit log for print actions')
 def api_labels_browser_print_bulk():
     """Render all items server-side and return one merged self-printing HTML page.
     Replaces the JS Promise.all() pattern that fires N simultaneous requests."""
@@ -499,6 +516,7 @@ def api_labels_browser_print_bulk():
 # ── Audit log ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/label-print-jobs', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_label_print_jobs():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -510,6 +528,7 @@ def api_label_print_jobs():
 # ── Printers ──────────────────────────────────────────────────────────────────
 
 @bp.route('/api/label-printers', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_label_printers_list():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -518,6 +537,7 @@ def api_label_printers_list():
 
 
 @bp.route('/api/label-printers', methods=['POST'])
+@audit_policy('AUDITED')
 def api_label_printers_create():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -534,15 +554,21 @@ def api_label_printers_create():
         existing.model      = model
         existing.connection = connection
         existing.address    = address
+        audit_event('label_printer_updated', 'label_printers', existing.id,
+                    after={'name': name, 'model': model, 'connection': connection})
         db.session.commit()
         return jsonify(_printer_dict(existing))
     p = LabelPrinter(name=name, model=model, connection=connection, address=address)
     db.session.add(p)
+    db.session.flush()
+    audit_event('label_printer_created', 'label_printers', p.id,
+                after={'name': name, 'model': model, 'connection': connection})
     db.session.commit()
     return jsonify(_printer_dict(p)), 201
 
 
 @bp.route('/api/label-printers/<int:printer_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_label_printers_delete(printer_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -550,6 +576,7 @@ def api_label_printers_delete(printer_id):
     if not p:
         return jsonify({'error': 'Not found'}), 404
     p.is_active = False
+    audit_event('label_printer_deleted', 'label_printers', p.id, before={'name': p.name}, after=None)
     db.session.commit()
     return jsonify({'ok': True})
 
