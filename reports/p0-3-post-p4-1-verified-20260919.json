@@ -1,0 +1,719 @@
+{
+  "generated_at": "2026-09-19T15:08:15.108736+00:00",
+  "overall_status": "FAIL",
+  "invariants": [
+    {
+      "id": "INV-2",
+      "name": "No orphan movement",
+      "severity": "high",
+      "blocks": [
+        "deployment",
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "PASS",
+      "checked_count": 4671,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "Pre-P2-0 proxy: checks StockConsumption.batch_id against stock_batches. CORRECTION (found investigating the 563-violation P0-3 baseline): despite models.py declaring ForeignKey('stock_batches.id'), no FK constraint on this column actually existed in the database \u2014 confirmed via pg_constraint. strong_migrate() now adds fk_stock_consumption_batch NOT VALID, which stops new orphans without failing on the historical ones; VALIDATE CONSTRAINT after Phase 4 repair is the acceptance test that this invariant is closed for good. Superseded by the real movement.batch_id check once P2-0 ships."
+    },
+    {
+      "id": "INV-1",
+      "name": "Quantity closure",
+      "severity": "n/a",
+      "blocks": [
+        "cutover"
+      ],
+      "tolerance": "n/a",
+      "status": "NOT_YET_COMPUTABLE",
+      "checked_count": 0,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "Requires the P2-0 movement ledger."
+    },
+    {
+      "id": "INV-3",
+      "name": "Typed source resolves",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero, excluding documented proxies",
+      "status": "PASS",
+      "checked_count": 18,
+      "skipped_count": 4,
+      "violation_count": 0,
+      "violations": [],
+      "note": "4 of 22 movements are documented proxies not checked here: migration rows (exempt by design), absorb_neg_placeholder's NULL-source_id receipts, and writeoff CONSUMPTION movements whose source_id is a correlation-only token with no independently resolvable record \u2014 see this function's docstring for all three."
+    },
+    {
+      "id": "INV-4",
+      "name": "No free stock",
+      "severity": "high",
+      "blocks": [
+        "deployment",
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 927,
+      "skipped_count": 0,
+      "violation_count": 15,
+      "violations": [
+        {
+          "batch_id": 866,
+          "product_id": 315,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-04T14:55:11.638593"
+        },
+        {
+          "batch_id": 1332,
+          "product_id": 534,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-13T00:00:00"
+        },
+        {
+          "batch_id": 1515,
+          "product_id": 451,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-22T00:00:00"
+        },
+        {
+          "batch_id": 1605,
+          "product_id": 595,
+          "qty_remaining_base": "7.0000",
+          "purchased_at": "2026-08-25T00:00:00"
+        },
+        {
+          "batch_id": 1335,
+          "product_id": 447,
+          "qty_remaining_base": "6648.0000",
+          "purchased_at": "2026-08-13T00:00:00"
+        },
+        {
+          "batch_id": 1522,
+          "product_id": 291,
+          "qty_remaining_base": "993515.0000",
+          "purchased_at": "2026-08-22T00:00:00"
+        },
+        {
+          "batch_id": 1253,
+          "product_id": 276,
+          "qty_remaining_base": "2.0000",
+          "purchased_at": "2026-05-27T00:00:00"
+        },
+        {
+          "batch_id": 1468,
+          "product_id": 315,
+          "qty_remaining_base": "1.0000",
+          "purchased_at": "2026-08-19T09:11:37.090747"
+        },
+        {
+          "batch_id": 1576,
+          "product_id": 602,
+          "qty_remaining_base": "5.0000",
+          "purchased_at": "2026-08-25T06:21:39.138173"
+        },
+        {
+          "batch_id": 1394,
+          "product_id": 558,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-08-15T00:00:00"
+        },
+        {
+          "batch_id": 1578,
+          "product_id": 608,
+          "qty_remaining_base": "2.0000",
+          "purchased_at": "2026-08-25T06:22:25.528944"
+        },
+        {
+          "batch_id": 1927,
+          "product_id": 534,
+          "qty_remaining_base": "0.0000",
+          "purchased_at": "2026-09-12T00:00:00"
+        },
+        {
+          "batch_id": 1962,
+          "product_id": 541,
+          "qty_remaining_base": "2.0000",
+          "purchased_at": "2026-09-14T10:13:36.489848"
+        },
+        {
+          "batch_id": 1529,
+          "product_id": 451,
+          "qty_remaining_base": "29843.0000",
+          "purchased_at": "2026-08-22T00:00:00"
+        },
+        {
+          "batch_id": 1918,
+          "product_id": 508,
+          "qty_remaining_base": "18050.0000",
+          "purchased_at": "2026-09-12T00:00:00"
+        }
+      ],
+      "note": null
+    },
+    {
+      "id": "INV-5",
+      "name": "Consignment closure",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 34,
+      "skipped_count": 0,
+      "violation_count": 6,
+      "violations": [
+        {
+          "batch_id": 1384,
+          "liability_qty_outstanding_plus_settled": "4584.0000",
+          "consumed_qty": "4136.0000",
+          "difference": "448.0000"
+        },
+        {
+          "batch_id": 1850,
+          "liability_qty_outstanding_plus_settled": "542.0000",
+          "consumed_qty": "3140.0000",
+          "difference": "-2598.0000"
+        },
+        {
+          "batch_id": 1383,
+          "liability_qty_outstanding_plus_settled": "3491.0000",
+          "consumed_qty": "2662.0000",
+          "difference": "829.0000"
+        },
+        {
+          "batch_id": 1382,
+          "liability_qty_outstanding_plus_settled": "1435.5200",
+          "consumed_qty": "5000.0000",
+          "difference": "-3564.4800"
+        },
+        {
+          "batch_id": 1388,
+          "liability_qty_outstanding_plus_settled": "24.0000",
+          "consumed_qty": "20.0000",
+          "difference": "4.0000"
+        },
+        {
+          "batch_id": 1574,
+          "liability_qty_outstanding_plus_settled": "2.0000",
+          "consumed_qty": "10.0000",
+          "difference": "-8.0000"
+        }
+      ],
+      "note": "REDUCED PROXY \u2014 see module docstring. Compares, per (supplier_id, batch_id) and per (supplier_id, product_id) for batch_id IS NULL (simple consignment products), Sigma ConsignmentLiability.qty_consumed (status != voided) against Sigma StockConsumption.qty_consumed_base for that batch. Does NOT net returned quantity (no consumption<->return link exists pre-P2-2) \u2014 a partial return will currently show as a mismatch here, which is a known limitation, not a false invariant violation you should act on before P2-2 ships."
+    },
+    {
+      "id": "INV-6",
+      "name": "COGS agrees",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "FAIL",
+      "checked_count": 1327,
+      "skipped_count": 23,
+      "violation_count": 47,
+      "violations": [
+        {
+          "sale_id": "8f3a374d-76f2-4382-9ace-1740f3eab39c",
+          "product_id": 478,
+          "sale_row_id": 22,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "bf8e7ce7-10ae-4e15-8a41-aa6c9825301b",
+          "product_id": 478,
+          "sale_row_id": 27,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "e0f5d80a-c4de-4d23-87a1-cef30ff985f2",
+          "product_id": 504,
+          "sale_row_id": 156,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "88232252-88ac-4791-933b-e96849550706",
+          "product_id": 504,
+          "sale_row_id": 166,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "adc87ca7-2d04-46ee-88c0-348a5f1ddf29",
+          "product_id": 477,
+          "sale_row_id": 521,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "223b2246-5ff6-44b8-bd7a-ad56bbe5a2a0",
+          "product_id": 477,
+          "sale_row_id": 589,
+          "sale_cogs": "81.37",
+          "consumption_derived_cogs": "0.00",
+          "difference": "81.37"
+        },
+        {
+          "sale_id": "6f4515a7-3060-41ed-b09c-aaf0755163a0",
+          "product_id": 504,
+          "sale_row_id": 216,
+          "sale_cogs": "28.82",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.82"
+        },
+        {
+          "sale_id": "a9651045-157a-4e0c-81c1-534c1b96e656",
+          "product_id": 477,
+          "sale_row_id": 150,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "a0f6bf1e-3500-40b9-b282-630bcc5806cc",
+          "product_id": 477,
+          "sale_row_id": 560,
+          "sale_cogs": "57.81",
+          "consumption_derived_cogs": "0.00",
+          "difference": "57.81"
+        },
+        {
+          "sale_id": "25063465-ef89-436e-9676-3c0672ebefac",
+          "product_id": 477,
+          "sale_row_id": 805,
+          "sale_cogs": "94.56",
+          "consumption_derived_cogs": "0.00",
+          "difference": "94.56"
+        },
+        {
+          "sale_id": "aca6473e-4019-4edd-a209-8f49f61dc542",
+          "product_id": 504,
+          "sale_row_id": 67,
+          "sale_cogs": "22.24",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.24"
+        },
+        {
+          "sale_id": "5bf676df-a1ed-4275-ab31-752597e9f040",
+          "product_id": 504,
+          "sale_row_id": 82,
+          "sale_cogs": "22.24",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.24"
+        },
+        {
+          "sale_id": "8179c37d-2a4c-4d55-b4ae-73cf3846d62e",
+          "product_id": 504,
+          "sale_row_id": 104,
+          "sale_cogs": "22.24",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.24"
+        },
+        {
+          "sale_id": "e9725a5a-ed15-4a0b-bd35-8b19a6ee30e1",
+          "product_id": 504,
+          "sale_row_id": 108,
+          "sale_cogs": "16.83",
+          "consumption_derived_cogs": "0.00",
+          "difference": "16.83"
+        },
+        {
+          "sale_id": "2e5fccfa-59cc-486e-a02d-1baa1cc810d6",
+          "product_id": 478,
+          "sale_row_id": 117,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "0552bfa4-6ce4-4620-a58f-a7bfb4ebd87e",
+          "product_id": 478,
+          "sale_row_id": 140,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "94dd7fca-5c5b-4e4f-8e64-e2a9aa24db24",
+          "product_id": 477,
+          "sale_row_id": 153,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "2ccd01e3-69ed-40d0-81e0-158cd06f2ac5",
+          "product_id": 477,
+          "sale_row_id": 868,
+          "sale_cogs": "51.59",
+          "consumption_derived_cogs": "0.00",
+          "difference": "51.59"
+        },
+        {
+          "sale_id": "1807ccbc-8895-48b6-bdae-7e2680206f44",
+          "product_id": 477,
+          "sale_row_id": 528,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "df5ed417-f743-4e17-840f-c2b01e303f0a",
+          "product_id": 478,
+          "sale_row_id": 764,
+          "sale_cogs": "42.99",
+          "consumption_derived_cogs": "0.00",
+          "difference": "42.99"
+        },
+        {
+          "sale_id": "a6c623a5-7112-412c-b58c-cf5b93cf5f11",
+          "product_id": 477,
+          "sale_row_id": 482,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "0c4ffc63-dfd8-4df2-bae3-67913814e1c9",
+          "product_id": 477,
+          "sale_row_id": 769,
+          "sale_cogs": "37.06",
+          "consumption_derived_cogs": "0.00",
+          "difference": "37.06"
+        },
+        {
+          "sale_id": "c3230a40-e187-4a0d-93b0-2ab46d649d2b",
+          "product_id": 477,
+          "sale_row_id": 822,
+          "sale_cogs": "10.40",
+          "consumption_derived_cogs": "0.00",
+          "difference": "10.40"
+        },
+        {
+          "sale_id": "20484e1b-1a1f-4ee8-819e-2fce98bc9933",
+          "product_id": 477,
+          "sale_row_id": 474,
+          "sale_cogs": "28.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "28.90"
+        },
+        {
+          "sale_id": "c0370527-4220-4992-b187-55ad7ec02755",
+          "product_id": 504,
+          "sale_row_id": 228,
+          "sale_cogs": "19.21",
+          "consumption_derived_cogs": "0.00",
+          "difference": "19.21"
+        },
+        {
+          "sale_id": "15c6fc48-d1c2-48ed-90d7-1583f5247ac0",
+          "product_id": 478,
+          "sale_row_id": 245,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "61c877b8-8b80-49e6-8642-178768aecbd4",
+          "product_id": 504,
+          "sale_row_id": 436,
+          "sale_cogs": "11.94",
+          "consumption_derived_cogs": "0.00",
+          "difference": "11.94"
+        },
+        {
+          "sale_id": "6dbc89a1-18b9-444c-a73c-89f4f005ec41",
+          "product_id": 504,
+          "sale_row_id": 438,
+          "sale_cogs": "11.16",
+          "consumption_derived_cogs": "0.00",
+          "difference": "11.16"
+        },
+        {
+          "sale_id": "d22bd5c1-619b-416f-ac9b-a7e3e46ab9c7",
+          "product_id": 504,
+          "sale_row_id": 191,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "551c7145-2c49-44f7-8dfe-1cdd0450c975",
+          "product_id": 477,
+          "sale_row_id": 187,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "dacbdff2-c125-4eb6-bede-09d16e70254d",
+          "product_id": 477,
+          "sale_row_id": 224,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "eb37905e-93fa-4866-96af-8a2556e34e06",
+          "product_id": 477,
+          "sale_row_id": 184,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "dacbdff2-c125-4eb6-bede-09d16e70254d",
+          "product_id": 504,
+          "sale_row_id": 225,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "8e4f4550-5d42-4087-a522-fdca46d5a911",
+          "product_id": 477,
+          "sale_row_id": 283,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "b50550e3-87d1-4de8-b62c-21583dac5a91",
+          "product_id": 504,
+          "sale_row_id": 305,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "f88eadf6-e014-42c6-af32-aee7891c00b3",
+          "product_id": 478,
+          "sale_row_id": 316,
+          "sale_cogs": "22.11",
+          "consumption_derived_cogs": "0.00",
+          "difference": "22.11"
+        },
+        {
+          "sale_id": "af1af31c-1cc4-4180-b7ab-3aa3f493e561",
+          "product_id": 477,
+          "sale_row_id": 366,
+          "sale_cogs": "30.09",
+          "consumption_derived_cogs": "0.00",
+          "difference": "30.09"
+        },
+        {
+          "sale_id": "c3dcc89b-525c-458a-bba5-79db775b4440",
+          "product_id": 504,
+          "sale_row_id": 384,
+          "sale_cogs": "9.61",
+          "consumption_derived_cogs": "0.00",
+          "difference": "9.61"
+        },
+        {
+          "sale_id": "cc82147b-e7cd-431e-bdc9-dda4b7b56706",
+          "product_id": 504,
+          "sale_row_id": 424,
+          "sale_cogs": "20.38",
+          "consumption_derived_cogs": "0.00",
+          "difference": "20.38"
+        },
+        {
+          "sale_id": "f9e38163-8d51-4afe-950e-a1e7ea5a26dd",
+          "product_id": 477,
+          "sale_row_id": 449,
+          "sale_cogs": "33.59",
+          "consumption_derived_cogs": "0.00",
+          "difference": "33.59"
+        },
+        {
+          "sale_id": "c3230a40-e187-4a0d-93b0-2ab46d649d2b",
+          "product_id": 594,
+          "sale_row_id": 828,
+          "sale_cogs": "26.86",
+          "consumption_derived_cogs": "0.00",
+          "difference": "26.86"
+        },
+        {
+          "sale_id": "66c32fc5-278d-4390-820f-255d1a878441",
+          "product_id": 477,
+          "sale_row_id": 202,
+          "sale_cogs": "62.58",
+          "consumption_derived_cogs": "0.00",
+          "difference": "62.58"
+        },
+        {
+          "sale_id": "aca4c0b2-825a-43e5-a494-67afe11e4db4",
+          "product_id": 477,
+          "sale_row_id": 624,
+          "sale_cogs": "31.34",
+          "consumption_derived_cogs": "0.00",
+          "difference": "31.34"
+        },
+        {
+          "sale_id": "0b8822d0-fcbc-4f07-924b-fbc28d58d475",
+          "product_id": 477,
+          "sale_row_id": 704,
+          "sale_cogs": "31.34",
+          "consumption_derived_cogs": "0.00",
+          "difference": "31.34"
+        },
+        {
+          "sale_id": "c3b46b1d-8b69-434f-9667-14038d6da673",
+          "product_id": 477,
+          "sale_row_id": 780,
+          "sale_cogs": "37.06",
+          "consumption_derived_cogs": "0.00",
+          "difference": "37.06"
+        },
+        {
+          "sale_id": "37e0eb78-65c2-4dc7-9fde-7f777e3d72fa",
+          "product_id": 477,
+          "sale_row_id": 852,
+          "sale_cogs": "43.90",
+          "consumption_derived_cogs": "0.00",
+          "difference": "43.90"
+        },
+        {
+          "sale_id": "5e30724f-3be2-4141-b3f0-c7fc672d1be6",
+          "product_id": 419,
+          "sale_row_id": 1032,
+          "sale_cogs": "31.80",
+          "consumption_derived_cogs": "31.79",
+          "difference": "0.01"
+        }
+      ],
+      "note": "Restricted to stock_item / produced-recipe Sale lines \u2014 see module docstring for why made-to-order recipe lines and duplicate product-per-sale lines are NOT_YET_COMPUTABLE pre-P2-0 (StockConsumption.sale_id is basket-scoped, not line-scoped, so attribution is ambiguous in those cases)."
+    },
+    {
+      "id": "INV-7",
+      "name": "VAT closure",
+      "severity": "high",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "PASS",
+      "checked_count": 0,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "Only checks vat_method=per_line headers (P1-1 checkout-forward sales) \u2014 formula: sum of per-line rounded vat_amount == header.total_vat, and header subtotals (standard+zero_rated+exempt) sum to total_excl_vat, and total_excl_vat + total_vat == total_incl_vat. legacy_flat headers (scripts/backfill_vat_headers.py) have no per-line data to check against by design \u2014 reported via skipped_count with the reason, not silently ignored and not treated as a violation."
+    },
+    {
+      "id": "INV-8",
+      "name": "Value closure",
+      "severity": "medium",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "zero",
+      "status": "PASS",
+      "checked_count": 927,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "NOT A TRUE CLOSURE \u2014 see module docstring. No inventory valuation report exists in this codebase to close against, so this reports the batch-derived valuation as a baseline plus a sanity check (no unexpected negative remaining qty, no negative cost) rather than a two-source agreement. CORRECTION (found while building the P4-1 apply step, before anything was written): this originally flagged EVERY negative qty_remaining_base as a violation, including batch_type='negative_placeholder' rows \u2014 which are supposed to be negative by design (they represent stock owed, per P2-1's oversell handling) and are supposed to carry cost_per_base_unit=0 by design (the real cost estimate lives in estimated_unit_cost instead \u2014 see StockBatch's own model comment). All 19 of the production baseline's INV-8 violations turned out to be legitimate pre-existing negative_placeholder rows dated across 2026-08-17 to 2026-09-19, not oversell corruption; 'repairing' them would have created a second placeholder per product, breaking the one-aggregate-per-product assumption absorb_neg_placeholder relies on. Skipped from this check entirely now, matching how the rest of the app already excludes this batch_type from valuation and FIFO-cost queries. Baseline total inventory value: R256411.67 across 528 products."
+    },
+    {
+      "id": "INV-9",
+      "name": "Allocation closure",
+      "severity": "medium",
+      "blocks": [
+        "pilot_readiness"
+      ],
+      "tolerance": "0.01 (see note)",
+      "status": "FAIL",
+      "checked_count": 721,
+      "skipped_count": 0,
+      "violation_count": 7,
+      "violations": [
+        {
+          "batch_id": 588,
+          "check": "cost_per_base_unit == final_cost_incl_vat / qty_purchased_base",
+          "stored": "223.03",
+          "expected": "250.33"
+        },
+        {
+          "batch_id": 1331,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1600.00",
+          "expected": "1100.00"
+        },
+        {
+          "batch_id": 1330,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1600.00",
+          "expected": "1100.00"
+        },
+        {
+          "batch_id": 1329,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1700.00",
+          "expected": "1200.00"
+        },
+        {
+          "batch_id": 1327,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "0.00",
+          "expected": "800.00"
+        },
+        {
+          "batch_id": 1328,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "1200.00",
+          "expected": "1000.00"
+        },
+        {
+          "batch_id": 2057,
+          "check": "base_cost_incl_vat == base_cost_total + vat_amount",
+          "stored": "60.97",
+          "expected": "3350.00"
+        }
+      ],
+      "note": "Only checks batches created via the VAT-aware purchase-run costing path (base_cost_incl_vat IS NOT NULL) \u2014 receive/stocktake/write-off/return batches don't populate these columns and are out of scope for this invariant. Formula reconstructed from actual suppliers.py code, not the literal Rev 5 column name \u2014 see module docstring discrepancy note. Tolerance 0.01 because these columns are independently rounded (quantize to 2dp/4dp) at several points during purchase-run allocation, not because exact equality is unattainable in principle."
+    },
+    {
+      "id": "INV-10",
+      "name": "Transaction immutability",
+      "severity": "n/a",
+      "blocks": [],
+      "tolerance": "n/a",
+      "status": "NOT_APPLICABLE_HERE",
+      "checked_count": 0,
+      "skipped_count": 0,
+      "violation_count": 0,
+      "violations": [],
+      "note": "Enforced via DB trigger + CI per Rev 5 Section 6, not a reconcile.py check."
+    },
+    {
+      "id": "INV-11",
+      "name": "Projection rebuild",
+      "severity": "critical",
+      "blocks": [
+        "cutover"
+      ],
+      "tolerance": "zero, excluding not-yet-covered batches",
+      "status": "PASS",
+      "checked_count": 18,
+      "skipped_count": 1090,
+      "violation_count": 0,
+      "violations": [],
+      "note": "1090 of 1108 batches have zero movements (not yet covered by dual-write \u2014 see docstring). 18 batches checked against the ledger sum."
+    }
+  ]
+}
