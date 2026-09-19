@@ -1,0 +1,161 @@
+{
+  "run_id": "f1b24a23-71cb-4792-a436-e73535d04b57",
+  "generated_at": "2026-09-19T15:30:40.756739+00:00",
+  "mode": "COMMITTED",
+  "phase": "P4-1",
+  "source_proposal": "/app/reports/p4-1-dry-run-prod-20260919.json",
+  "targets": {
+    "INV-4": [],
+    "INV-9": [
+      588,
+      1331,
+      1330,
+      1329,
+      1327,
+      1328,
+      2057
+    ]
+  },
+  "log": [
+    {
+      "batch_id": 588,
+      "action": "APPLIED",
+      "before": {
+        "base_cost_incl_vat": "500.6600",
+        "final_cost_incl_vat": "500.6600",
+        "cost_per_base_unit": "223.030000"
+      },
+      "after": {
+        "base_cost_incl_vat": "500.6600",
+        "final_cost_incl_vat": "500.6600",
+        "cost_per_base_unit": "250.330000"
+      },
+      "cost_per_unit_changed": true
+    },
+    {
+      "batch_id": 588,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "2.0000"
+    },
+    {
+      "batch_id": 1331,
+      "action": "APPLIED",
+      "before": {
+        "base_cost_incl_vat": "1600.0000",
+        "final_cost_incl_vat": "1600.0000",
+        "cost_per_base_unit": "0.055000"
+      },
+      "after": {
+        "base_cost_incl_vat": "1100.0000",
+        "final_cost_incl_vat": "1100.0000",
+        "cost_per_base_unit": "0.055000"
+      },
+      "cost_per_unit_changed": false
+    },
+    {
+      "batch_id": 1331,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "17040.0000"
+    },
+    {
+      "batch_id": 1330,
+      "action": "APPLIED",
+      "before": {
+        "base_cost_incl_vat": "1600.0000",
+        "final_cost_incl_vat": "1600.0000",
+        "cost_per_base_unit": "0.055000"
+      },
+      "after": {
+        "base_cost_incl_vat": "1100.0000",
+        "final_cost_incl_vat": "1100.0000",
+        "cost_per_base_unit": "0.055000"
+      },
+      "cost_per_unit_changed": false
+    },
+    {
+      "batch_id": 1330,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "7294.0000"
+    },
+    {
+      "batch_id": 1329,
+      "action": "APPLIED",
+      "before": {
+        "base_cost_incl_vat": "1700.0000",
+        "final_cost_incl_vat": "1700.0000",
+        "cost_per_base_unit": "0.060000"
+      },
+      "after": {
+        "base_cost_incl_vat": "1200.0000",
+        "final_cost_incl_vat": "1200.0000",
+        "cost_per_base_unit": "0.060000"
+      },
+      "cost_per_unit_changed": false
+    },
+    {
+      "batch_id": 1329,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "16916.0000"
+    },
+    {
+      "batch_id": 1327,
+      "action": "APPLIED",
+      "before": {
+        "base_cost_incl_vat": "0.0000",
+        "final_cost_incl_vat": "0.0000",
+        "cost_per_base_unit": "40.000000"
+      },
+      "after": {
+        "base_cost_incl_vat": "800.0000",
+        "final_cost_incl_vat": "800.0000",
+        "cost_per_base_unit": "40.000000"
+      },
+      "cost_per_unit_changed": false
+    },
+    {
+      "batch_id": 1328,
+      "action": "APPLIED",
+      "before": {
+        "base_cost_incl_vat": "1200.0000",
+        "final_cost_incl_vat": "1200.0000",
+        "cost_per_base_unit": "0.050000"
+      },
+      "after": {
+        "base_cost_incl_vat": "1000.0000",
+        "final_cost_incl_vat": "1000.0000",
+        "cost_per_base_unit": "0.050000"
+      },
+      "cost_per_unit_changed": false
+    },
+    {
+      "batch_id": 2057,
+      "action": "APPLIED",
+      "before": {
+        "base_cost_incl_vat": "60.9700",
+        "final_cost_incl_vat": "60.9700",
+        "cost_per_base_unit": "0.335000"
+      },
+      "after": {
+        "base_cost_incl_vat": "3350.0000",
+        "final_cost_incl_vat": "3350.0000",
+        "cost_per_base_unit": "0.335000"
+      },
+      "cost_per_unit_changed": false
+    },
+    {
+      "batch_id": 2057,
+      "action": "BACKFILLED_OPENING_BALANCE",
+      "qty_delta": "9396.0000"
+    }
+  ],
+  "verification": {
+    "inv4_total_violations_after": 15,
+    "inv9_total_violations_after": 0,
+    "inv3_total_violations_after": 0,
+    "inv11_total_violations_after": 0,
+    "targeted_batches_still_violating": [],
+    "newly_broken_untargeted_batches": [],
+    "applied_count": 7,
+    "skipped_count": 0
+  }
+}

@@ -247,14 +247,15 @@ def apply_inv9_correction(session, batch_id, run_id, log):
     batch.base_cost_incl_vat = expected_base_incl_vat
     batch.final_cost_incl_vat = expected_final
     batch.cost_per_base_unit = expected_cost_per_unit
+    cost_per_unit_note = (' (unchanged)' if not cost_per_unit_changing else
+                          ' — this batch had zero consumption to date, so no historical COGS is affected')
     batch.cost_adjustment_reason = (
         f'P4-1 reconciliation repair, run {run_id}. INV-9 allocation correction, recomputed '
         f'from base_cost_total + vat_amount (+ non-discount overhead - allocated_discount): '
         f'base_cost_incl_vat {before["base_cost_incl_vat"]} -> {expected_base_incl_vat}, '
         f'final_cost_incl_vat {before["final_cost_incl_vat"]} -> {expected_final}, '
         f'cost_per_base_unit {before["cost_per_base_unit"]} -> {expected_cost_per_unit}'
-        f'{" (unchanged)" if not cost_per_unit_changing else " — this batch had zero consumption "
-                                                               "to date, so no historical COGS is affected"}.'
+        f'{cost_per_unit_note}.'
     )
     batch.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     after = {'base_cost_incl_vat': str(expected_base_incl_vat), 'final_cost_incl_vat': str(expected_final),
