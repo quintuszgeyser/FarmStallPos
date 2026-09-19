@@ -2480,6 +2480,22 @@ def strong_migrate():
         pg_try("ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_invoice_number_key")
         pg_try("CREATE UNIQUE INDEX IF NOT EXISTS ix_invoices_number_live ON invoices (invoice_number) WHERE deleted_at IS NULL")
 
+        # Rev 5 Phase 4 prerequisite — stock_consumption.batch_id has carried a
+        # ForeignKey('stock_batches.id') in models.py since this table was created,
+        # but that was never enforced at the database level: the P0-3 baseline run
+        # (reports/p0-3-baseline-qa-20260919.json) found 563 rows whose batch_id
+        # points at a StockBatch that no longer exists — almost certainly from
+        # hard deletes made before P1-4 removed the permanent product-delete route.
+        # Add the constraint NOT VALID: Postgres does not check existing rows at
+        # creation time, so this closes the gap for every write from this point
+        # forward without failing on the current corruption. Once Phase 4's repair
+        # has cleaned the 563 orphans, `VALIDATE CONSTRAINT fk_stock_consumption_batch`
+        # is the acceptance test that the repair actually closed INV-2 — do not
+        # validate it before then, and do not quietly drop this comment once it's
+        # validated; flip it to record that fact instead.
+        pg_try("ALTER TABLE stock_consumption ADD CONSTRAINT fk_stock_consumption_batch "
+               "FOREIGN KEY (batch_id) REFERENCES stock_batches(id) NOT VALID")
+
     # No explicit unlock needed: the transaction-level advisory lock acquired inside
     # the engine.begin() block above auto-releases when that transaction committed.
 

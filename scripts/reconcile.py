@@ -158,10 +158,13 @@ class Result:
 def check_inv2_no_orphan_movement(session):
     r = Result('INV-2', 'No orphan movement', 'high', ['deployment', 'pilot_readiness'], 'zero')
     r.note = ('Pre-P2-0 proxy: checks StockConsumption.batch_id against stock_batches. '
-              'FK-enforced (StockConsumption.batch_id is NOT NULL with a real FK), so this '
-              'is expected to always pass unless referential integrity was bypassed '
-              '(e.g. a hard delete outside the ORM). Superseded by the real movement.batch_id '
-              'check once P2-0 ships.')
+              'CORRECTION (found investigating the 563-violation P0-3 baseline): despite '
+              'models.py declaring ForeignKey(\'stock_batches.id\'), no FK constraint on '
+              'this column actually existed in the database — confirmed via pg_constraint. '
+              'strong_migrate() now adds fk_stock_consumption_batch NOT VALID, which stops '
+              'new orphans without failing on the historical ones; VALIDATE CONSTRAINT after '
+              'Phase 4 repair is the acceptance test that this invariant is closed for good. '
+              'Superseded by the real movement.batch_id check once P2-0 ships.')
     batch_ids = {b.id for b in session.query(StockBatch.id).all()}
     consumptions = session.query(StockConsumption).all()
     r.checked_count = len(consumptions)
