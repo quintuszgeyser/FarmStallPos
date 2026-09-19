@@ -32,7 +32,7 @@ from helpers import (
     consume_fifo, reverse_fifo,
     get_stock_level, get_fifo_cost_per_unit,
     sync_sell_packages, _gen_barcode, _gen_barcode_from_code, _assign_product_code, _ean13_check, _serialize_product,
-    _parse_dt,
+    _parse_dt, _install_audit_completeness_check,
 )
 
 APP_VERSION = os.environ.get('APP_VERSION', '1.6.4')
@@ -2734,6 +2734,8 @@ def create_app():
         logger.log(level, 'RESP %s %s  status=%s  %dms',
                    request.method, request.path, response.status_code, elapsed_ms)
         return response
+
+    _install_audit_completeness_check(app)
 
     @app.errorhandler(Exception)
     def _handle_exception(e):

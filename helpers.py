@@ -170,6 +170,73 @@ def audit_event(event_type, entity_table, entity_id, before=None, after=None,
     ))
 
 
+# ---------------------------------------------------------------------------
+# Mutation registry (Rev 5 P3-1b)
+# ---------------------------------------------------------------------------
+# "Every non-GET route writes an audit row" is the wrong CI rule — HTTP method
+# is a signal, not a boundary (a state-changing GET or a side-effect-only POST
+# both slip past it). Every registered operation instead declares an explicit
+# policy via @audit_policy, checked by tests/test_mutation_registry.py:
+#   AUDITED             — writes through audit_event() when it mutates.
+#   SECURITY_EVENT_ONLY  — security-relevant (login/logout/password/account
+#                          lifecycle); still writes through audit_event(),
+#                          categorized separately from ordinary business
+#                          mutations for reporting purposes.
+#   NO_STATE_CHANGE      — reads only, or a side effect with no persisted
+#                          state change (e.g. sending a print job).
+#   EXPLICITLY_EXEMPT     — mutates but deliberately carries no audit trail;
+#                          REQUIRES a written reason, checked at decoration
+#                          time, not left to be filled in "later."
+#
+# Scope note: only blueprints in ADOPTED_AUDIT_BLUEPRINTS (see
+# tests/test_mutation_registry.py) are coverage-checked today — this is a
+# gradual-adoption registry, not full coverage of the app's ~370 routes in
+# one pass. transactions.py and auth.py are the two adopted so far (the
+# highest-stakes: money movement and account/session lifecycle).
+def audit_policy(policy, reason=None):
+    valid = {'AUDITED', 'NO_STATE_CHANGE', 'SECURITY_EVENT_ONLY', 'EXPLICITLY_EXEMPT'}
+    if policy not in valid:
+        raise ValueError(f'invalid audit policy {policy!r} — must be one of {sorted(valid)}')
+    if policy == 'EXPLICITLY_EXEMPT' and not reason:
+        raise ValueError('EXPLICITLY_EXEMPT requires a reason')
+
+    def decorator(fn):
+        fn._audit_policy = policy
+        fn._audit_policy_reason = reason
+        return fn
+    return decorator
+
+
+def _install_audit_completeness_check(app):
+    """Rev 5 P3-1b runtime half of the proof: "CI fails when [a route]
+    declaring AUDITED completes without writing an event." A route can only
+    be proven to have written one by actually exercising it — this hooks
+    every response and, for a 2xx response from a route policed AUDITED,
+    checks whether an AuditLog row with this request's correlation_id exists.
+    In TESTING config this raises (so the existing test suite's own coverage
+    of audited routes doubles as the completeness check); in production it
+    only logs, since a forensic-trail gap must never take down a live
+    response the business mutation itself already succeeded on.
+    """
+    @app.after_request
+    def _check_audit_completeness(response):
+        try:
+            fn = app.view_functions.get(request.endpoint) if request.endpoint else None
+            policy = getattr(fn, '_audit_policy', None) if fn else None
+            if policy == 'AUDITED' and 200 <= response.status_code < 300:
+                cid = getattr(g, '_audit_cid', None)
+                if cid and not AuditLog.query.filter_by(correlation_id=cid).first():
+                    msg = f'AUDITED route {request.endpoint} completed 2xx with no AuditLog row for correlation_id={cid}'
+                    if app.config.get('TESTING'):
+                        raise AssertionError(msg)
+                    logger.error(msg)
+        except AssertionError:
+            raise
+        except Exception:
+            pass  # the completeness check itself must never break a response
+        return response
+
+
 # Rev 5 P1-3 — routes a user with must_change_password=True may still reach.
 # Everything else is blocked until they change it. Both require_login() and
 # require_role() enforce this (they are independent implementations, not one

@@ -13,7 +13,7 @@ from helpers import (
     consume_fifo, reverse_fifo, reverse_consignment_liabilities, _parse_dt,
     qty_bucket, get_stock_level, collect_kitchen_items, auto_produce_on_negative,
     get_setting, write_stock_movement, reverse_consignment_liabilities_partial,
-    get_fifo_cost_per_unit, audit_event,
+    get_fifo_cost_per_unit, audit_event, audit_policy,
 )
 from decimal import ROUND_HALF_UP
 from models import (
@@ -109,6 +109,7 @@ def _audit(event_type, target_id, before_rows, note=None, after_rows=None):
 
 
 @bp.route('/api/transactions', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_transactions_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -257,6 +258,9 @@ def api_transactions_get():
 
 
 @bp.route('/api/transactions', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine sale creation — the immutable Sale row IS '
+              'the record; the audit trail covers corrections/reversals of it (void/edit/return), '
+              'not its creation')
 def api_transactions_post():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -558,6 +562,7 @@ def _receipt_lines(rows, product_map):
 
 
 @bp.route('/api/transactions/<sale_id>/receipt', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_transaction_receipt(sale_id):
     """Return receipt data for a sale. Used by the print receipt button."""
     if not require_login():
@@ -593,6 +598,7 @@ def api_transaction_receipt(sale_id):
 
 
 @bp.route('/api/transactions/<sale_id>/print-receipt', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')  # sends to a physical printer; no persisted state change
 def api_transaction_print_receipt(sale_id):
     """Render a receipt image and send directly to the thermal printer via TSPL2."""
     if not require_login():
@@ -650,6 +656,7 @@ def api_transaction_print_receipt(sale_id):
 
 
 @bp.route('/api/transactions/<sale_id>/browser-print-receipt', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_transaction_browser_print_receipt(sale_id):
     """Return a self-printing HTML receipt page — browser handles the printer protocol."""
     if not require_login():
@@ -766,6 +773,8 @@ def api_transaction_browser_print_receipt(sale_id):
 
 
 @bp.route('/api/transactions/<sale_id>/flag', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='flag state is visible directly on the Sale row and '
+              'transactions list; not yet wired to the audit service')
 def api_transaction_flag(sale_id):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -785,6 +794,7 @@ def api_transaction_flag(sale_id):
 
 
 @bp.route('/api/transactions/<sale_id>/return', methods=['POST'])
+@audit_policy('AUDITED')
 def api_transaction_return(sale_id):
     """Post-session return: partial or full reversal with FIFO stock restore.
 
@@ -976,6 +986,7 @@ def api_transaction_return(sale_id):
 
 
 @bp.route('/api/transactions/<sale_id>/void', methods=['POST'])
+@audit_policy('AUDITED')
 def api_transaction_void(sale_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1000,6 +1011,7 @@ def api_transaction_void(sale_id):
 
 
 @bp.route('/api/transactions/<sale_id>/edit', methods=['POST'])
+@audit_policy('AUDITED')
 def api_transaction_edit(sale_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403

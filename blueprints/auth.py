@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from flask import Blueprint, jsonify, request, session
 from werkzeug.security import generate_password_hash, check_password_hash
 
-from helpers import require_login, require_role, current_user, validate_password
+from helpers import require_login, require_role, current_user, validate_password, audit_event, audit_policy
 from models import db, User, UserSession, AuditLog, LoginAttempt
 
 bp = Blueprint('auth', __name__)
@@ -36,6 +36,7 @@ def _account_locked(username):
 
 
 @bp.route('/api/login', methods=['POST'])
+@audit_policy('SECURITY_EVENT_ONLY')
 def api_login():
     from flask import request as _req
     import time as _time
@@ -76,20 +77,15 @@ def api_login():
         _login_attempts[ip] = wins + [now]   # record failed attempt (flood guard)
         db.session.add(LoginAttempt(username=username, ip=remote_ip, success=False,
                                      attempted_at=datetime.utcnow()))
-        db.session.add(AuditLog(
-            event_type='login_failed', actor_user_id=None,
-            target_table='users', target_id=username,
-            note=f'ip={remote_ip}',
-        ))
+        audit_event('login_failed', 'users', username, reason=f'ip={remote_ip}',
+                     source='ui', actor_user_id=None)
         db.session.flush()
         # Did THIS failure cross the lockout threshold? Fire the transition event
         # exactly once (the pre-check above already excluded "already locked").
         if username and _account_locked(username):
-            db.session.add(AuditLog(
-                event_type='account_locked', actor_user_id=None,
-                target_table='users', target_id=username,
-                note=f'{LOCKOUT_MAX_FAILURES} failures within {int(LOCKOUT_WINDOW.total_seconds()//60)} min; ip={remote_ip}',
-            ))
+            audit_event('account_locked', 'users', username,
+                         reason=f'{LOCKOUT_MAX_FAILURES} failures within {int(LOCKOUT_WINDOW.total_seconds()//60)} min; ip={remote_ip}',
+                         source='ui', actor_user_id=None)
         db.session.commit()
         return jsonify({'ok': False, 'error': 'Invalid credentials'}), 401
 
@@ -108,6 +104,8 @@ def api_login():
 
 
 @bp.route('/api/logout', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine self-service session termination, no '
+              'forensic requirement — login/lockout/account changes are the security-relevant events')
 def api_logout():
     sid = session.get('session_id')
     if sid:
@@ -120,6 +118,7 @@ def api_logout():
 
 
 @bp.route('/api/me', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_me():
     u = current_user()
     if not u:
@@ -129,6 +128,7 @@ def api_me():
 
 
 @bp.route('/api/users', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_users_get():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -140,6 +140,7 @@ def api_users_get():
 
 
 @bp.route('/api/users', methods=['POST'])
+@audit_policy('AUDITED')
 def api_users_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -162,11 +163,14 @@ def api_users_post():
     u = User(username=username, role=role,
              password_hash=generate_password_hash(password), active=True)
     db.session.add(u)
+    db.session.flush()
+    audit_event('user_created', 'users', u.username, after={'username': u.username, 'role': u.role})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/users/update', methods=['POST'])
+@audit_policy('AUDITED')
 def api_users_update():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -178,31 +182,42 @@ def api_users_update():
     u = User.query.filter_by(username=username).first()
     if not u:
         return jsonify({'error': 'User not found'}), 404
+    changed = []
     if role:
         valid_roles = {'admin', 'teller', 'developer', 'cctv'}
         role_set = {r.strip() for r in role.split(',') if r.strip()}
         if role_set and role_set.issubset(valid_roles):
             new_role = ','.join(sorted(role_set))
             if new_role != u.role:
-                actor = current_user()
-                db.session.add(AuditLog(
-                    event_type='role_changed',
-                    actor_user_id=(actor.id if actor else None),
-                    target_table='users', target_id=u.username,
-                    before_json=json.dumps({'role': u.role}),
-                    note=f'new role: {new_role}',
-                ))
+                audit_event('role_changed', 'users', u.username,
+                             before={'role': u.role}, after={'role': new_role},
+                             reason=f'new role: {new_role}')
+                changed.append('role')
             u.role = new_role
     if isinstance(active, bool):
-        if active:
+        if active and not u.active:
             u.active = True
-        else:
+            audit_event('user_activated', 'users', u.username,
+                         before={'active': False}, after={'active': True})
+            changed.append('active')
+        elif not active and u.active:
             _deactivate_user(u)
+            audit_event('user_deactivated', 'users', u.username,
+                         before={'active': True}, after={'active': False})
+            changed.append('active')
     if password:
         pw_error = validate_password(password)
         if pw_error:
             return jsonify({'error': pw_error}), 400
         u.password_hash = generate_password_hash(password)
+        audit_event('password_reset_by_admin', 'users', u.username,
+                     reason=f'reset by {current_user().username if current_user() else "?"}')
+        changed.append('password')
+    if not changed:
+        # AUDITED means every 2xx completion writes an event — a no-op call
+        # (e.g. an empty payload) still needs one, or the completeness check
+        # (helpers._install_audit_completeness_check) flags this as a gap.
+        audit_event('user_update_noop', 'users', u.username, reason='no fields changed')
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -215,6 +230,7 @@ def _deactivate_user(u):
 
 
 @bp.route('/api/users/<username>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_users_delete(username):
     """Rev 5 P3-2: an alias for deactivation, not a hard delete. sales.user_id
     has no ondelete clause, so a hard delete either 500s for any user who ever
@@ -231,13 +247,18 @@ def api_users_delete(username):
     u = User.query.filter_by(username=username).first()
     if not u:
         return jsonify({'error': 'User not found'}), 404
+    was_active = u.active
     _deactivate_user(u)
+    audit_event('user_deleted', 'users', u.username,
+                 before={'active': was_active}, after={'active': False},
+                 reason='delete aliased to deactivation (Rev 5 P3-2)')
     db.session.commit()
     return jsonify({'ok': True})
 
 
 
 @bp.route('/api/users/change_password', methods=['POST'])
+@audit_policy('SECURITY_EVENT_ONLY')
 def api_users_change_password():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -252,5 +273,6 @@ def api_users_change_password():
         return jsonify({'error': pw_error}), 400
     u.password_hash = generate_password_hash(new_pw)
     u.must_change_password = False
+    audit_event('password_changed', 'users', u.username, source='ui')
     db.session.commit()
     return jsonify({'ok': True})
