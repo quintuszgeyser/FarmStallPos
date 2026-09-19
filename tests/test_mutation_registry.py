@@ -99,12 +99,16 @@ commit is AUDITED, same preview/commit split as stock.py's opening-stock
 import; preview writes nothing). 'cctv' (a separate login gate for the
 camera viewer, same shape as auth.py's login — SECURITY_EVENT_ONLY, logging
 both success and failure since there's no other row recording who watched
-the cameras; logout is EXPLICITLY_EXEMPT like auth.py's).
+the cameras; logout is EXPLICITLY_EXEMPT like auth.py's). 'stats' — all 28
+routes are reporting/export reads with zero ORM writes anywhere in the file
+(verified by grepping for db.session.add/commit/delete/update before
+adopting), so every one is NO_STATE_CHANGE.
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
                       'categories', 'cost_categories', 'families', 'kitchen', 'specials',
                       'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule',
+                      'stats',
                       'cost_corrections', 'bulk', 'backup', 'labels', 'scale', 'imports', 'cctv'}
 
 

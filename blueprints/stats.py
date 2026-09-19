@@ -8,7 +8,7 @@ from statistics import median
 from flask import Blueprint, jsonify, request, send_file
 from sqlalchemy import func
 
-from helpers import require_role, get_setting, _parse_dt, get_fifo_cost_per_unit
+from helpers import require_role, get_setting, _parse_dt, get_fifo_cost_per_unit, audit_policy
 from models import (
     db,
     Product, RecipeLine, StockBatch, StockConsumption, StockAdjustment,
@@ -41,6 +41,7 @@ def _parse_range(start_arg, end_arg):
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/stats/today')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_today():
     today = date.today().isoformat()
     from werkzeug.datastructures import ImmutableMultiDict
@@ -49,6 +50,7 @@ def api_stats_today():
 
 
 @bp.route('/api/stats')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     today = date.today()
@@ -536,6 +538,7 @@ def api_stats():
 
 
 @bp.route('/api/stats/filter-options')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_filter_options():
     """Return valid product/supplier/category options given current filter selections."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -591,6 +594,7 @@ def api_stats_filter_options():
 
 
 @bp.route('/api/stats/drilldown')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     slice_type = request.args.get('type'); slice_val = request.args.get('value')
@@ -664,6 +668,7 @@ def api_stats_drilldown():
 
 
 @bp.route('/api/stats/drilldown/supplier')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_supplier():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     supplier_name = request.args.get('supplier', '')
@@ -679,6 +684,7 @@ def api_stats_drilldown_supplier():
 
 
 @bp.route('/api/stats/drilldown/kitchen')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_kitchen():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
@@ -694,6 +700,7 @@ def api_stats_drilldown_kitchen():
 
 
 @bp.route('/api/stats/drilldown/writeoffs')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_writeoffs():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
@@ -710,6 +717,7 @@ def api_stats_drilldown_writeoffs():
 
 
 @bp.route('/api/stats/drilldown/profit')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_profit():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
@@ -763,6 +771,7 @@ def api_stats_drilldown_profit():
 # ---------------------------------------------------------------------------
 
 @bp.route('/admin/export/products')
+@audit_policy('NO_STATE_CHANGE')
 def export_products_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     default_markup = float(get_setting('markup_percent', 40) or 40)
@@ -808,6 +817,7 @@ def export_products_csv():
 
 
 @bp.route('/admin/export/transactions')
+@audit_policy('NO_STATE_CHANGE')
 def export_transactions_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
@@ -846,6 +856,7 @@ def export_transactions_csv():
 
 
 @bp.route('/admin/export/profit')
+@audit_policy('NO_STATE_CHANGE')
 def export_profit_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
@@ -893,6 +904,7 @@ def export_profit_csv():
 
 
 @bp.route('/admin/export/writeoffs')
+@audit_policy('NO_STATE_CHANGE')
 def export_writeoffs_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
@@ -915,6 +927,7 @@ def export_writeoffs_csv():
 
 
 @bp.route('/admin/export/suppliers')
+@audit_policy('NO_STATE_CHANGE')
 def export_suppliers_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
@@ -930,6 +943,7 @@ def export_suppliers_csv():
 
 
 @bp.route('/admin/export/staff')
+@audit_policy('NO_STATE_CHANGE')
 def export_staff_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
@@ -986,6 +1000,7 @@ def export_staff_csv():
 
 
 @bp.route('/admin/export/till-sessions')
+@audit_policy('NO_STATE_CHANGE')
 def export_till_sessions_csv():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt = _parse_dt(request.args.get('start')) or datetime(*date.today().timetuple()[:3])
@@ -1025,6 +1040,7 @@ def export_till_sessions_csv():
 # ── New drilldown: Channels ──────────────────────────────────────────────────
 
 @bp.route('/api/stats/drilldown/channels')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_channels():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
@@ -1085,6 +1101,7 @@ def api_stats_drilldown_channels():
 # ── New drilldown: Customers ─────────────────────────────────────────────────
 
 @bp.route('/api/stats/drilldown/customers')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_customers():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt = _parse_range(request.args.get('start'), request.args.get('end'))
@@ -1147,6 +1164,7 @@ def api_stats_drilldown_customers():
 
 
 @bp.route('/api/stats/overhead')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_overhead():
     """Aggregate additional_costs by type across stock batches in the date range.
     Respects the same start/end/product_id filters as other stats routes."""
@@ -1251,6 +1269,7 @@ def api_stats_overhead():
 
 
 @bp.route('/api/stats/drilldown/overhead-type')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_overhead_type():
     """Return batch-level detail for a specific additional_cost type in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -1303,6 +1322,7 @@ def api_stats_drilldown_overhead_type():
 
 
 @bp.route('/api/stats/drilldown/overhead-supplier')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_overhead_supplier():
     """Batch-level overhead detail for a specific supplier in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -1356,6 +1376,7 @@ def api_stats_drilldown_overhead_supplier():
 
 
 @bp.route('/api/stats/drilldown/production-overhead')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_production_overhead():
     """Batch-level overhead detail for a specific produced product in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -1397,6 +1418,7 @@ def api_stats_drilldown_production_overhead():
 
 
 @bp.route('/api/stats/drilldown/supplier-vat')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_supplier_vat():
     """Invoice-level VAT detail for a specific supplier in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -1444,6 +1466,7 @@ def api_stats_drilldown_supplier_vat():
 
 
 @bp.route('/api/stats/drilldown/supplier-discounts')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_supplier_discounts():
     """Invoice-level discount detail for a specific supplier in the date range."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -1499,6 +1522,7 @@ def api_stats_drilldown_supplier_discounts():
 
 
 @bp.route('/api/stats/drilldown/customer-list')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_drilldown_customer_list():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     start_dt, end_dt  = _parse_range(request.args.get('start'), request.args.get('end'))
@@ -1550,6 +1574,7 @@ def api_stats_drilldown_customer_list():
 
 
 @bp.route('/api/stats/supplier-vat')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_supplier_vat():
     """Aggregate supplier VAT paid from invoices in the date range, grouped by supplier."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -1606,6 +1631,7 @@ def api_stats_supplier_vat():
 
 
 @bp.route('/api/stats/supplier-discounts')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_supplier_discounts():
     """Aggregate supplier discounts received from invoices in the date range, grouped by supplier."""
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
@@ -1681,6 +1707,7 @@ def api_stats_supplier_discounts():
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/stats/inventory')
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_inventory():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
 
@@ -2151,6 +2178,7 @@ def _build_daily_revenue(start_dt, end_dt, product_id_filter, user_id_filter, su
 
 
 @bp.route('/api/stats/forecast', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_stats_forecast():
     """Revenue forecast for the requested period using Theil-Sen + weekday seasonality."""
     if not require_role('admin'):
