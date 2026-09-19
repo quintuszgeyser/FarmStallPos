@@ -23,7 +23,7 @@ from models import (
     RecipeLine,
     CostAdjustment, CostAdjustmentLine,
 )
-from helpers import require_role, current_user
+from helpers import require_role, current_user, audit_event, audit_policy
 
 bp = Blueprint('cost_corrections', __name__)
 
@@ -259,6 +259,7 @@ def _compute_impact(batch, new_unit_cost_raw, scope):
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @bp.route('/api/stock/batches/<int:batch_id>/cost-correction/preview', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_cost_correction_preview(batch_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -282,6 +283,7 @@ def api_cost_correction_preview(batch_id):
 
 
 @bp.route('/api/stock/batches/<int:batch_id>/cost-correction', methods=['POST'])
+@audit_policy('AUDITED')
 def api_cost_correction_apply(batch_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -417,6 +419,12 @@ def api_cost_correction_apply(batch_id):
                 new_total=Decimal(str(line['new_total'])) if line.get('new_total') is not None else None,
             ))
 
+        audit_event('cost_correction_applied', 'stock_batches', batch_id, before={
+            'cost_per_base_unit': float(old_cpu),
+        }, after={
+            'cost_per_base_unit': float(new_unit_cost), 'scope': scope, 'reason': reason,
+            'sales_affected': impact.get('sales_affected', 0), 'cogs_delta': float(adj.cogs_delta or 0),
+        })
         db.session.commit()
 
         try:
@@ -442,6 +450,7 @@ def api_cost_correction_apply(batch_id):
 
 
 @bp.route('/api/stock/cost-corrections/<int:adj_id>/reverse', methods=['POST'])
+@audit_policy('AUDITED')
 def api_cost_correction_reverse(adj_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -506,6 +515,9 @@ def api_cost_correction_reverse(adj_id):
             created_at=now,
         )
         db.session.add(rev)
+        audit_event('cost_correction_reversed', 'stock_batches', adj.batch_id, before={
+            'cost_per_base_unit': float(adj.new_cost_per_unit),
+        }, after={'cost_per_base_unit': float(old_cpu_to_restore), 'reversed_adjustment_id': adj_id, 'reason': reason})
         db.session.commit()
 
         try:
@@ -522,6 +534,7 @@ def api_cost_correction_reverse(adj_id):
 
 
 @bp.route('/api/stock/batches/<int:batch_id>/cost-corrections', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_cost_correction_list(batch_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403

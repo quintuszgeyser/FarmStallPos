@@ -81,12 +81,17 @@ AUDITED — they directly change what's owed; reads NO_STATE_CHANGE).
 'deploy_schedule' (scheduling/cancelling/triggering a deploy or rollback are
 AUDITED — this is the prod deploy pipeline; the host-cron-only poll/complete
 callbacks are EXPLICITLY_EXEMPT, same high-frequency-telemetry reasoning as
-customers.py's recognition routes).
+customers.py's recognition routes). 'cost_corrections' (apply/reverse a
+retroactive batch cost correction are AUDITED — rewrites historical COGS;
+preview/list NO_STATE_CHANGE). 'bulk' (apply/rollback a bulk product edit are
+AUDITED — can touch price/margin across many products at once; the
+filter/preview/fields/history routes are read-only queries, NO_STATE_CHANGE).
 """
 ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
                       'products', 'customers', 'branding', 'packaging', 'subcategories',
                       'categories', 'cost_categories', 'families', 'kitchen', 'specials',
-                      'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule'}
+                      'settings', 'recognition', 'kiosk', 'core', 'consignment', 'deploy_schedule',
+                      'cost_corrections', 'bulk'}
 
 
 def _adopted_rules(app):

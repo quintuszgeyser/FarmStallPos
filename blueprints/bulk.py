@@ -5,7 +5,7 @@ from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, jsonify, request
 
-from helpers import require_role, current_user, get_or_create_category
+from helpers import require_role, current_user, get_or_create_category, audit_event, audit_policy
 from models import db, Product, Category, ProductBulkEditRun, StockBatch, SubCategory, ProductFamily
 
 bp = Blueprint('bulk', __name__)
@@ -383,6 +383,7 @@ def _apply_action(p, action):
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
 @bp.route('/api/products/bulk/fields', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_bulk_fields():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -393,6 +394,7 @@ def api_bulk_fields():
 
 
 @bp.route('/api/products/bulk/filter', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_bulk_filter():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -416,6 +418,7 @@ def api_bulk_filter():
 
 
 @bp.route('/api/products/bulk/preview', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_bulk_preview():
     """Dry-run: show what will change without persisting."""
     if not require_role('admin'):
@@ -525,6 +528,7 @@ def api_bulk_preview():
 
 
 @bp.route('/api/products/bulk/apply', methods=['POST'])
+@audit_policy('AUDITED')
 def api_bulk_apply():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -671,12 +675,18 @@ def api_bulk_apply():
         before_json=json.dumps(before, default=str),
     )
     db.session.add(run)
+    db.session.flush()
+    audit_event('bulk_edit_applied', 'products', None, after={
+        'run_id': run.id, 'affected': changed_count, 'description': description,
+        'actions': actions,
+    })
     db.session.commit()
 
     return jsonify({'ok': True, 'affected': changed_count, 'run_id': run.id})
 
 
 @bp.route('/api/products/bulk/history', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_bulk_history():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -697,6 +707,7 @@ def api_bulk_history():
 
 
 @bp.route('/api/products/bulk/rollback/<int:run_id>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_bulk_rollback(run_id):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -738,6 +749,7 @@ def api_bulk_rollback(run_id):
     user = current_user()
     run.rolled_back_at = datetime.utcnow()
     run.rolled_back_by = user.id if user else None
+    audit_event('bulk_edit_rolled_back', 'products', None, after={'run_id': run_id, 'restored': restored})
     db.session.commit()
 
     return jsonify({'ok': True, 'restored': restored})
