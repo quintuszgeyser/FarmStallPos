@@ -27,8 +27,13 @@ next-highest-stakes blueprint after money movement and account lifecycle.
 billed amounts, and finalise/undo already run through the same FIFO and
 consignment-liability reversal paths P2-2b hardened. Shipping-fee updates are
 audited too since they change what online customers are charged.
+
+'till_sessions' was adopted fifth: it's small (three routes) but the primary
+till-fraud detection surface — the Z-report close records counted cash vs.
+expected cash and the over/under, the same kind of record P2-4 made void
+reasons mandatory to protect.
 """
-ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices'}
+ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions'}
 
 
 def _adopted_rules(app):
@@ -89,5 +94,8 @@ def test_adopted_blueprints_have_the_expected_policy_mix(app):
     assert 'invoices.api_invoices_undo' in by_policy.get('AUDITED', [])
     assert 'invoices.api_invoices_delete' in by_policy.get('AUDITED', [])
     assert 'invoices.api_invoices_list' in by_policy.get('NO_STATE_CHANGE', [])
+    assert 'till_sessions.api_till_close' in by_policy.get('AUDITED', [])
+    assert 'till_sessions.api_till_summary' in by_policy.get('NO_STATE_CHANGE', [])
+    assert 'till_sessions.api_till_sessions_list' in by_policy.get('NO_STATE_CHANGE', [])
     assert len(by_policy.get('NO_STATE_CHANGE', [])) >= 3
     assert len(by_policy.get('EXPLICITLY_EXEMPT', [])) >= 2

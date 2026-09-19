@@ -12,7 +12,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 
 from sqlalchemy import case
-from helpers import require_role, current_user, _parse_dt, get_setting
+from helpers import require_role, current_user, _parse_dt, get_setting, audit_event, audit_policy
 from models import db, Sale, SaleHeader, TillSession, User
 
 bp = Blueprint('till_sessions', __name__)
@@ -135,6 +135,7 @@ def _vat_summary(start_dt, end_dt):
 
 
 @bp.route('/api/till/sessions/summary', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_till_summary():
     """Return today's sales totals for the Close Till modal. Admin only."""
     if not require_role('admin'):
@@ -203,6 +204,7 @@ def api_till_summary():
 
 
 @bp.route('/api/till/sessions', methods=['POST'])
+@audit_policy('AUDITED')
 def api_till_close():
     """Close the till: record cash count and compute over/under. Admin only."""
     if not require_role('admin'):
@@ -253,6 +255,14 @@ def api_till_close():
         notes=(data.get('notes') or '').strip() or None,
     )
     db.session.add(session_row)
+    db.session.flush()
+    audit_event('till_closed', 'till_sessions', session_row.id, after={
+        'opened_at': opened_at.isoformat(), 'closed_at': now.isoformat(),
+        'opening_float': float(opening_float), 'counted_cash': float(counted_cash),
+        'expected_cash': float(expected_cash), 'over_under': float(over_under),
+        'pos_cash_sales': float(total_cash), 'pos_card_sales': float(total_card),
+        'cash_refunds': float(cash_refunds), 'void_total': float(void_total),
+    })
     db.session.commit()
 
     return jsonify({
@@ -269,6 +279,7 @@ def api_till_close():
 
 
 @bp.route('/api/till/sessions', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_till_sessions_list():
     """List past sessions. Admin only."""
     if not require_role('admin'):
