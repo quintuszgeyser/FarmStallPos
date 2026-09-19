@@ -10,7 +10,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, jsonify, request, current_app, send_from_directory, abort
 from sqlalchemy import func
 
-from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities, get_stock_level, write_stock_movement
+from helpers import require_login, require_role, current_user, _gen_barcode, _auto_price_products, absorb_neg_placeholder, backfill_consignment_liabilities, get_stock_level, write_stock_movement, audit_event, audit_policy
 from models import (db, Supplier, StockBatch, StockConsumption, Purchase, Product,
                     SupplierDocument, SupplierInvoice,
                     SupplierInvoiceTemplate, SupplierProductMapping,
@@ -1265,6 +1265,7 @@ def _parse_invoice_pdf(content):
 
 
 @bp.route('/api/suppliers/<int:sid>/invoices/parse', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_supplier_invoice_parse(sid):
     """Parse an uploaded invoice PDF and return structured delivery data."""
     if not require_role('admin'):
@@ -1358,6 +1359,7 @@ _UNIT_CONVERSIONS = {
 
 
 @bp.route('/api/suppliers', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_suppliers_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -1370,6 +1372,7 @@ def api_suppliers_get():
 
 
 @bp.route('/api/suppliers', methods=['POST'])
+@audit_policy('AUDITED')
 def api_suppliers_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1385,11 +1388,16 @@ def api_suppliers_post():
         return jsonify({'error': 'Supplier already exists'}), 409
     s = Supplier(name=name, phone=phone, email=email, website=website, notes=notes)
     db.session.add(s)
+    db.session.flush()
+    audit_event('supplier_created', 'suppliers', s.id, after={
+        'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website,
+    })
     db.session.commit()
     return jsonify({'ok': True, 'id': s.id})
 
 
 @bp.route('/api/suppliers/<int:sid>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_suppliers_update(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1397,6 +1405,7 @@ def api_suppliers_update(sid):
     if not s:
         return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
+    before = {'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website, 'notes': s.notes}
     if 'name' in data:
         name  = data['name'].strip()
         clash = Supplier.query.filter(Supplier.id != sid, Supplier.name == name).first()
@@ -1407,24 +1416,33 @@ def api_suppliers_update(sid):
     if 'email'   in data: s.email   = data['email'].strip()   or None
     if 'website' in data: s.website = data['website'].strip() or None
     if 'notes'   in data: s.notes   = data['notes'].strip()   or None
+    audit_event('supplier_updated', 'suppliers', s.id, before=before, after={
+        'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website, 'notes': s.notes,
+    })
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/suppliers/<int:sid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_suppliers_delete(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     s = db.session.get(Supplier, sid)
     if not s:
         return jsonify({'error': 'Not found'}), 404
+    before = {'name': s.name, 'phone': s.phone, 'email': s.email, 'website': s.website}
+    detached_batches = StockBatch.query.filter_by(supplier_id=sid).count()
     StockBatch.query.filter_by(supplier_id=sid).update({'supplier_id': None})
+    audit_event('supplier_deleted', 'suppliers', sid, before=before,
+                after={'batches_detached': detached_batches})
     db.session.delete(s)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/suppliers/<int:sid>/products', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_suppliers_products(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1456,6 +1474,7 @@ def api_suppliers_products(sid):
 
 
 @bp.route('/api/suppliers/<int:sid>/purchase_run', methods=['POST'])
+@audit_policy('AUDITED')
 def api_suppliers_purchase_run(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1795,6 +1814,13 @@ def api_suppliers_purchase_run(sid):
         except Exception as _le:
             current_app.logger.warning(f'Learning step failed for supplier {sid}: {_le}')
 
+    audit_event('purchase_run_posted', 'supplier_invoices', run_id, after={
+        'supplier_id': sid, 'invoice_number': invoice_ref, 'batches_created': batches_created,
+        'created_products': [p['id'] for p in created_products],
+        'subtotal': float(subtotal), 'vat_total': float(vat_total),
+        'additional_costs_total': float(total_addl), 'discount_total': float(discount_total),
+        'total': float(inv.total),
+    })
     db.session.commit()
     try:
         _auto_price_products({pl['pid'] for pl in prepared_lines})
@@ -1811,6 +1837,7 @@ def api_suppliers_purchase_run(sid):
 
 
 @bp.route('/api/suppliers/<int:sid>/product-mappings', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_supplier_product_mappings(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1843,18 +1870,23 @@ def api_supplier_product_mappings(sid):
 
 
 @bp.route('/api/suppliers/<int:sid>/product-mappings/<int:mid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_supplier_product_mapping_delete(sid, mid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
     m = SupplierProductMapping.query.filter_by(id=mid, supplier_id=sid).first()
     if not m:
         return jsonify({'error': 'Not found'}), 404
+    before = {'raw_description': m.raw_description_original, 'product_id': m.product_id,
+              'mapping_state': getattr(m, 'mapping_state', 'SUGGESTED')}
+    audit_event('supplier_product_mapping_deleted', 'supplier_product_mappings', mid, before=before, after=None)
     db.session.delete(m)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/suppliers/<int:sid>/product-mappings/<int:mid>', methods=['PATCH'])
+@audit_policy('AUDITED')
 def api_supplier_product_mapping_patch(sid, mid):
     """Update mapping_state: SUGGESTED | CONFIRMED | REJECTED | IGNORED."""
     if not require_role('admin'):
@@ -1875,6 +1907,8 @@ def api_supplier_product_mapping_patch(sid, mid):
         action='state_changed', old_state=old_state, new_state=new_state,
         created_at=datetime.utcnow(),
     ))
+    audit_event('supplier_product_mapping_state_changed', 'supplier_product_mappings', mid,
+                before={'mapping_state': old_state}, after={'mapping_state': new_state})
     db.session.commit()
     return jsonify({'ok': True, 'mapping_state': new_state})
 
@@ -1890,6 +1924,7 @@ def _doc_dir():
 
 
 @bp.route('/api/suppliers/<int:sid>/documents', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_supplier_docs_list(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1906,6 +1941,7 @@ def api_supplier_docs_list(sid):
 
 
 @bp.route('/api/suppliers/<int:sid>/documents', methods=['POST'])
+@audit_policy('AUDITED')
 def api_supplier_docs_upload(sid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1935,12 +1971,17 @@ def api_supplier_docs_upload(sid):
         uploaded_by=u.id if u else None,
     )
     db.session.add(doc)
+    db.session.flush()
+    audit_event('supplier_document_uploaded', 'supplier_documents', doc.id, after={
+        'supplier_id': sid, 'invoice_id': invoice_id, 'original_name': doc.original_name,
+    })
     db.session.commit()
     return jsonify({'ok': True, 'id': doc.id, 'original_name': doc.original_name,
                     'filename': doc.filename, 'uploaded_at': doc.uploaded_at.date().isoformat()})
 
 
 @bp.route('/api/suppliers/<int:sid>/documents/<int:did>/download', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_supplier_docs_download(sid, did):
     if not require_role('admin'):
         abort(403)
@@ -1952,6 +1993,7 @@ def api_supplier_docs_download(sid, did):
 
 
 @bp.route('/api/suppliers/<int:sid>/documents/<int:did>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_supplier_docs_delete(sid, did):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -1963,12 +2005,15 @@ def api_supplier_docs_delete(sid, did):
         os.remove(path)
     except OSError:
         pass
+    audit_event('supplier_document_deleted', 'supplier_documents', did,
+                before={'original_name': doc.original_name, 'supplier_id': sid}, after=None)
     db.session.delete(doc)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/suppliers/<int:sid>/invoices', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_supplier_invoices(sid):
     """Return supplier invoices with nested batches and documents."""
     if not require_role('admin'):
@@ -2086,6 +2131,7 @@ def api_supplier_invoices(sid):
 
 
 @bp.route('/api/suppliers/<int:sid>/invoices/<int:inv_id>', methods=['PUT'])
+@audit_policy('AUDITED')
 def api_supplier_invoice_update(sid, inv_id):
     """Replace all batches on an invoice with new lines (only if no stock consumed)."""
     if not require_role('admin'):
@@ -2100,6 +2146,11 @@ def api_supplier_invoice_update(sid, inv_id):
             return jsonify({'error': f'Cannot edit — stock from batch #{b.id} has already been used in sales'}), 400
         if Decimal(str(b.qty_remaining_base)) != Decimal(str(b.qty_purchased_base)):
             return jsonify({'error': f'Cannot edit — some stock from batch #{b.id} has already been consumed'}), 400
+
+    before_snapshot = {
+        'invoice_number': inv.invoice_number, 'total': float(inv.total) if inv.total is not None else None,
+        'batch_count': len(batches),
+    }
 
     data           = request.json or {}
     lines          = data.get('lines', [])
@@ -2302,11 +2353,15 @@ def api_supplier_invoice_update(sid, inv_id):
         except Exception:
             pass
 
+    audit_event('supplier_invoice_updated', 'supplier_invoices', inv_id, before=before_snapshot, after={
+        'invoice_number': invoice_ref, 'total': float(inv.total), 'batches_created': batches_created,
+    })
     db.session.commit()
     return jsonify({'ok': True, 'batches_created': batches_created, 'invoice_id': inv_id, 'invoice_number': invoice_ref})
 
 
 @bp.route('/api/suppliers/<int:sid>/invoices/<int:inv_id>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_supplier_invoice_delete(sid, inv_id):
     """Delete an invoice and all its batches (only if no stock has been consumed)."""
     if not require_role('admin'):
@@ -2332,6 +2387,10 @@ def api_supplier_invoice_delete(sid, inv_id):
             pass
         db.session.delete(doc)
 
+    audit_event('supplier_invoice_deleted', 'supplier_invoices', inv_id, before={
+        'supplier_id': sid, 'invoice_number': inv.invoice_number,
+        'total': float(inv.total) if inv.total is not None else None, 'batch_count': len(batches),
+    }, after=None)
     for b in batches:
         db.session.delete(b)
     db.session.delete(inv)
@@ -2340,6 +2399,7 @@ def api_supplier_invoice_delete(sid, inv_id):
 
 
 @bp.route('/api/suppliers/<int:sid>/batches', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_supplier_batches(sid):
     """Legacy alias — returns flat batch list for the apply-costs selector."""
     if not require_role('admin'):
@@ -2371,6 +2431,7 @@ def api_supplier_batches(sid):
 
 
 @bp.route('/api/suppliers/search')
+@audit_policy('NO_STATE_CHANGE')
 def api_suppliers_search():
     """Search suppliers by name, linked product name, or invoice number/ref.
     Returns matching supplier IDs and any matching invoice IDs."""

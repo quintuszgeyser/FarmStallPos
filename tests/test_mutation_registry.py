@@ -32,8 +32,16 @@ audited too since they change what online customers are charged.
 till-fraud detection surface — the Z-report close records counted cash vs.
 expected cash and the over/under, the same kind of record P2-4 made void
 reasons mandatory to protect.
+
+'suppliers' was adopted sixth: purchase_run is the other major costing-input
+surface besides stock.py's receive/adjust — it's what P2-0's write_stock_
+movement and absorb_neg_placeholder calls in stock.py are shared with, and it
+carries the VAT/discount/shipping allocation waterfall P0-2's INV-9 checks.
+The invoice PUT/DELETE routes and supplier CRUD are audited for the same
+reason invoices.py's routes are: they change billed amounts and vendor
+records with no prior trail.
 """
-ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions'}
+ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers'}
 
 
 def _adopted_rules(app):
@@ -97,5 +105,9 @@ def test_adopted_blueprints_have_the_expected_policy_mix(app):
     assert 'till_sessions.api_till_close' in by_policy.get('AUDITED', [])
     assert 'till_sessions.api_till_summary' in by_policy.get('NO_STATE_CHANGE', [])
     assert 'till_sessions.api_till_sessions_list' in by_policy.get('NO_STATE_CHANGE', [])
+    assert 'suppliers.api_suppliers_purchase_run' in by_policy.get('AUDITED', [])
+    assert 'suppliers.api_supplier_invoice_delete' in by_policy.get('AUDITED', [])
+    assert 'suppliers.api_suppliers_delete' in by_policy.get('AUDITED', [])
+    assert 'suppliers.api_suppliers_get' in by_policy.get('NO_STATE_CHANGE', [])
     assert len(by_policy.get('NO_STATE_CHANGE', [])) >= 3
     assert len(by_policy.get('EXPLICITLY_EXEMPT', [])) >= 2
