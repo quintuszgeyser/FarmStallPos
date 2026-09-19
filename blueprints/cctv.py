@@ -2,6 +2,7 @@ from flask import Blueprint, request, session, redirect, render_template_string
 from werkzeug.security import check_password_hash, generate_password_hash
 from models import User
 from functools import wraps
+from helpers import audit_event, audit_policy
 
 bp = Blueprint('cctv', __name__)
 
@@ -63,21 +64,29 @@ _LOGIN_HTML = """<!doctype html>
 
 
 @bp.route('/cctv/login', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def cctv_login_get():
     return render_template_string(_LOGIN_HTML, error=None)
 
 
 @bp.route('/cctv/login', methods=['POST'])
+@audit_policy('SECURITY_EVENT_ONLY')
 def cctv_login_post():
+    from models import db
     username = (request.form.get('username') or '').strip()
     password = request.form.get('password') or ''
+    remote_ip = request.remote_addr or 'unknown'
     user = User.query.filter_by(username=username, active=True).first()
     dummy = user.password_hash if user else generate_password_hash('dummy-constant')
     valid = check_password_hash(dummy, password)
     roles = (user.role or '').split(',') if user else []
     if not user or not valid or 'cctv' not in roles:
+        audit_event('cctv_login_failed', 'users', username or None, reason=f'ip={remote_ip}')
+        db.session.commit()
         return render_template_string(_LOGIN_HTML, error='Invalid credentials or access not granted'), 401
     session['cctv_user'] = user.username
+    audit_event('cctv_login_succeeded', 'users', user.username, reason=f'ip={remote_ip}')
+    db.session.commit()
     return redirect('/cctv/view')
 
 
@@ -1038,17 +1047,21 @@ _VIEW_HTML = """<!doctype html>
 
 @bp.route('/cctv/view', methods=['GET'])
 @_require_cctv
+@audit_policy('NO_STATE_CHANGE')
 def cctv_view():
     return render_template_string(_VIEW_HTML)
 
 
 @bp.route('/cctv/logout', methods=['GET', 'POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='routine self-service session termination, no '
+              'forensic requirement — cctv_login_failed/succeeded are the security-relevant events')
 def cctv_logout():
     session.pop('cctv_user', None)
     return redirect('/cctv/login')
 
 
 @bp.route('/api/cctv-session-check', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def cctv_session_check():
     if session.get('cctv_user'):
         return ('', 200)
