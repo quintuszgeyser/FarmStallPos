@@ -1,0 +1,25 @@
+{
+  "run_id": "ecaff6d3-57ed-4c2a-b4ea-e60ae805ce0d",
+  "mode": "COMMITTED",
+  "log": [
+    {
+      "action": "VOIDED",
+      "target": "liability 181",
+      "batch_id": 1388
+    },
+    {
+      "action": "BACKFILLED",
+      "target": "consumption 4265",
+      "batch_id": 1850,
+      "qty": "1044.0000",
+      "amount_owed": "46.98"
+    },
+    {
+      "action": "BACKFILLED",
+      "target": "consumption 4266",
+      "batch_id": 1850,
+      "qty": "1554.0000",
+      "amount_owed": "69.93"
+    }
+  ]
+}
