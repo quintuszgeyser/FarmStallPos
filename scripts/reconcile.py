@@ -340,6 +340,7 @@ def check_inv3_typed_source_resolves(session):
 
 
 CONFIRMED_FREE_MARKER = 'OWNER-CONFIRMED-FREE:'
+CONFIRMED_FREE_CONSIGNMENT_MARKER = 'OWNER-CONFIRMED-CONSIGNMENT-FREE:'
 
 
 def check_inv4_no_free_stock(session):
@@ -390,7 +391,12 @@ def check_inv5_consignment_closure(session):
               'adj-) never get a matching liability — write-offs are absorbed as the store\'s '
               'own loss, per consume_fifo\'s own comment: "supplier is not owed for spoilage/'
               'damage." Summing them into consumed_qty made a batch look underpaid when the '
-              'true consumption (sales only) matched its liability exactly.')
+              'true consumption (sales only) matched its liability exactly. A batch whose '
+              f'cost_adjustment_reason contains {CONFIRMED_FREE_CONSIGNMENT_MARKER!r} is also '
+              'skipped, not failed — the owner\'s explicit call that a specific gap involves no '
+              'real money owed (e.g. stock given away, not sold on consignment terms), mirroring '
+              'INV-4\'s CONFIRMED_FREE_MARKER for the same reason: a dated, sourced decision '
+              'beats an unexplained mismatch this check would otherwise flag forever.')
     liabilities = session.query(ConsignmentLiability).filter(
         ConsignmentLiability.status != 'voided'
     ).all()
@@ -423,6 +429,11 @@ def check_inv5_consignment_closure(session):
         liability_qty = by_batch.get(key, Decimal('0'))
         consumed_qty = consumed_by_batch.get(key, Decimal('0'))
         if liability_qty != consumed_qty:
+            batch = session.get(StockBatch, key[1])
+            if (batch and batch.cost_adjustment_reason
+                    and CONFIRMED_FREE_CONSIGNMENT_MARKER in batch.cost_adjustment_reason):
+                r.skipped_count += 1
+                continue
             r.violations.append({
                 'batch_id': key[1], 'liability_qty_outstanding_plus_settled': str(liability_qty),
                 'consumed_qty': str(consumed_qty), 'difference': str(liability_qty - consumed_qty),

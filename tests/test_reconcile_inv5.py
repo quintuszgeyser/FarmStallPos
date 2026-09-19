@@ -10,7 +10,7 @@ the store's own absorbed loss, never owed to the supplier. Four of six
 production violations turned out to be entirely explained by these two
 patterns, not real supplier-liability corruption.
 """
-from scripts.reconcile import check_inv5_consignment_closure
+from scripts.reconcile import CONFIRMED_FREE_CONSIGNMENT_MARKER, check_inv5_consignment_closure
 from tests.factories import make_product, make_stock_batch, make_supplier
 from tests.helpers import D
 
@@ -94,3 +94,22 @@ def test_a_genuinely_missing_liability_is_still_a_violation(db_session):
     matching = [v for v in r.violations if v['batch_id'] == batch.id]
     assert len(matching) == 1
     assert matching[0]['difference'] == '-7.0000'
+
+
+def test_owner_confirmed_free_consignment_gap_is_not_a_violation(db_session):
+    # Reproduces batch 1574 (Flowers/Pin Cushions): a real gap between liability and
+    # consumption, but the owner confirmed directly the extra consumption was genuinely
+    # free — no supplier owed — so it should be skipped, not flagged forever.
+    supplier = make_supplier()
+    product = make_product(product_type='stock_item', name='INV5 Confirmed Free Gap')
+    batch = make_stock_batch(
+        product, ownership_type='CONSIGNMENT', supplier_id=None,
+        cost_adjustment_reason=(f'Wrong price | {CONFIRMED_FREE_CONSIGNMENT_MARKER} owner confirmed '
+                                 f'2026-09-19, no supplier owed for this gap.'),
+    )
+    _make_consumption(batch, product, sale_id='sale-a', qty_consumed_base=D('10'))
+    _make_liability(supplier, product, batch, sale_id='sale-a', qty_consumed=D('2'), status='settled')
+    db_session.commit()
+
+    r = check_inv5_consignment_closure(db_session)
+    assert batch.id not in {v['batch_id'] for v in r.violations}
