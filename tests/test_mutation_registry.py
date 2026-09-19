@@ -60,8 +60,18 @@ already the record, so a duplicate AuditLog entry per camera event would be
 log spam with no decision to review. Visit-notification acknowledgement gets
 the same exemption as products.py's image routes: a UI-only flag with no
 financial or PII impact beyond what the row already carries.
+
+Adopted from here on, terser: 'branding' (one route — rare admin config
+change, AUDITED). 'packaging' (list/suggestions read-only; record is high-
+frequency teller usage-counter telemetry, EXPLICITLY_EXEMPT — same reasoning
+as customers.py's recognition-telemetry routes). 'subcategories',
+'categories', 'cost_categories', 'families' (small taxonomy CRUD blueprints —
+create/update/delete/merge AUDITED, matching suppliers.py's CRUD precedent;
+reads NO_STATE_CHANGE).
 """
-ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers', 'products', 'customers'}
+ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers',
+                      'products', 'customers', 'branding', 'packaging', 'subcategories',
+                      'categories', 'cost_categories', 'families'}
 
 
 def _adopted_rules(app):

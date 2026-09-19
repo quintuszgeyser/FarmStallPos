@@ -16,7 +16,7 @@ import uuid
 
 from flask import Blueprint, jsonify, request, current_app
 
-from helpers import require_role, set_setting
+from helpers import require_role, set_setting, audit_event, audit_policy
 
 bp = Blueprint('branding', __name__)
 
@@ -82,6 +82,7 @@ def _svg_is_safe(raw_bytes):
 
 
 @bp.route('/api/branding/logo', methods=['POST'])
+@audit_policy('AUDITED')
 def upload_logo():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -144,6 +145,7 @@ def upload_logo():
         return jsonify({'error': 'Failed to store logo'}), 500
 
     set_setting('branding_logo_file', fname)
+    audit_event('branding_logo_uploaded', 'settings', None, after={'logo_file': fname, 'ext': ext})
     # bust the cross-worker branding cache so all workers pick up the new logo
     try:
         from app import bust_branding_cache

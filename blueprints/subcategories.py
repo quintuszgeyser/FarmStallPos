@@ -3,7 +3,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 
-from helpers import require_login, require_role
+from helpers import require_login, require_role, audit_event, audit_policy
 from models import db, SubCategory, Category, Product
 
 bp = Blueprint('subcategories', __name__)
@@ -16,6 +16,7 @@ def _slug(name):
 
 
 @bp.route('/api/subcategories', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_subcategories_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -43,6 +44,7 @@ def api_subcategories_get():
 
 
 @bp.route('/api/subcategories', methods=['POST'])
+@audit_policy('AUDITED')
 def api_subcategories_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -66,11 +68,14 @@ def api_subcategories_post():
         sort_order=data.get('sort_order', 0),
     )
     db.session.add(s)
+    db.session.flush()
+    audit_event('subcategory_created', 'sub_categories', s.id, after={'name': s.name, 'category_id': category_id})
     db.session.commit()
     return jsonify({'ok': True, 'id': s.id, 'name': s.name})
 
 
 @bp.route('/api/subcategories/update', methods=['POST'])
+@audit_policy('AUDITED')
 def api_subcategories_update():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -91,15 +96,19 @@ def api_subcategories_update():
     if clash:
         return jsonify({'error': 'Another sub-category already uses that name'}), 409
 
+    _before = {'name': s.name, 'sort_order': s.sort_order}
     s.name = name
     s.name_norm = norm
     if 'sort_order' in data:
         s.sort_order = int(data['sort_order'])
+    audit_event('subcategory_updated', 'sub_categories', s.id, before=_before,
+                after={'name': s.name, 'sort_order': s.sort_order})
     db.session.commit()
     return jsonify({'ok': True, 'id': s.id, 'name': s.name})
 
 
 @bp.route('/api/subcategories/delete', methods=['POST'])
+@audit_policy('AUDITED')
 def api_subcategories_delete():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -108,6 +117,7 @@ def api_subcategories_delete():
     if not s:
         return jsonify({'error': 'Sub-category not found'}), 404
     Product.query.filter_by(sub_category_id=s.id).update({'sub_category_id': None})
+    audit_event('subcategory_deleted', 'sub_categories', s.id, before={'name': s.name}, after=None)
     db.session.delete(s)
     db.session.commit()
     return jsonify({'ok': True})

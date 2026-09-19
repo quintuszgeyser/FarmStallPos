@@ -5,7 +5,7 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 
-from helpers import require_login, require_role
+from helpers import require_login, require_role, audit_event, audit_policy
 from models import db, ProductFamily, Product, Attribute, AttributeValue, ProductVariantAttribute
 
 bp = Blueprint('families', __name__)
@@ -33,6 +33,7 @@ def _unique_slug(name, exclude_id=None):
 # ── Families ──────────────────────────────────────────────────────────────────
 
 @bp.route('/api/families', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_families_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -55,6 +56,7 @@ def api_families_get():
 
 
 @bp.route('/api/families', methods=['POST'])
+@audit_policy('AUDITED')
 def api_families_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -66,11 +68,14 @@ def api_families_post():
     slug = _unique_slug(name)
     f = ProductFamily(name=name, description=data.get('description'), slug=slug)
     db.session.add(f)
+    db.session.flush()
+    audit_event('product_family_created', 'product_families', f.id, after={'name': f.name, 'slug': f.slug})
     db.session.commit()
     return jsonify({'ok': True, 'id': f.id, 'name': f.name, 'slug': f.slug})
 
 
 @bp.route('/api/families/update', methods=['POST'])
+@audit_policy('AUDITED')
 def api_families_update():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -81,15 +86,19 @@ def api_families_update():
     name = (data.get('name') or '').strip()
     if not name:
         return jsonify({'error': 'name required'}), 400
+    _before = {'name': f.name, 'description': f.description, 'slug': f.slug}
     f.name = name
     f.description = data.get('description', f.description)
     f.slug = _unique_slug(name, exclude_id=f.id)
     f.updated_at = datetime.utcnow()
+    audit_event('product_family_updated', 'product_families', f.id, before=_before,
+                after={'name': f.name, 'description': f.description, 'slug': f.slug})
     db.session.commit()
     return jsonify({'ok': True, 'id': f.id, 'name': f.name, 'slug': f.slug})
 
 
 @bp.route('/api/families/delete', methods=['POST'])
+@audit_policy('AUDITED')
 def api_families_delete():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -100,12 +109,14 @@ def api_families_delete():
     Product.query.filter_by(product_family_id=f.id).update({
         'product_family_id': None, 'is_default_variant': False
     })
+    audit_event('product_family_deleted', 'product_families', f.id, before={'name': f.name}, after=None)
     db.session.delete(f)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/families/<int:fid>/variants', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_family_variants(fid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -146,6 +157,7 @@ def api_family_variants(fid):
 # ── Attributes ────────────────────────────────────────────────────────────────
 
 @bp.route('/api/attributes', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_attributes_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -158,6 +170,7 @@ def api_attributes_get():
 
 
 @bp.route('/api/attributes', methods=['POST'])
+@audit_policy('AUDITED')
 def api_attributes_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -169,11 +182,14 @@ def api_attributes_post():
         return jsonify({'error': 'Attribute already exists'}), 409
     a = Attribute(name=name)
     db.session.add(a)
+    db.session.flush()
+    audit_event('attribute_created', 'attributes', a.id, after={'name': a.name})
     db.session.commit()
     return jsonify({'ok': True, 'id': a.id, 'name': a.name})
 
 
 @bp.route('/api/attributes/delete', methods=['POST'])
+@audit_policy('AUDITED')
 def api_attributes_delete():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -181,12 +197,14 @@ def api_attributes_delete():
     a = db.session.get(Attribute, data.get('id'))
     if not a:
         return jsonify({'error': 'Attribute not found'}), 404
+    audit_event('attribute_deleted', 'attributes', a.id, before={'name': a.name}, after=None)
     db.session.delete(a)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/attributes/values', methods=['POST'])
+@audit_policy('AUDITED')
 def api_attribute_values_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -201,11 +219,14 @@ def api_attribute_values_post():
         return jsonify({'error': 'Value already exists'}), 409
     v = AttributeValue(attribute_id=a.id, value=value)
     db.session.add(v)
+    db.session.flush()
+    audit_event('attribute_value_created', 'attribute_values', v.id, after={'attribute_id': a.id, 'value': v.value})
     db.session.commit()
     return jsonify({'ok': True, 'id': v.id, 'value': v.value, 'attribute_id': a.id})
 
 
 @bp.route('/api/attribute_values/delete', methods=['POST'])
+@audit_policy('AUDITED')
 def api_attribute_values_delete():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -218,6 +239,7 @@ def api_attribute_values_delete():
             ProductVariantAttribute.attribute_value_id == v.id
         )
     )
+    audit_event('attribute_value_deleted', 'attribute_values', v.id, before={'value': v.value}, after=None)
     db.session.delete(v)
     db.session.commit()
     return jsonify({'ok': True})
@@ -226,6 +248,7 @@ def api_attribute_values_delete():
 # ── Per-product variant attributes ────────────────────────────────────────────
 
 @bp.route('/api/products/<int:pid>/variant_attributes', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_product_variant_attrs_get(pid):
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -243,6 +266,7 @@ def api_product_variant_attrs_get(pid):
 
 
 @bp.route('/api/products/<int:pid>/variant_attributes', methods=['POST'])
+@audit_policy('AUDITED')
 def api_product_variant_attrs_set(pid):
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -259,5 +283,6 @@ def api_product_variant_attrs_set(pid):
         v = db.session.get(AttributeValue, vid)
         if v:
             db.session.add(ProductVariantAttribute(product_id=pid, attribute_value_id=vid))
+    audit_event('product_variant_attributes_set', 'products', pid, after={'value_ids': value_ids})
     db.session.commit()
     return jsonify({'ok': True})

@@ -3,7 +3,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request, g
 
-from helpers import require_login, current_user
+from helpers import require_login, current_user, audit_event, audit_policy
 from models import db, CostCategory
 
 bp = Blueprint('cost_categories', __name__)
@@ -14,6 +14,7 @@ def _slug(s):
 
 
 @bp.route('/api/cost-categories', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def list_cost_categories():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -28,6 +29,7 @@ def list_cost_categories():
 
 
 @bp.route('/api/cost-categories/all', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def list_all_cost_categories():
     u = current_user()
     if not u or not u.has_role('admin', 'manager'):
@@ -42,6 +44,7 @@ def list_all_cost_categories():
 
 
 @bp.route('/api/cost-categories', methods=['POST'])
+@audit_policy('AUDITED')
 def create_cost_category():
     u = current_user()
     if not u or not u.has_role('admin', 'manager'):
@@ -63,11 +66,14 @@ def create_cost_category():
         created_at=datetime.utcnow(),
     )
     db.session.add(cat)
+    db.session.flush()
+    audit_event('cost_category_created', 'cost_categories', cat.id, after={'name': cat.name, 'label': cat.label})
     db.session.commit()
     return jsonify({'ok': True, 'id': cat.id, 'name': cat.name, 'label': cat.label})
 
 
 @bp.route('/api/cost-categories/<int:cid>', methods=['PATCH'])
+@audit_policy('AUDITED')
 def update_cost_category(cid):
     u = current_user()
     if not u or not u.has_role('admin', 'manager'):
@@ -76,6 +82,7 @@ def update_cost_category(cid):
     if not cat:
         return jsonify({'error': 'Not found'}), 404
     data = request.get_json() or {}
+    _before = {'label': cat.label, 'color': cat.color, 'is_active': cat.is_active, 'sort_order': cat.sort_order}
     if 'label' in data:
         cat.label = str(data['label']).strip() or cat.label
     if 'color' in data:
@@ -84,11 +91,14 @@ def update_cost_category(cid):
         cat.is_active = bool(data['is_active'])
     if 'sort_order' in data:
         cat.sort_order = int(data['sort_order'])
+    audit_event('cost_category_updated', 'cost_categories', cat.id, before=_before,
+                after={'label': cat.label, 'color': cat.color, 'is_active': cat.is_active, 'sort_order': cat.sort_order})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/cost-categories/<int:cid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def delete_cost_category(cid):
     u = current_user()
     if not u or not u.has_role('admin', 'manager'):
@@ -97,5 +107,6 @@ def delete_cost_category(cid):
     if not cat:
         return jsonify({'error': 'Not found'}), 404
     cat.is_active = False   # soft delete
+    audit_event('cost_category_deactivated', 'cost_categories', cat.id, before={'is_active': True}, after={'is_active': False})
     db.session.commit()
     return jsonify({'ok': True})

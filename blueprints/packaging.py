@@ -3,7 +3,7 @@ import logging
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text
 
-from helpers import require_login, qty_bucket
+from helpers import require_login, qty_bucket, audit_policy
 from models import db, Product, Category, PackagingUsage, ProductImage
 
 bp = Blueprint('packaging', __name__)
@@ -25,6 +25,7 @@ def _serialize_pkg(p):
 
 
 @bp.route('/api/packaging', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_packaging_list():
     """All products whose category has is_packaging=True, ordered by name."""
     if not require_login():
@@ -41,6 +42,7 @@ def api_packaging_list():
 
 
 @bp.route('/api/packaging/suggestions', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_packaging_suggestions():
     """Top packaging suggestions for a given product_id and qty.
 
@@ -87,6 +89,8 @@ def api_packaging_suggestions():
 
 
 @bp.route('/api/packaging/record', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='high-frequency teller-driven usage-counter increment; '
+              'the aggregate row is the data, not a business decision worth an audit trail entry')
 def api_packaging_record():
     """Record that a specific packaging was chosen for a specific product (or cart).
 

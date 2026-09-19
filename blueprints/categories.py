@@ -6,6 +6,7 @@ from sqlalchemy import func
 from helpers import (
     require_login, require_role,
     normalize_category_name, get_or_create_category,
+    audit_event, audit_policy,
 )
 from models import db, Category, Product
 
@@ -21,6 +22,7 @@ def _counts():
 
 
 @bp.route('/api/categories', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_categories_get():
     if not require_login():
         return jsonify({'error': 'Unauthorized'}), 401
@@ -34,6 +36,7 @@ def api_categories_get():
 
 
 @bp.route('/api/categories', methods=['POST'])
+@audit_policy('AUDITED')
 def api_categories_post():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -41,11 +44,14 @@ def api_categories_post():
     if not normalize_category_name(data.get('name')):
         return jsonify({'error': 'name required'}), 400
     cat = get_or_create_category(data.get('name'))
+    db.session.flush()
+    audit_event('category_created', 'categories', cat.id, after={'name': cat.name})
     db.session.commit()
     return jsonify({'ok': True, 'id': cat.id, 'name': cat.name})
 
 
 @bp.route('/api/categories/update', methods=['POST'])
+@audit_policy('AUDITED')
 def api_categories_update():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -60,15 +66,19 @@ def api_categories_update():
     clash = Category.query.filter(Category.id != cat.id, Category.name_norm == norm).first()
     if clash:
         return jsonify({'error': 'Another category already uses that name'}), 409
+    _before = {'name': cat.name, 'is_packaging': bool(cat.is_packaging)}
     cat.name = clean
     cat.name_norm = norm
     if 'is_packaging' in data:
         cat.is_packaging = bool(data['is_packaging'])
+    audit_event('category_updated', 'categories', cat.id, before=_before,
+                after={'name': cat.name, 'is_packaging': bool(cat.is_packaging)})
     db.session.commit()
     return jsonify({'ok': True, 'id': cat.id, 'name': cat.name, 'is_packaging': bool(cat.is_packaging)})
 
 
 @bp.route('/api/categories/delete', methods=['POST'])
+@audit_policy('AUDITED')
 def api_categories_delete():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -78,12 +88,14 @@ def api_categories_delete():
         return jsonify({'error': 'Category not found'}), 404
     # Unassign products (keep them, just clear the category) then remove the row
     Product.query.filter_by(category_id=cat.id).update({'category_id': None})
+    audit_event('category_deleted', 'categories', cat.id, before={'name': cat.name}, after=None)
     db.session.delete(cat)
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/categories/merge', methods=['POST'])
+@audit_policy('AUDITED')
 def api_categories_merge():
     if not require_role('admin'):
         return jsonify({'error': 'Forbidden'}), 403
@@ -95,6 +107,8 @@ def api_categories_merge():
     if source.id == target.id:
         return jsonify({'error': 'Source and target must differ'}), 400
     moved = Product.query.filter_by(category_id=source.id).update({'category_id': target.id})
+    audit_event('categories_merged', 'categories', target.id, before={'source_id': source.id, 'source_name': source.name},
+                after={'target_id': target.id, 'moved_products': moved})
     db.session.delete(source)
     db.session.commit()
     return jsonify({'ok': True, 'moved': moved, 'target_id': target.id})
