@@ -1084,6 +1084,14 @@ def strong_migrate():
             )""")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_dt  ON plate_detections (detected_at)")
             conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_plate_det_cid ON plate_detections (customer_id)")
+            # camera_source was added to the CREATE TABLE above after plate_detections already
+            # existed on deployed boxes - CREATE TABLE IF NOT EXISTS never retrofits a column
+            # onto an existing table, so every box migrated before this line was added is
+            # missing it. api_customers_log_plate has unconditionally written camera_source=...
+            # since it was added, so log_plate (ANPR plate logging) 500s on every call on any
+            # such box. Found via P3-1b's customers.py audit-policy tests, which gave that
+            # route its first-ever test coverage.
+            pg_try("ALTER TABLE plate_detections ADD COLUMN IF NOT EXISTS camera_source VARCHAR(20)")
 
             # ---- Phase 1: Auto-Enrollment System (2026-05-12) ----
 

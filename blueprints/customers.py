@@ -8,7 +8,7 @@ from decimal import Decimal
 from flask import Blueprint, jsonify, request, Response
 from sqlalchemy import text
 
-from helpers import require_login, require_role, current_user, get_setting
+from helpers import require_login, require_role, current_user, get_setting, audit_event, audit_policy
 from models import (
     db,
     Customer, CustomerPlate, CustomerFace, CustomerGait,
@@ -219,12 +219,14 @@ def _recompute_customer_embeddings(customer_id, _text_fn):
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/customers', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_get():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     return jsonify(_build_customer_list(Customer.query.filter_by(active=True).order_by(Customer.name.asc()).all()))
 
 
 @bp.route('/api/customers/<int:cid>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_get_single(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     c = db.session.get(Customer, cid)
@@ -233,6 +235,7 @@ def api_customer_get_single(cid):
 
 
 @bp.route('/api/customers', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_post():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     data    = request.json or {}
@@ -254,6 +257,11 @@ def api_customers_post():
     )
     db.session.add(c)
     try:
+        db.session.flush()
+        audit_event('customer_created', 'customers', c.id, after={
+            'name': c.name, 'phone': c.phone, 'email': c.email,
+            'is_online_customer': is_online, 'is_pos_customer': is_pos,
+        })
         db.session.commit()
     except Exception as e:
         db.session.rollback()
@@ -264,11 +272,14 @@ def api_customers_post():
 
 
 @bp.route('/api/customers/<int:cid>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_update(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     c = db.session.get(Customer, cid)
     if not c: return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
+    _audit_fields = ('name', 'phone', 'email', 'notes', 'active', 'is_employee', 'is_online_customer', 'is_pos_customer')
+    _before = {f: getattr(c, f) for f in _audit_fields}
     if 'name'               in data: c.name               = (data['name'] or '').strip() or None
     if 'phone'              in data: c.phone              = (data['phone'] or '').strip() or None
     if 'email'              in data: c.email              = (data['email'] or '').strip() or None
@@ -277,21 +288,26 @@ def api_customers_update(cid):
     if 'is_employee'        in data: c.is_employee        = bool(data['is_employee'])
     if 'is_online_customer' in data: c.is_online_customer = bool(data['is_online_customer'])
     if 'is_pos_customer'    in data: c.is_pos_customer    = bool(data['is_pos_customer'])
+    audit_event('customer_updated', 'customers', cid, before=_before,
+                after={f: getattr(c, f) for f in _audit_fields})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/customers/<int:cid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_customers_delete(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     c = db.session.get(Customer, cid)
     if not c: return jsonify({'error': 'Not found'}), 404
     c.active = False
+    audit_event('customer_deactivated', 'customers', cid, before={'active': True}, after={'active': False})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/customers/cleanup_empty', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_cleanup_empty():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     cutoff = datetime.utcnow() - timedelta(days=30)
@@ -316,14 +332,18 @@ def api_customers_cleanup_empty():
     for cid in ids:
         c = db.session.get(Customer, cid)
         if c: db.session.delete(c)
+    audit_event('customers_cleanup_empty', 'customers', None, after={'deleted_ids': ids})
     db.session.commit()
     return jsonify({'ok': True, 'deleted': len(ids)})
 
 
 @bp.route('/api/customers/<int:cid>/delete_permanent', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_delete_permanent(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     try:
+        _victim = db.session.get(Customer, cid)
+        _before = {'name': _victim.name, 'customer_number': _victim.customer_number} if _victim else None
         # 1) delete the customer's own child detail rows
         for tbl in ['customer_physical_attributes', 'customer_faces', 'customer_gaits',
                     'customer_visits', 'customer_plates', 'visit_sessions',
@@ -344,6 +364,7 @@ def api_customers_delete_permanent(cid):
         db.session.execute(text('UPDATE invoices         SET customer_id = NULL WHERE customer_id = :cid'), {'cid': cid})
         db.session.execute(text('UPDATE customers        SET merged_into = NULL WHERE merged_into = :cid'), {'cid': cid})
         # 5) finally remove the customer
+        audit_event('customer_permanently_deleted', 'customers', cid, before=_before, after=None)
         db.session.execute(text('DELETE FROM customers WHERE id = :cid'), {'cid': cid})
         db.session.commit()
         try:
@@ -357,13 +378,16 @@ def api_customers_delete_permanent(cid):
 
 
 @bp.route('/api/customers/<int:cid>/name', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customer_name(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     c = db.session.get(Customer, cid)
     if not c: return jsonify({'error': 'Not found'}), 404
     name = (request.json or {}).get('name', '').strip()
     if not name: return jsonify({'error': 'name required'}), 400
+    _before_name = c.name
     c.name = name
+    audit_event('customer_renamed', 'customers', cid, before={'name': _before_name}, after={'name': name})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -375,6 +399,7 @@ def api_customer_name(cid):
 _DOW_NAMES = {0:'Sunday',1:'Monday',2:'Tuesday',3:'Wednesday',4:'Thursday',5:'Friday',6:'Saturday'}
 
 @bp.route('/api/customers/<int:cid>/profile', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_profile(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     customer = db.session.get(Customer, cid)
@@ -508,6 +533,7 @@ def api_customer_profile(cid):
 
 
 @bp.route('/api/customers/<int:cid>/radar', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_radar(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     c = db.session.get(Customer, cid)
@@ -581,6 +607,7 @@ def api_customer_radar(cid):
 
 
 @bp.route('/api/customers/<int:cid>/visits', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_visits(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     visits = CustomerVisit.query.filter_by(customer_id=cid).order_by(CustomerVisit.detected_at.desc()).limit(20).all()
@@ -594,6 +621,7 @@ def api_customer_visits(cid):
 
 
 @bp.route('/api/customers/<int:cid>/sales', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_sales(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     start = request.args.get('start'); end = request.args.get('end')
@@ -608,6 +636,7 @@ def api_customer_sales(cid):
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/customers/merge_suggestions', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_merge_suggestions():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     import numpy as np
@@ -643,6 +672,7 @@ def api_customers_merge_suggestions():
 
 
 @bp.route('/api/customers/exclusions', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_add_exclusion():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     data   = request.get_json() or {}
@@ -653,11 +683,14 @@ def api_customers_add_exclusion():
     existing = db.session.execute(db.text("SELECT id FROM customer_exclusions WHERE customer_id_a=:a AND customer_id_b=:b"), {'a': lo, 'b': hi}).fetchone()
     if not existing:
         db.session.execute(db.text("INSERT INTO customer_exclusions (customer_id_a, customer_id_b, reason) VALUES (:a, :b, :r)"), {'a': lo, 'b': hi, 'r': reason})
+        audit_event('customer_merge_exclusion_added', 'customer_exclusions', None,
+                    after={'customer_id_a': lo, 'customer_id_b': hi, 'reason': reason})
         db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/customers/merge_suggest_primary', methods=['POST'])
+@audit_policy('NO_STATE_CHANGE')
 def api_merge_suggest_primary():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     data = request.json or {}; ids = data.get('ids', [])
@@ -682,6 +715,7 @@ def api_merge_suggest_primary():
 
 
 @bp.route('/api/customers/merge', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_merge():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     data       = request.json or {}
@@ -769,6 +803,10 @@ def api_customers_merge():
             for _, raw_bytes, photo in selected:
                 db.session.execute(text('INSERT INTO customer_faces (customer_id, embedding, photo, enrolled_at, active) VALUES (:pid, :emb, :photo, NOW(), TRUE)'), {'pid': primary_id, 'emb': raw_bytes, 'photo': photo})
 
+        audit_event('customers_merged', 'customers', primary_id, after={
+            'primary_id': primary_id, 'merged_ids': merge_ids, 'merged_count': merged_count,
+            'auto_merged': auto_merged, 'similarity': float(similarity) if similarity is not None else None,
+        })
         db.session.commit()
         return jsonify({'ok': True, 'merged': merged_count, 'primary_id': primary_id})
     except Exception as e:
@@ -777,6 +815,7 @@ def api_customers_merge():
 
 
 @bp.route('/api/customers/merge_log/<int:log_id>/unmerge', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_unmerge(log_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     try:
@@ -794,6 +833,9 @@ def api_customers_unmerge(log_id):
         _recompute_customer_embeddings(primary_id, text)
         db.session.execute(text('UPDATE customer_merge_log SET unmerged_at = NOW() WHERE id = :id'), {'id': log_id})
         soft = moved_faces == 0
+        audit_event('customer_unmerged', 'customers', source_id, after={
+            'log_id': log_id, 'primary_id': primary_id, 'source_id': source_id, 'soft_unmerge': soft,
+        })
         db.session.commit()
         return jsonify({'ok': True, 'soft_unmerge': soft, 'message': 'Customer reactivated. Biometric data will rebuild automatically.' if soft else 'Customer reactivated with their original biometric data.'})
     except Exception as e:
@@ -802,6 +844,7 @@ def api_customers_unmerge(log_id):
 
 
 @bp.route('/api/customers/<int:cid>/merge_history', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_merge_history(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     import base64 as _b64
@@ -819,6 +862,7 @@ def api_customer_merge_history(cid):
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/customers/<int:cid>/enroll/plate', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_enroll_plate(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     c = db.session.get(Customer, cid)
@@ -826,21 +870,28 @@ def api_customers_enroll_plate(cid):
     plate = (request.json or {}).get('plate_number', '').strip().upper()
     if not plate: return jsonify({'error': 'plate_number required'}), 400
     if CustomerPlate.query.filter_by(plate_number=plate).first(): return jsonify({'error': 'Plate already enrolled'}), 409
-    db.session.add(CustomerPlate(customer_id=cid, plate_number=plate))
+    cp = CustomerPlate(customer_id=cid, plate_number=plate)
+    db.session.add(cp)
+    db.session.flush()
+    audit_event('customer_plate_enrolled', 'customer_plates', cp.id, after={'customer_id': cid, 'plate_number': plate})
     db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/customers/<int:cid>/enroll/plate/<int:pid>', methods=['DELETE'])
+@audit_policy('AUDITED')
 def api_customers_delete_plate(cid, pid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     cp = db.session.get(CustomerPlate, pid)
     if not cp or cp.customer_id != cid: return jsonify({'error': 'Not found'}), 404
+    audit_event('customer_plate_removed', 'customer_plates', pid,
+                before={'customer_id': cid, 'plate_number': cp.plate_number}, after=None)
     db.session.delete(cp); db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/customers/<int:cid>/enroll/face', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_enroll_face(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     c = db.session.get(Customer, cid)
@@ -862,6 +913,7 @@ def api_customers_enroll_face(cid):
             else:
                 existing_body_row.body_photo = body_photo_bytes
                 if photo_bytes: existing_body_row.photo = photo_bytes
+            audit_event('customer_face_snapshot_enrolled', 'customer_faces', None, after={'customer_id': cid})
         db.session.commit()
         is_new_angle = None
     else:
@@ -894,11 +946,15 @@ def api_customers_enroll_face(cid):
             if len(existing) >= MAX_EMBEDDINGS:
                 min(existing, key=lambda r: r.enrolled_at).active = False
             db.session.add(CustomerFace(customer_id=cid, embedding=embedding_bytes, photo=photo_bytes, body_photo=body_photo_bytes, quality=new_quality if new_quality > 0 else None, camera_source=camera_source_val))
+        audit_event('customer_face_enrolled', 'customer_faces', None, after={
+            'customer_id': cid, 'new_angle': is_new_angle, 'replaced': replaced,
+        })
         db.session.commit()
     return jsonify({'ok': True, 'new_angle': is_new_angle})
 
 
 @bp.route('/api/customers/<int:cid>/enroll/gait', methods=['POST'])
+@audit_policy('AUDITED')
 def api_customers_enroll_gait(cid):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     c = db.session.get(Customer, cid)
@@ -908,6 +964,7 @@ def api_customers_enroll_gait(cid):
     features_bytes = base64.b64decode(features_b64)
     CustomerGait.query.filter_by(customer_id=cid).update({'active': False})
     db.session.add(CustomerGait(customer_id=cid, gait_features=features_bytes))
+    audit_event('customer_gait_enrolled', 'customer_gaits', None, after={'customer_id': cid})
     db.session.commit()
     return jsonify({'ok': True})
 
@@ -917,6 +974,7 @@ def api_customers_enroll_gait(cid):
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/customers/<int:cid>/photo', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_photo(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     for row in CustomerFace.query.filter_by(customer_id=cid, active=True).filter(CustomerFace.photo != None).filter(CustomerFace.quality != None).order_by(CustomerFace.quality.desc()).all():
@@ -931,6 +989,7 @@ def api_customer_photo(cid):
 
 
 @bp.route('/api/customers/<int:cid>/body_photo', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_body_photo(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     row = CustomerFace.query.filter_by(customer_id=cid).filter(CustomerFace.body_photo != None).order_by(CustomerFace.enrolled_at.desc()).first()
@@ -943,6 +1002,9 @@ def api_customer_body_photo(cid):
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/customers/identify', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='automated recognition-service telemetry — a high-'
+              'frequency camera detection event; the created CustomerVisit row is itself the '
+              'record, an AuditLog row per detection would be pure log spam with no decision to review')
 def api_customers_identify():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     data = request.json or {}
@@ -974,6 +1036,8 @@ def api_customers_identify():
 
 
 @bp.route('/api/customers/log_plate', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='automated ANPR telemetry — the created PlateDetection '
+              'row is itself the record; see identify\'s exemption for the same reasoning')
 def api_customers_log_plate():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     data = request.json or {}
@@ -983,6 +1047,7 @@ def api_customers_log_plate():
 
 
 @bp.route('/api/customers/pending_visits', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_pending_visits():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     cutoff = datetime.utcnow() - timedelta(minutes=5)
@@ -1001,6 +1066,8 @@ def api_customers_pending_visits():
 
 
 @bp.route('/api/customers/visits/<int:vid>/acknowledge', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='UI-only notification dismissal flag on an existing '
+              'visit row — no financial, inventory, or PII impact beyond what the row already carries')
 def api_customers_acknowledge_visit(vid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     v = db.session.get(CustomerVisit, vid)
@@ -1009,6 +1076,7 @@ def api_customers_acknowledge_visit(vid):
 
 
 @bp.route('/api/customers/faces_raw', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_faces_raw():
     # Biometric data — admin or recognition service only (POPIA compliance)
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
@@ -1017,6 +1085,7 @@ def api_customers_faces_raw():
 
 
 @bp.route('/api/customers/gaits_raw', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_gaits_raw():
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     rows = CustomerGait.query.filter_by(active=True).all()
@@ -1024,6 +1093,7 @@ def api_customers_gaits_raw():
 
 
 @bp.route('/api/customers/<int:cid>/faces_raw', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_faces_raw(cid):
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     rows = CustomerFace.query.filter_by(customer_id=cid, active=True).order_by(CustomerFace.enrolled_at.desc()).limit(10).all()
@@ -1031,6 +1101,7 @@ def api_customer_faces_raw(cid):
 
 
 @bp.route('/api/customers/<int:cid>/gaits_raw', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customer_gaits_raw(cid):
     if not require_role('admin', 'developer'): return jsonify({'error': 'Forbidden'}), 403
     rows = CustomerGait.query.filter_by(customer_id=cid, active=True).all()
@@ -1038,6 +1109,7 @@ def api_customer_gaits_raw(cid):
 
 
 @bp.route('/api/customers/plate_log', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_plate_log():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     limit = int(request.args.get('limit', 50))
@@ -1046,6 +1118,7 @@ def api_customers_plate_log():
 
 
 @bp.route('/api/customers/max_number', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_max_number():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     max_c = Customer.query.filter(Customer.customer_number.isnot(None)).order_by(Customer.customer_number.desc()).first()
@@ -1058,6 +1131,8 @@ def api_customers_max_number():
 
 
 @bp.route('/api/customers/<int:cid>/attributes', methods=['GET', 'POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='GET is a plain read; POST is automated recognition-'
+              'service telemetry writing an observation row — same reasoning as identify/log_plate')
 def api_customer_attributes(cid):
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     if not db.session.get(Customer, cid): return jsonify({'error': 'Customer not found'}), 404
@@ -1071,6 +1146,7 @@ def api_customer_attributes(cid):
 
 
 @bp.route('/api/customers/attributes_bulk', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_attributes_bulk():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     result = db.session.execute(text(f"""SELECT customer_id, height_cm, hair_color, skin_tone, build, eye_color, age_range, gender, wearing_glasses, facial_hair, detected_at, camera_source, confidence, height_category FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY customer_id ORDER BY detected_at DESC) AS rn FROM customer_physical_attributes) ranked WHERE rn <= {_ATTR_WINDOW} ORDER BY customer_id, detected_at DESC""")).fetchall()
@@ -1084,6 +1160,7 @@ def api_customers_attributes_bulk():
 # ---------------------------------------------------------------------------
 
 @bp.route('/api/till/active_customer', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_till_active_customer():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     try:
@@ -1097,6 +1174,8 @@ def api_till_active_customer():
 
 
 @bp.route('/api/till/detect', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='automated recognition-service telemetry — the created '
+              'till_detections row is itself the record; see identify\'s exemption for the same reasoning')
 def api_till_detect():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     data = request.get_json()
@@ -1106,6 +1185,7 @@ def api_till_detect():
 
 
 @bp.route('/api/customers/visits/recent', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_customers_visits_recent():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     cutoff = datetime.utcnow() - timedelta(hours=int(request.args.get('hours', 2)))
@@ -1114,6 +1194,8 @@ def api_customers_visits_recent():
 
 
 @bp.route('/api/customers/sessions', methods=['POST'])
+@audit_policy('EXPLICITLY_EXEMPT', reason='automated recognition-service telemetry — the created '
+              'visit_sessions row is itself the record; see identify\'s exemption for the same reasoning')
 def api_customers_sessions():
     if not require_login(): return jsonify({'error': 'Unauthorized'}), 401
     data     = request.get_json()

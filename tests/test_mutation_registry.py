@@ -49,8 +49,19 @@ surface. Image management (upload/delete/reorder/set-primary) is the one
 deliberate EXPLICITLY_EXEMPT block in this blueprint: cosmetic product
 photography with no financial, inventory, or costing impact, current state
 always visible directly on the product.
+
+'customers' was adopted eighth: customer CRUD, merges/unmerges, exclusions,
+and biometric enrollment (face/gait/plate) are all admin-gated identity
+decisions with real POPIA consequences, so they're AUDITED. The recognition
+service's own detection telemetry (identify, log_plate, till/detect,
+attributes POST, sessions) is EXPLICITLY_EXEMPT instead — high-frequency
+machine writes where the created row (visit/detection/attribute/session) is
+already the record, so a duplicate AuditLog entry per camera event would be
+log spam with no decision to review. Visit-notification acknowledgement gets
+the same exemption as products.py's image routes: a UI-only flag with no
+financial or PII impact beyond what the row already carries.
 """
-ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers', 'products'}
+ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices', 'till_sessions', 'suppliers', 'products', 'customers'}
 
 
 def _adopted_rules(app):
@@ -124,5 +135,10 @@ def test_adopted_blueprints_have_the_expected_policy_mix(app):
     assert 'products.api_products_delete' in by_policy.get('AUDITED', [])
     assert 'products.api_products_get' in by_policy.get('NO_STATE_CHANGE', [])
     assert 'products.api_product_image_upload' in by_policy.get('EXPLICITLY_EXEMPT', [])
+    assert 'customers.api_customers_merge' in by_policy.get('AUDITED', [])
+    assert 'customers.api_customers_enroll_face' in by_policy.get('AUDITED', [])
+    assert 'customers.api_customers_delete_permanent' in by_policy.get('AUDITED', [])
+    assert 'customers.api_customers_get' in by_policy.get('NO_STATE_CHANGE', [])
+    assert 'customers.api_customers_identify' in by_policy.get('EXPLICITLY_EXEMPT', [])
     assert len(by_policy.get('NO_STATE_CHANGE', [])) >= 3
     assert len(by_policy.get('EXPLICITLY_EXEMPT', [])) >= 2

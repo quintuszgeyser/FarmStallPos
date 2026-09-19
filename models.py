@@ -939,6 +939,11 @@ class PlateDetection(db.Model):
     customer_id   = db.Column(db.Integer, db.ForeignKey('customers.id'), nullable=True)
     matched       = db.Column(db.Boolean,     nullable=False, default=False)
     snapshot_path = db.Column(db.Text,        nullable=True)
+    # Column has existed in the DDL (app.py strong_migrate) since plate_detections was
+    # created; the model just never mapped it, so api_customers_log_plate's unconditional
+    # camera_source=... kwarg 500ed on every call. Found writing customers.py's P3-1b
+    # audit-policy tests, which gave log_plate its first-ever test coverage.
+    camera_source = db.Column(db.String(20),  nullable=True)
 
 
 # ── Consignment Inventory ─────────────────────────────────────────────────────
