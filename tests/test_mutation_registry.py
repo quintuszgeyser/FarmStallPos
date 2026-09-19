@@ -21,8 +21,14 @@ classified, not by adding its name here first.
 inventory/costing mutation surface the P2 ledger-integrity work (movement
 ledger, FIFO reversal, stocktake variance) already hardened, so it's the
 next-highest-stakes blueprint after money movement and account lifecycle.
+
+'invoices' was adopted fourth: it's the other money-movement surface besides
+`transactions` — invoice create/update/delete/copy/finalise/undo all touch
+billed amounts, and finalise/undo already run through the same FIFO and
+consignment-liability reversal paths P2-2b hardened. Shipping-fee updates are
+audited too since they change what online customers are charged.
 """
-ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock'}
+ADOPTED_BLUEPRINTS = {'transactions', 'auth', 'stock', 'invoices'}
 
 
 def _adopted_rules(app):
@@ -78,5 +84,10 @@ def test_adopted_blueprints_have_the_expected_policy_mix(app):
     assert 'stock.api_stock_writeoff' in by_policy.get('AUDITED', [])
     assert 'stock.api_stock_adjust' in by_policy.get('AUDITED', [])
     assert 'stock.api_stock_ingredients' in by_policy.get('NO_STATE_CHANGE', [])
+    assert 'invoices.api_invoices_create' in by_policy.get('AUDITED', [])
+    assert 'invoices.api_invoices_finalise' in by_policy.get('AUDITED', [])
+    assert 'invoices.api_invoices_undo' in by_policy.get('AUDITED', [])
+    assert 'invoices.api_invoices_delete' in by_policy.get('AUDITED', [])
+    assert 'invoices.api_invoices_list' in by_policy.get('NO_STATE_CHANGE', [])
     assert len(by_policy.get('NO_STATE_CHANGE', [])) >= 3
     assert len(by_policy.get('EXPLICITLY_EXEMPT', [])) >= 2

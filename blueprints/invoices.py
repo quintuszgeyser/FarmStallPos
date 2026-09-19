@@ -9,6 +9,7 @@ from sqlalchemy import text
 from helpers import (
     require_login, require_role, current_user, get_online_user_id, consume_fifo,
     get_setting, set_setting, reverse_fifo, reverse_consignment_liabilities, audit_event,
+    audit_policy,
 )
 from models import db, Invoice, Customer, Product, RecipeLine, Sale
 
@@ -26,6 +27,7 @@ _SHIPPING_METHODS = (
 
 
 @bp.route('/api/invoices/shipping-fees', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_shipping_fees_get():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     return jsonify({
@@ -38,10 +40,12 @@ def api_shipping_fees_get():
 
 
 @bp.route('/api/invoices/shipping-fees', methods=['POST'])
+@audit_policy('AUDITED')
 def api_shipping_fees_update():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     data = request.json or {}
     fees = data.get('fees') or {}
+    before = {m: float(get_setting(f'shipping_fee_{m}', d) or d) for m, _label, d in _SHIPPING_METHODS}
     saved = {}
     for m, _label, _default in _SHIPPING_METHODS:
         if m in fees:
@@ -53,6 +57,8 @@ def api_shipping_fees_update():
                 return jsonify({'error': f'Fee for {m} cannot be negative'}), 400
             set_setting(f'shipping_fee_{m}', val)
             saved[m] = val
+    if saved:
+        audit_event('shipping_fees_updated', 'settings', None, before=before, after=saved)
     return jsonify({'ok': True, 'saved': saved})
 
 
@@ -87,6 +93,7 @@ def _resolve_online_customer(email, name, phone):
 
 
 @bp.route('/api/invoices', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_invoices_list():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     invs = db.session.query(Invoice).order_by(Invoice.created_at.desc()).all()
@@ -94,6 +101,7 @@ def api_invoices_list():
 
 
 @bp.route('/api/invoices', methods=['POST'])
+@audit_policy('AUDITED')
 def api_invoices_create():
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     data = request.json or {}; lines = data.get('lines', [])
@@ -106,11 +114,17 @@ def api_invoices_create():
         cust, _ = _resolve_online_customer((data.get('customer_email') or '').strip(), (data.get('customer_name') or '').strip(), (data.get('customer_phone') or '').strip())
         cust_id = cust.id
     inv = Invoice(invoice_number=_next_invoice_number(), due_date=data.get('due_date') or None, customer_name=data.get('customer_name') or None, customer_phone=data.get('customer_phone') or None, customer_email=data.get('customer_email') or None, customer_address=data.get('customer_address') or None, notes=data.get('notes') or None, bank_details=data.get('bank_details') or None, lines_json=_json.dumps(lines), subtotal=round(subtotal, 2), discount_pct=disc or None, total=round(total, 2), status='draft', created_by=current_user().id if current_user() else None, customer_id=cust_id)
-    db.session.add(inv); db.session.commit()
+    db.session.add(inv); db.session.flush()
+    audit_event('invoice_created', 'invoices', inv.id, after={
+        'invoice_number': inv.invoice_number, 'customer_id': inv.customer_id,
+        'subtotal': float(inv.subtotal), 'total': float(inv.total), 'status': inv.status,
+    })
+    db.session.commit()
     return jsonify({'id': inv.id, 'invoice_number': inv.invoice_number, 'customer_id': inv.customer_id})
 
 
 @bp.route('/api/invoices/<int:inv_id>', methods=['GET'])
+@audit_policy('NO_STATE_CHANGE')
 def api_invoices_get(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
@@ -119,15 +133,20 @@ def api_invoices_get(inv_id):
 
 
 @bp.route('/api/invoices/<int:inv_id>', methods=['POST'])
+@audit_policy('AUDITED')
 def api_invoices_update(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
     if not inv: return jsonify({'error': 'Not found'}), 404
     data = request.json or {}
     allowed_fields = ('due_date', 'customer_name', 'customer_phone', 'customer_email', 'customer_address', 'notes', 'bank_details', 'status')
+    before = {f: getattr(inv, f) for f in allowed_fields}
+    before['subtotal'] = float(inv.subtotal); before['total'] = float(inv.total)
     if inv.sale_id:
         for field in allowed_fields:
             if field in data: setattr(inv, field, data[field] or None)
+        audit_event('invoice_updated', 'invoices', inv.id, before=before,
+                    after={f: getattr(inv, f) for f in allowed_fields} | {'subtotal': float(inv.subtotal), 'total': float(inv.total)})
         db.session.commit(); return jsonify({'ok': True})
     for field in allowed_fields:
         if field in data: setattr(inv, field, data[field] or None)
@@ -135,21 +154,28 @@ def api_invoices_update(inv_id):
         lines = data['lines']; subtotal = sum(float(l.get('subtotal', 0)) for l in lines)
         disc = float(data.get('discount_pct') or inv.discount_pct or 0); total = subtotal * (1 - disc / 100) if disc else subtotal
         inv.lines_json = _json.dumps(lines); inv.subtotal = round(subtotal, 2); inv.discount_pct = disc or None; inv.total = round(total, 2)
+    audit_event('invoice_updated', 'invoices', inv.id, before=before,
+                after={f: getattr(inv, f) for f in allowed_fields} | {'subtotal': float(inv.subtotal), 'total': float(inv.total)})
     db.session.commit(); return jsonify({'ok': True})
 
 
 @bp.route('/api/invoices/<int:inv_id>/delete', methods=['POST'])
+@audit_policy('AUDITED')
 def api_invoices_delete(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
     if not inv: return jsonify({'error': 'Not found'}), 404
     if inv.status == 'finalised':
         return jsonify({'error': 'Cannot delete a finalised invoice. Use Undo to reverse it first.'}), 400
+    before = {'invoice_number': inv.invoice_number, 'status': inv.status,
+              'total': float(inv.total), 'customer_id': inv.customer_id}
+    audit_event('invoice_deleted', 'invoices', inv.id, before=before, after=None)
     db.session.delete(inv); db.session.commit()
     return jsonify({'ok': True})
 
 
 @bp.route('/api/invoices/<int:inv_id>/copy', methods=['POST'])
+@audit_policy('AUDITED')
 def api_invoices_copy(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     src = db.session.get(Invoice, inv_id)
@@ -173,11 +199,15 @@ def api_invoices_copy(inv_id):
         created_by=current_user().id if current_user() else None,
         customer_id=src.customer_id,
     )
-    db.session.add(copy); db.session.commit()
+    db.session.add(copy); db.session.flush()
+    audit_event('invoice_copied', 'invoices', copy.id, before={'source_invoice_id': src.id},
+                after={'invoice_number': copy.invoice_number, 'total': float(copy.total)})
+    db.session.commit()
     return jsonify({'id': copy.id, 'invoice_number': copy.invoice_number})
 
 
 @bp.route('/api/invoices/<int:inv_id>/finalise', methods=['POST'])
+@audit_policy('AUDITED')
 def api_invoices_finalise(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
@@ -193,7 +223,12 @@ def api_invoices_finalise(inv_id):
         if cust:
             if is_online and not cust.is_online_customer: cust.is_online_customer = True
             if not is_online and not cust.is_pos_customer: cust.is_pos_customer = True
-    if inv.sale_id: inv.status = 'finalised'; db.session.commit(); return jsonify({'ok': True, 'sale_id': inv.sale_id})
+    if inv.sale_id:
+        before_status = inv.status
+        inv.status = 'finalised'
+        audit_event('invoice_finalised', 'invoices', inv.id,
+                    before={'status': before_status}, after={'status': 'finalised', 'sale_id': inv.sale_id})
+        db.session.commit(); return jsonify({'ok': True, 'sale_id': inv.sale_id})
     lines = _json.loads(inv.lines_json or '[]')
     if not lines: return jsonify({'error': 'Invoice has no items'}), 400
     if float(inv.total or 0) <= 0:
@@ -223,11 +258,16 @@ def api_invoices_finalise(inv_id):
             db.session.add(Sale(sale_id=sale_uuid, date_time=now, product_id=p.id, qty=qty_disp,
                                 unit_price=unit_price, user_id=sale_user_id,
                                 payment_method=inv_payment_method, cogs=line_cogs))
-    inv.sale_id = sale_uuid; inv.status = 'finalised'; db.session.commit()
+    inv.sale_id = sale_uuid; inv.status = 'finalised'
+    audit_event('invoice_finalised', 'invoices', inv.id,
+                before={'status': 'draft', 'sale_id': None},
+                after={'status': 'finalised', 'sale_id': sale_uuid, 'total': float(inv.total)})
+    db.session.commit()
     return jsonify({'ok': True, 'sale_id': sale_uuid})
 
 
 @bp.route('/api/invoices/<int:inv_id>/undo', methods=['POST'])
+@audit_policy('AUDITED')
 def api_invoices_undo(inv_id):
     if not require_role('admin'): return jsonify({'error': 'Forbidden'}), 403
     inv = db.session.get(Invoice, inv_id)
@@ -260,6 +300,7 @@ def api_invoices_undo(inv_id):
 
 
 @bp.route('/invoices/<int:inv_id>/print')
+@audit_policy('NO_STATE_CHANGE')
 def invoice_print(inv_id):
     if not require_login(): return 'Unauthorized', 401
     inv = db.session.get(Invoice, inv_id)
