@@ -1,0 +1,120 @@
+{
+  "run_id": "87a78354-9236-4629-aceb-50cb6dd2f6a3",
+  "mode": "COMMITTED",
+  "log": [
+    {
+      "batch_id": 2085,
+      "product": "Focaccia Bread",
+      "action": "ANNOTATED",
+      "shortfall": "18.0000"
+    },
+    {
+      "batch_id": 2140,
+      "product": "Wondersousie",
+      "action": "ANNOTATED",
+      "shortfall": "40.0000"
+    },
+    {
+      "batch_id": 2119,
+      "product": "Cream of Tartar",
+      "action": "ANNOTATED",
+      "shortfall": "9.0000"
+    },
+    {
+      "batch_id": 2142,
+      "product": "Pitted Dates",
+      "action": "ANNOTATED",
+      "shortfall": "250.0000"
+    },
+    {
+      "batch_id": 1444,
+      "product": "Bran & Seed Rusks",
+      "action": "ANNOTATED",
+      "shortfall": "1.0000"
+    },
+    {
+      "batch_id": 2090,
+      "product": "Whole Chicken Eikeboom Chicken",
+      "action": "ANNOTATED",
+      "shortfall": "2056.0000"
+    },
+    {
+      "batch_id": 2066,
+      "product": "Carrots",
+      "action": "ANNOTATED",
+      "shortfall": "400.0000"
+    },
+    {
+      "batch_id": 1685,
+      "product": "Cinnamon Rolls CLASSIC",
+      "action": "ANNOTATED",
+      "shortfall": "6.0000"
+    },
+    {
+      "batch_id": 1623,
+      "product": "Sandwich Ham",
+      "action": "ANNOTATED",
+      "shortfall": "150.0000"
+    },
+    {
+      "batch_id": 2068,
+      "product": "Tomato",
+      "action": "ANNOTATED",
+      "shortfall": "404.0000"
+    },
+    {
+      "batch_id": 2135,
+      "product": "White Cheddar",
+      "action": "ANNOTATED",
+      "shortfall": "215.0000"
+    },
+    {
+      "batch_id": 2145,
+      "product": "Roast Beef Focaccia Sandwich",
+      "action": "ANNOTATED",
+      "shortfall": "1.0000"
+    },
+    {
+      "batch_id": 1925,
+      "product": "Bee Long Drink 305ml",
+      "action": "ANNOTATED",
+      "shortfall": "1.0000"
+    },
+    {
+      "batch_id": 1563,
+      "product": "Strawberry Cheesecake",
+      "action": "ANNOTATED",
+      "shortfall": "5.0000"
+    },
+    {
+      "batch_id": 2133,
+      "product": "Petite Herb Leaf Salad",
+      "action": "ANNOTATED",
+      "shortfall": "16.0000"
+    },
+    {
+      "batch_id": 2116,
+      "product": "Biltong - Springbok",
+      "action": "ANNOTATED",
+      "shortfall": "362.0000"
+    },
+    {
+      "batch_id": 2128,
+      "product": "Free Range Skinless Chicken Breast Fillets",
+      "action": "ANNOTATED",
+      "shortfall": "40.0000"
+    },
+    {
+      "batch_id": 2060,
+      "product": "Soft Buns Homemade",
+      "action": "ANNOTATED",
+      "shortfall": "16.0000"
+    },
+    {
+      "batch_id": 2125,
+      "product": "Eggs",
+      "action": "ANNOTATED",
+      "shortfall": "16.0000"
+    }
+  ]
+}
